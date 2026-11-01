@@ -118,7 +118,7 @@ impl SubActionRunner for BanUserRunner {
 mod tests {
     use super::*;
     use crate::error::TwitchError;
-    use crate::sub_actions::test_support::{
+    use crate::test_support::{
         MockTransport, SELF_USER_ID, TOKEN_SENTINEL, assert_request_refused, make_ctx,
         users_fixture,
     };
@@ -128,7 +128,7 @@ mod tests {
     fn runner_with(
         responses: Vec<Result<serde_json::Value, TwitchError>>,
     ) -> (Arc<MockTransport>, BanUserRunner) {
-        crate::sub_actions::test_support::runner_with(responses, BanUserRunner::new)
+        crate::test_support::runner_with(responses, BanUserRunner::new)
     }
 
     fn config(target: &str, reason: &str) -> SubActionConfig {

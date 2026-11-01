@@ -62,8 +62,8 @@ pub async fn sandboxed_backend_at(url: &str, key: [u8; 32]) -> Sandboxed<SqliteB
     Sandboxed::new(backend, media_root)
 }
 
-pub async fn sandboxed_backend(key: [u8; 32]) -> Sandboxed<SqliteBackend> {
-    sandboxed_backend_at(IN_MEMORY_URL, key).await
+pub async fn sandboxed_backend() -> Sandboxed<SqliteBackend> {
+    sandboxed_backend_at(IN_MEMORY_URL, TEST_KEY).await
 }
 
 pub async fn sandboxed_file_backend(key: [u8; 32]) -> Sandboxed<SqliteBackend> {

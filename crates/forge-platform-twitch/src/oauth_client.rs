@@ -259,7 +259,7 @@ mod tests {
 
     use super::{DevicePoll, TwitchOAuthClient};
     use crate::TwitchError;
-    use crate::sub_actions::test_support::{oauth_client_at, oauth_client_limited_by};
+    use crate::test_support::{oauth_client_at, oauth_client_limited_by};
 
     const CLIENT: &str = "test_client";
     const DEVICE_CODE: &str = "DEVICE_CODE_SENTINEL_x9";

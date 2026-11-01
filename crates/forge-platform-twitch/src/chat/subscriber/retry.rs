@@ -190,10 +190,10 @@ fn record_retry_failure(
 mod tests {
     use super::super::{TOPICS, subscribe_all};
     use super::TopicRetryRun;
-    use crate::bot_account::test_support::RecordingBus;
     use crate::error::TwitchError;
     use crate::helix::{HelixRequest, HelixTransport};
     use crate::subscriptions::{SubStatus, SubscriptionFailure, SubscriptionTracker};
+    use crate::test_support::bot_account::RecordingBus;
     use crate::vocabulary::event_kinds::EVENTSUB_SUBSCRIPTION_CREATED;
     use async_trait::async_trait;
     use forge_events::EventPublisher;

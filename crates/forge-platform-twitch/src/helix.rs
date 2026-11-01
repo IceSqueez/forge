@@ -235,14 +235,14 @@ impl HelixTransport for HelixHttpTransport {
 
 #[cfg(test)]
 mod tests {
-    use crate::bot_account::test_support::RecordingBus;
+    use crate::test_support::bot_account::RecordingBus;
     use std::collections::BTreeSet;
     use std::sync::atomic::{AtomicU32, Ordering};
     use std::time::Duration;
 
     use super::*;
     use crate::helix_gateway::helix_gateway;
-    use crate::sub_actions::test_support::endpoints_with;
+    use crate::test_support::endpoints_with;
     use forge_events::{Event, EventPublisher, EventSource};
     use forge_net::RateLimiter;
     use forge_net::test_support::RecordingRateLimiter;

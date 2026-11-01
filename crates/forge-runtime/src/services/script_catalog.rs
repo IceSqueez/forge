@@ -173,7 +173,7 @@ mod tests {
     use time::OffsetDateTime;
 
     async fn make_dp() -> Sandboxed<Arc<SqliteBackend>> {
-        sandboxed_backend([0xab; 32]).await.map(Arc::new)
+        sandboxed_backend().await.map(Arc::new)
     }
 
     fn make_record(name: &str, body: &str, enabled: bool) -> ScriptRecord {

@@ -1,3 +1,4 @@
+mod actions_screen;
 mod memory_scripts;
 pub(crate) mod pack_flow;
 mod setup_transfer;
@@ -22,6 +23,7 @@ use forge_speech_types::PcmBuffer;
 use forge_storage::{DataProvider, OverlayId, SettingsRepo, StorageError};
 use forge_types::{Action, ActionId, EventId, PlatformId, TriggerConfig};
 
+pub(crate) use actions_screen::{ActionsRepos, actions_deps, actions_screen};
 pub(crate) use forge_host::test_support::{
     GatedSchedule, ReadFault, RecordingSink, SETTINGS_READ_FAILED, SETTINGS_WRITE_FAILED,
     SettingWrite, StubActions, StubEventLog, StubHistory, StubOverlays, TestBackend, alive_tasks,

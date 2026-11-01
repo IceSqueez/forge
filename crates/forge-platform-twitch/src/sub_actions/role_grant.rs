@@ -178,7 +178,7 @@ mod tests {
     use super::*;
     use crate::error::TwitchError;
     use crate::helix::HelixMethod;
-    use crate::sub_actions::test_support::{
+    use crate::test_support::{
         MockTransport, SELF_USER_ID, TOKEN_SENTINEL, assert_request_refused, make_ctx,
         users_fixture,
     };
@@ -186,7 +186,7 @@ mod tests {
     fn runner_with(
         responses: Vec<Result<serde_json::Value, TwitchError>>,
     ) -> (Arc<MockTransport>, RoleGrantRunner) {
-        crate::sub_actions::test_support::runner_with(responses, RoleGrantRunner::add_moderator)
+        crate::test_support::runner_with(responses, RoleGrantRunner::add_moderator)
     }
 
     fn login_config(target: &str) -> SubActionConfig {
@@ -214,7 +214,7 @@ mod tests {
         }
 
         fn identity() -> Arc<SelfIdentity> {
-            crate::sub_actions::test_support::self_identity()
+            crate::test_support::self_identity()
         }
 
         let t_add_mod = make_transport();

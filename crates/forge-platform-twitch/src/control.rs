@@ -90,10 +90,10 @@ mod tests {
     use tokio::sync::watch;
 
     use crate::account::identity::BroadcasterTier;
-    use crate::bot_account::test_support::KeyedRepo;
     use crate::builtin::TwitchIntegrationBundle;
     use crate::chat::ChatSessionState;
     use crate::subscriptions::SubscriptionTracker;
+    use crate::test_support::bot_account::KeyedRepo;
 
     fn undecryptable() -> StorageError {
         StorageError::Decryption

@@ -257,3 +257,158 @@ impl OverlayPropertyPanel {
         )
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use forge_components::FORGE_DEFAULT;
+    use forge_overlay::config::{ACCENT_MAUVE, ACCENT_MAUVE_HEX};
+
+    use super::*;
+
+    const CUSTOM: &str = "#123456";
+    const OTHER_CUSTOM: &str = "#abcdef";
+
+    fn names(offered: &[(String, Rgba)]) -> Vec<&str> {
+        offered.iter().map(|(name, _)| name.as_str()).collect()
+    }
+
+    fn offered(key: &str, saved: &[&str], selected: &str) -> Vec<(String, Rgba)> {
+        let saved: Vec<String> = saved.iter().map(|color| (*color).to_owned()).collect();
+        offered_colors(key, &saved, selected, &FORGE_DEFAULT)
+    }
+
+    fn extended(presets: &[&'static str], extra: &[&'static str]) -> Vec<&'static str> {
+        presets.iter().chain(extra).copied().collect()
+    }
+
+    fn swatch(key: &str, selected: &str) -> ConfigField {
+        ConfigField::Swatch {
+            key: key.to_owned(),
+            gate: None,
+            options: Vec::new(),
+            selected: selected.to_owned(),
+        }
+    }
+
+    fn selected_of(field: &ConfigField) -> Option<&str> {
+        match field {
+            ConfigField::Swatch { selected, .. } => Some(selected),
+            _ => None,
+        }
+    }
+
+    #[test]
+    fn each_color_field_starts_from_its_own_preset_list() {
+        assert_eq!(
+            names(&offered(ACCENT, &[], ACCENT_MAUVE)),
+            ACCENT_OPTIONS.to_vec()
+        );
+        assert_eq!(
+            names(&offered(BACKGROUND_COLOR, &[], DEFAULT_BACKGROUND_COLOR)),
+            BACKGROUND_COLOR_OPTIONS.to_vec()
+        );
+    }
+
+    #[test]
+    fn a_named_accent_takes_the_palette_tint_and_a_hex_preset_its_own_color() {
+        let accents = offered(ACCENT, &[], ACCENT_MAUVE);
+        let backgrounds = offered(BACKGROUND_COLOR, &[], DEFAULT_BACKGROUND_COLOR);
+
+        assert_eq!(
+            accents.iter().find(|(name, _)| name == ACCENT_MAUVE),
+            Some(&(
+                ACCENT_MAUVE.to_owned(),
+                accent_swatch(ACCENT_MAUVE, &FORGE_DEFAULT).unwrap()
+            ))
+        );
+        assert_eq!(
+            backgrounds
+                .iter()
+                .find(|(name, _)| name == ACCENT_MAUVE_HEX),
+            Some(&(
+                ACCENT_MAUVE_HEX.to_owned(),
+                hex_tint(ACCENT_MAUVE_HEX).unwrap()
+            ))
+        );
+    }
+
+    #[test]
+    fn saved_colors_follow_the_presets_in_saved_order() {
+        assert_eq!(
+            names(&offered(ACCENT, &[OTHER_CUSTOM, CUSTOM], ACCENT_MAUVE)),
+            extended(ACCENT_OPTIONS, &[OTHER_CUSTOM, CUSTOM])
+        );
+    }
+
+    #[test]
+    fn a_saved_color_equal_to_a_preset_is_offered_once() {
+        assert_eq!(
+            names(&offered(
+                BACKGROUND_COLOR,
+                &[ACCENT_MAUVE_HEX, CUSTOM],
+                DEFAULT_BACKGROUND_COLOR
+            )),
+            extended(BACKGROUND_COLOR_OPTIONS, &[CUSTOM])
+        );
+    }
+
+    #[test]
+    fn an_unsaved_selection_is_offered_last_in_its_normalized_form() {
+        assert_eq!(
+            names(&offered(ACCENT, &[CUSTOM], "  #ABCDEF ")),
+            extended(ACCENT_OPTIONS, &[CUSTOM, OTHER_CUSTOM])
+        );
+    }
+
+    #[test]
+    fn a_saved_selection_is_not_offered_twice() {
+        assert_eq!(
+            names(&offered(ACCENT, &[CUSTOM], CUSTOM)),
+            extended(ACCENT_OPTIONS, &[CUSTOM])
+        );
+    }
+
+    #[test]
+    fn colors_that_cannot_be_tinted_are_never_offered() {
+        for (saved, selected) in [
+            ("not-a-color", ACCENT_MAUVE),
+            ("#12345", "#12345"),
+            ("", ""),
+        ] {
+            assert_eq!(
+                names(&offered(ACCENT, &[saved], selected)),
+                ACCENT_OPTIONS.to_vec(),
+                "{saved:?} with {selected:?} selected"
+            );
+        }
+    }
+
+    #[test]
+    fn a_stored_background_keeps_its_hex_in_normalized_form() {
+        assert_eq!(background_choice(" #ABCDEF "), OTHER_CUSTOM);
+    }
+
+    #[test]
+    fn anything_but_a_hex_color_falls_back_to_the_default_background() {
+        for stored in ["", ACCENT_MAUVE, "#12345", "#1234567", "#gggggg"] {
+            assert_eq!(
+                background_choice(stored),
+                DEFAULT_BACKGROUND_COLOR,
+                "{stored:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn settling_replaces_only_the_background_selection() {
+        let mut fields = [
+            swatch(ACCENT, ACCENT_MAUVE),
+            swatch(BACKGROUND_COLOR, ACCENT_MAUVE),
+        ];
+
+        settle_background_choice(&mut fields);
+
+        assert_eq!(selected_of(&fields[0]), Some(ACCENT_MAUVE));
+        assert_eq!(selected_of(&fields[1]), Some(DEFAULT_BACKGROUND_COLOR));
+    }
+}

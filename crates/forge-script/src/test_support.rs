@@ -115,3 +115,49 @@ impl crate::ScriptGlobals for RepoGlobals {
         }
     }
 }
+
+const TEST_API_BUDGET: std::time::Duration = std::time::Duration::from_secs(30);
+
+pub(crate) fn api_publishing_to(
+    publisher: std::sync::Arc<dyn forge_events::EventPublisher>,
+    globals: std::sync::Arc<dyn crate::ScriptGlobals>,
+    caused_by: forge_types::EventId,
+) -> crate::ForgeApi {
+    crate::ForgeApi::new(
+        publisher,
+        globals,
+        caused_by,
+        std::time::Instant::now() + TEST_API_BUDGET,
+    )
+}
+
+pub(crate) fn quiet_api_until(
+    globals: std::sync::Arc<dyn crate::ScriptGlobals>,
+    deadline: std::time::Instant,
+) -> crate::ForgeApi {
+    crate::ForgeApi::new(
+        std::sync::Arc::new(forge_events::test_support::NullPublisher),
+        globals,
+        forge_types::EventId::new(),
+        deadline,
+    )
+}
+
+pub(crate) fn quiet_api(globals: std::sync::Arc<dyn crate::ScriptGlobals>) -> crate::ForgeApi {
+    quiet_api_until(globals, std::time::Instant::now() + TEST_API_BUDGET)
+}
+
+pub(crate) fn host_over(
+    backend: &forge_storage_sqlite::SqliteBackend,
+    bus: std::sync::Arc<dyn forge_events::EventPublisher>,
+    capabilities: crate::runner::ScriptCapabilities,
+) -> crate::runner::ScriptHost {
+    use forge_storage::DataProvider as _;
+
+    crate::runner::ScriptHost {
+        globals: repo_globals(backend.globals_repo()),
+        settings: backend.settings_repo(),
+        bus,
+        capabilities,
+    }
+}

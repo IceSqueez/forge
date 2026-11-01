@@ -163,7 +163,7 @@ mod tests {
     const UNCHANGED: &str = "unchanged";
 
     use crate::error::TwitchError;
-    use crate::sub_actions::test_support::{
+    use crate::test_support::{
         MockTransport, SELF_USER_ID, TOKEN_SENTINEL, assert_request_refused, make_ctx,
     };
     use forge_types::Variant;
@@ -172,10 +172,7 @@ mod tests {
     fn runner_with(
         response: Result<serde_json::Value, TwitchError>,
     ) -> (Arc<MockTransport>, GuestStarUpdateSlotRunner) {
-        crate::sub_actions::test_support::runner_with(
-            vec![response],
-            GuestStarUpdateSlotRunner::new,
-        )
+        crate::test_support::runner_with(vec![response], GuestStarUpdateSlotRunner::new)
     }
 
     fn cfg(session: &str, slot: &str, edits: &[(&str, Variant)]) -> SubActionConfig {

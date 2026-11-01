@@ -99,14 +99,14 @@ impl SubActionRunner for GuestStarRemoveGuestRunner {
 mod tests {
     use super::*;
     use crate::error::TwitchError;
-    use crate::sub_actions::test_support::{MockTransport, SELF_USER_ID, make_ctx, users_fixture};
+    use crate::test_support::{MockTransport, SELF_USER_ID, make_ctx, users_fixture};
     use forge_types::Variant;
     use std::collections::BTreeMap;
 
     fn runner_with(
         responses: Vec<Result<serde_json::Value, TwitchError>>,
     ) -> (Arc<MockTransport>, GuestStarRemoveGuestRunner) {
-        crate::sub_actions::test_support::runner_with(responses, GuestStarRemoveGuestRunner::new)
+        crate::test_support::runner_with(responses, GuestStarRemoveGuestRunner::new)
     }
 
     fn config(session_template: &str, target: &str, slot: &str) -> SubActionConfig {
@@ -203,7 +203,7 @@ mod tests {
     fn validate_config_requires_slot_id_in_addition_to_session_and_login() {
         let runner = GuestStarRemoveGuestRunner::new(
             Arc::new(MockTransport::returning(Ok(serde_json::Value::Null))),
-            crate::sub_actions::test_support::self_identity(),
+            crate::test_support::self_identity(),
         );
 
         assert!(

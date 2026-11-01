@@ -155,8 +155,8 @@ mod tests {
     use crate::BroadcasterTier;
     use crate::chat::ChatSessionState;
     use crate::helix::{HelixHttpTransport, HelixTokenRefresher, HelixTokenSource, HelixTransport};
-    use crate::sub_actions::test_support::{MockCreds, MockTransport, helix_gateway_at};
     use crate::subscriptions::SubscriptionTracker;
+    use crate::test_support::{MockCreds, MockTransport, helix_gateway_at};
 
     const BROADCASTER: &str = "100000001";
     const VIEWER: &str = "200000042";

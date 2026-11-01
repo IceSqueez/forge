@@ -7,6 +7,7 @@ use forge_runtime::{EventBus, NullEventLogRepo, spawn_chat_history_persistence};
 use forge_storage::MockChatHistoryRepo;
 use forge_storage::settings::core_settings::CHAT_HISTORY_PER_VIEWER_LIMIT;
 use forge_storage::test_support::MemorySettings;
+use forge_storage::test_support::{ChatHistoryScript, ScriptedChatHistoryRepo};
 use forge_storage::{
     ChatHistoryRepo, ChatModerationTarget, DEFAULT_CHAT_HISTORY_PER_VIEWER_LIMIT,
     MAX_CHAT_HISTORY_PER_VIEWER_LIMIT, SettingsRepo, StorageError,
@@ -403,66 +404,9 @@ impl forge_storage::EventLogRepo for StuckEventLog {
 struct StuckChatHistory;
 
 #[async_trait::async_trait]
-impl ChatHistoryRepo for StuckChatHistory {
-    async fn append(&self, _: &forge_types::UnifiedChatRow) -> Result<(), StorageError> {
+impl ChatHistoryScript for StuckChatHistory {
+    async fn append_rows(&self, _: &[forge_types::UnifiedChatRow]) -> Result<(), StorageError> {
         std::future::pending().await
-    }
-
-    async fn list_recent(
-        &self,
-        _: usize,
-    ) -> Result<Vec<forge_types::UnifiedChatRow>, StorageError> {
-        Ok(Vec::new())
-    }
-
-    async fn author_page(
-        &self,
-        _: &forge_storage::ChatAuthorKey,
-        _: Option<forge_storage::ChatHistoryCursor>,
-        _: usize,
-    ) -> Result<forge_storage::ChatAuthorPage, StorageError> {
-        Ok(forge_storage::ChatAuthorPage::default())
-    }
-
-    async fn author_tallies(
-        &self,
-        _: &[forge_storage::ChatAuthorKey],
-    ) -> Result<Vec<forge_storage::ChatAuthorTally>, StorageError> {
-        Ok(Vec::new())
-    }
-
-    async fn apply_retention(
-        &self,
-        _: &[forge_storage::ChatAuthorKey],
-        _: usize,
-    ) -> Result<u64, StorageError> {
-        Ok(0)
-    }
-
-    async fn mark_message_deleted(&self, _: PlatformId, _: &str) -> Result<u64, StorageError> {
-        Ok(0)
-    }
-
-    async fn mark_user_messages_moderated(
-        &self,
-        _: &ChatModerationTarget,
-        _: UserRemoval,
-    ) -> Result<u64, StorageError> {
-        Ok(0)
-    }
-
-    async fn clear_platform(&self, _: PlatformId) -> Result<u64, StorageError> {
-        Ok(0)
-    }
-
-    async fn append_batch(
-        &self,
-        rows: &[forge_types::UnifiedChatRow],
-    ) -> Result<(), forge_storage::StorageError> {
-        for row in rows {
-            forge_storage::ChatHistoryRepo::append(self, row).await?;
-        }
-        Ok(())
     }
 }
 
@@ -470,7 +414,11 @@ impl ChatHistoryRepo for StuckChatHistory {
 async fn abandoning_the_flush_returns_the_rows_every_stuck_writer_gave_up_in_total() {
     let bus = EventBus::new(Arc::new(StuckEventLog));
     EventBus::spawn_flush_task(Arc::clone(&bus));
-    spawn_chat_history_persistence(Arc::clone(&bus), Arc::new(StuckChatHistory), no_settings());
+    spawn_chat_history_persistence(
+        Arc::clone(&bus),
+        Arc::new(ScriptedChatHistoryRepo(Arc::new(StuckChatHistory))),
+        no_settings(),
+    );
     for id in ["a", "b", "c"] {
         bus.publish(chat_event(id));
     }

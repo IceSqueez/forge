@@ -237,8 +237,8 @@ mod tests {
     use crate::custom_rewards::{CUSTOM_REWARD_REDEMPTIONS_PATH, CUSTOM_REWARDS_PATH};
     use crate::error::TwitchError;
     use crate::helix::{HelixMethod, HelixRequest, HelixTransport};
-    use crate::sub_actions::test_support::{MockCreds, MockTransport, SELF_USER_ID};
     use crate::subscriptions::SubscriptionTracker;
+    use crate::test_support::{MockCreds, MockTransport, SELF_USER_ID};
 
     type Reply = Result<Value, TwitchError>;
 

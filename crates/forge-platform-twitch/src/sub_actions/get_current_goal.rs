@@ -154,8 +154,8 @@ impl SubActionRunner for GetCurrentGoalRunner {
 mod tests {
     use super::*;
     use crate::error::TwitchError;
-    use crate::sub_actions::test_support::TOKEN_SENTINEL;
-    use crate::sub_actions::test_support::{
+    use crate::test_support::TOKEN_SENTINEL;
+    use crate::test_support::{
         MockCreds, MockTransport, SELF_USER_ID, assert_request_refused, make_ctx,
     };
     use std::collections::BTreeMap;

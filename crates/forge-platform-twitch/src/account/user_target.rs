@@ -97,10 +97,10 @@ mod tests {
     use super::super::identity::SelfIdentity;
     use crate::error::TwitchError;
     use crate::helix::{HelixRequest, HelixTransport};
-    use crate::sub_actions::test_support::{MockTransport, make_ctx, users_fixture};
     use crate::sub_actions::{
         BanUserRunner, SendShoutoutRunner, SendWhisperRunner, TimeoutUserRunner, UnbanUserRunner,
     };
+    use crate::test_support::{MockTransport, make_ctx, users_fixture};
 
     const USERS_PATH: &str = "/helix/users";
 
@@ -196,7 +196,7 @@ mod tests {
             let transport = Arc::new(MockTransport::returning_sequence(responses));
             let runner = (self.build)(
                 Arc::clone(&transport) as Arc<dyn HelixTransport>,
-                crate::sub_actions::test_support::self_identity(),
+                crate::test_support::self_identity(),
             );
             (transport, runner)
         }

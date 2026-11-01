@@ -1,7 +1,9 @@
+mod chat_history;
 mod credentials;
 mod globals;
 mod memory;
 
+pub use chat_history::{ChatHistoryScript, ScriptedChatHistoryRepo};
 pub use credentials::MemoryCredentials;
 pub use globals::MemoryGlobals;
 pub use memory::MemorySettings;

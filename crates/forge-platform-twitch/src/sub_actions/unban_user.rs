@@ -121,7 +121,7 @@ impl SubActionRunner for UnbanUserRunner {
 mod tests {
     use super::*;
     use crate::error::TwitchError;
-    use crate::sub_actions::test_support::{
+    use crate::test_support::{
         MockTransport, REQUEST_FAIL_KIND, SELF_USER_ID, make_ctx, observed_helix_at, users_fixture,
     };
     use forge_types::Variant;
@@ -132,7 +132,7 @@ mod tests {
     fn runner_with(
         responses: Vec<Result<serde_json::Value, TwitchError>>,
     ) -> (Arc<MockTransport>, UnbanUserRunner) {
-        crate::sub_actions::test_support::runner_with(responses, UnbanUserRunner::new)
+        crate::test_support::runner_with(responses, UnbanUserRunner::new)
     }
 
     fn config(target: &str) -> SubActionConfig {
@@ -311,8 +311,7 @@ mod tests {
                 .mount(&server)
                 .await;
             let (transport, bus) = observed_helix_at(&server.uri());
-            let runner =
-                UnbanUserRunner::new(transport, crate::sub_actions::test_support::self_identity());
+            let runner = UnbanUserRunner::new(transport, crate::test_support::self_identity());
             let stack = ArgStack::new();
 
             let (telemetry, _) = runner.execute(&config("target"), &make_ctx(&stack)).await;

@@ -149,7 +149,7 @@ async fn post_chat_message(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::sub_actions::test_support::MockTransport;
+    use crate::test_support::MockTransport;
 
     fn sent_fixture() -> serde_json::Value {
         serde_json::json!({"data": [{"message_id": "abc-123"}, {"message_id": "later"}]})

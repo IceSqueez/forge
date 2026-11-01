@@ -187,7 +187,7 @@ mod tests {
     use super::*;
     use crate::error::TwitchError;
     use crate::helix::HelixMethod;
-    use crate::sub_actions::test_support::{
+    use crate::test_support::{
         MockCreds, MockTransport, SELF_USER_ID, TOKEN_SENTINEL, assert_failed_with_code,
         assert_failed_with_detail, make_ctx,
     };
@@ -356,7 +356,7 @@ mod tests {
             .await;
 
         assert!(
-            matches!(&telemetry.outcome, SubActionOutcome::Failed(msg) if crate::sub_actions::test_support::rejected_field(msg) == Some("color")),
+            matches!(&telemetry.outcome, SubActionOutcome::Failed(msg) if crate::test_support::rejected_field(msg) == Some("color")),
             "{:?}",
             telemetry.outcome
         );

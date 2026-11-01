@@ -76,10 +76,10 @@ mod tests {
     use crate::error::TwitchError;
     use crate::helix::{HelixHttpTransport, HelixTokenRefresher, HelixTokenSource, HelixTransport};
     use crate::helix_gateway::helix_gateway;
-    use crate::sub_actions::test_support::{
+    use crate::subscriptions::SubscriptionTracker;
+    use crate::test_support::{
         MockCreds, MockTransport, endpoints_with, unreachable_twitch_endpoints,
     };
-    use crate::subscriptions::SubscriptionTracker;
     use forge_events::EventChannel;
 
     const BROADCASTER: &str = "100000001";

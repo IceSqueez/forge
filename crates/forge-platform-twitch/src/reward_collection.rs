@@ -580,15 +580,13 @@ mod tests {
 
     use super::*;
     use crate::account::identity::SelfIdentity;
-    use crate::bot_account::test_support::RecordingBus;
     use crate::chat::ChatSessionState;
     use crate::helix::{HelixMethod, HelixTransport};
-    use crate::sub_actions::test_support::{
-        MockCreds, MockTransport, SELF_USER_ID, TOKEN_SENTINEL, make_ctx,
-    };
-    use crate::sub_actions::test_support::{REQUEST_FAIL_KIND, observed_helix_at};
     use crate::sub_actions::{DeleteRewardRunner, RewardToggleRunner, UpdateRewardRunner};
     use crate::subscriptions::SubscriptionTracker;
+    use crate::test_support::bot_account::RecordingBus;
+    use crate::test_support::{MockCreds, MockTransport, SELF_USER_ID, TOKEN_SENTINEL, make_ctx};
+    use crate::test_support::{REQUEST_FAIL_KIND, observed_helix_at};
     use forge_types::SubActionOutcome;
     use wiremock::matchers::path;
     use wiremock::{Mock, MockServer, ResponseTemplate};
@@ -1347,7 +1345,7 @@ mod tests {
             let runner_transport = Arc::new(MockTransport::returning(Ok(Value::Null)));
             let runner = runner(
                 Arc::clone(&runner_transport) as Arc<dyn HelixTransport>,
-                crate::sub_actions::test_support::self_identity(),
+                crate::test_support::self_identity(),
             );
             runner.execute(&config, &make_ctx(&stack)).await;
             let (manager_transport, bundle) =
@@ -1478,7 +1476,7 @@ mod tests {
                 .mount(&server)
                 .await;
             let (transport, bus) = observed_helix_at(&server.uri());
-            let runner = runner(transport, crate::sub_actions::test_support::self_identity());
+            let runner = runner(transport, crate::test_support::self_identity());
 
             let (telemetry, _) = runner.execute(&config, &make_ctx(&stack)).await;
 

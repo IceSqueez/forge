@@ -167,7 +167,7 @@ impl SubActionRunner for UpdateCategoryRunner {
 mod tests {
     use super::*;
     use crate::error::TwitchError;
-    use crate::sub_actions::test_support::{
+    use crate::test_support::{
         MockTransport, SELF_USER_ID, TOKEN_SENTINEL, assert_failed_with_code,
         assert_request_refused, make_ctx,
     };
@@ -177,7 +177,7 @@ mod tests {
     fn runner_with(
         response: Result<serde_json::Value, TwitchError>,
     ) -> (Arc<MockTransport>, UpdateCategoryRunner) {
-        crate::sub_actions::test_support::runner_with(vec![response], UpdateCategoryRunner::new)
+        crate::test_support::runner_with(vec![response], UpdateCategoryRunner::new)
     }
 
     fn cfg(pairs: &[(&str, &str)]) -> SubActionConfig {
@@ -259,7 +259,7 @@ mod tests {
         ]));
         let runner = UpdateCategoryRunner::new(
             Arc::clone(&transport) as Arc<dyn HelixTransport>,
-            crate::sub_actions::test_support::self_identity(),
+            crate::test_support::self_identity(),
         );
         let stack = ArgStack::new();
 

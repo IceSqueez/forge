@@ -59,7 +59,7 @@ mod tests {
     use wiremock::{Mock, MockServer, ResponseTemplate};
 
     use super::*;
-    use crate::sub_actions::test_support::oauth_client_limited_by;
+    use crate::test_support::oauth_client_limited_by;
 
     const CLIENT: &str = "test_client";
     const TOKEN: &str = "BOT_VALIDATE_SENTINEL_q8";

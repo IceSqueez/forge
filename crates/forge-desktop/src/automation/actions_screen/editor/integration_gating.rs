@@ -121,9 +121,6 @@ impl ActionEditor {
 #[cfg(test)]
 pub(in crate::automation::actions_screen) mod tests {
     use forge_components::ThemeId;
-    use forge_runtime::ActionsService;
-    use forge_runtime::QueueScheduler;
-    use forge_soundboard::ClipLibrary;
     use forge_storage::MockQueueRepo;
     use forge_storage::MockSoundboardClipsRepo;
     use forge_storage::MockTriggerInstanceRepo;
@@ -132,7 +129,7 @@ pub(in crate::automation::actions_screen) mod tests {
 
     use super::*;
     use crate::test_support::{
-        StubActions, StubEventLog, StubHistory, StubOverlays, action_running, lifecycle_switch,
+        ActionsRepos, StubActions, action_running, actions_deps, actions_screen, lifecycle_switch,
         owned_sub_actions, owned_triggers, runtime, step, switch_lifecycle, test_backend,
     };
     use forge_components::Presentation;
@@ -182,51 +179,24 @@ pub(in crate::automation::actions_screen) mod tests {
             let trigger_repo: Arc<dyn TriggerInstanceRepo> =
                 Arc::new(MockTriggerInstanceRepo::new());
             let clips: Arc<dyn SoundboardClipsRepo> = Arc::new(MockSoundboardClipsRepo::new());
-            let service = Arc::new(ActionsService::new(
-                Arc::clone(&action_repo),
-                Arc::clone(&queue_repo),
-                Arc::new(StubHistory),
-                Arc::clone(&trigger_repo),
-            ));
             let (backend, _writes) = test_backend();
-            let (bus, scheduler) = rt.block_on(async {
-                let bus = EventBus::new(Arc::new(StubEventLog));
-                let engine = crate::test_support::stub_action_engine(Arc::clone(&bus));
-                let scheduler = QueueScheduler::spawn(engine, Arc::clone(&bus), Vec::new());
-                (bus, scheduler)
-            });
-            let handle = rt.handle().clone();
+            let deps = actions_deps(
+                &rt,
+                ActionsRepos {
+                    actions: action_repo,
+                    queues: queue_repo,
+                    triggers: trigger_repo,
+                    scripts: backend.script_repo(),
+                    clips,
+                    media: backend.media_repo(),
+                    globals: backend.globals_repo(),
+                    sub_actions: owned_sub_actions(&[(OBS_SCENE, "obs")]),
+                    trigger_kinds: owned_triggers(&[(OBS_SCENE_CHANGED, "obs")]),
+                },
+            );
             let host = cx.update(|cx| {
                 cx.new(|cx| {
-                    let view = ScreenActionsView::new(
-                        super::ActionsDeps {
-                            action_repo,
-                            queue_repo,
-                            actions_service: service,
-                            trigger_instance_repo: trigger_repo,
-                            script_repo: backend.script_repo(),
-                            clip_library: Arc::new(ClipLibrary::new(
-                                clips,
-                                backend.media_repo(),
-                                Arc::new(forge_events::test_support::NullPublisher),
-                            )),
-                            globals_repo: backend.globals_repo(),
-                            overlay_repo: Arc::new(StubOverlays),
-                            speak: None,
-                            sub_action_registry: Arc::new(owned_sub_actions(&[(OBS_SCENE, "obs")])),
-                            trigger_registry: Arc::new(owned_triggers(&[(
-                                OBS_SCENE_CHANGED,
-                                "obs",
-                            )])),
-                            rt_handle: handle,
-                            bus,
-                            scheduler,
-                        },
-                        backend.settings_repo(),
-                        Arc::new(OverlayKindRegistry::new()),
-                        None,
-                        cx,
-                    );
+                    let view = actions_screen(deps, backend.settings_repo(), cx);
                     view.editor.update(cx, |editor, _| editor.detail = open);
                     view.with_integration_switch(switch, cx)
                 })

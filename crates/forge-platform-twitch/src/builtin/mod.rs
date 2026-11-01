@@ -476,9 +476,9 @@ impl TwitchIntegrationBundle {
             tracker,
             creds,
             tier,
-            Arc::new(crate::sub_actions::test_support::MockTransport::returning(
-                Ok(serde_json::Value::Null),
-            )),
+            Arc::new(crate::test_support::MockTransport::returning(Ok(
+                serde_json::Value::Null,
+            ))),
             "1",
         )
     }
@@ -494,7 +494,7 @@ impl TwitchIntegrationBundle {
         broadcaster_id: &str,
     ) -> Arc<Self> {
         let credentials_manager = Arc::new(TwitchCredentialsManager::new(
-            crate::sub_actions::test_support::unreachable_oauth_client("test-client"),
+            crate::test_support::unreachable_oauth_client("test-client"),
             Arc::clone(&creds),
         ));
         Self::for_test_over(
@@ -524,9 +524,9 @@ impl TwitchIntegrationBundle {
             tracker,
             creds,
             tier,
-            Arc::new(crate::sub_actions::test_support::MockTransport::returning(
-                Ok(serde_json::Value::Null),
-            )),
+            Arc::new(crate::test_support::MockTransport::returning(Ok(
+                serde_json::Value::Null,
+            ))),
             "1",
             credentials_manager,
         )
@@ -553,9 +553,9 @@ impl TwitchIntegrationBundle {
             client_id: "test-client".to_owned(),
             broadcaster_id: broadcaster_id.to_owned(),
             user_id: broadcaster_id.to_owned(),
-            endpoints: crate::sub_actions::test_support::unreachable_twitch_endpoints(),
+            endpoints: crate::test_support::unreachable_twitch_endpoints(),
         };
-        let helix = crate::sub_actions::test_support::unreachable_helix_gateway();
+        let helix = crate::test_support::unreachable_helix_gateway();
         let lifecycle = TwitchLifecycle::new();
         let platform = Arc::new(TwitchPlatform::new(
             config.clone(),
@@ -1270,11 +1270,11 @@ mod tests {
         broadcaster_id: &str,
     ) -> (
         Arc<TwitchIntegrationBundle>,
-        Arc<crate::sub_actions::test_support::MockTransport>,
+        Arc<crate::test_support::MockTransport>,
     ) {
-        let transport = Arc::new(
-            crate::sub_actions::test_support::MockTransport::returning_sequence(Vec::new()),
-        );
+        let transport = Arc::new(crate::test_support::MockTransport::returning_sequence(
+            Vec::new(),
+        ));
         let (_, rx) = watch::channel(ChatSessionState::Disconnected);
         let bundle = TwitchIntegrationBundle::for_test_with_transport(
             Some("streamer".to_owned()),
@@ -1289,7 +1289,7 @@ mod tests {
     }
 
     async fn requests_reached(
-        transport: &crate::sub_actions::test_support::MockTransport,
+        transport: &crate::test_support::MockTransport,
         path: &str,
         expected: usize,
     ) -> usize {
@@ -1319,9 +1319,7 @@ mod tests {
     const SHIELD_PATH: &str = "/helix/moderation/shield_mode";
     const HANG_GUARD: Duration = Duration::from_secs(30);
 
-    fn goal_requests(
-        transport: &crate::sub_actions::test_support::MockTransport,
-    ) -> Vec<HelixRequest> {
+    fn goal_requests(transport: &crate::test_support::MockTransport) -> Vec<HelixRequest> {
         (0..transport.call_count())
             .map(|index| transport.request(index))
             .filter(|request| request.path == GOALS_PATH)
@@ -1827,7 +1825,7 @@ mod tests {
     #[test]
     fn every_quick_action_field_key_is_consumed_by_its_runner() {
         use crate::sub_actions::register_twitch_sub_actions;
-        use crate::sub_actions::test_support::{MockCreds, MockTransport};
+        use crate::test_support::{MockCreds, MockTransport};
         use forge_registry::SubActionRegistry;
 
         let mut reg = SubActionRegistry::new();
@@ -1869,7 +1867,7 @@ mod tests {
     #[test]
     fn every_quick_action_template_filled_in_by_its_fields_passes_its_runner_validation() {
         use crate::sub_actions::register_twitch_sub_actions;
-        use crate::sub_actions::test_support::{MockCreds, MockTransport};
+        use crate::test_support::{MockCreds, MockTransport};
         use forge_registry::SubActionRegistry;
 
         let mut reg = SubActionRegistry::new();
@@ -1995,15 +1993,15 @@ mod tests {
                 client_id: "test-client".to_owned(),
                 broadcaster_id: "1".to_owned(),
                 user_id: "1".to_owned(),
-                endpoints: crate::sub_actions::test_support::unreachable_twitch_endpoints(),
+                endpoints: crate::test_support::unreachable_twitch_endpoints(),
             },
             Arc::clone(&creds),
             Arc::new(TwitchCredentialsManager::new(
-                crate::sub_actions::test_support::unreachable_oauth_client("test-client"),
+                crate::test_support::unreachable_oauth_client("test-client"),
                 creds,
             )),
             SubscriptionTracker::default(),
-            crate::sub_actions::test_support::unreachable_helix_gateway(),
+            crate::test_support::unreachable_helix_gateway(),
             TwitchLifecycle::new(),
         ));
         let bundle = TwitchIntegrationBundle::new(Some("streamer".to_owned()), platform);
@@ -2050,7 +2048,7 @@ mod tests {
         );
         let (_, state_rx) = watch::channel(ChatSessionState::Disconnected);
         let credentials_manager = Arc::new(TwitchCredentialsManager::new(
-            crate::sub_actions::test_support::oauth_client_at(&server.uri(), "test-client"),
+            crate::test_support::oauth_client_at(&server.uri(), "test-client"),
             Arc::clone(&repo),
         ));
         let bundle = TwitchIntegrationBundle::for_test_with_credentials_manager(

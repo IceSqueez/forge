@@ -550,12 +550,14 @@ async fn update_enabled<'e>(
     enabled: bool,
 ) -> Result<(), StorageError> {
     let id_str = id.to_string();
-    let result = sqlx::query("UPDATE trigger_instances SET enabled = ? WHERE id = ?")
-        .bind(i64::from(enabled))
-        .bind(&id_str)
-        .execute(executor)
-        .await
-        .map_err(SqliteStorageError::Sqlx)?;
+    let result = sqlx::query(
+        "UPDATE trigger_instances SET enabled = ? WHERE id = ? AND archived_at IS NULL",
+    )
+    .bind(i64::from(enabled))
+    .bind(&id_str)
+    .execute(executor)
+    .await
+    .map_err(SqliteStorageError::Sqlx)?;
 
     if result.rows_affected() == 0 {
         return Err(StorageError::NotFound { key: id_str });

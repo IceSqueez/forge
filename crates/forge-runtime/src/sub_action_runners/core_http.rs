@@ -434,7 +434,7 @@ mod tests {
     use wiremock::{Mock, MockServer, ResponseTemplate};
 
     async fn backend() -> Sandboxed<Arc<SqliteBackend>> {
-        sandboxed_backend([0x11; 32]).await.map(Arc::new)
+        sandboxed_backend().await.map(Arc::new)
     }
 
     fn runner(method: HttpMethod, dp: &Arc<SqliteBackend>) -> CoreHttpRunner {

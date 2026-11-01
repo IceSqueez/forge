@@ -2679,6 +2679,7 @@ dependencies = [
  "forge-platform-youtube",
  "forge-registry",
  "forge-runtime",
+ "forge-speech-types",
  "forge-storage",
  "forge-storage-sqlite",
  "forge-transfer",
@@ -2686,6 +2687,7 @@ dependencies = [
  "forge-vtube",
  "serde_json",
  "tempfile",
+ "time",
  "tokio",
  "ulid",
 ]

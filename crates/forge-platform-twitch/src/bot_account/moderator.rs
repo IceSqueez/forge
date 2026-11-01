@@ -100,10 +100,8 @@ mod tests {
 
     use super::*;
     use crate::bot_account::BotStatus;
-    use crate::bot_account::test_support::{BOT_LOGIN, BOT_USER_ID, BotHarness};
-    use crate::sub_actions::test_support::{
-        MockTransport, REQUEST_FAIL_KIND, SELF_USER_ID, observed_helix_at,
-    };
+    use crate::test_support::bot_account::{BOT_LOGIN, BOT_USER_ID, BotHarness};
+    use crate::test_support::{MockTransport, REQUEST_FAIL_KIND, SELF_USER_ID, observed_helix_at};
     use crate::vocabulary::event_kinds::BOT_STATUS_CHANGED as BOT_STATUS_CHANGED_KIND;
 
     fn listed() -> Result<serde_json::Value, TwitchError> {
@@ -169,7 +167,7 @@ mod tests {
                 .mount_validate(
                     validate_status,
                     crate::auth::TWITCH_BOT_SCOPES,
-                    crate::bot_account::test_support::CLIENT_ID,
+                    crate::test_support::bot_account::CLIENT_ID,
                 )
                 .await;
 
@@ -220,7 +218,7 @@ mod tests {
                 display_name: BOT_LOGIN.to_owned(),
                 broadcaster_type: Default::default(),
             },
-            client_id: crate::bot_account::test_support::CLIENT_ID.to_owned(),
+            client_id: crate::test_support::bot_account::CLIENT_ID.to_owned(),
             expires_at: None,
         };
 

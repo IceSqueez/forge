@@ -498,7 +498,7 @@ mod tests {
         channel_cap: usize,
         ring_cap: usize,
     ) -> (Arc<EventBus>, Sandboxed<Arc<SqliteBackend>>) {
-        let backend = sandboxed_backend([0xab; 32]).await.map(Arc::new);
+        let backend = sandboxed_backend().await.map(Arc::new);
         let event_log: Arc<dyn EventLogRepo> = Arc::new(BackedEventLog(Arc::clone(&backend)));
         let bus = bus_with_caps(event_log, channel_cap, ring_cap);
         (bus, backend)

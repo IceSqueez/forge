@@ -190,7 +190,7 @@ mod tests {
     use super::*;
     use crate::error::TwitchError;
     use crate::helix::HelixMethod;
-    use crate::sub_actions::test_support::{
+    use crate::test_support::{
         MockTransport, SELF_USER_ID, TOKEN_SENTINEL, assert_request_refused, make_ctx,
     };
     use forge_types::Variant;
@@ -199,7 +199,7 @@ mod tests {
     fn enable_runner_with(
         response: Result<serde_json::Value, TwitchError>,
     ) -> (Arc<MockTransport>, RewardToggleRunner) {
-        crate::sub_actions::test_support::runner_with(vec![response], RewardToggleRunner::enable)
+        crate::test_support::runner_with(vec![response], RewardToggleRunner::enable)
     }
 
     #[tokio::test]
@@ -329,7 +329,7 @@ mod tests {
         let transport = Arc::new(MockTransport::returning(Ok(serde_json::Value::Null)));
         let runner = RewardToggleRunner::disable(
             Arc::clone(&transport) as Arc<dyn HelixTransport>,
-            crate::sub_actions::test_support::self_identity(),
+            crate::test_support::self_identity(),
         );
         let stack = ArgStack::new().set("reward.id".to_owned(), Variant::String("rw1".to_owned()));
 
@@ -358,7 +358,7 @@ mod tests {
         let transport = Arc::new(MockTransport::returning(Ok(serde_json::Value::Null)));
         let runner = RewardToggleRunner::pause(
             Arc::clone(&transport) as Arc<dyn HelixTransport>,
-            crate::sub_actions::test_support::self_identity(),
+            crate::test_support::self_identity(),
         );
         let stack = ArgStack::new().set("reward.id".to_owned(), Variant::String("rw2".to_owned()));
 
@@ -384,7 +384,7 @@ mod tests {
         let transport = Arc::new(MockTransport::returning(Ok(serde_json::Value::Null)));
         let runner = RewardToggleRunner::resume(
             Arc::clone(&transport) as Arc<dyn HelixTransport>,
-            crate::sub_actions::test_support::self_identity(),
+            crate::test_support::self_identity(),
         );
         let stack = ArgStack::new().set("reward.id".to_owned(), Variant::String("rw3".to_owned()));
 

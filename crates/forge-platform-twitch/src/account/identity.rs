@@ -112,7 +112,7 @@ pub(crate) async fn resolve_broadcaster_tier(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::sub_actions::test_support::{MockTransport, users_fixture};
+    use crate::test_support::{MockTransport, users_fixture};
 
     #[tokio::test]
     async fn resolve_user_id_queries_users_by_login_and_returns_first_id() {

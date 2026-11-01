@@ -113,11 +113,11 @@ mod tests {
     use wiremock::ResponseTemplate;
 
     use super::*;
-    use crate::bot_account::test_support::{
+    use crate::credentials::TWITCH_CREDENTIAL_ID;
+    use crate::test_support::bot_account::{
         BOT_ACCESS, BOT_LOGIN, BOT_REFRESH, BOT_USER_ID, BotHarness, KeyedRepo,
     };
-    use crate::credentials::TWITCH_CREDENTIAL_ID;
-    use crate::sub_actions::test_support::{SELF_USER_ID, TOKEN_SENTINEL};
+    use crate::test_support::{SELF_USER_ID, TOKEN_SENTINEL};
     use crate::vocabulary::event_kinds::BOT_STATUS_CHANGED as BOT_STATUS_CHANGED_KIND;
 
     const ROTATED_BOT_ACCESS: &str = "ROTATED_BOT_ACCESS_q4x";
@@ -295,7 +295,7 @@ mod tests {
                 display_name: login.to_owned(),
                 broadcaster_type: Default::default(),
             },
-            client_id: crate::bot_account::test_support::CLIENT_ID.to_owned(),
+            client_id: crate::test_support::bot_account::CLIENT_ID.to_owned(),
             expires_at: None,
         }
     }
@@ -426,7 +426,7 @@ mod tests {
     fn logout_during_a_bot_refresh_revokes_the_rotated_pair_and_stays_signed_out() {
         forge_test_support::run_with_quiescence(|quiet| async move {
             use crate::auth::TWITCH_BOT_SCOPES;
-            use crate::bot_account::test_support::{CLIENT_ID, StoreGate};
+            use crate::test_support::bot_account::{CLIENT_ID, StoreGate};
 
             let gate = StoreGate::armed();
             let harness = BotHarness::with_bot_row_gated_by(Arc::clone(&gate)).await;

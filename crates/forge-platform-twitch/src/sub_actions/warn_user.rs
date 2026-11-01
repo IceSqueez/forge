@@ -116,14 +116,14 @@ impl SubActionRunner for WarnUserRunner {
 mod tests {
     use super::*;
     use crate::error::TwitchError;
-    use crate::sub_actions::test_support::{MockTransport, make_ctx, users_fixture};
+    use crate::test_support::{MockTransport, make_ctx, users_fixture};
     use forge_types::Variant;
     use std::collections::BTreeMap;
 
     fn runner_with(
         responses: Vec<Result<serde_json::Value, TwitchError>>,
     ) -> (Arc<MockTransport>, WarnUserRunner) {
-        crate::sub_actions::test_support::runner_with(responses, WarnUserRunner::new)
+        crate::test_support::runner_with(responses, WarnUserRunner::new)
     }
 
     fn config(target: &str, reason: &str) -> SubActionConfig {

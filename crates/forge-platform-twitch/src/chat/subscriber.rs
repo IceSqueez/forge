@@ -409,8 +409,8 @@ mod tests {
         EVENTSUB_PATH, SubStatus, SubscribePass, SubscriptionFailure, SubscriptionTracker,
         TwitchError, subscribe_all,
     };
-    use crate::bot_account::test_support::RecordingBus;
     use crate::helix::{FixedTokenSource, HelixHttpTransport, HelixTransport};
+    use crate::test_support::bot_account::RecordingBus;
     use crate::vocabulary::RaidDirection;
     use forge_events::EventPublisher;
     use forge_net::RateLimiter;
@@ -446,10 +446,8 @@ mod tests {
         let bus = Arc::new(RecordingBus::default());
         let limiter = Arc::new(limiter);
         let publisher: Arc<dyn EventPublisher> = bus.clone();
-        let endpoints = crate::sub_actions::test_support::endpoints_with(&[(
-            crate::endpoint_surfaces::TWITCH_API,
-            api_url,
-        )]);
+        let endpoints =
+            crate::test_support::endpoints_with(&[(crate::endpoint_surfaces::TWITCH_API, api_url)]);
         let gateway = crate::helix_gateway::helix_gateway(
             &endpoints,
             Arc::clone(&limiter) as Arc<dyn RateLimiter>,

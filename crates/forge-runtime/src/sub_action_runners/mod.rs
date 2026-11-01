@@ -421,7 +421,7 @@ mod tests {
 
     #[tokio::test]
     async fn only_condition_and_value_fields_edit_as_expressions_and_the_inline_body_as_a_script() {
-        let (runtime, _backend) = frozen_core_runtime([0x23; 32]).await;
+        let (runtime, _backend) = frozen_core_runtime().await;
         let registry = runtime.sub_action_registry;
 
         let mut roster: Vec<(String, &str, CodeKind)> = registry
@@ -486,7 +486,7 @@ mod tests {
     #[tokio::test]
     async fn duration_fields_keep_their_stored_key_base_and_bounds() {
         let gate = Arc::new(ConditionGate::new(&Config::default()));
-        let backend = sandboxed_backend([0x22; 32]).await.map(Arc::new);
+        let backend = sandboxed_backend().await.map(Arc::new);
         let settings = forge_storage::DataProvider::settings_repo(&**backend);
         let http = CoreHttpRunner::new(
             HttpMethod::Get,
@@ -495,7 +495,7 @@ mod tests {
         );
         let wait_until = CoreLogicWaitUntilRunner::new(gate);
         let notify = CoreNotifyShowRunner::new(OsPorts::unavailable().notify);
-        let (runtime, _scheduling_backend) = frozen_core_runtime([0x24; 32]).await;
+        let (runtime, _scheduling_backend) = frozen_core_runtime().await;
         let schedule = runtime
             .sub_action_registry
             .get(SCHEDULE_ACTION_KIND_ID)
@@ -568,7 +568,7 @@ mod tests {
 
     #[tokio::test]
     async fn text_edited_fields_default_to_text_so_a_new_step_opens_without_rendered_containers() {
-        let (runtime, _backend) = frozen_core_runtime([0x25; 32]).await;
+        let (runtime, _backend) = frozen_core_runtime().await;
         let registry = runtime.sub_action_registry;
         let offenders: Vec<String> = registry
             .all()

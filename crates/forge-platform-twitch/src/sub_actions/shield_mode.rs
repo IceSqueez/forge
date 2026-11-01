@@ -125,7 +125,7 @@ mod tests {
 
     use super::*;
     use crate::helix::HelixMethod;
-    use crate::sub_actions::test_support::{MockTransport, SELF_USER_ID, make_ctx};
+    use crate::test_support::{MockTransport, SELF_USER_ID, make_ctx};
 
     #[tokio::test]
     async fn shield_mode_on_and_off_each_post_with_correct_is_active_flag() {
@@ -143,7 +143,7 @@ mod tests {
         }
 
         fn identity() -> Arc<SelfIdentity> {
-            crate::sub_actions::test_support::self_identity()
+            crate::test_support::self_identity()
         }
 
         let t_on = make_transport();

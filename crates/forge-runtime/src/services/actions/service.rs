@@ -510,7 +510,7 @@ mod tests {
         crate::test_support::Sandboxed<Arc<dyn forge_storage::DataProvider>>,
         ActionsService,
     ) {
-        let provider = crate::test_support::sandboxed_backend([0x5c; 32])
+        let provider = crate::test_support::sandboxed_backend()
             .await
             .map(|backend| Arc::new(backend) as Arc<dyn forge_storage::DataProvider>);
         let service = ActionsService::new(

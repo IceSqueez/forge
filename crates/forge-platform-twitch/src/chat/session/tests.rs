@@ -1,8 +1,8 @@
 use std::time::Duration;
 
-use crate::bot_account::test_support::RecordingBus;
 use crate::chat_platform::EVENT_CHANNEL_CAPACITY;
-use crate::sub_actions::test_support::MockCreds;
+use crate::test_support::MockCreds;
+use crate::test_support::bot_account::RecordingBus;
 use forge_events::EventChannel;
 use forge_events::{EventSource, EventSubscription};
 use forge_events::{PlatformConnectionChanged, TypedEvent};
@@ -130,7 +130,7 @@ async fn publish_chat_message_emits_the_documented_payload_shape() {
 
 #[tokio::test]
 async fn chat_message_is_flagged_as_the_connected_bot_only_for_the_bots_chatter_id() {
-    use crate::bot_account::test_support::{BOT_USER_ID, BotHarness};
+    use crate::test_support::bot_account::{BOT_USER_ID, BotHarness};
 
     let harness = BotHarness::connected().await;
     for (chatter_id, expected) in [(BOT_USER_ID, Some(true)), ("67890", None), ("", None)] {
@@ -702,7 +702,7 @@ fn session_over_creds(
     let (session, _state_rx, _shutdown_tx) = session_with(
         bus,
         repo,
-        crate::sub_actions::test_support::unreachable_twitch_endpoints(),
+        crate::test_support::unreachable_twitch_endpoints(),
     );
     session
 }
@@ -717,7 +717,7 @@ fn session_with(
     oneshot::Sender<()>,
 ) {
     let manager = Arc::new(TwitchCredentialsManager::new(
-        crate::sub_actions::test_support::unreachable_oauth_client("client"),
+        crate::test_support::unreachable_oauth_client("client"),
         repo,
     ));
     let publisher: Arc<dyn EventPublisher> = bus.clone();
@@ -825,7 +825,7 @@ fn session_welcome_over_failing_token_endpoint()
             .await;
 
         let manager = Arc::new(TwitchCredentialsManager::new(
-            crate::sub_actions::test_support::oauth_client_at(&server.uri(), "client"),
+            crate::test_support::oauth_client_at(&server.uri(), "client"),
             crate::credentials_manager::tests::seeded_repo(
                 &crate::credentials_manager::tests::stub_cred(
                     std::time::SystemTime::now() + Duration::from_secs(60),
@@ -834,7 +834,7 @@ fn session_welcome_over_failing_token_endpoint()
         ));
         let bus = Arc::new(EventChannel::new(EVENT_CHANNEL_CAPACITY));
         let publisher: Arc<dyn EventPublisher> = bus.clone();
-        let endpoints = crate::sub_actions::test_support::endpoints_with(&[(
+        let endpoints = crate::test_support::endpoints_with(&[(
             crate::endpoint_surfaces::TWITCH_API,
             &server.uri(),
         )]);
@@ -959,7 +959,7 @@ async fn session_welcome_creates_eventsub_subscriptions_on_the_twitch_api_overri
         .mount(&server)
         .await;
     let bus = Arc::new(EventChannel::new(EVENT_CHANNEL_CAPACITY));
-    let endpoints = crate::sub_actions::test_support::endpoints_with(&[
+    let endpoints = crate::test_support::endpoints_with(&[
         (crate::endpoint_surfaces::TWITCH_API, &server.uri()),
         (
             crate::endpoint_surfaces::TWITCH_EVENTSUB_SOCKET,
@@ -1163,7 +1163,7 @@ fn spawn_session(socket_url: &str, api_url: &str) -> RunningSession {
 
 fn spawn_session_timed(socket_url: &str, api_url: &str, timing: ChatTiming) -> RunningSession {
     let bus = Arc::new(EventChannel::new(EVENT_CHANNEL_CAPACITY));
-    let endpoints = crate::sub_actions::test_support::endpoints_with(&[
+    let endpoints = crate::test_support::endpoints_with(&[
         (crate::endpoint_surfaces::TWITCH_API, api_url),
         (crate::endpoint_surfaces::TWITCH_EVENTSUB_SOCKET, socket_url),
     ]);
@@ -2014,11 +2014,11 @@ fn session_over(
 ) {
     let manager = match oauth_base {
         Some(oauth_base) => TwitchCredentialsManager::new(
-            crate::sub_actions::test_support::oauth_client_at(&oauth_base, "client"),
+            crate::test_support::oauth_client_at(&oauth_base, "client"),
             repo,
         ),
         None => TwitchCredentialsManager::new(
-            crate::sub_actions::test_support::unreachable_oauth_client("client"),
+            crate::test_support::unreachable_oauth_client("client"),
             repo,
         ),
     };
@@ -2033,7 +2033,7 @@ fn session_over(
 }
 
 fn socket_and_api(socket_url: &str, api_url: &str) -> PlatformEndpoints {
-    crate::sub_actions::test_support::endpoints_with(&[
+    crate::test_support::endpoints_with(&[
         (crate::endpoint_surfaces::TWITCH_API, api_url),
         (crate::endpoint_surfaces::TWITCH_EVENTSUB_SOCKET, socket_url),
     ])
@@ -2042,7 +2042,7 @@ fn socket_and_api(socket_url: &str, api_url: &str) -> PlatformEndpoints {
 fn chat_over(socket_url: &str, api_url: &str) -> (crate::chat::TwitchChat, Arc<EventChannel>) {
     let bus = Arc::new(EventChannel::new(EVENT_CHANNEL_CAPACITY));
     let manager = Arc::new(TwitchCredentialsManager::new(
-        crate::sub_actions::test_support::unreachable_oauth_client("client"),
+        crate::test_support::unreachable_oauth_client("client"),
         Arc::new(MockCreds::with_identity()),
     ));
     let endpoints = socket_and_api(socket_url, api_url);
@@ -2251,7 +2251,7 @@ fn near_expiry_manager(
         stored: tokio::sync::Notify::new(),
     });
     let manager = Arc::new(TwitchCredentialsManager::new(
-        crate::sub_actions::test_support::oauth_client_at(token_url, "client"),
+        crate::test_support::oauth_client_at(token_url, "client"),
         repo.clone(),
     ));
     (manager, repo)
@@ -2326,7 +2326,7 @@ async fn a_session_dropped_after_a_shutdown_request_reports_an_expected_disconne
         Arc::new(MockCreds::with_identity()),
         None,
         SubscriptionTracker::default(),
-        crate::sub_actions::test_support::unreachable_twitch_endpoints(),
+        crate::test_support::unreachable_twitch_endpoints(),
     );
     assert!(shutdown.send(()).is_ok());
 
@@ -2487,7 +2487,7 @@ async fn bundle_over(
     use forge_platform_core::ChatPlatform;
     let creds: Arc<dyn forge_storage::CredentialsRepo> = Arc::new(MockCreds::with_identity());
     let manager = Arc::new(TwitchCredentialsManager::new(
-        crate::sub_actions::test_support::unreachable_oauth_client("client"),
+        crate::test_support::unreachable_oauth_client("client"),
         Arc::clone(&creds),
     ));
     let endpoints = socket_and_api(socket_url, api_url);
@@ -2743,7 +2743,7 @@ fn session_tracking(
         Arc::new(MockCreds::with_identity()),
         None,
         tracker.clone(),
-        crate::sub_actions::test_support::unreachable_twitch_endpoints(),
+        crate::test_support::unreachable_twitch_endpoints(),
     );
     (session, tracker)
 }

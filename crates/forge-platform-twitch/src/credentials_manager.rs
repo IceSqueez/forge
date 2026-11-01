@@ -325,7 +325,7 @@ pub(crate) mod tests {
         server: &MockServer,
     ) -> TwitchCredentialsManager {
         TwitchCredentialsManager::new(
-            crate::sub_actions::test_support::oauth_client_at(&server.uri(), "test_client_id"),
+            crate::test_support::oauth_client_at(&server.uri(), "test_client_id"),
             repo,
         )
     }
@@ -642,12 +642,12 @@ pub(crate) mod tests {
                 client_id: "test_client_id".to_owned(),
                 broadcaster_id: "user_1".to_owned(),
                 user_id: "user_1".to_owned(),
-                endpoints: crate::sub_actions::test_support::unreachable_twitch_endpoints(),
+                endpoints: crate::test_support::unreachable_twitch_endpoints(),
             },
             repo,
             Arc::clone(&mgr),
             crate::subscriptions::SubscriptionTracker::default(),
-            crate::sub_actions::test_support::unreachable_helix_gateway(),
+            crate::test_support::unreachable_helix_gateway(),
             crate::lifecycle::TwitchLifecycle::new(),
         ));
         let bundle =
@@ -691,7 +691,7 @@ pub(crate) mod tests {
             };
             let cred = stub_cred(SystemTime::now() + std::time::Duration::from_secs(3600));
             let mgr = TwitchCredentialsManager::new(
-                crate::sub_actions::test_support::oauth_client_at(&oauth_base, "test_client_id"),
+                crate::test_support::oauth_client_at(&oauth_base, "test_client_id"),
                 seeded_repo(&cred),
             );
 
@@ -926,11 +926,11 @@ pub(crate) mod tests {
 
     #[tokio::test]
     async fn refreshing_one_role_rotates_only_that_roles_row() {
-        use crate::bot_account::test_support::{
+        use crate::credentials::TWITCH_BOT_CREDENTIAL_ID;
+        use crate::test_support::bot_account::{
             BOT_ACCESS, BOT_REFRESH, KeyedRepo, credential_json,
         };
-        use crate::credentials::TWITCH_BOT_CREDENTIAL_ID;
-        use crate::sub_actions::test_support::oauth_client_at;
+        use crate::test_support::oauth_client_at;
 
         for refreshed_role in [TWITCH_BOT_CREDENTIAL_ID, TWITCH_CREDENTIAL_ID] {
             let server = MockServer::start().await;
@@ -1000,11 +1000,11 @@ pub(crate) mod tests {
     #[test]
     fn clear_during_an_in_flight_refresh_waits_and_leaves_each_role_signed_out() {
         forge_test_support::run_with_quiescence(|quiet| async move {
-            use crate::bot_account::test_support::{
+            use crate::credentials::TWITCH_BOT_CREDENTIAL_ID;
+            use crate::test_support::bot_account::{
                 GatedRepo, KeyedRepo, StoreGate, credential_json,
             };
-            use crate::credentials::TWITCH_BOT_CREDENTIAL_ID;
-            use crate::sub_actions::test_support::oauth_client_at;
+            use crate::test_support::oauth_client_at;
 
             for role in [TWITCH_CREDENTIAL_ID, TWITCH_BOT_CREDENTIAL_ID] {
                 let server = MockServer::start().await;

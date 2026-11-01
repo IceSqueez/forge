@@ -206,7 +206,7 @@ mod tests {
 
     use super::*;
 
-    use crate::test_support::{repo_globals, sandboxed_backend};
+    use crate::test_support::{host_over, repo_globals, sandboxed_backend};
     use forge_events::test_support::CapturingPublisher;
 
     struct TwitchDisabled;
@@ -219,17 +219,16 @@ mod tests {
 
     #[tokio::test]
     async fn an_editor_run_sending_to_a_disabled_integration_fails_and_publishes_no_send() {
-        let backend = sandboxed_backend([0xab; 32]).await.map(Arc::new);
+        let backend = sandboxed_backend().await.map(Arc::new);
         let captured = CapturingPublisher::shared();
-        let host = ScriptHost {
-            globals: repo_globals(backend.globals_repo()),
-            settings: backend.settings_repo(),
-            bus: Arc::clone(&captured) as Arc<dyn EventPublisher>,
-            capabilities: ScriptCapabilities {
+        let host = host_over(
+            &backend,
+            Arc::clone(&captured) as Arc<dyn EventPublisher>,
+            ScriptCapabilities {
                 integrations: Some(Arc::new(TwitchDisabled)),
                 ..ScriptCapabilities::default()
             },
-        };
+        );
 
         let result = run_inline(
             r#"forge::chat::send("twitch", "hello")"#.to_owned(),
@@ -283,16 +282,15 @@ mod tests {
     async fn run_latest_probe(
         latest_values: Option<Arc<dyn LatestValueReader>>,
     ) -> Result<RunResult, ScriptError> {
-        let backend = sandboxed_backend([0xab; 32]).await.map(Arc::new);
-        let host = ScriptHost {
-            globals: repo_globals(backend.globals_repo()),
-            settings: backend.settings_repo(),
-            bus: CapturingPublisher::shared() as Arc<dyn EventPublisher>,
-            capabilities: ScriptCapabilities {
+        let backend = sandboxed_backend().await.map(Arc::new);
+        let host = host_over(
+            &backend,
+            CapturingPublisher::shared(),
+            ScriptCapabilities {
                 latest_values,
                 ..ScriptCapabilities::default()
             },
-        };
+        );
         run_inline(
             r#"forge::latest::get("donation").marker"#.to_owned(),
             ScriptContract::default(),
@@ -343,16 +341,15 @@ mod tests {
 
     #[tokio::test]
     async fn an_editor_run_schedules_through_the_wired_scheduler() {
-        let backend = sandboxed_backend([0xab; 32]).await.map(Arc::new);
-        let host = ScriptHost {
-            globals: repo_globals(backend.globals_repo()),
-            settings: backend.settings_repo(),
-            bus: CapturingPublisher::shared() as Arc<dyn EventPublisher>,
-            capabilities: ScriptCapabilities {
+        let backend = sandboxed_backend().await.map(Arc::new);
+        let host = host_over(
+            &backend,
+            CapturingPublisher::shared(),
+            ScriptCapabilities {
                 scheduler: Some(Arc::new(KeyHolder)),
                 ..ScriptCapabilities::default()
             },
-        };
+        );
 
         let result = run_inline(
             r#"forge::schedule::cancel("raid-thanks")"#.to_owned(),
@@ -387,17 +384,16 @@ mod tests {
 
     #[tokio::test]
     async fn an_editor_run_speaks_through_the_wired_requester() {
-        let backend = sandboxed_backend([0xab; 32]).await.map(Arc::new);
+        let backend = sandboxed_backend().await.map(Arc::new);
         let speaker = Arc::new(RecordingSpeaker(Mutex::new(Vec::new())));
-        let host = ScriptHost {
-            globals: repo_globals(backend.globals_repo()),
-            settings: backend.settings_repo(),
-            bus: CapturingPublisher::shared() as Arc<dyn EventPublisher>,
-            capabilities: ScriptCapabilities {
+        let host = host_over(
+            &backend,
+            CapturingPublisher::shared(),
+            ScriptCapabilities {
                 speak: Some(Arc::clone(&speaker) as Arc<dyn SpeakRequester>),
                 ..ScriptCapabilities::default()
             },
-        };
+        );
 
         run_inline(
             r#"forge::tts::speak("hello")"#.to_owned(),
@@ -414,13 +410,12 @@ mod tests {
 
     #[tokio::test]
     async fn an_editor_run_reaches_the_http_client_and_its_deny_by_default_policy() {
-        let backend = sandboxed_backend([0xab; 32]).await.map(Arc::new);
-        let host = ScriptHost {
-            globals: repo_globals(backend.globals_repo()),
-            settings: backend.settings_repo(),
-            bus: CapturingPublisher::shared() as Arc<dyn EventPublisher>,
-            capabilities: ScriptCapabilities::default(),
-        };
+        let backend = sandboxed_backend().await.map(Arc::new);
+        let host = host_over(
+            &backend,
+            CapturingPublisher::shared(),
+            ScriptCapabilities::default(),
+        );
 
         let result = run_inline(
             r#"forge::http::get("https://192.0.2.1/")"#.to_owned(),
@@ -445,7 +440,7 @@ mod tests {
         bus: Arc<dyn EventPublisher>,
         caused_by: EventId,
     ) -> Engine {
-        let backend = sandboxed_backend([0xab; 32]).await.map(Arc::new);
+        let backend = sandboxed_backend().await.map(Arc::new);
         ScriptSession::open(
             store,
             bus,
@@ -504,7 +499,7 @@ mod tests {
 
     async fn session_for_value() -> ScriptSession {
         let store = forge_storage::test_support::MemorySettings::new();
-        let backend = sandboxed_backend([0xab; 32]).await.map(Arc::new);
+        let backend = sandboxed_backend().await.map(Arc::new);
         ScriptSession::open(
             &store,
             CapturingPublisher::shared() as Arc<dyn EventPublisher>,

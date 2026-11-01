@@ -353,11 +353,11 @@ mod tests {
     use crate::account::user_target::UserTarget;
     use crate::auth::TWITCH_BOT_SCOPES;
     use crate::bot_account::BotStatus;
-    use crate::bot_account::test_support::{
+    use crate::credentials::TWITCH_BOT_CREDENTIAL_ID;
+    use crate::test_support::bot_account::{
         BOT_ACCESS, BOT_LOGIN, BOT_USER_ID, BotHarness, CLIENT_ID,
     };
-    use crate::credentials::TWITCH_BOT_CREDENTIAL_ID;
-    use crate::sub_actions::test_support::{MockTransport, SELF_USER_ID, users_fixture};
+    use crate::test_support::{MockTransport, SELF_USER_ID, users_fixture};
 
     const CHAT_PATH: &str = "/helix/chat/messages";
     const WHISPER_PATH: &str = "/helix/whispers";
@@ -439,9 +439,9 @@ mod tests {
     };
 
     fn streamer_senders(transport: Arc<dyn HelixTransport>) -> ChatSenders {
-        use crate::bot_account::test_support::{KeyedRepo, credential_json};
         use crate::credentials::TWITCH_CREDENTIAL_ID;
-        use crate::sub_actions::test_support::TOKEN_SENTINEL;
+        use crate::test_support::TOKEN_SENTINEL;
+        use crate::test_support::bot_account::{KeyedRepo, credential_json};
 
         let repo = Arc::new(KeyedRepo::default());
         repo.put(
@@ -454,7 +454,7 @@ mod tests {
     struct StreamerRig {
         streamer: Arc<MockTransport>,
         senders: ChatSenders,
-        bus: crate::bot_account::test_support::RecordingBus,
+        bus: crate::test_support::bot_account::RecordingBus,
     }
 
     impl StreamerRig {
@@ -1220,7 +1220,7 @@ mod tests {
     async fn two_shoutouts_racing_through_the_user_lookup_let_exactly_one_through() {
         let transport = Arc::new(HeldUserLookup::default());
         let senders = streamer_senders(Arc::clone(&transport) as Arc<dyn HelixTransport>);
-        let bus = crate::bot_account::test_support::RecordingBus::default();
+        let bus = crate::test_support::bot_account::RecordingBus::default();
         let by_login = |login| ChatDelivery::Shoutout {
             target: UserTarget::Login(login),
         };

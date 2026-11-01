@@ -310,7 +310,7 @@ fn map_send_failure(failure: TwitchError) -> PlatformError {
 mod tests {
     use super::*;
     use crate::error::TwitchError;
-    use crate::sub_actions::test_support::{
+    use crate::test_support::{
         MockCreds, MockTransport, SELF_USER_ID, TOKEN_SENTINEL, unreachable_twitch_endpoints,
         users_fixture,
     };
@@ -326,11 +326,11 @@ mod tests {
             },
             Arc::clone(&creds),
             Arc::new(TwitchCredentialsManager::new(
-                crate::sub_actions::test_support::unreachable_oauth_client("test-client"),
+                crate::test_support::unreachable_oauth_client("test-client"),
                 creds,
             )),
             SubscriptionTracker::default(),
-            crate::sub_actions::test_support::unreachable_helix_gateway(),
+            crate::test_support::unreachable_helix_gateway(),
             TwitchLifecycle::new(),
         );
         platform

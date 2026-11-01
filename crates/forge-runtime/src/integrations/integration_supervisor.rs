@@ -596,10 +596,6 @@ mod tests {
     struct FakeFactory {
         id: IntegrationId,
         behaviour: Mutex<Behaviour>,
-        configured: bool,
-        teardown_hangs: bool,
-        teardown_delay: Option<Duration>,
-        installs_object: bool,
         starts: AtomicUsize,
         teardowns: Arc<AtomicUsize>,
         finished_teardowns: Arc<AtomicUsize>,
@@ -611,10 +607,6 @@ mod tests {
         fn new(id: &'static str, behaviour: Behaviour) -> Arc<Self> {
             Arc::new(Self {
                 id: IntegrationId::from_static(id),
-                configured: behaviour.configured,
-                teardown_hangs: behaviour.teardown_hangs,
-                teardown_delay: behaviour.teardown_delay,
-                installs_object: behaviour.installs_object,
                 behaviour: Mutex::new(behaviour),
                 starts: AtomicUsize::new(0),
                 teardowns: Arc::new(AtomicUsize::new(0)),
@@ -656,7 +648,7 @@ mod tests {
         }
 
         async fn is_configured(&self) -> Result<bool, StorageError> {
-            Ok(self.configured)
+            Ok(self.behaviour.lock().unwrap().configured)
         }
 
         async fn start(&self) -> Result<RunningIntegration<FakeObject>, IntegrationStartError> {
@@ -684,8 +676,10 @@ mod tests {
             let teardowns = Arc::clone(&self.teardowns);
             let finished = Arc::clone(&self.finished_teardowns);
             let held_by_teardown = Arc::clone(&self.held_by_teardown);
-            let hangs = self.teardown_hangs;
-            let delay = self.teardown_delay;
+            let (hangs, delay) = {
+                let behaviour = self.behaviour.lock().unwrap();
+                (behaviour.teardown_hangs, behaviour.teardown_delay)
+            };
             let running = RunningIntegration::idle().with_teardown(Box::pin(async move {
                 let _held = held_by_teardown;
                 tasks.abort_all();
@@ -698,7 +692,7 @@ mod tests {
                 }
                 finished.fetch_add(1, Ordering::SeqCst);
             }));
-            if self.installs_object {
+            if self.behaviour.lock().unwrap().installs_object {
                 return Ok(running.with_object(FakeObject {
                     id: self.id.clone(),
                     generation,

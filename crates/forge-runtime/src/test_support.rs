@@ -33,10 +33,8 @@ impl OverlayFrameSink for NoPages {
     async fn revoke(&self, _: &OverlayId) {}
 }
 
-pub(crate) async fn frozen_core_runtime(
-    key: [u8; 32],
-) -> (FrozenRuntime, Sandboxed<Arc<SqliteBackend>>) {
-    let backend = sandboxed_backend(key).await.map(Arc::new);
+pub(crate) async fn frozen_core_runtime() -> (FrozenRuntime, Sandboxed<Arc<SqliteBackend>>) {
+    let backend = sandboxed_backend().await.map(Arc::new);
     let provider = Arc::clone(&*backend) as Arc<dyn DataProvider>;
     let bus = EventBus::new(Arc::new(NullEventLogRepo));
     let latest_values = LatestValues::load(

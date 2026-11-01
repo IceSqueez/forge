@@ -236,8 +236,8 @@ mod tests {
 
     use super::*;
     use crate::error::TwitchError;
-    use crate::sub_actions::test_support::TOKEN_SENTINEL;
-    use crate::sub_actions::test_support::{
+    use crate::test_support::TOKEN_SENTINEL;
+    use crate::test_support::{
         MockTransport, SELF_USER_ID, assert_failed_with_code, assert_request_refused, make_ctx,
     };
     use forge_types::Variant;
@@ -257,7 +257,7 @@ mod tests {
     fn runner(transport: Arc<MockTransport>) -> UpdateAutomodSettingsRunner {
         UpdateAutomodSettingsRunner::new(
             transport as Arc<dyn HelixTransport>,
-            crate::sub_actions::test_support::self_identity(),
+            crate::test_support::self_identity(),
         )
     }
 
@@ -265,7 +265,7 @@ mod tests {
         let r = UpdateAutomodSettingsRunner::new(
             Arc::new(MockTransport::returning(Ok(serde_json::Value::Null)))
                 as Arc<dyn HelixTransport>,
-            crate::sub_actions::test_support::self_identity(),
+            crate::test_support::self_identity(),
         );
         let mut config = r.default_config();
         for (key, value) in overrides {

@@ -94,7 +94,7 @@ impl SubActionRunner for DeleteMessageRunner {
 mod tests {
     use super::*;
     use crate::error::TwitchError;
-    use crate::sub_actions::test_support::{
+    use crate::test_support::{
         MockCreds, MockTransport, SELF_USER_ID, TOKEN_SENTINEL, assert_request_refused,
         chat_trigger_args, make_ctx,
     };

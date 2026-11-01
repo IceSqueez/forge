@@ -284,7 +284,7 @@ mod tests {
 
     #[tokio::test]
     async fn a_step_that_cannot_reach_an_overlay_fails_rather_than_reporting_success() {
-        let (runtime, _backend) = frozen_core_runtime([0x31; 32]).await;
+        let (runtime, _backend) = frozen_core_runtime().await;
         let runner = runtime
             .sub_action_registry
             .get(OVERLAY_SEND_KIND_ID)

@@ -1169,7 +1169,7 @@ mod tests {
     use forge_events::EventSubscription;
 
     async fn make_dp() -> Sandboxed<Arc<dyn DataProvider>> {
-        sandboxed_backend([0xab; 32])
+        sandboxed_backend()
             .await
             .map(|backend| Arc::new(backend) as Arc<dyn DataProvider>)
     }

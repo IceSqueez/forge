@@ -5,7 +5,9 @@ use common::registry;
 use std::collections::BTreeSet;
 
 use forge_overlay::config::{
-    ACCENT_OPTIONS, MARGIN_BOTTOM, MARGIN_LEFT, MARGIN_RIGHT, MARGIN_TOP, TEXT_SIZE,
+    ACCENT_GREEN, ACCENT_GREEN_HEX, ACCENT_MAUVE, ACCENT_MAUVE_HEX, ACCENT_OPTIONS, ACCENT_PEACH,
+    ACCENT_PEACH_HEX, ACCENT_RED, ACCENT_RED_HEX, ACCENT_SKY, ACCENT_SKY_HEX, ACCENT_YELLOW,
+    ACCENT_YELLOW_HEX, MARGIN_BOTTOM, MARGIN_LEFT, MARGIN_RIGHT, MARGIN_TOP, TEXT_SIZE,
 };
 use forge_overlay::metrics::{
     MARGIN_BOTTOM_PROPERTY, MARGIN_LEFT_PROPERTY, MARGIN_RIGHT_PROPERTY, MARGIN_TOP_PROPERTY,
@@ -55,6 +57,25 @@ fn the_runtime_carries_a_hex_value_for_every_accent_the_form_offers() {
         mapped, offered,
         "an accent the runtime cannot map falls back to mauve on every overlay that picks it"
     );
+}
+
+#[test]
+fn the_runtime_paints_each_named_accent_with_the_hex_the_form_offers_for_it() {
+    let mapped = common::js_block(RUNTIME_SOURCE, "var ACCENT_HEX = {");
+
+    for (name, hex) in [
+        (ACCENT_MAUVE, ACCENT_MAUVE_HEX),
+        (ACCENT_SKY, ACCENT_SKY_HEX),
+        (ACCENT_GREEN, ACCENT_GREEN_HEX),
+        (ACCENT_PEACH, ACCENT_PEACH_HEX),
+        (ACCENT_YELLOW, ACCENT_YELLOW_HEX),
+        (ACCENT_RED, ACCENT_RED_HEX),
+    ] {
+        assert!(
+            mapped.contains(&format!("{name}: \"{hex}\"")),
+            "{name} is offered as {hex}, which is not the color the runtime paints"
+        );
+    }
 }
 
 #[test]

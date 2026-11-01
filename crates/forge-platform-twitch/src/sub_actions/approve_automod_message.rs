@@ -132,7 +132,7 @@ mod tests {
     use super::*;
     use crate::error::TwitchError;
     use crate::helix::HelixMethod;
-    use crate::sub_actions::test_support::{
+    use crate::test_support::{
         MockTransport, SELF_USER_ID, TOKEN_SENTINEL, assert_request_refused, make_ctx,
     };
     use forge_types::Variant;
@@ -141,10 +141,7 @@ mod tests {
     fn approve_runner_with(
         response: Result<serde_json::Value, TwitchError>,
     ) -> (Arc<MockTransport>, ApproveAutomodMessageRunner) {
-        crate::sub_actions::test_support::runner_with(
-            vec![response],
-            ApproveAutomodMessageRunner::new,
-        )
+        crate::test_support::runner_with(vec![response], ApproveAutomodMessageRunner::new)
     }
 
     fn config_with_message_id(value: &str) -> SubActionConfig {

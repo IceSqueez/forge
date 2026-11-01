@@ -451,9 +451,6 @@ fn step_icon_btn(
 #[cfg(test)]
 pub(in crate::automation::actions_screen) mod tests {
     use forge_components::ThemeId;
-    use forge_runtime::ActionsService;
-    use forge_runtime::QueueScheduler;
-    use forge_soundboard::ClipLibrary;
     use forge_storage::MockGlobalsRepo;
     use forge_storage::MockQueueRepo;
     use forge_storage::MockScriptRepo;
@@ -464,7 +461,9 @@ pub(in crate::automation::actions_screen) mod tests {
     };
 
     use super::*;
-    use crate::test_support::{StubEventLog, StubHistory, StubOverlays, test_backend_with_media};
+    use crate::test_support::{
+        ActionsRepos, actions_deps, actions_screen, test_backend_with_media,
+    };
     use forge_components::Presentation;
 
     pub(in crate::automation::actions_screen) fn screen_parts(
@@ -507,49 +506,21 @@ pub(in crate::automation::actions_screen) mod tests {
         let mut clip_repo = MockSoundboardClipsRepo::new();
         clip_repo.expect_list().returning(move || Ok(clips.clone()));
         let clip_repo: Arc<dyn SoundboardClipsRepo> = Arc::new(clip_repo);
-        let service = Arc::new(ActionsService::new(
-            Arc::clone(&action_repo),
-            Arc::clone(&queue_repo),
-            Arc::new(StubHistory),
-            Arc::clone(&trigger_repo),
-        ));
         let (backend, _writes) = test_backend_with_media(Arc::new(media));
-        let (bus, scheduler) = rt.block_on(async {
-            let bus = EventBus::new(Arc::new(StubEventLog));
-            let engine = crate::test_support::stub_action_engine(Arc::clone(&bus));
-            let scheduler = QueueScheduler::spawn(engine, Arc::clone(&bus), Vec::new());
-            (bus, scheduler)
-        });
-        let handle = rt.handle().clone();
-        cx.update(|cx| {
-            cx.new(|cx| {
-                ScreenActionsView::new(
-                    super::super::ActionsDeps {
-                        action_repo,
-                        queue_repo,
-                        actions_service: service,
-                        trigger_instance_repo: trigger_repo,
-                        script_repo: Arc::new(scripts),
-                        clip_library: Arc::new(ClipLibrary::new(
-                            clip_repo,
-                            backend.media_repo(),
-                            Arc::new(forge_events::test_support::NullPublisher),
-                        )),
-                        globals_repo: Arc::new(globals),
-                        overlay_repo: Arc::new(StubOverlays),
-                        speak: None,
-                        sub_action_registry: Arc::new(sub_actions),
-                        trigger_registry: Arc::new(TriggerRegistry::new()),
-                        rt_handle: handle,
-                        bus,
-                        scheduler,
-                    },
-                    backend.settings_repo(),
-                    Arc::new(OverlayKindRegistry::new()),
-                    None,
-                    cx,
-                )
-            })
-        })
+        let deps = actions_deps(
+            rt,
+            ActionsRepos {
+                actions: action_repo,
+                queues: queue_repo,
+                triggers: trigger_repo,
+                scripts: Arc::new(scripts),
+                clips: clip_repo,
+                media: backend.media_repo(),
+                globals: Arc::new(globals),
+                sub_actions,
+                trigger_kinds: TriggerRegistry::new(),
+            },
+        );
+        cx.update(|cx| cx.new(|cx| actions_screen(deps, backend.settings_repo(), cx)))
     }
 }

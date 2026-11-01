@@ -110,7 +110,7 @@ impl SubActionRunner for GuestStarInviteRunner {
 mod tests {
     use super::*;
     use crate::error::TwitchError;
-    use crate::sub_actions::test_support::{
+    use crate::test_support::{
         MockTransport, SELF_USER_ID, TOKEN_SENTINEL, assert_request_refused, make_ctx,
         users_fixture,
     };
@@ -120,7 +120,7 @@ mod tests {
     fn runner_with(
         responses: Vec<Result<serde_json::Value, TwitchError>>,
     ) -> (Arc<MockTransport>, GuestStarInviteRunner) {
-        crate::sub_actions::test_support::runner_with(responses, GuestStarInviteRunner::new)
+        crate::test_support::runner_with(responses, GuestStarInviteRunner::new)
     }
 
     fn config(session_template: &str, target: &str) -> SubActionConfig {
@@ -293,7 +293,7 @@ mod tests {
     fn validate_config_requires_session_id_and_target_login() {
         let runner = GuestStarInviteRunner::new(
             Arc::new(MockTransport::returning(Ok(serde_json::Value::Null))),
-            crate::sub_actions::test_support::self_identity(),
+            crate::test_support::self_identity(),
         );
 
         assert!(runner.validate_config(&runner.default_config()).is_err());

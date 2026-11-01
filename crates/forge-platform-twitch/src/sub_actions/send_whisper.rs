@@ -157,7 +157,7 @@ mod tests {
 
     use super::*;
     use crate::error::TwitchError;
-    use crate::sub_actions::test_support::{
+    use crate::test_support::{
         MockTransport, SELF_USER_ID, TOKEN_SENTINEL, assert_request_refused, make_ctx,
         users_fixture,
     };
@@ -166,7 +166,7 @@ mod tests {
     fn runner_with(
         responses: Vec<Result<serde_json::Value, TwitchError>>,
     ) -> (Arc<MockTransport>, SendWhisperRunner) {
-        crate::sub_actions::test_support::runner_with(responses, SendWhisperRunner::new)
+        crate::test_support::runner_with(responses, SendWhisperRunner::new)
     }
 
     fn config(to_user_login: &str, message: &str) -> SubActionConfig {
@@ -237,7 +237,7 @@ mod tests {
 
     #[tokio::test]
     async fn execute_whispers_as_the_connected_bot_and_records_it_as_the_sender() {
-        use crate::bot_account::test_support::{BOT_LOGIN, BOT_USER_ID, BotHarness};
+        use crate::test_support::bot_account::{BOT_LOGIN, BOT_USER_ID, BotHarness};
         use wiremock::ResponseTemplate;
 
         let harness = BotHarness::connected().await;

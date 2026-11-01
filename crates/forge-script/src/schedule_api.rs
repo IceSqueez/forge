@@ -249,20 +249,16 @@ fn placement_map(placement: ScriptSchedulePlacement) -> Map {
 
 #[cfg(test)]
 mod tests {
-    use forge_events::test_support::NullPublisher;
     use forge_storage::DataProvider;
     use std::sync::Mutex;
-    use std::time::{Duration, Instant};
 
-    use forge_types::EventId;
     use time::OffsetDateTime;
     use time::format_description::well_known::Rfc3339;
 
     use super::*;
-    use crate::ForgeApi;
     use crate::ScriptError;
     use crate::engine::{Engine, EngineConfig};
-    use crate::test_support::{repo_globals, sandboxed_backend};
+    use crate::test_support::{quiet_api, repo_globals, sandboxed_backend};
 
     const DUE_UNIX_SECS: i64 = 1_791_118_800;
     const PLACED_ID: i64 = 42;
@@ -341,13 +337,8 @@ mod tests {
         scheduler: Option<Arc<RecordingScheduler>>,
         script: String,
     ) -> Result<Dynamic, ScriptError> {
-        let backend = sandboxed_backend([0xab; 32]).await.map(Arc::new);
-        let mut api = ForgeApi::new(
-            Arc::new(NullPublisher),
-            repo_globals(backend.globals_repo()),
-            EventId::new(),
-            Instant::now() + Duration::from_secs(10),
-        );
+        let backend = sandboxed_backend().await.map(Arc::new);
+        let mut api = quiet_api(repo_globals(backend.globals_repo()));
         if let Some(scheduler) = scheduler {
             api = api.with_action_scheduler(scheduler as Arc<dyn ActionScheduler>);
         }

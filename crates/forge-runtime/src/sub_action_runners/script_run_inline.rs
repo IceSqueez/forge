@@ -195,7 +195,7 @@ mod tests {
     use forge_types::Variant;
 
     async fn make_backend() -> Sandboxed<Arc<SqliteBackend>> {
-        let backend = sandboxed_backend([0xab; 32]).await.map(Arc::new);
+        let backend = sandboxed_backend().await.map(Arc::new);
         write_setting(
             backend.settings_repo().as_ref(),
             &forge_script::settings::TIMEOUT_MS,

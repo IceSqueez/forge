@@ -308,7 +308,7 @@ mod tests {
     }
 
     async fn run_named_into(body: &str, target_var: &str) -> NamedRun {
-        let backend = sandboxed_backend([0xab; 32]).await.map(Arc::new);
+        let backend = sandboxed_backend().await.map(Arc::new);
         let bus = EventBus::new(Arc::new(NullEventLogRepo));
         let publisher: Arc<dyn EventPublisher> = Arc::clone(&bus) as Arc<dyn EventPublisher>;
 
@@ -469,7 +469,7 @@ mod tests {
 
     impl NamedScript {
         async fn saved(body: &str) -> Self {
-            let backend = sandboxed_backend([0xab; 32]).await.map(Arc::new);
+            let backend = sandboxed_backend().await.map(Arc::new);
             let bus = EventBus::new(Arc::new(NullEventLogRepo));
             let registry = Arc::new(ScriptCatalog::new());
             let runner = ScriptRunNamedRunner::new(
@@ -614,7 +614,7 @@ mod tests {
                 reason: "disk gone".to_owned(),
             })
         });
-        let backend = sandboxed_backend([0xab; 32]).await.map(Arc::new);
+        let backend = sandboxed_backend().await.map(Arc::new);
         let bus = EventBus::new(Arc::new(NullEventLogRepo));
         let runner = ScriptRunNamedRunner::new(
             Arc::new(ScriptCatalog::new()),

@@ -66,12 +66,12 @@ pub(crate) async fn publish_current_goals(
 
 #[cfg(test)]
 mod tests {
-    use crate::bot_account::test_support::RecordingBus;
+    use crate::test_support::bot_account::RecordingBus;
 
     use serde_json::{Value, json};
 
     use super::*;
-    use crate::sub_actions::test_support::MockTransport;
+    use crate::test_support::MockTransport;
 
     const BROADCASTER: &str = "4242";
     const UNAVAILABLE: u16 = reqwest::StatusCode::SERVICE_UNAVAILABLE.as_u16();

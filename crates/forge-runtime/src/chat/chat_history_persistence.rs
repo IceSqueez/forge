@@ -274,6 +274,7 @@ async fn stored_per_viewer_limit(settings: &dyn SettingsRepo) -> usize {
 #[cfg(test)]
 mod tests {
     use forge_storage::MockChatHistoryRepo;
+    use forge_storage::test_support::{ChatHistoryScript, ScriptedChatHistoryRepo};
     use forge_storage::{DataProvider, StorageError};
     use forge_types::{ModerationMarks, UnifiedChatRow};
 
@@ -281,7 +282,6 @@ mod tests {
     use crate::NullEventLogRepo;
     use crate::test_support::{Sandboxed, sandboxed_backend};
 
-    const KEY: [u8; 32] = [0x5a; 32];
     const MINUTE: time::Duration = time::Duration::minutes(1);
 
     struct Rig {
@@ -290,7 +290,7 @@ mod tests {
     }
 
     async fn rig() -> Rig {
-        let backend = sandboxed_backend(KEY).await;
+        let backend = sandboxed_backend().await;
         let sink = sink_over(
             backend.chat_history_repo(),
             &EventBus::new(Arc::new(NullEventLogRepo)),
@@ -853,12 +853,8 @@ mod tests {
     }
 
     #[async_trait::async_trait]
-    impl ChatHistoryRepo for ScriptedRepo {
-        async fn append(&self, row: &UnifiedChatRow) -> Result<(), StorageError> {
-            self.append_batch(std::slice::from_ref(row)).await
-        }
-
-        async fn append_batch(&self, rows: &[UnifiedChatRow]) -> Result<(), StorageError> {
+    impl ChatHistoryScript for ScriptedRepo {
+        async fn append_rows(&self, rows: &[UnifiedChatRow]) -> Result<(), StorageError> {
             self.appended
                 .lock()
                 .unwrap()
@@ -866,31 +862,7 @@ mod tests {
             settle(self.append).await
         }
 
-        async fn list_recent(&self, _: usize) -> Result<Vec<UnifiedChatRow>, StorageError> {
-            Ok(Vec::new())
-        }
-
-        async fn author_page(
-            &self,
-            _: &ChatAuthorKey,
-            _: Option<forge_storage::ChatHistoryCursor>,
-            _: usize,
-        ) -> Result<forge_storage::ChatAuthorPage, StorageError> {
-            Ok(forge_storage::ChatAuthorPage::default())
-        }
-
-        async fn author_tallies(
-            &self,
-            _: &[ChatAuthorKey],
-        ) -> Result<Vec<forge_storage::ChatAuthorTally>, StorageError> {
-            Ok(Vec::new())
-        }
-
-        async fn apply_retention(
-            &self,
-            _: &[ChatAuthorKey],
-            _: usize,
-        ) -> Result<u64, StorageError> {
+        async fn retain(&self) -> Result<u64, StorageError> {
             let nth = self
                 .retentions
                 .fetch_add(1, std::sync::atomic::Ordering::SeqCst);
@@ -900,22 +872,6 @@ mod tests {
                 Outcome::Succeeds
             };
             settle(outcome).await.map(|()| 0)
-        }
-
-        async fn mark_message_deleted(&self, _: PlatformId, _: &str) -> Result<u64, StorageError> {
-            Ok(0)
-        }
-
-        async fn mark_user_messages_moderated(
-            &self,
-            _: &ChatModerationTarget,
-            _: UserRemoval,
-        ) -> Result<u64, StorageError> {
-            Ok(0)
-        }
-
-        async fn clear_platform(&self, _: PlatformId) -> Result<u64, StorageError> {
-            Ok(0)
         }
     }
 
@@ -930,7 +886,10 @@ mod tests {
     async fn no_retention_runs_after_a_failed_or_stalled_append() {
         for append in [Outcome::Fails, Outcome::Stalls] {
             let repo = ScriptedRepo::new(append, Outcome::Succeeds);
-            let mut sink = sink_over(repo.clone(), &EventBus::new(Arc::new(NullEventLogRepo)));
+            let mut sink = sink_over(
+                Arc::new(ScriptedChatHistoryRepo(repo.clone())),
+                &EventBus::new(Arc::new(NullEventLogRepo)),
+            );
 
             flush(&mut sink, vec![by("m", PlatformId::Twitch, Some("u1"))]).await;
 
@@ -943,7 +902,7 @@ mod tests {
         for retention in [Outcome::Fails, Outcome::Stalls] {
             let bus = EventBus::new(Arc::new(NullEventLogRepo));
             let repo = ScriptedRepo::new(Outcome::Succeeds, retention);
-            let mut sink = sink_over(repo.clone(), &bus);
+            let mut sink = sink_over(Arc::new(ScriptedChatHistoryRepo(repo.clone())), &bus);
 
             flush(&mut sink, vec![by("first", PlatformId::Twitch, Some("u1"))]).await;
             flush(
@@ -973,64 +932,10 @@ mod tests {
     }
 
     #[async_trait::async_trait]
-    impl ChatHistoryRepo for StuckAppends {
-        async fn append(&self, _: &UnifiedChatRow) -> Result<(), StorageError> {
+    impl ChatHistoryScript for StuckAppends {
+        async fn append_rows(&self, _: &[UnifiedChatRow]) -> Result<(), StorageError> {
             self.appending.notify_one();
             std::future::pending().await
-        }
-
-        async fn list_recent(&self, _: usize) -> Result<Vec<UnifiedChatRow>, StorageError> {
-            Ok(Vec::new())
-        }
-
-        async fn author_page(
-            &self,
-            _: &forge_storage::ChatAuthorKey,
-            _: Option<forge_storage::ChatHistoryCursor>,
-            _: usize,
-        ) -> Result<forge_storage::ChatAuthorPage, StorageError> {
-            Ok(forge_storage::ChatAuthorPage::default())
-        }
-
-        async fn author_tallies(
-            &self,
-            _: &[forge_storage::ChatAuthorKey],
-        ) -> Result<Vec<forge_storage::ChatAuthorTally>, StorageError> {
-            Ok(Vec::new())
-        }
-
-        async fn apply_retention(
-            &self,
-            _: &[forge_storage::ChatAuthorKey],
-            _: usize,
-        ) -> Result<u64, StorageError> {
-            Ok(0)
-        }
-
-        async fn mark_message_deleted(&self, _: PlatformId, _: &str) -> Result<u64, StorageError> {
-            Ok(0)
-        }
-
-        async fn mark_user_messages_moderated(
-            &self,
-            _: &ChatModerationTarget,
-            _: UserRemoval,
-        ) -> Result<u64, StorageError> {
-            Ok(0)
-        }
-
-        async fn clear_platform(&self, _: PlatformId) -> Result<u64, StorageError> {
-            Ok(0)
-        }
-
-        async fn append_batch(
-            &self,
-            rows: &[forge_types::UnifiedChatRow],
-        ) -> Result<(), forge_storage::StorageError> {
-            for row in rows {
-                forge_storage::ChatHistoryRepo::append(self, row).await?;
-            }
-            Ok(())
         }
     }
 
@@ -1039,9 +944,9 @@ mod tests {
         let bus = EventBus::new(Arc::new(NullEventLogRepo));
         let appending = Arc::new(tokio::sync::Notify::new());
         let sink = sink_over(
-            Arc::new(StuckAppends {
+            Arc::new(ScriptedChatHistoryRepo(Arc::new(StuckAppends {
                 appending: Arc::clone(&appending),
-            }),
+            }))),
             &bus,
         );
         let now = OffsetDateTime::now_utc();

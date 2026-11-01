@@ -70,9 +70,7 @@ pub(crate) async fn send_whisper_to(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::sub_actions::test_support::{
-        MockTransport, REQUEST_FAIL_KIND, observed_helix_at, users_fixture,
-    };
+    use crate::test_support::{MockTransport, REQUEST_FAIL_KIND, observed_helix_at, users_fixture};
     use reqwest::StatusCode;
     use wiremock::matchers::{method, path};
     use wiremock::{Mock, MockServer, ResponseTemplate};

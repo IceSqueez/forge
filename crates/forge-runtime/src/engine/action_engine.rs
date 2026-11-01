@@ -712,10 +712,42 @@ mod tests {
 
     use super::*;
     use crate::NullEventLogRepo;
-    use crate::test_support::sandboxed_backend;
+    use crate::test_support::{Sandboxed, sandboxed_backend};
     use forge_events::Event;
 
     const HISTORY_HANG_GUARD: Duration = Duration::from_secs(30);
+
+    async fn engine_provider() -> Sandboxed<Arc<dyn DataProvider>> {
+        sandboxed_backend()
+            .await
+            .map(|backend| Arc::new(backend) as Arc<dyn DataProvider>)
+    }
+
+    fn engine_over(
+        dp: &Arc<dyn DataProvider>,
+        bus: &Arc<EventBus>,
+        registry: SubActionRegistry,
+    ) -> ActionEngineHandle {
+        engine_recording_to(dp, bus, registry, dp.history_repo())
+    }
+
+    fn engine_recording_to(
+        dp: &Arc<dyn DataProvider>,
+        bus: &Arc<EventBus>,
+        registry: SubActionRegistry,
+        history: Arc<dyn HistoryRepo>,
+    ) -> ActionEngineHandle {
+        spawn_action_engine(crate::ActionEngineParts {
+            bus: Arc::clone(bus),
+            catalog: crate::Catalog::from_provider(dp.as_ref()),
+            actions: dp.action_repo(),
+            history,
+            sub_action_registry: Arc::new(registry),
+            cancel_registry: Arc::new(crate::engine::action_cancel::ActionCancelRegistry::new()),
+            date_names: crate::DateNamesHandle::default(),
+            config: crate::Config::default(),
+        })
+    }
 
     struct RecordingRunner {
         last_config: Arc<Mutex<Option<forge_registry::SubActionConfig>>>,
@@ -842,9 +874,7 @@ mod tests {
 
     #[tokio::test]
     async fn chain_signal_maps_to_recorded_execution_outcome() {
-        let dp = sandboxed_backend([0xcd; 32])
-            .await
-            .map(|backend| Arc::new(backend) as Arc<dyn DataProvider>);
+        let dp = engine_provider().await;
         let bus = EventBus::new(Arc::new(NullEventLogRepo));
 
         let mut reg = SubActionRegistry::new();
@@ -858,20 +888,7 @@ mod tests {
             outcome: SubActionOutcome::Failed(VerbatimText::new("kaboom").into()),
         }))
         .unwrap();
-        let engine = spawn_action_engine(crate::ActionEngineParts {
-            bus: Arc::clone(&bus),
-            catalog: crate::Catalog::new(
-                dp.action_repo(),
-                dp.trigger_instance_repo(),
-                dp.catalog_revision(),
-            ),
-            actions: dp.action_repo(),
-            history: dp.history_repo(),
-            sub_action_registry: Arc::new(reg),
-            cancel_registry: Arc::new(crate::engine::action_cancel::ActionCancelRegistry::new()),
-            date_names: crate::DateNamesHandle::default(),
-            config: crate::Config::default(),
-        });
+        let engine = engine_over(&dp, &bus, reg);
 
         let cases = [
             ("map.success", ExecutionOutcome::Success),
@@ -946,9 +963,7 @@ mod tests {
 
     #[tokio::test]
     async fn quick_action_resolves_effective_config_before_execute() {
-        let dp = sandboxed_backend([0xab; 32])
-            .await
-            .map(|backend| Arc::new(backend) as Arc<dyn DataProvider>);
+        let dp = engine_provider().await;
         let bus = EventBus::new(Arc::new(NullEventLogRepo));
 
         let last = Arc::new(Mutex::new(None));
@@ -957,20 +972,7 @@ mod tests {
         });
         let mut reg = SubActionRegistry::new();
         reg.register(runner).unwrap();
-        let engine = spawn_action_engine(crate::ActionEngineParts {
-            bus: Arc::clone(&bus),
-            catalog: crate::Catalog::new(
-                dp.action_repo(),
-                dp.trigger_instance_repo(),
-                dp.catalog_revision(),
-            ),
-            actions: dp.action_repo(),
-            history: dp.history_repo(),
-            sub_action_registry: Arc::new(reg),
-            cancel_registry: Arc::new(crate::engine::action_cancel::ActionCancelRegistry::new()),
-            date_names: crate::DateNamesHandle::default(),
-            config: crate::Config::default(),
-        });
+        let engine = engine_over(&dp, &bus, reg);
 
         let mut overrides = BTreeMap::new();
         overrides.insert("a".to_owned(), Variant::Int(99));
@@ -1008,24 +1010,9 @@ mod tests {
 
     #[tokio::test]
     async fn quick_path_emits_action_quick_done_and_links_subaction_run_causation() {
-        let dp = sandboxed_backend([0x3c; 32])
-            .await
-            .map(|backend| Arc::new(backend) as Arc<dyn DataProvider>);
+        let dp = engine_provider().await;
         let bus = EventBus::new(Arc::new(NullEventLogRepo));
-        let engine = spawn_action_engine(crate::ActionEngineParts {
-            bus: Arc::clone(&bus),
-            catalog: crate::Catalog::new(
-                dp.action_repo(),
-                dp.trigger_instance_repo(),
-                dp.catalog_revision(),
-            ),
-            actions: dp.action_repo(),
-            history: dp.history_repo(),
-            sub_action_registry: Arc::new(SubActionRegistry::new()),
-            cancel_registry: Arc::new(crate::engine::action_cancel::ActionCancelRegistry::new()),
-            date_names: crate::DateNamesHandle::default(),
-            config: crate::Config::default(),
-        });
+        let engine = engine_over(&dp, &bus, SubActionRegistry::new());
 
         let parent = EventId::new();
         for expected_parent in [Some(parent), None] {
@@ -1123,9 +1110,7 @@ mod tests {
 
     #[tokio::test]
     async fn quick_action_run_maps_subaction_outcome_to_execution_outcome() {
-        let dp = sandboxed_backend([0x51; 32])
-            .await
-            .map(|backend| Arc::new(backend) as Arc<dyn DataProvider>);
+        let dp = engine_provider().await;
         let bus = EventBus::new(Arc::new(NullEventLogRepo));
         let (history, mut rx) = capturing_history();
 
@@ -1146,20 +1131,7 @@ mod tests {
         }))
         .unwrap();
 
-        let engine = spawn_action_engine(crate::ActionEngineParts {
-            bus: Arc::clone(&bus),
-            catalog: crate::Catalog::new(
-                dp.action_repo(),
-                dp.trigger_instance_repo(),
-                dp.catalog_revision(),
-            ),
-            actions: dp.action_repo(),
-            history,
-            sub_action_registry: Arc::new(reg),
-            cancel_registry: Arc::new(crate::engine::action_cancel::ActionCancelRegistry::new()),
-            date_names: crate::DateNamesHandle::default(),
-            config: crate::Config::default(),
-        });
+        let engine = engine_recording_to(&dp, &bus, reg, history);
 
         let cases = [
             ("quick.ok", ExecutionOutcome::Success),
@@ -1188,9 +1160,7 @@ mod tests {
 
     #[tokio::test]
     async fn quick_action_run_records_quick_action_metadata() {
-        let dp = sandboxed_backend([0x52; 32])
-            .await
-            .map(|backend| Arc::new(backend) as Arc<dyn DataProvider>);
+        let dp = engine_provider().await;
         let bus = EventBus::new(Arc::new(NullEventLogRepo));
         let (history, mut rx) = capturing_history();
         let engine = spawn_action_engine(crate::ActionEngineParts {
@@ -1234,9 +1204,7 @@ mod tests {
 
     #[tokio::test]
     async fn quick_action_runs_receive_distinct_action_ids() {
-        let dp = sandboxed_backend([0x53; 32])
-            .await
-            .map(|backend| Arc::new(backend) as Arc<dyn DataProvider>);
+        let dp = engine_provider().await;
         let bus = EventBus::new(Arc::new(NullEventLogRepo));
         let (history, mut rx) = capturing_history();
         let engine = spawn_action_engine(crate::ActionEngineParts {
@@ -1284,9 +1252,7 @@ mod tests {
 
     #[tokio::test]
     async fn quick_action_history_captures_merged_config_as_args_in() {
-        let dp = sandboxed_backend([0x54; 32])
-            .await
-            .map(|backend| Arc::new(backend) as Arc<dyn DataProvider>);
+        let dp = engine_provider().await;
         let bus = EventBus::new(Arc::new(NullEventLogRepo));
         let (history, mut rx) = capturing_history();
 
@@ -1295,20 +1261,7 @@ mod tests {
             last_config: Arc::new(Mutex::new(None)),
         }))
         .unwrap();
-        let engine = spawn_action_engine(crate::ActionEngineParts {
-            bus: Arc::clone(&bus),
-            catalog: crate::Catalog::new(
-                dp.action_repo(),
-                dp.trigger_instance_repo(),
-                dp.catalog_revision(),
-            ),
-            actions: dp.action_repo(),
-            history,
-            sub_action_registry: Arc::new(reg),
-            cancel_registry: Arc::new(crate::engine::action_cancel::ActionCancelRegistry::new()),
-            date_names: crate::DateNamesHandle::default(),
-            config: crate::Config::default(),
-        });
+        let engine = engine_recording_to(&dp, &bus, reg, history);
 
         let mut overrides = BTreeMap::new();
         overrides.insert("a".to_owned(), Variant::Int(99));
@@ -1487,9 +1440,7 @@ mod tests {
     }
 
     async fn self_loop_rig_with(bus: Arc<EventBus>, steps: Vec<SubActionStep>) -> SelfLoopRig {
-        let dp = sandboxed_backend([0x16; 32])
-            .await
-            .map(|backend| Arc::new(backend) as Arc<dyn DataProvider>);
+        let dp = engine_provider().await;
         let mut reg = SubActionRegistry::new();
         for runner in EmitRunner::all() {
             reg.register(Box::new(runner)).unwrap();
@@ -1506,20 +1457,7 @@ mod tests {
             crate::sub_action_runners::CoreLogicLoopRunner::new(gate),
         ))
         .unwrap();
-        let engine = spawn_action_engine(crate::ActionEngineParts {
-            bus: Arc::clone(&bus),
-            catalog: crate::Catalog::new(
-                dp.action_repo(),
-                dp.trigger_instance_repo(),
-                dp.catalog_revision(),
-            ),
-            actions: dp.action_repo(),
-            history: dp.history_repo(),
-            sub_action_registry: Arc::new(reg),
-            cancel_registry: Arc::new(crate::engine::action_cancel::ActionCancelRegistry::new()),
-            date_names: crate::DateNamesHandle::default(),
-            config: crate::Config::default(),
-        });
+        let engine = engine_over(&dp, &bus, reg);
         let action_id = ActionId::new();
         let action = forge_types::Action {
             id: action_id,
@@ -1831,20 +1769,9 @@ mod tests {
 
     #[tokio::test]
     async fn a_run_started_after_an_action_edit_returns_executes_the_edited_action() {
-        let dp = sandboxed_backend([0x5e; 32])
-            .await
-            .map(|backend| Arc::new(backend) as Arc<dyn DataProvider>);
+        let dp = engine_provider().await;
         let bus = EventBus::new(Arc::new(NullEventLogRepo));
-        let engine = spawn_action_engine(crate::ActionEngineParts {
-            bus: Arc::clone(&bus),
-            catalog: crate::Catalog::from_provider(dp.as_ref()),
-            actions: dp.action_repo(),
-            history: dp.history_repo(),
-            sub_action_registry: Arc::new(SubActionRegistry::new()),
-            cancel_registry: Arc::new(crate::engine::action_cancel::ActionCancelRegistry::new()),
-            date_names: crate::DateNamesHandle::default(),
-            config: crate::Config::default(),
-        });
+        let engine = engine_over(&dp, &bus, SubActionRegistry::new());
         let default_queue = forge_types::DEFAULT_QUEUE_ID;
         let mut action = forge_types::Action {
             id: ActionId::new(),

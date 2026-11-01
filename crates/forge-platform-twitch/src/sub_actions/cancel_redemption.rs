@@ -78,14 +78,14 @@ mod tests {
     use forge_types::{ArgStack, SubActionOutcome, Variant};
 
     use super::*;
-    use crate::sub_actions::test_support::{MockTransport, make_ctx};
+    use crate::test_support::{MockTransport, make_ctx};
 
     #[tokio::test]
     async fn cancel_sends_status_canceled_single_l() {
         let transport = Arc::new(MockTransport::returning(Ok(serde_json::Value::Null)));
         let runner = CancelRedemptionRunner::new(
             Arc::clone(&transport) as Arc<dyn HelixTransport>,
-            crate::sub_actions::test_support::self_identity(),
+            crate::test_support::self_identity(),
         );
         let stack = ArgStack::new()
             .set(

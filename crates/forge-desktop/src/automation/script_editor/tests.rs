@@ -342,7 +342,7 @@ mod unsaved_work {
                 let _entered = rt.enter();
                 EventBus::new(Arc::new(StubEventLog))
             };
-            let backend = test_backend_with_scripts(Arc::new(repo(store)));
+            let backend = test_backend_with_scripts(Arc::new(repo(store))).with_stub_actions();
             let handle = rt.handle().clone();
             let view = cx.new(|cx| {
                 ScriptEditorView::new(
@@ -722,7 +722,8 @@ mod lifecycle {
                 let _entered = rt.enter();
                 EventBus::new(Arc::new(StubEventLog))
             };
-            let backend = test_backend_with_scripts(Arc::clone(&scripts) as Arc<dyn ScriptRepo>);
+            let backend = test_backend_with_scripts(Arc::clone(&scripts) as Arc<dyn ScriptRepo>)
+                .with_stub_actions();
             let handle = rt.handle().clone();
             let shared = Arc::clone(&registry);
             let view = cx.new(|cx| {

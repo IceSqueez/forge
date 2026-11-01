@@ -189,12 +189,15 @@ pub(crate) fn map_eval_error(
 mod tests {
     use super::*;
     use crate::api::ForgeApi;
-    use forge_events::test_support::{CapturingPublisher, NullPublisher};
+    use forge_events::test_support::CapturingPublisher;
     use forge_storage::DataProvider;
     use forge_storage::test_support::MemorySettings;
     use forge_storage_sqlite::SqliteBackend;
 
-    use crate::test_support::{Sandboxed, ScriptedClock, repo_globals, sandboxed_backend};
+    use crate::test_support::{
+        Sandboxed, ScriptedClock, api_publishing_to, quiet_api, quiet_api_until, repo_globals,
+        sandboxed_backend,
+    };
     use forge_types::{EventId, Variant};
     use std::sync::Arc;
     use std::time::Instant;
@@ -210,25 +213,15 @@ mod tests {
     }
 
     async fn open_test_dp() -> Sandboxed<Arc<SqliteBackend>> {
-        sandboxed_backend([0xab; 32]).await.map(Arc::new)
+        sandboxed_backend().await.map(Arc::new)
     }
 
     fn make_api(dp: Arc<SqliteBackend>) -> ForgeApi {
-        ForgeApi::new(
-            Arc::new(NullPublisher),
-            repo_globals(dp.globals_repo()),
-            EventId::new(),
-            Instant::now() + std::time::Duration::from_secs(10),
-        )
+        quiet_api(repo_globals(dp.globals_repo()))
     }
 
     fn make_api_with_deadline(dp: Arc<SqliteBackend>, deadline: Instant) -> ForgeApi {
-        ForgeApi::new(
-            Arc::new(NullPublisher),
-            repo_globals(dp.globals_repo()),
-            EventId::new(),
-            deadline,
-        )
+        quiet_api_until(repo_globals(dp.globals_repo()), deadline)
     }
 
     fn bounded() -> EngineConfig {
@@ -391,12 +384,7 @@ mod tests {
         let expired_deadline = Instant::now()
             .checked_sub(Duration::from_millis(50))
             .unwrap();
-        let api = ForgeApi::new(
-            Arc::new(NullPublisher),
-            repo_globals(dp.globals_repo()),
-            EventId::new(),
-            expired_deadline,
-        );
+        let api = quiet_api_until(repo_globals(dp.globals_repo()), expired_deadline);
         let engine = Engine::with_api(unhurried(), api);
         let result = tokio::task::spawn_blocking(move || engine.eval_script("forge::sleep(100)"))
             .await
@@ -573,12 +561,7 @@ mod tests {
         let captured = CapturingPublisher::shared();
         let publisher = Arc::clone(&captured);
         let caused_by = EventId::new();
-        let api = ForgeApi::new(
-            publisher,
-            repo_globals(dp.globals_repo()),
-            caused_by,
-            Instant::now() + std::time::Duration::from_secs(10),
-        );
+        let api = api_publishing_to(publisher, repo_globals(dp.globals_repo()), caused_by);
         let engine = Engine::with_api(unhurried(), api);
 
         tokio::task::spawn_blocking(move || {

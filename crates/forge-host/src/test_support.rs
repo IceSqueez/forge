@@ -55,6 +55,7 @@ pub use schedules::{
     GatedSchedule, gated_running_schedule, gated_running_schedule_sharing, keyless_enabled_schedule,
 };
 
+const SNAPSHOT_SCHEMA_VERSION: u32 = 0;
 const PUMP_HANG_GUARD: std::time::Duration = std::time::Duration::from_secs(90);
 
 pub type SettingWrite = (String, String);
@@ -101,6 +102,7 @@ pub struct TestBackend {
     triggers: Option<Arc<dyn TriggerInstanceRepo>>,
     media: Arc<dyn MediaRepo>,
     export_gate: Option<Arc<tokio::sync::Notify>>,
+    schema_version: Option<u32>,
     export_stalls_midway: bool,
     export_lands_late: bool,
     on_shutdown: Option<Box<dyn Fn() + Send + Sync>>,
@@ -118,21 +120,17 @@ pub fn test_backend_with_scripts_and_actions(
     scripts: Arc<dyn ScriptRepo>,
     actions: Arc<dyn ActionRepo>,
 ) -> Arc<TestBackend> {
-    let backend = test_backend_with_scripts(scripts);
-    let mut backend = Arc::into_inner(backend).unwrap();
-    backend.actions = Some(actions);
-    Arc::new(backend)
+    test_backend_with_scripts(scripts).reshaped(|backend| backend.actions = Some(actions))
 }
 
 pub fn test_backend_with_actions_and_triggers(
     actions: Arc<dyn ActionRepo>,
     triggers: Arc<dyn TriggerInstanceRepo>,
 ) -> Arc<TestBackend> {
-    let (backend, _) = backend_over(None, None, Arc::new(EmptyMediaLibrary));
-    let mut backend = Arc::into_inner(backend).unwrap();
-    backend.actions = Some(actions);
-    backend.triggers = Some(triggers);
-    Arc::new(backend)
+    bare_backend().reshaped(|backend| {
+        backend.actions = Some(actions);
+        backend.triggers = Some(triggers);
+    })
 }
 
 pub fn test_backend_with_overlays(
@@ -150,34 +148,30 @@ pub fn test_backend_with_media(
 pub fn test_backend_observing_shutdown(
     on_shutdown: impl Fn() + Send + Sync + 'static,
 ) -> Arc<TestBackend> {
-    let (backend, _) = backend_over(None, None, Arc::new(EmptyMediaLibrary));
-    let mut backend = Arc::into_inner(backend).unwrap();
-    backend.on_shutdown = Some(Box::new(on_shutdown));
-    Arc::new(backend)
+    bare_backend().reshaped(|backend| backend.on_shutdown = Some(Box::new(on_shutdown)))
 }
 
 pub fn test_backend_with_gated_export() -> (Arc<TestBackend>, Arc<tokio::sync::Notify>) {
-    let (backend, _) = backend_over(None, None, Arc::new(EmptyMediaLibrary));
     let gate = Arc::new(tokio::sync::Notify::new());
-    let mut backend = Arc::into_inner(backend).unwrap();
-    backend.export_gate = Some(Arc::clone(&gate));
-    (Arc::new(backend), gate)
+    let backend = bare_backend().reshaped(|backend| backend.gate_export(Arc::clone(&gate)));
+    (backend, gate)
 }
 
 pub fn test_backend_with_late_export() -> (Arc<TestBackend>, Arc<tokio::sync::Notify>) {
-    let (backend, _) = backend_over(None, None, Arc::new(EmptyMediaLibrary));
     let gate = Arc::new(tokio::sync::Notify::new());
-    let mut backend = Arc::into_inner(backend).unwrap();
-    backend.export_gate = Some(Arc::clone(&gate));
-    backend.export_lands_late = true;
-    (Arc::new(backend), gate)
+    let backend = bare_backend().reshaped(|backend| {
+        backend.gate_export(Arc::clone(&gate));
+        backend.export_lands_late = true;
+    });
+    (backend, gate)
 }
 
 pub fn test_backend_with_stalling_export() -> Arc<TestBackend> {
-    let (backend, _) = backend_over(None, None, Arc::new(EmptyMediaLibrary));
-    let mut backend = Arc::into_inner(backend).unwrap();
-    backend.export_stalls_midway = true;
-    Arc::new(backend)
+    bare_backend().reshaped(|backend| backend.export_stalls_midway = true)
+}
+
+fn bare_backend() -> Arc<TestBackend> {
+    backend_over(None, None, Arc::new(EmptyMediaLibrary)).0
 }
 
 fn backend_over(
@@ -194,6 +188,7 @@ fn backend_over(
             triggers: None,
             media,
             export_gate: None,
+            schema_version: None,
             export_stalls_midway: false,
             export_lands_late: false,
             on_shutdown: None,
@@ -218,17 +213,36 @@ impl TestBackend {
         export_gate: Arc<tokio::sync::Notify>,
     ) -> Arc<Self> {
         let (writes, _) = unbounded_channel();
-        Arc::new(Self {
+        let mut backend = Self {
             repos: TestRepos::over(settings, writes, None),
             overlays: None,
             actions: None,
             triggers: None,
             media: Arc::new(EmptyMediaLibrary),
-            export_gate: Some(export_gate),
+            export_gate: None,
+            schema_version: None,
             export_stalls_midway: false,
             export_lands_late: false,
             on_shutdown: None,
-        })
+        };
+        backend.gate_export(export_gate);
+        Arc::new(backend)
+    }
+
+    #[must_use]
+    pub fn with_stub_actions(self: Arc<Self>) -> Arc<Self> {
+        self.reshaped(|backend| backend.actions = Some(Arc::new(StubActions)))
+    }
+
+    fn reshaped(self: Arc<Self>, change: impl FnOnce(&mut Self)) -> Arc<Self> {
+        let mut backend = Arc::into_inner(self).unwrap();
+        change(&mut backend);
+        Arc::new(backend)
+    }
+
+    fn gate_export(&mut self, gate: Arc<tokio::sync::Notify>) {
+        self.export_gate = Some(gate);
+        self.schema_version = Some(SNAPSHOT_SCHEMA_VERSION);
     }
 }
 
@@ -646,55 +660,52 @@ impl DataProvider for TestBackend {
         if let Some(actions) = &self.actions {
             return Arc::clone(actions);
         }
-        if self.scripts.is_some() {
-            return Arc::new(StubActions);
-        }
-        unreachable!("this TestBackend was built without that repo")
+        unreachable!("this TestBackend was built without actions")
     }
 
     fn trigger_instance_repo(&self) -> Arc<dyn TriggerInstanceRepo> {
         if let Some(triggers) = &self.triggers {
             return Arc::clone(triggers);
         }
-        unreachable!("this TestBackend was built without that repo")
+        unreachable!("this TestBackend was built without a trigger_instance repo")
     }
 
     fn queue_repo(&self) -> Arc<dyn QueueRepo> {
-        unreachable!("this TestBackend was built without that repo")
+        unreachable!("this TestBackend was built without a queue repo")
     }
 
     fn history_repo(&self) -> Arc<dyn HistoryRepo> {
-        unreachable!("this TestBackend was built without that repo")
+        unreachable!("this TestBackend was built without a history repo")
     }
 
     fn event_log_repo(&self) -> Arc<dyn EventLogRepo> {
-        unreachable!("this TestBackend was built without that repo")
+        unreachable!("this TestBackend was built without a event_log repo")
     }
 
     fn soundboard_clips_repo(&self) -> Arc<dyn SoundboardClipsRepo> {
-        unreachable!("this TestBackend was built without that repo")
+        unreachable!("this TestBackend was built without a soundboard_clips repo")
     }
 
     fn voice_alias_repo(&self) -> Arc<dyn VoiceAliasRepo> {
-        unreachable!("this TestBackend was built without that repo")
+        unreachable!("this TestBackend was built without a voice_alias repo")
     }
 
     fn viewer_repo(&self) -> Arc<dyn ViewerRepo> {
-        unreachable!("this TestBackend was built without that repo")
+        unreachable!("this TestBackend was built without a viewer repo")
     }
 
     fn tts_filters_repo(&self) -> Arc<dyn TtsFiltersRepo> {
-        unreachable!("this TestBackend was built without that repo")
+        unreachable!("this TestBackend was built without a tts_filters repo")
     }
 
     fn chat_history_repo(&self) -> Arc<dyn ChatHistoryRepo> {
-        unreachable!("this TestBackend was built without that repo")
+        unreachable!("this TestBackend was built without a chat_history repo")
     }
 
     fn overlay_repo(&self) -> Arc<dyn OverlayRepo> {
         self.overlays
             .clone()
-            .unwrap_or_else(|| unreachable!("this TestBackend was built without that repo"))
+            .unwrap_or_else(|| unreachable!("this TestBackend was built without a overlay repo"))
     }
 
     fn media_repo(&self) -> Arc<dyn MediaRepo> {
@@ -702,19 +713,19 @@ impl DataProvider for TestBackend {
     }
 
     fn donation_repo(&self) -> Arc<dyn DonationRepo> {
-        unreachable!("this TestBackend was built without that repo")
+        unreachable!("this TestBackend was built without a donation repo")
     }
 
     fn latest_value_repo(&self) -> Arc<dyn LatestValueRepo> {
-        unreachable!("this TestBackend was built without that repo")
+        unreachable!("this TestBackend was built without a latest_value repo")
     }
 
     fn ban_ledger_repo(&self) -> Arc<dyn BanLedgerRepo> {
-        unreachable!("this TestBackend was built without that repo")
+        unreachable!("this TestBackend was built without a ban_ledger repo")
     }
 
     fn scheduled_run_repo(&self) -> Arc<dyn ScheduledRunRepo> {
-        unreachable!("this TestBackend was built without that repo")
+        unreachable!("this TestBackend was built without a scheduled_run repo")
     }
 
     fn scheduled_run_revision(&self) -> CatalogRevision {
@@ -731,7 +742,7 @@ impl DataProvider for TestBackend {
             std::future::pending::<()>().await;
         }
         let Some(gate) = &self.export_gate else {
-            unreachable!("this TestBackend was not built to exports")
+            unreachable!("this TestBackend was built without a gated export")
         };
         gate.notified().await;
         if self.export_lands_late {
@@ -744,10 +755,10 @@ impl DataProvider for TestBackend {
     }
 
     async fn schema_version(&self) -> Result<u32, StorageError> {
-        if self.export_gate.is_none() {
-            unreachable!("this TestBackend was not built to reads the schema version")
-        }
-        Ok(0)
+        let Some(version) = self.schema_version else {
+            unreachable!("this TestBackend was built without a schema version")
+        };
+        Ok(version)
     }
 
     async fn shutdown(&self) {

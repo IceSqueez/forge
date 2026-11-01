@@ -386,7 +386,7 @@ impl Render for BackupPassphraseModal {
 }
 
 #[cfg(test)]
-pub(crate) mod tests {
+mod tests {
     use gpui::TestAppContext;
 
     use super::*;

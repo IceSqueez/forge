@@ -541,7 +541,7 @@ mod tests {
     use forge_events::EventSubscription;
 
     async fn make_backend() -> Sandboxed<Arc<SqliteBackend>> {
-        sandboxed_backend([0xab; 32]).await.map(Arc::new)
+        sandboxed_backend().await.map(Arc::new)
     }
 
     fn log_action(id: ActionId, queue_id: QueueId) -> Action {

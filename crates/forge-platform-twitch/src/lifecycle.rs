@@ -390,7 +390,7 @@ impl LifecycleSnapshot {
 mod tests {
     use super::*;
     use crate::error::TwitchError;
-    use crate::sub_actions::test_support::MockTransport;
+    use crate::test_support::MockTransport;
     use serde_json::{Value, json};
 
     const SELF_ID: &str = "1234";

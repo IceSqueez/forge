@@ -32,6 +32,8 @@ mod reward_collection;
 mod step_failure;
 mod sub_actions;
 mod subscriptions;
+#[cfg(test)]
+mod test_support;
 mod timestamp;
 mod triggers;
 mod viewer_step;

@@ -290,13 +290,14 @@ mod tests {
     use forge_storage_sqlite::SqliteBackend;
 
     use crate::globals_port::ScriptGlobals;
-    use crate::test_support::{RepoGlobals, Sandboxed, repo_globals, sandboxed_backend};
+    use crate::test_support::{
+        RepoGlobals, Sandboxed, api_publishing_to, repo_globals, sandboxed_backend,
+    };
     use forge_types::{
         EventId, INTEGRATION_DISABLED, MessageCode, UNKNOWN_CHAT_TARGET, Variant, VerbatimText,
         WHISPERS_UNSUPPORTED,
     };
     use std::sync::{Arc, Mutex};
-    use std::time::Instant;
 
     fn unhurried() -> EngineConfig {
         EngineConfig {
@@ -306,7 +307,7 @@ mod tests {
     }
 
     async fn open_dp() -> Sandboxed<Arc<SqliteBackend>> {
-        sandboxed_backend([0xab; 32]).await.map(Arc::new)
+        sandboxed_backend().await.map(Arc::new)
     }
 
     fn make_api_with_publisher(
@@ -314,11 +315,10 @@ mod tests {
         captured: Arc<CapturingPublisher>,
     ) -> (ForgeApi, EventId) {
         let caused_by = EventId::new();
-        let api = ForgeApi::new(
+        let api = api_publishing_to(
             captured as Arc<dyn EventPublisher>,
             repo_globals(dp.globals_repo()),
             caused_by,
-            Instant::now() + std::time::Duration::from_secs(30),
         );
         (api, caused_by)
     }
@@ -337,11 +337,10 @@ mod tests {
         let port = Arc::new(RepoGlobals::new(dp.globals_repo()));
         let captured = CapturingPublisher::shared();
         let caused_by = EventId::new();
-        let api = ForgeApi::new(
+        let api = api_publishing_to(
             Arc::clone(&captured) as Arc<dyn EventPublisher>,
             Arc::clone(&port) as Arc<dyn ScriptGlobals>,
             caused_by,
-            Instant::now() + std::time::Duration::from_secs(30),
         );
         let engine = Engine::with_api(unhurried(), api);
         let result = tokio::task::spawn_blocking(move || engine.eval_script(script).unwrap())
@@ -411,11 +410,10 @@ mod tests {
     ) -> Engine {
         let caused_by = EventId::new();
         let http_client = Arc::new(ScriptHttpClient::new(config).unwrap());
-        let api = ForgeApi::new(
+        let api = api_publishing_to(
             captured as Arc<dyn EventPublisher>,
             repo_globals(dp.globals_repo()),
             caused_by,
-            Instant::now() + std::time::Duration::from_secs(30),
         )
         .with_http(http_client);
         Engine::with_api(unhurried(), api)
@@ -504,11 +502,10 @@ mod tests {
             let captured = CapturingPublisher::shared();
             let caused_by = EventId::new();
             let script_id = ScriptId::new();
-            let api = ForgeApi::new(
+            let api = api_publishing_to(
                 Arc::clone(&captured) as Arc<dyn EventPublisher>,
                 repo_globals(dp.globals_repo()),
                 caused_by,
-                Instant::now() + std::time::Duration::from_secs(30),
             )
             .with_script_id(script_id);
             let engine = Engine::with_api(unhurried(), api);
@@ -547,11 +544,10 @@ mod tests {
         let dp = open_dp().await;
         let captured = CapturingPublisher::shared();
         let caused_by = EventId::new();
-        let api = ForgeApi::new(
+        let api = api_publishing_to(
             captured as Arc<dyn EventPublisher>,
             repo_globals(dp.globals_repo()),
             caused_by,
-            Instant::now() + std::time::Duration::from_secs(30),
         );
         let counter = api.error_count_handle();
         let engine = Engine::with_api(unhurried(), api);

@@ -141,17 +141,15 @@ impl SubActionRunner for EndPollRunner {
 mod tests {
     use super::*;
     use crate::error::TwitchError;
-    use crate::sub_actions::test_support::TOKEN_SENTINEL;
-    use crate::sub_actions::test_support::{
-        MockTransport, SELF_USER_ID, assert_request_refused, make_ctx,
-    };
+    use crate::test_support::TOKEN_SENTINEL;
+    use crate::test_support::{MockTransport, SELF_USER_ID, assert_request_refused, make_ctx};
     use forge_types::Variant;
     use std::collections::BTreeMap;
 
     fn runner_with(
         response: Result<serde_json::Value, TwitchError>,
     ) -> (Arc<MockTransport>, EndPollRunner) {
-        crate::sub_actions::test_support::runner_with(vec![response], EndPollRunner::new)
+        crate::test_support::runner_with(vec![response], EndPollRunner::new)
     }
 
     fn cfg(poll_id: &str, status: &str) -> SubActionConfig {
@@ -245,7 +243,7 @@ mod tests {
     fn validate_config_requires_poll_id_and_known_status() {
         let runner = EndPollRunner::new(
             Arc::new(MockTransport::returning(Ok(serde_json::Value::Null))),
-            crate::sub_actions::test_support::self_identity(),
+            crate::test_support::self_identity(),
         );
 
         let cases = [

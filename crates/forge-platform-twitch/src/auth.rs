@@ -403,8 +403,8 @@ mod tests {
     use wiremock::{Mock, MockServer, Request, Respond, ResponseTemplate};
 
     use super::*;
-    use crate::bot_account::test_support::RecordingBus;
-    use crate::sub_actions::test_support::{endpoints_with, helix_gateway_at, oauth_client_at};
+    use crate::test_support::bot_account::RecordingBus;
+    use crate::test_support::{endpoints_with, helix_gateway_at, oauth_client_at};
 
     const CLIENT: &str = "test_client";
     const ACCESS: &str = "ACCESS_SENTINEL_r7";
@@ -540,8 +540,8 @@ mod tests {
     #[tokio::test]
     async fn wait_before_start_reports_auth_error() {
         let mut flow = TwitchAuthFlow::new(
-            crate::sub_actions::test_support::unreachable_oauth_client(CLIENT),
-            crate::sub_actions::test_support::unreachable_helix_gateway(),
+            crate::test_support::unreachable_oauth_client(CLIENT),
+            crate::test_support::unreachable_helix_gateway(),
         );
 
         let err = flow
@@ -948,7 +948,7 @@ mod tests {
             .unwrap();
             let mut flow = TwitchAuthFlow::new(
                 TwitchOAuthClient::new(gateway, CLIENT.to_owned()),
-                crate::sub_actions::test_support::unreachable_helix_gateway(),
+                crate::test_support::unreachable_helix_gateway(),
             )
             .with_timing(timing);
             let started = std::time::Instant::now();

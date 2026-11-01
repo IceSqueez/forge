@@ -126,7 +126,7 @@ async fn post_blocked_term(
 mod tests {
     use super::*;
     use crate::error::TwitchError;
-    use crate::sub_actions::test_support::{
+    use crate::test_support::{
         MockTransport, SELF_USER_ID, TOKEN_SENTINEL, assert_request_refused, make_ctx,
     };
     use std::collections::BTreeMap;
@@ -138,7 +138,7 @@ mod tests {
     fn runner_with(
         response: Result<serde_json::Value, TwitchError>,
     ) -> (Arc<MockTransport>, AddBlockedTermRunner) {
-        crate::sub_actions::test_support::runner_with(vec![response], AddBlockedTermRunner::new)
+        crate::test_support::runner_with(vec![response], AddBlockedTermRunner::new)
     }
 
     fn cfg(text: &str) -> SubActionConfig {

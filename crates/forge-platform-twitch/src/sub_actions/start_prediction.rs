@@ -179,8 +179,8 @@ impl SubActionRunner for StartPredictionRunner {
 mod tests {
     use super::*;
     use crate::error::TwitchError;
-    use crate::sub_actions::test_support::TOKEN_SENTINEL;
-    use crate::sub_actions::test_support::{
+    use crate::test_support::TOKEN_SENTINEL;
+    use crate::test_support::{
         MockCreds, MockTransport, SELF_USER_ID, assert_request_refused, make_ctx,
     };
     use std::collections::BTreeMap;
@@ -192,7 +192,7 @@ mod tests {
     fn runner_with(
         response: Result<serde_json::Value, TwitchError>,
     ) -> (Arc<MockTransport>, StartPredictionRunner) {
-        crate::sub_actions::test_support::runner_with(vec![response], StartPredictionRunner::new)
+        crate::test_support::runner_with(vec![response], StartPredictionRunner::new)
     }
 
     fn full_cfg() -> SubActionConfig {
@@ -316,7 +316,7 @@ mod tests {
     fn validate_config_enforces_field_constraints() {
         let runner = StartPredictionRunner::new(
             Arc::new(MockTransport::returning(Ok(serde_json::Value::Null))),
-            crate::sub_actions::test_support::self_identity(),
+            crate::test_support::self_identity(),
         );
 
         let valid = full_cfg();

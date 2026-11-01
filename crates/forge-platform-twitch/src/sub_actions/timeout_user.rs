@@ -146,7 +146,7 @@ mod tests {
     use super::*;
     use crate::error::TwitchError;
     use crate::sub_actions::fields::MAX_REASON_CHARS;
-    use crate::sub_actions::test_support::{MockCreds, MockTransport, make_ctx, users_fixture};
+    use crate::test_support::{MockCreds, MockTransport, make_ctx, users_fixture};
     use forge_registry::{ConfigReason, RegistryError, ValueBounds};
     use forge_types::Variant;
     use std::collections::BTreeMap;
@@ -154,7 +154,7 @@ mod tests {
     fn runner_with(
         responses: Vec<Result<serde_json::Value, TwitchError>>,
     ) -> (Arc<MockTransport>, TimeoutUserRunner) {
-        crate::sub_actions::test_support::runner_with(responses, TimeoutUserRunner::new)
+        crate::test_support::runner_with(responses, TimeoutUserRunner::new)
     }
 
     fn config(target: &str, reason: &str, duration: i64) -> SubActionConfig {

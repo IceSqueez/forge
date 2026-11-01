@@ -24,6 +24,7 @@ forge-platform-twitch = { path = "../forge-platform-twitch" }
 forge-platform-youtube = { path = "../forge-platform-youtube" }
 forge-registry = { path = "../forge-registry" }
 forge-runtime = { path = "../forge-runtime" }
+forge-speech-types = { path = "../forge-speech-types" }
 forge-storage = { path = "../forge-storage", features = ["test-mocks", "settings-test-support"] }
 forge-storage-sqlite = { path = "../forge-storage-sqlite", features = ["test-support"] }
 forge-transfer = { path = "../forge-transfer" }
@@ -32,5 +33,6 @@ forge-vtube = { path = "../forge-vtube" }
 flate2 = { workspace = true }
 serde_json = { workspace = true }
 tempfile = { workspace = true }
+time = { workspace = true }
 tokio = { workspace = true }
 ulid = { workspace = true }

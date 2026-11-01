@@ -1,14 +1,11 @@
 use super::*;
-use forge_runtime::ActionsService;
 use forge_storage::{GlobalsRepo, QueueRepo, ScriptRepo};
 use forge_types::ExecutionMode;
 use gpui::MouseButton;
 use std::collections::HashMap;
 
 use forge_components::ThemeId;
-use forge_runtime::QueueScheduler;
 use forge_runtime::{TIMER_TICK_KIND, TimerTickDescriptor};
-use forge_soundboard::ClipLibrary;
 use forge_storage::MockActionRepo;
 use forge_storage::MockQueueRepo;
 use forge_storage::MockSoundboardClipsRepo;
@@ -17,7 +14,7 @@ use forge_storage::{DataProvider, SoundboardClipsRepo};
 use forge_types::{PermissionRung, PlatformScope, TriggerInstance, TriggerInstanceId};
 
 use crate::test_support::{
-    Declares, StubEventLog, StubHistory, StubOverlays, StubTrigger, runtime, test_backend,
+    ActionsRepos, Declares, StubTrigger, actions_deps, actions_screen, runtime, test_backend,
     trigger_registry,
 };
 use forge_components::Presentation;
@@ -136,53 +133,25 @@ impl Fixture {
         let mut stored_clips = MockSoundboardClipsRepo::new();
         stored_clips.expect_list().returning(|| Ok(Vec::new()));
         let clips: Arc<dyn SoundboardClipsRepo> = Arc::new(stored_clips);
-        let service = Arc::new(ActionsService::new(
-            Arc::clone(&action_repo),
-            Arc::clone(&queue_repo),
-            Arc::new(StubHistory),
-            Arc::clone(&trigger_repo),
-        ));
         let (backend, _writes) = test_backend();
         let mut globals = forge_storage::MockGlobalsRepo::new();
         globals.expect_list().returning(|| Ok(Vec::new()));
-        let (bus, scheduler) = rt.block_on(async {
-            let bus = EventBus::new(Arc::new(StubEventLog));
-            let engine = crate::test_support::stub_action_engine(Arc::clone(&bus));
-            let scheduler = QueueScheduler::spawn(engine, Arc::clone(&bus), Vec::new());
-            (bus, scheduler)
-        });
-        let handle = rt.handle().clone();
-        let host = cx.update(|cx| {
-            cx.new(|cx| {
-                ScreenActionsView::new(
-                    super::ActionsDeps {
-                        action_repo,
-                        queue_repo,
-                        actions_service: service,
-                        trigger_instance_repo: trigger_repo,
-                        script_repo: Arc::new(crate::test_support::MemoryScripts::default())
-                            as Arc<dyn ScriptRepo>,
-                        clip_library: Arc::new(ClipLibrary::new(
-                            clips,
-                            backend.media_repo(),
-                            Arc::new(forge_events::test_support::NullPublisher),
-                        )),
-                        globals_repo: Arc::new(globals) as Arc<dyn GlobalsRepo>,
-                        overlay_repo: Arc::new(StubOverlays),
-                        speak: None,
-                        sub_action_registry: Arc::new(SubActionRegistry::new()),
-                        trigger_registry: Arc::new(registry()),
-                        rt_handle: handle,
-                        bus,
-                        scheduler,
-                    },
-                    backend.settings_repo(),
-                    Arc::new(OverlayKindRegistry::new()),
-                    None,
-                    cx,
-                )
-            })
-        });
+        let deps = actions_deps(
+            &rt,
+            ActionsRepos {
+                actions: action_repo,
+                queues: queue_repo,
+                triggers: trigger_repo,
+                scripts: Arc::new(crate::test_support::MemoryScripts::default())
+                    as Arc<dyn ScriptRepo>,
+                clips,
+                media: backend.media_repo(),
+                globals: Arc::new(globals) as Arc<dyn GlobalsRepo>,
+                sub_actions: SubActionRegistry::new(),
+                trigger_kinds: registry(),
+            },
+        );
+        let host = cx.update(|cx| cx.new(|cx| actions_screen(deps, backend.settings_repo(), cx)));
         let view = host.read_with(cx, |host, _| host.tree.clone());
         let fixture = Self {
             host,

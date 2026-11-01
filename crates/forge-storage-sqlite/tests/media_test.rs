@@ -1,4 +1,5 @@
 #![expect(clippy::expect_used, reason = "test fixtures")]
+use std::collections::HashMap;
 use std::fs::File;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
@@ -503,6 +504,111 @@ async fn blob_of_reports_nothing_for_a_slot_that_was_never_retained() {
         fx.media().blob_of(&clip_source()).await.expect("blob_of"),
         None
     );
+}
+
+async fn stored(fx: &Fixture, label: &str, bytes: &[u8]) -> MediaBlobId {
+    fx.media()
+        .store(label, bytes.to_vec())
+        .await
+        .expect("store")
+        .id
+}
+
+async fn clip_sources_held(fx: &Fixture) -> HashMap<String, MediaBlobId> {
+    fx.media()
+        .blobs_by_referrer_id(MediaReferrerKind::SoundboardClip, SOURCE_SLOT)
+        .await
+        .expect("bulk read")
+}
+
+fn other_clip_source() -> MediaReferrer {
+    MediaReferrer::new(
+        MediaReferrerKind::SoundboardClip,
+        OTHER_CLIP_ID,
+        SOURCE_SLOT,
+    )
+}
+
+#[tokio::test]
+async fn bulk_read_maps_every_row_holding_the_slot_to_what_blob_of_reports() {
+    let fx = fixture().await;
+    let gif = stored(&fx, "one.gif", TINY_GIF).await;
+    let wav = stored(&fx, "two.wav", TINY_WAV).await;
+    fx.media()
+        .retain(&clip_source(), &gif)
+        .await
+        .expect("retain");
+    fx.media()
+        .retain(&other_clip_source(), &wav)
+        .await
+        .expect("retain");
+
+    let held = clip_sources_held(&fx).await;
+
+    assert_eq!(held.len(), 2);
+    assert_eq!(held.get(CLIP_ID), Some(&gif));
+    for (row, referrer) in [
+        (CLIP_ID, clip_source()),
+        (OTHER_CLIP_ID, other_clip_source()),
+    ] {
+        assert_eq!(
+            held.get(row).cloned(),
+            fx.media().blob_of(&referrer).await.expect("blob_of"),
+            "{row}"
+        );
+    }
+}
+
+#[tokio::test]
+async fn bulk_read_leaves_out_other_slots_and_other_referrer_kinds() {
+    let fx = fixture().await;
+    let blob = stored(&fx, "shared.gif", TINY_GIF).await;
+    for referrer in [
+        clip_source(),
+        MediaReferrer::new(MediaReferrerKind::SoundboardClip, OTHER_CLIP_ID, ICON_SLOT),
+        MediaReferrer::new(MediaReferrerKind::Overlay, OVERLAY_ID, SOURCE_SLOT),
+    ] {
+        fx.media().retain(&referrer, &blob).await.expect("retain");
+    }
+
+    let held = clip_sources_held(&fx).await;
+
+    assert_eq!(held.into_keys().collect::<Vec<_>>(), vec![CLIP_ID]);
+}
+
+#[tokio::test]
+async fn bulk_read_follows_a_replaced_slot_and_forgets_a_released_one() {
+    let fx = fixture().await;
+    let gif = stored(&fx, "one.gif", TINY_GIF).await;
+    let wav = stored(&fx, "two.wav", TINY_WAV).await;
+    fx.media()
+        .retain(&clip_source(), &gif)
+        .await
+        .expect("retain");
+    fx.media()
+        .retain(&other_clip_source(), &gif)
+        .await
+        .expect("retain");
+    fx.media()
+        .retain(&clip_source(), &wav)
+        .await
+        .expect("replace");
+    fx.media()
+        .release(&other_clip_source())
+        .await
+        .expect("release");
+
+    let held = clip_sources_held(&fx).await;
+
+    assert_eq!(held.len(), 1);
+    assert_eq!(held.get(CLIP_ID), Some(&wav));
+}
+
+#[tokio::test]
+async fn bulk_read_of_a_slot_nobody_holds_is_empty() {
+    let fx = fixture().await;
+
+    assert!(clip_sources_held(&fx).await.is_empty());
 }
 
 #[tokio::test]

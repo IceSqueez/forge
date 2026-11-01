@@ -16,10 +16,7 @@ impl PlatformScope {
     pub fn matches(&self, platform: Option<PlatformId>) -> bool {
         match self {
             Self::Any => true,
-            Self::Only(set) => {
-                debug_assert!(!set.is_empty(), "PlatformScope::Only invariant violated");
-                platform.is_some_and(|p| set.contains(&p))
-            }
+            Self::Only(set) => platform.is_some_and(|p| set.contains(&p)),
         }
     }
 }

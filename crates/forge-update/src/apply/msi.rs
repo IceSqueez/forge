@@ -2,7 +2,7 @@ use std::ffi::OsString;
 use std::path::{Path, PathBuf};
 use std::time::Duration;
 
-use super::files::{FileRetry, path_exists, remove_path};
+use super::files::{FileRetry, path_exists, remove_leftover, remove_path};
 use crate::UpdateError;
 use crate::process::{ChildExit, ProcessHost};
 use forge_types::MonotonicClock;
@@ -41,18 +41,10 @@ pub(super) fn apply(
                 Err(undo) => UpdateError::install_displaced(&error, &undo),
             });
         }
-        #[expect(
-            clippy::let_underscore_must_use,
-            reason = "best-effort cleanup; the installer error is returned"
-        )]
-        let _ = remove_path(previous);
+        remove_leftover(previous);
         return Err(error);
     }
-    #[expect(
-        clippy::let_underscore_must_use,
-        reason = "a leftover package does not undo a finished install"
-    )]
-    let _ = remove_path(package);
+    remove_leftover(package);
     Ok(())
 }
 

@@ -1,4 +1,3 @@
-mod auth;
 mod catalog;
 mod client;
 mod connect_attempt;

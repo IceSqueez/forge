@@ -32,4 +32,7 @@ pub enum VTubeError {
 
     #[error("stored VTube Studio credential could not be read: {0}")]
     Credentials(#[from] forge_storage::StorageError),
+
+    #[error("VTube Studio credentials not stored")]
+    NotStored,
 }

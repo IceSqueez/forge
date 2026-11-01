@@ -52,7 +52,6 @@ impl BuiltinControl for VTubeClient {
         let ctx = SupervisorContext {
             endpoint: self.config.endpoint.clone(),
             state: Arc::clone(&self.state),
-            auth_state: Arc::clone(&self.auth_state),
             shutdown: new_notify,
             connected_at: Arc::clone(&self.connected_at),
             publisher: Arc::clone(&self.reconnect_publisher),

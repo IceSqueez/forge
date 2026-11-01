@@ -1,8 +1,6 @@
 use std::path::PathBuf;
-use std::sync::Arc;
 
 use forge_components::{ActivePresentation, OverlayPosition, PushToast, ToastKind, overlay, tr};
-use forge_storage_sqlite::SqliteDatabaseFileSchema;
 use forge_transfer::{
     BUNDLE_EXTENSION, BundleSummary, Passphrase, StageRequest, StagedRestore, backups_dir,
     discard_staged_restore, read_bundle_summary, record_pending_restore, stage_full_restore,
@@ -165,7 +163,7 @@ impl RestoreFlow {
             bundle,
             data_dir: self.data_dir.clone(),
             passphrase,
-            database_schema: Arc::new(SqliteDatabaseFileSchema),
+            database_schema: crate::boot::database_file_schema(),
         };
         async_bridge::run_async(
             &self.rt_handle,

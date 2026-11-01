@@ -399,11 +399,9 @@ impl Supervisor<'_> {
         if leftovers.is_empty() {
             return;
         }
-        #[expect(
-            clippy::let_underscore_must_use,
-            reason = "a leftover file does not change the outcome of the update"
-        )]
-        let _ = remember_leftovers(self.context.data_dir, leftovers);
+        if let Err(error) = remember_leftovers(self.context.data_dir, leftovers) {
+            tracing::warn!(%error, "update leftovers could not be recorded for the next start");
+        }
     }
 
     fn relaunch(&mut self) -> Result<(), UpdateError> {

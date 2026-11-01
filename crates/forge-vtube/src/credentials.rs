@@ -5,6 +5,7 @@ use forge_storage::{CredentialId, CredentialsRepo, StorageError};
 use forge_types::Secret;
 use serde::{Deserialize, Serialize};
 
+use crate::error::VTubeError;
 use crate::vts::endpoint::{DEFAULT_VTS_HOST, DEFAULT_VTS_PORT, endpoint_url_with};
 use crate::{VTubeClient, VTubeConfig};
 
@@ -56,20 +57,12 @@ pub async fn load(creds: &dyn CredentialsRepo) -> Result<Option<VTubeCredentials
     Ok(Some(parsed))
 }
 
-#[derive(Debug, thiserror::Error)]
-pub enum VTubeConnectError {
-    #[error(transparent)]
-    Storage(#[from] StorageError),
-    #[error("VTube Studio credentials not stored")]
-    NotStored,
-}
-
 pub async fn load_and_connect(
     creds: &dyn CredentialsRepo,
     publisher: Arc<dyn EventPublisher>,
     creds_arc: Arc<dyn CredentialsRepo>,
-) -> Result<Arc<VTubeClient>, VTubeConnectError> {
-    let stored = load(creds).await?.ok_or(VTubeConnectError::NotStored)?;
+) -> Result<Arc<VTubeClient>, VTubeError> {
+    let stored = load(creds).await?.ok_or(VTubeError::NotStored)?;
     let cfg = VTubeConfig {
         endpoint: endpoint_url_with(&stored.host, stored.port, stored.secure),
     };

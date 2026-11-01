@@ -10,6 +10,7 @@ use crate::data_api::YoutubeDataApi;
 const THUMBNAIL_SET_COST: u32 = 50;
 const MAX_THUMBNAIL_BYTES: u64 = 2 * 1024 * 1024;
 const THUMBNAIL_SET_PATH: &str = "/thumbnails/set";
+const NO_ACTIVE_BROADCAST: &str = "thumbnail needs an active YouTube broadcast";
 const UNSUPPORTED_IMAGE_TYPE: &str = "thumbnail must be a .png, .jpg or .jpeg file";
 const HOME_PREFIX: &str = "~/";
 const MISSING_SCOPE: &str = "thumbnail upload scope missing";
@@ -36,17 +37,19 @@ impl YoutubeThumbnail {
     }
 
     pub async fn set(&self, image_path: &str) -> Result<(), PlatformError> {
-        let video_id = self.active_broadcast_id.resolve().await?.ok_or_else(|| {
-            PlatformError::Unsupported {
-                feature: "thumbnail - no active YouTube broadcast".to_owned(),
-            }
-        })?;
+        let video_id =
+            self.active_broadcast_id
+                .resolve()
+                .await?
+                .ok_or_else(|| PlatformError::Refused {
+                    reason: NO_ACTIVE_BROADCAST.to_owned(),
+                })?;
 
         let content_type = content_type_for(image_path).ok_or_else(|| PlatformError::Refused {
             reason: UNSUPPORTED_IMAGE_TYPE.to_owned(),
         })?;
-        let size_limit_error = || PlatformError::Unsupported {
-            feature: format!("thumbnail exceeds the {MAX_THUMBNAIL_BYTES}-byte API limit"),
+        let size_limit_error = || PlatformError::Refused {
+            reason: format!("thumbnail exceeds the {MAX_THUMBNAIL_BYTES}-byte API limit"),
         };
         let image_path = expanded_home(image_path);
         if tokio::fs::metadata(&image_path).await?.len() > MAX_THUMBNAIL_BYTES {
@@ -167,15 +170,15 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn set_returns_unsupported_when_no_active_broadcast() {
+    async fn set_is_refused_when_no_active_broadcast() {
         let server = MockServer::start().await;
         let (thumb, _quota) = thumbnail_on(&server, None);
         let img = TempImage::new("t.png", b"\x89PNG\r\n");
 
         let err = thumb.set(img.as_str()).await.unwrap_err();
         assert!(
-            matches!(err, PlatformError::Unsupported { .. }),
-            "expected Unsupported without a broadcast, got: {err}"
+            matches!(err, PlatformError::Refused { .. }),
+            "expected a refusal without a broadcast, got: {err}"
         );
         assert!(
             server.received_requests().await.unwrap().is_empty(),
@@ -215,8 +218,8 @@ mod tests {
 
         let err = thumb.set(img.as_str()).await.unwrap_err();
         assert!(
-            matches!(err, PlatformError::Unsupported { .. }),
-            "over-cap file must be rejected as Unsupported, got: {err}"
+            matches!(err, PlatformError::Refused { .. }),
+            "over-cap file must be refused, got: {err}"
         );
         assert!(
             server.received_requests().await.unwrap().is_empty(),
@@ -296,8 +299,8 @@ mod tests {
 
         let err = thumb.set(img.as_str()).await.unwrap_err();
         assert!(
-            matches!(err, PlatformError::Unsupported { .. }),
-            "oversized file must be refused as Unsupported, got: {err}"
+            matches!(err, PlatformError::Refused { .. }),
+            "oversized file must be refused, got: {err}"
         );
         assert!(server.received_requests().await.unwrap().is_empty());
     }

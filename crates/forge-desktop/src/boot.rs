@@ -12,8 +12,8 @@ use forge_platform_core::PlatformEndpoints;
 use forge_runtime::DateNamesHandle;
 use forge_storage::settings::core_settings::{ACCENT, FONT_BODY, FONT_MONO, LANGUAGE, THEME};
 use forge_storage::{
-    CredentialsKeyLoss, DataProvider, Language, SettingsCatalog, SettingsRepo, StorageError,
-    read_setting, read_setting_or_default, write_setting,
+    CredentialsKeyLoss, DataProvider, DatabaseFileSchema, Language, SettingsCatalog, SettingsRepo,
+    StorageError, read_setting, read_setting_or_default, write_setting,
 };
 use forge_storage_sqlite::SqliteBackend;
 use forge_types::Shared;
@@ -223,6 +223,10 @@ pub(crate) struct RuntimeInputs {
     pub audio_sinks: Arc<dyn AudioSinkFactory>,
     pub local_tts_engines: Vec<LocalTtsEngine>,
     pub platform_identities: PlatformIdentities,
+}
+
+pub(crate) fn database_file_schema() -> Arc<dyn DatabaseFileSchema> {
+    Arc::new(forge_storage_sqlite::SqliteDatabaseFileSchema)
 }
 
 pub(crate) async fn build_runtime(inputs: RuntimeInputs) -> Result<RuntimeHandles, BootFailure> {

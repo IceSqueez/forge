@@ -5,7 +5,7 @@ use std::path::{Component, Path, PathBuf};
 
 use flate2::read::GzDecoder;
 
-use super::files::{FileRetry, remove_path, swap_in};
+use super::files::{FileRetry, remove_leftover, remove_path, swap_in};
 use crate::UpdateError;
 
 const EXTRACT_DIR_PREFIX: &str = ".forge-update-extract-";
@@ -23,17 +23,9 @@ pub(super) fn apply(
     let swapped = extract_archive(archive, &extract_dir)
         .and_then(|()| single_bundle(&extract_dir))
         .and_then(|bundle| swap_in(target, &bundle, previous, retry));
-    #[expect(
-        clippy::let_underscore_must_use,
-        reason = "best-effort cleanup; the swap result is what gets reported"
-    )]
-    let _ = remove_path(&extract_dir);
+    remove_leftover(&extract_dir);
     swapped?;
-    #[expect(
-        clippy::let_underscore_must_use,
-        reason = "a leftover archive does not undo a finished swap"
-    )]
-    let _ = remove_path(archive);
+    remove_leftover(archive);
     Ok(())
 }
 

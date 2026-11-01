@@ -48,11 +48,9 @@ pub fn pending_start_action(
 }
 
 fn sweep_leftovers_quietly(data_dir: &Path) {
-    #[expect(
-        clippy::let_underscore_must_use,
-        reason = "an unswept leftover never blocks a start; the next start tries again"
-    )]
-    let _ = sweep_leftovers(data_dir);
+    if let Err(error) = sweep_leftovers(data_dir) {
+        tracing::warn!(%error, "update leftovers kept for the next start");
+    }
 }
 
 fn abandon_interrupted_update(

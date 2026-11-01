@@ -249,15 +249,18 @@ fn note_poll_failure(
     }
 }
 
+#[derive(Debug)]
+struct EventSinkClosed;
+
 async fn emit(
     event_tx: &mpsc::Sender<Event>,
     kind: &'static str,
     payload: serde_json::Value,
-) -> Result<(), ()> {
+) -> Result<(), EventSinkClosed> {
     event_tx
         .send(Event::new(EventSource::Kick, kind, payload))
         .await
-        .map_err(|_| ())
+        .map_err(|_| EventSinkClosed)
 }
 
 async fn poll_channel(
@@ -267,7 +270,7 @@ async fn poll_channel(
     viewer_tx: &watch::Sender<ViewerReport>,
     auth: &mut AuthTracker,
     last_snapshot: &mut Option<ChannelSnapshot>,
-) -> Result<(), ()> {
+) -> Result<(), EventSinkClosed> {
     let token = match token_source().await {
         Ok(token) => token,
         Err(error) => {
@@ -337,7 +340,7 @@ async fn poll_redemptions(
     auth: &mut AuthTracker,
     seen: &mut DedupSet,
     seeded: &mut bool,
-) -> Result<(), ()> {
+) -> Result<(), EventSinkClosed> {
     let token = match token_source().await {
         Ok(token) => token,
         Err(error) => {

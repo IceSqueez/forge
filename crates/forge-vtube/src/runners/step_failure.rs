@@ -14,7 +14,7 @@ pub(crate) fn message(error: &VTubeError) -> MessageRef {
         VTubeError::Rejected { error_id, message } => {
             messages::request_rejected(*error_id, message)
         }
-        VTubeError::NotConnected => messages::not_connected(),
+        VTubeError::NotConnected | VTubeError::NotStored => messages::not_connected(),
         VTubeError::Timeout => messages::request_timed_out(),
         VTubeError::Json(source) => messages::payload_invalid(&source.to_string()),
         VTubeError::Credentials(source) => messages::request_failed(&source.to_string()),

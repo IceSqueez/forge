@@ -10,6 +10,7 @@ pub const BASELINE_VERSION: i64 = 47;
 pub(crate) const JOURNAL_CHECK: &str = "journal check";
 
 const JOURNAL_TABLE: &str = "_sqlx_migrations";
+const UNIDENTIFIED_MIGRATION: &str = "unidentified";
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum JournalState {
@@ -40,8 +41,18 @@ pub async fn apply(pool: &sqlx::SqlitePool) -> Result<(), SqliteStorageError> {
 }
 
 fn migration_failed(e: sqlx::migrate::MigrateError) -> SqliteStorageError {
+    use sqlx::migrate::MigrateError;
+
+    let migration = match &e {
+        MigrateError::ExecuteMigration(_, version)
+        | MigrateError::VersionMissing(version)
+        | MigrateError::VersionMismatch(version)
+        | MigrateError::VersionNotPresent(version)
+        | MigrateError::Dirty(version) => version.to_string(),
+        _ => UNIDENTIFIED_MIGRATION.to_owned(),
+    };
     SqliteStorageError::Migration {
-        migration: e.to_string(),
+        migration,
         reason: e.to_string(),
     }
 }

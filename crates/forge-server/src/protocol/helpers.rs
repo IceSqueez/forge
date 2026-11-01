@@ -7,6 +7,8 @@ use crate::bus_adapter::EventFilter;
 
 use super::envelope::{WireEventFilter, WsResponse};
 
+const RUNTIME_FAILURE_MESSAGE: &str = "the request could not be completed";
+
 #[derive(Debug, thiserror::Error)]
 #[error("unknown event source: {0}")]
 pub(crate) struct UnknownEventSource(String);
@@ -99,6 +101,14 @@ pub(crate) fn build_arg_stack(args: serde_json::Value) -> ArgStack {
     accepted
         .into_iter()
         .fold(ArgStack::new(), |stack, (k, v)| stack.set(k, v))
+}
+
+pub(super) fn runtime_failure(error: &impl std::fmt::Display) -> WsResponse {
+    tracing::warn!(%error, "websocket request failed");
+    WsResponse::Error {
+        code: Some("RUNTIME_ERROR".to_owned()),
+        message: RUNTIME_FAILURE_MESSAGE.to_owned(),
+    }
 }
 
 pub(super) fn parse_id<T: FromStr>(raw: &str, refusal: &str) -> Result<T, WsResponse> {

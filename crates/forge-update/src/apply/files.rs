@@ -56,6 +56,12 @@ pub(crate) fn remove_path(path: &Path) -> io::Result<()> {
     }
 }
 
+pub(crate) fn remove_leftover(path: &Path) {
+    if let Err(error) = remove_path(path) {
+        tracing::warn!(path = %path.display(), %error, "update cleanup left a file behind");
+    }
+}
+
 pub(crate) fn swap_in(
     target: &Path,
     replacement: &Path,

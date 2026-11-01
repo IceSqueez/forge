@@ -47,11 +47,9 @@ pub(crate) fn restore_database(
         .and_then(|_| OpenOptions::new().write(true).open(&staged))
         .and_then(|file| file.sync_all());
     if let Err(error) = copied {
-        #[expect(
-            clippy::let_underscore_must_use,
-            reason = "best-effort cleanup; the copy error is returned"
-        )]
-        let _ = std::fs::remove_file(&staged);
+        if let Err(cleanup) = std::fs::remove_file(&staged) {
+            tracing::warn!(path = %staged.display(), error = %cleanup, "partial snapshot left behind");
+        }
         return Err(error.into());
     }
     for sidecar in &unit.sidecars {

@@ -3318,6 +3318,7 @@ version = "0.6.3"
 dependencies = [
  "aes-gcm 0.11.1",
  "async-trait",
+ "forge-durable",
  "forge-events",
  "forge-paths",
  "forge-registry",
@@ -3325,6 +3326,7 @@ dependencies = [
  "forge-storage",
  "forge-storage-sqlite",
  "forge-types",
+ "jiff",
  "libc",
  "rand 0.10.3",
  "serde",
@@ -3510,6 +3512,7 @@ dependencies = [
  "thiserror 2.0.21",
  "tokio",
  "tokio-util",
+ "tracing",
 ]
 
 [[package]]

@@ -29,9 +29,10 @@ const ITEM_INSTANCE_ICON: &str = "confetti";
 
 fn listing_failure(error: &VTubeError) -> CollectionFailure {
     match error {
-        VTubeError::NotConnected | VTubeError::Connect(_) | VTubeError::ApiDisabled => {
-            CollectionFailure::NotConnected
-        }
+        VTubeError::NotConnected
+        | VTubeError::NotStored
+        | VTubeError::Connect(_)
+        | VTubeError::ApiDisabled => CollectionFailure::NotConnected,
         VTubeError::TokenDenied | VTubeError::TokenTimeout | VTubeError::TokenRejected => {
             CollectionFailure::Unauthorized
         }

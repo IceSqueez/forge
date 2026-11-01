@@ -11,7 +11,6 @@ use forge_platform_core::{
 use forge_storage::CredentialsRepo;
 use forge_types::{IntegrationId, MessageRef, RecoverMutex};
 
-use crate::auth::AuthState;
 use crate::error::VTubeError;
 use crate::health::{HealthSnapshot, make_health_channel};
 use crate::timing::VTubeTiming;
@@ -38,7 +37,6 @@ pub struct VTubeClient {
     pub(crate) config: VTubeConfig,
     pub(crate) vtube_id: IntegrationId,
     pub(crate) state: Arc<AtomicConnectionState>,
-    pub(crate) auth_state: Arc<RwLock<AuthState>>,
     pub(crate) shutdown: Arc<tokio::sync::Mutex<Arc<Notify>>>,
     pub(crate) lifecycle: tokio::sync::Mutex<()>,
     pub(crate) supervisor: Arc<std::sync::Mutex<Option<JoinHandle<()>>>>,
@@ -104,7 +102,6 @@ impl VTubeClient {
         transport_layer: TransportLayer,
     ) -> Self {
         let state = Arc::new(AtomicConnectionState::new(ConnectionState::Connecting));
-        let auth_state = Arc::new(RwLock::new(AuthState::Cold));
         let notify = Arc::new(Notify::new());
         let shutdown = Arc::new(tokio::sync::Mutex::new(Arc::clone(&notify)));
         let connected_at = Arc::new(RwLock::new(None::<Instant>));
@@ -147,7 +144,6 @@ impl VTubeClient {
         let ctx = crate::supervisor::SupervisorContext {
             endpoint: cfg.endpoint.clone(),
             state: Arc::clone(&state),
-            auth_state: Arc::clone(&auth_state),
             shutdown: Arc::clone(&notify),
             connected_at: Arc::clone(&connected_at),
             publisher: Arc::clone(&publisher),
@@ -169,7 +165,6 @@ impl VTubeClient {
             config: cfg,
             vtube_id: crate::VTUBE_INTEGRATION.id,
             state,
-            auth_state,
             shutdown,
             lifecycle: tokio::sync::Mutex::new(()),
             supervisor: Arc::new(std::sync::Mutex::new(Some(handle))),
@@ -195,11 +190,6 @@ impl VTubeClient {
 
     pub fn connection_state(&self) -> ConnectionState {
         self.state.load()
-    }
-
-    #[cfg(test)]
-    pub(crate) fn auth_state(&self) -> AuthState {
-        self.auth_state.read().map_or(AuthState::Cold, |g| *g)
     }
 
     pub fn set_auto_reconnect(&self, enabled: bool) {
@@ -256,7 +246,6 @@ impl VTubeClient {
             },
             vtube_id: IntegrationId::new(VTUBE_PLATFORM_ID),
             state: Arc::new(AtomicConnectionState::new(ConnectionState::Disconnected)),
-            auth_state: Arc::new(RwLock::new(AuthState::Cold)),
             shutdown: Arc::new(tokio::sync::Mutex::new(Arc::new(Notify::new()))),
             lifecycle: tokio::sync::Mutex::new(()),
             supervisor: Arc::new(std::sync::Mutex::new(None)),
@@ -1413,7 +1402,7 @@ pub(crate) mod tests {
         });
         let publisher = CapturingPublisher::shared();
 
-        let client = VTubeClient::connect(
+        let _client = VTubeClient::connect(
             VTubeConfig {
                 endpoint: format!("ws://{addr}"),
             },
@@ -1425,7 +1414,6 @@ pub(crate) mod tests {
             wait_for(|| publisher.disconnected_with_reason("awaiting_approval")).await,
             "a cold start must announce the pending approval popup"
         );
-        assert_eq!(client.auth_state(), AuthState::AwaitingApproval);
     }
 
     const ATTEMPTS_BEFORE_VERDICT: usize = 3;

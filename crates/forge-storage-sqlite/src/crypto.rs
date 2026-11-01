@@ -50,7 +50,8 @@ fn load_or_create_file_key(path: &std::path::Path) -> Result<([u8; 32], bool), S
     discard_staged(&staged);
     match published {
         Ok(()) => {
-            sync_directory(parent.unwrap_or_else(|| std::path::Path::new(".")))?;
+            forge_durable::sync_dir(parent.unwrap_or_else(|| std::path::Path::new(".")))
+                .map_err(key_file_error)?;
             Ok((key, true))
         }
         Err(error) if error.kind() == std::io::ErrorKind::AlreadyExists => {
@@ -78,28 +79,9 @@ fn write_staged_key(path: &std::path::Path, contents: &[u8]) -> Result<(), Sqlit
     use std::io::Write;
 
     discard_staged(path);
-    let mut options = std::fs::OpenOptions::new();
-    options.write(true).create_new(true);
-    #[cfg(unix)]
-    {
-        use std::os::unix::fs::OpenOptionsExt;
-        options.mode(0o600);
-    }
-    let mut file = options.open(path).map_err(key_file_error)?;
+    let mut file = forge_durable::create_private(path).map_err(key_file_error)?;
     file.write_all(contents).map_err(key_file_error)?;
     file.sync_all().map_err(key_file_error)
-}
-
-#[cfg(unix)]
-fn sync_directory(dir: &std::path::Path) -> Result<(), SqliteStorageError> {
-    std::fs::File::open(dir)
-        .and_then(|handle| handle.sync_all())
-        .map_err(key_file_error)
-}
-
-#[cfg(not(unix))]
-fn sync_directory(_dir: &std::path::Path) -> Result<(), SqliteStorageError> {
-    Ok(())
 }
 
 pub(crate) fn encrypt(

@@ -235,9 +235,7 @@ impl Drop for ObsClient {
         if let Ok(shutdown) = self.shutdown.try_lock() {
             shutdown.notify_one();
         }
-        if let Ok(mut supervisor) = self.supervisor.lock()
-            && let Some(handle) = supervisor.take()
-        {
+        if let Some(handle) = self.supervisor.lock_recover().take() {
             handle.abort();
         }
     }

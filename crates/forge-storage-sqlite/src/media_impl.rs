@@ -72,6 +72,7 @@ fn write_blob(root: &Path, format: MediaFormat, bytes: &[u8]) -> std::io::Result
             return Err(error);
         }
     }
+    forge_durable::sync_dir(root)?;
 
     Ok(id)
 }

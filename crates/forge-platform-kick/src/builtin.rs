@@ -300,9 +300,8 @@ impl KickIntegrationBundle {
         let Ok(Some(stored)) = self.credentials_manager.load().await else {
             return;
         };
-        if let Ok(mut guard) = self.token_expires_at.write()
-            && guard.is_none()
-        {
+        let mut guard = self.token_expires_at.write_recover();
+        if guard.is_none() {
             *guard = Some(SystemTime::from(stored.expires_at));
         }
     }

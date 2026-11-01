@@ -56,11 +56,12 @@ pub(crate) fn apply_tracking(
     tx: &broadcast::Sender<HealthDelta>,
 ) {
     let mut changed = false;
-    if let Ok(mut s) = snap.write()
-        && s.tracking_active != face_found
     {
-        s.tracking_active = face_found;
-        changed = true;
+        let mut s = snap.write_recover();
+        if s.tracking_active != face_found {
+            s.tracking_active = face_found;
+            changed = true;
+        }
     }
     if changed {
         #[expect(
@@ -87,12 +88,13 @@ pub(crate) fn apply_model(
         String::new()
     };
     let mut changed = false;
-    if let Ok(mut s) = snap.write()
-        && (s.model_loaded != loaded || s.model_name != new_name)
     {
-        s.model_loaded = loaded;
-        s.model_name = new_name.clone();
-        changed = true;
+        let mut s = snap.write_recover();
+        if s.model_loaded != loaded || s.model_name != new_name {
+            s.model_loaded = loaded;
+            s.model_name = new_name.clone();
+            changed = true;
+        }
     }
     if changed {
         #[expect(

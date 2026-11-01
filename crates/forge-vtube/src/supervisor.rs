@@ -14,7 +14,6 @@ use forge_platform_core::{
 };
 use forge_storage::CredentialsRepo;
 
-use crate::auth::AuthState;
 use crate::client::VTUBE_PLATFORM_ID;
 use crate::error::VTubeError;
 use crate::health::{
@@ -242,7 +241,6 @@ async fn run_auth(
     ws: &mut VtsWs,
     creds: &dyn CredentialsRepo,
     endpoint: &str,
-    auth_state: &RwLock<AuthState>,
     publisher: &dyn EventPublisher,
     timing: VTubeTiming,
 ) -> Result<(), VTubeError> {
@@ -252,10 +250,6 @@ async fn run_auth(
         tracing::debug!(endpoint, "using stored VTube Studio credential");
         c.token.expose().to_owned()
     } else {
-        {
-            let mut g = auth_state.write_recover();
-            *g = AuthState::AwaitingApproval;
-        }
         emit_connection_changed(
             publisher,
             endpoint,
@@ -290,7 +284,6 @@ pub(crate) fn set_connection_state(
 pub(crate) struct SupervisorContext {
     pub(crate) endpoint: String,
     pub(crate) state: Arc<AtomicConnectionState>,
-    pub(crate) auth_state: Arc<RwLock<AuthState>>,
     pub(crate) shutdown: Arc<Notify>,
     pub(crate) connected_at: Arc<RwLock<Option<Instant>>>,
     pub(crate) publisher: Arc<dyn EventPublisher>,
@@ -374,7 +367,6 @@ impl ReconnectingSession for SupervisorContext {
         let Self {
             ref endpoint,
             ref state,
-            ref auth_state,
             ref shutdown,
             ref connected_at,
             ref publisher,
@@ -434,19 +426,15 @@ impl ReconnectingSession for SupervisorContext {
         };
 
         let auth_outcome = tokio::select! {
-            outcome = run_auth(&mut ws, &**creds, endpoint, auth_state, &**publisher, timing) => outcome,
+            outcome = run_auth(&mut ws, &**creds, endpoint, &**publisher, timing) => outcome,
             () = shutdown.notified() => {
-                announce_stopped(state, &**publisher, auth_state, endpoint);
+                announce_stopped(state, &**publisher, endpoint);
                 return SessionEnd::Stopped;
             }
         };
         match auth_outcome {
             Ok(()) => {}
             Err(VTubeError::TokenRejected) => {
-                {
-                    let mut g = auth_state.write_recover();
-                    *g = AuthState::AuthRequired;
-                }
                 record_reason(state, last_failure, VTubeDisconnectReason::AuthRequired);
                 set_connection_state(
                     state,
@@ -464,10 +452,6 @@ impl ReconnectingSession for SupervisorContext {
                 return SessionEnd::Stopped;
             }
             Err(VTubeError::TokenDenied) => {
-                {
-                    let mut g = auth_state.write_recover();
-                    *g = AuthState::AuthRequired;
-                }
                 record_reason(state, last_failure, VTubeDisconnectReason::AuthDenied);
                 set_connection_state(
                     state,
@@ -485,10 +469,6 @@ impl ReconnectingSession for SupervisorContext {
                 return SessionEnd::Stopped;
             }
             Err(VTubeError::TokenTimeout) => {
-                {
-                    let mut g = auth_state.write_recover();
-                    *g = AuthState::AuthRequired;
-                }
                 record_reason(state, last_failure, VTubeDisconnectReason::AuthTimeout);
                 set_connection_state(
                     state,
@@ -530,7 +510,7 @@ impl ReconnectingSession for SupervisorContext {
                 outcome.unwrap_or(Err(VTubeError::Timeout))
             }
             () = shutdown.notified() => {
-                announce_stopped(state, &**publisher, auth_state, endpoint);
+                announce_stopped(state, &**publisher, endpoint);
                 return SessionEnd::Stopped;
             }
         };
@@ -555,10 +535,6 @@ impl ReconnectingSession for SupervisorContext {
         {
             let mut g = connected_at.write_recover();
             *g = Some(Instant::now());
-        }
-        {
-            let mut g = auth_state.write_recover();
-            *g = AuthState::Connected;
         }
         record_connection_failure(state, last_failure, None);
         set_connection_state(
@@ -588,7 +564,7 @@ impl ReconnectingSession for SupervisorContext {
         let mut seeds = tokio::select! {
             sent = send_seed_queries(&mut ws, timing.request_timeout) => sent,
             () = shutdown.notified() => {
-                announce_stopped(state, &**publisher, auth_state, endpoint);
+                announce_stopped(state, &**publisher, endpoint);
                 return SessionEnd::Stopped;
             }
         };
@@ -600,7 +576,7 @@ impl ReconnectingSession for SupervisorContext {
                 () = shutdown.notified() => {
                     clear_session_state(health_state, health_tx);
                     catalog_signal.bump();
-                    announce_stopped(state, &**publisher, auth_state, endpoint);
+                    announce_stopped(state, &**publisher, endpoint);
                     return SessionEnd::Stopped;
                 }
                 Some(req) = req_rx.recv() => {
@@ -745,10 +721,6 @@ impl ReconnectingSession for SupervisorContext {
             let mut g = connected_at.write_recover();
             *g = None;
         }
-        {
-            let mut g = auth_state.write_recover();
-            *g = AuthState::Cold;
-        }
         record_reason(state, last_failure, close_reason);
         let retry = auto_reconnect.is_enabled();
         settle_unless_retrying(retry, state, &**publisher);
@@ -789,22 +761,13 @@ async fn send_seed_queries(ws: &mut VtsWs, limit: Duration) -> HashMap<String, S
     seeds
 }
 
-fn announce_stopped(
-    state: &AtomicConnectionState,
-    publisher: &dyn EventPublisher,
-    auth_state: &RwLock<AuthState>,
-    endpoint: &str,
-) {
+fn announce_stopped(state: &AtomicConnectionState, publisher: &dyn EventPublisher, endpoint: &str) {
     set_connection_state(
         state,
         publisher,
         ConnectionState::Disconnected,
         ConnectionTransition::Expected,
     );
-    {
-        let mut g = auth_state.write_recover();
-        *g = AuthState::Cold;
-    }
     emit_connection_changed(publisher, endpoint, false, None, None);
 }
 

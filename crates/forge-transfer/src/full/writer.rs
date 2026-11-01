@@ -280,7 +280,7 @@ fn write_bundle(input: BundleInput<'_>) -> Result<BundleOutcome, TransferError> 
     let partial = partial_path(input.destination);
     write_outer(&partial, &public, &ciphertext)?;
     std::fs::remove_file(&ciphertext)?;
-    std::fs::rename(&partial, input.destination)?;
+    crate::bundle::payload::publish_sealed(&partial, input.destination)?;
     Ok(BundleOutcome {
         fingerprint,
         written: true,

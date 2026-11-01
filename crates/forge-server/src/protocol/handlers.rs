@@ -8,7 +8,7 @@ use time::format_description::well_known::Rfc3339;
 use super::context::DispatchContext;
 use super::envelope::WsResponse;
 use super::helpers::{
-    MAX_CODE_EVENT_NAME_LEN, build_arg_stack, parse_id, valid_code_event_name,
+    MAX_CODE_EVENT_NAME_LEN, build_arg_stack, parse_id, runtime_failure, valid_code_event_name,
     variant_to_wire_value,
 };
 use super::introspect::{build_connected_accounts, build_connected_clients};
@@ -57,10 +57,7 @@ pub(crate) async fn handle_get_globals(ctx: &DispatchContext) -> WsResponse {
     let globals = match globals_repo.list().await {
         Ok(list) => list,
         Err(e) => {
-            return WsResponse::Error {
-                code: Some("RUNTIME_ERROR".to_owned()),
-                message: e.to_string(),
-            };
+            return runtime_failure(&e);
         }
     };
     let wire_globals: Vec<serde_json::Value> = globals
@@ -89,10 +86,7 @@ pub(crate) async fn handle_get_global(name: String, ctx: &DispatchContext) -> Ws
             code: Some("NOT_FOUND".to_owned()),
             message: format!("global '{name}' not found"),
         },
-        Err(e) => WsResponse::Error {
-            code: Some("RUNTIME_ERROR".to_owned()),
-            message: e.to_string(),
-        },
+        Err(e) => runtime_failure(&e),
     }
 }
 
@@ -136,10 +130,7 @@ pub(crate) async fn handle_set_global(
                 .publish(changed.into_event(EventSource::Server, None));
             WsResponse::Ok(serde_json::json!({ "ok": true }))
         }
-        Err(e) => WsResponse::Error {
-            code: Some("RUNTIME_ERROR".to_owned()),
-            message: e.to_string(),
-        },
+        Err(e) => runtime_failure(&e),
     }
 }
 
@@ -170,10 +161,7 @@ pub(crate) async fn handle_get_user_globals(
                 .collect();
             WsResponse::Ok(serde_json::json!({ "globals": wire }))
         }
-        Err(e) => WsResponse::Error {
-            code: Some("RUNTIME_ERROR".to_owned()),
-            message: e.to_string(),
-        },
+        Err(e) => runtime_failure(&e),
     }
 }
 
@@ -198,10 +186,7 @@ pub(crate) async fn handle_get_actions(ctx: &DispatchContext) -> WsResponse {
     let actions = match ctx.actions.list().await {
         Ok(list) => list,
         Err(e) => {
-            return WsResponse::Error {
-                code: Some("RUNTIME_ERROR".to_owned()),
-                message: e.to_string(),
-            };
+            return runtime_failure(&e);
         }
     };
     let wire_actions: Vec<serde_json::Value> = actions
@@ -242,10 +227,7 @@ pub(crate) async fn handle_do_action(
         }
         Ok(Some(_)) => {}
         Err(e) => {
-            return WsResponse::Error {
-                code: Some("RUNTIME_ERROR".to_owned()),
-                message: e.to_string(),
-            };
+            return runtime_failure(&e);
         }
     }
 
@@ -268,10 +250,7 @@ pub(crate) async fn handle_do_action(
             "ok": true,
             "execution_id": trigger_event_id.to_string(),
         })),
-        Err(e) => WsResponse::Error {
-            code: Some("RUNTIME_ERROR".to_owned()),
-            message: e.to_string(),
-        },
+        Err(e) => runtime_failure(&e),
     }
 }
 
@@ -434,10 +413,7 @@ pub(crate) async fn handle_replay_event(event_id: String, ctx: &DispatchContext)
             code: Some("NOT_FOUND".to_owned()),
             message: "event not found".to_owned(),
         },
-        Err(error) => WsResponse::Error {
-            code: Some("RUNTIME_ERROR".to_owned()),
-            message: error.to_string(),
-        },
+        Err(error) => runtime_failure(&error),
     }
 }
 

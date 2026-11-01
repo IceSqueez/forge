@@ -254,7 +254,7 @@ impl ScriptRepo for SqliteScriptRepo {
     async fn telemetry(&self, id: ScriptId) -> Result<ScriptTelemetry, StorageError> {
         let id_str = id.to_string();
         let now = OffsetDateTime::now_utc();
-        let start_of_today = now.replace_time(time::Time::MIDNIGHT).unix_timestamp();
+        let start_of_today = crate::epoch::start_of_local_day_secs(now);
 
         #[derive(sqlx::FromRow)]
         struct TelemetryRow {
@@ -272,7 +272,7 @@ impl ScriptRepo for SqliteScriptRepo {
                       WHERE script_id = ? AND started_at >= ?), \
                ad AS (SELECT AVG(duration_ms) AS v \
                       FROM (SELECT duration_ms FROM script_executions \
-                            WHERE script_id = ? ORDER BY started_at DESC LIMIT 100)) \
+                            WHERE script_id = ? ORDER BY started_at DESC LIMIT ?)) \
              SELECT lr.v AS last_run, rt.v AS runs_today, ad.v AS avg_duration_ms \
              FROM lr, rt, ad",
         )
@@ -280,6 +280,7 @@ impl ScriptRepo for SqliteScriptRepo {
         .bind(&id_str)
         .bind(start_of_today)
         .bind(&id_str)
+        .bind(crate::epoch::TELEMETRY_AVERAGE_WINDOW)
         .fetch_one(self.db.reader())
         .await
         .map_err(SqliteStorageError::Sqlx)?;

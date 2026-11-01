@@ -325,7 +325,7 @@ impl ActionRepo for SqliteActionRepo {
     async fn telemetry(&self, id: ActionId) -> Result<ActionTelemetry, StorageError> {
         let id_str = id.to_string();
         let now = OffsetDateTime::now_utc();
-        let start_of_today = now.replace_time(time::Time::MIDNIGHT).unix_timestamp();
+        let start_of_today = crate::epoch::start_of_local_day_secs(now);
         let start_of_7d = (now - time::Duration::days(7)).unix_timestamp();
 
         #[derive(sqlx::FromRow)]
@@ -345,7 +345,7 @@ impl ActionRepo for SqliteActionRepo {
                       WHERE action_id = ? AND started_at >= ?), \
                ad AS (SELECT AVG(duration_ms) AS v \
                       FROM (SELECT duration_ms FROM action_executions \
-                            WHERE action_id = ? ORDER BY started_at DESC LIMIT 100)), \
+                            WHERE action_id = ? ORDER BY started_at DESC LIMIT ?)), \
                e7 AS (SELECT COUNT(*) AS v \
                       FROM action_executions \
                       WHERE action_id = ? AND status = 'err' AND started_at >= ?) \
@@ -356,6 +356,7 @@ impl ActionRepo for SqliteActionRepo {
         .bind(&id_str)
         .bind(start_of_today)
         .bind(&id_str)
+        .bind(crate::epoch::TELEMETRY_AVERAGE_WINDOW)
         .bind(&id_str)
         .bind(start_of_7d)
         .fetch_one(self.db.reader())

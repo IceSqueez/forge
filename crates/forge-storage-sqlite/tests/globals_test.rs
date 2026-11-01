@@ -560,3 +560,112 @@ async fn backend_export_all_delegates_correctly() {
     assert_eq!(y.value, Variant::Bool(true));
     assert!(!y.persisted);
 }
+
+const REFUSE_VALUE_WRITES: &str =
+    "CREATE TRIGGER refuse_value_write BEFORE UPDATE OF value ON globals
+     BEGIN SELECT RAISE(ABORT, 'value write refused'); END";
+
+#[tokio::test]
+async fn rename_and_set_moves_the_name_and_stores_the_new_value_and_flag() {
+    let pools = common::migrated_pools().await;
+    let repo = SqliteGlobalsRepo::new((*pools).clone());
+    repo.set("old", Variant::Int(1), true).await.expect("set");
+
+    repo.rename_and_set("old", "new", Variant::Int(2), false)
+        .await
+        .expect("rename and set");
+
+    assert_eq!(repo.get("old").await.expect("get old"), None);
+    assert_eq!(
+        (
+            repo.get("new").await.expect("get new"),
+            repo.persisted("new").await.expect("persisted")
+        ),
+        (Some(Variant::Int(2)), Some(false))
+    );
+}
+
+#[tokio::test]
+async fn rename_and_set_to_the_same_name_only_sets() {
+    let pools = common::migrated_pools().await;
+    let repo = SqliteGlobalsRepo::new((*pools).clone());
+    repo.set("same", Variant::Int(1), true).await.expect("set");
+
+    repo.rename_and_set("same", "same", Variant::Int(2), true)
+        .await
+        .expect("rename and set");
+
+    assert_eq!(repo.get("same").await.expect("get"), Some(Variant::Int(2)));
+}
+
+#[tokio::test]
+async fn a_refused_value_write_leaves_the_old_name_and_value_in_place() {
+    let pools = common::migrated_pools().await;
+    let repo = SqliteGlobalsRepo::new((*pools).clone());
+    repo.set("old", Variant::Int(1), true).await.expect("set");
+    sqlx::query(REFUSE_VALUE_WRITES)
+        .execute(pools.writer())
+        .await
+        .expect("refusal trigger");
+
+    let outcome = repo
+        .rename_and_set("old", "new", Variant::Int(2), false)
+        .await;
+
+    assert!(outcome.is_err(), "the value write must be refused");
+    assert_eq!(
+        (
+            repo.get("old").await.expect("get old"),
+            repo.persisted("old").await.expect("persisted"),
+            repo.get("new").await.expect("get new")
+        ),
+        (Some(Variant::Int(1)), Some(true), None)
+    );
+}
+
+#[tokio::test]
+async fn rename_and_set_refuses_a_taken_name_and_a_missing_source_without_writing() {
+    let pools = common::migrated_pools().await;
+    let repo = SqliteGlobalsRepo::new((*pools).clone());
+    repo.set("old", Variant::Int(1), true).await.expect("set");
+    repo.set("taken", Variant::Int(7), true).await.expect("set");
+
+    let collision = repo
+        .rename_and_set("old", "taken", Variant::Int(2), true)
+        .await;
+    let missing = repo
+        .rename_and_set("gone", "fresh", Variant::Int(2), true)
+        .await;
+
+    assert!(matches!(collision, Err(StorageError::NameCollision { .. })));
+    assert!(matches!(missing, Err(StorageError::NotFound { .. })));
+    assert_eq!(
+        (
+            repo.get("old").await.expect("get old"),
+            repo.get("taken").await.expect("get taken"),
+            repo.get("fresh").await.expect("get fresh")
+        ),
+        (Some(Variant::Int(1)), Some(Variant::Int(7)), None)
+    );
+}
+
+#[tokio::test]
+async fn unflushed_reads_follow_a_renamed_and_set_global() {
+    let pools = common::migrated_pools().await;
+    let repo = SqliteGlobalsRepo::new((*pools).clone());
+    repo.set("old", Variant::Int(1), true).await.expect("set");
+    repo.get("old").await.expect("get");
+
+    repo.rename_and_set("old", "new", Variant::Int(2), true)
+        .await
+        .expect("rename and set");
+
+    let reads: Vec<(String, u64)> = repo
+        .list()
+        .await
+        .expect("list")
+        .into_iter()
+        .map(|entry| (entry.name, entry.reads))
+        .collect();
+    assert_eq!(reads, vec![("new".to_owned(), 1)]);
+}

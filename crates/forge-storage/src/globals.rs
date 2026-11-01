@@ -34,6 +34,14 @@ pub trait GlobalsRepo: Send + Sync {
 
     async fn rename(&self, old_name: &str, new_name: &str) -> Result<(), StorageError>;
 
+    async fn rename_and_set(
+        &self,
+        old_name: &str,
+        new_name: &str,
+        value: Variant,
+        persisted: bool,
+    ) -> Result<(), StorageError>;
+
     async fn list(&self) -> Result<Vec<GlobalEntry>, StorageError>;
 
     async fn count(&self) -> Result<usize, StorageError>;

@@ -6,8 +6,8 @@ use std::time::Duration;
 use forge_events::{Delivery, EventPublisher, EventSubscription};
 use forge_platform_core::{
     BanListSource, BuiltinCollections, BuiltinContent, BuiltinControl, BuiltinHealth,
-    BuiltinOptionSource, BuiltinStatus, ChatPlatform, FollowLookup, PlatformEndpoints,
-    QuickActions,
+    BuiltinOptionSource, BuiltinStatus, ChatPlatform, ControlOutcome, FollowLookup,
+    PlatformEndpoints, QuickActions,
 };
 use forge_registry::{SubActionRegistry, TriggerRegistry};
 use forge_runtime::{DonationIngest, EventBus};
@@ -128,10 +128,32 @@ pub struct Integrations {
     pub sign_out_routes: SignOutRoutes,
 }
 
+#[async_trait::async_trait]
+pub trait ObsConnection: Send + Sync {
+    fn connect_failure(&self) -> Option<MessageRef>;
+    async fn disconnect(&self) -> ControlOutcome;
+}
+
+#[async_trait::async_trait]
+impl ObsConnection for forge_obs::ObsClient {
+    fn connect_failure(&self) -> Option<MessageRef> {
+        BuiltinStatus::connect_failure(self)
+    }
+
+    async fn disconnect(&self) -> ControlOutcome {
+        BuiltinControl::disconnect(self).await
+    }
+}
+
+struct LiveObs {
+    client: Option<Arc<forge_obs::ObsClient>>,
+    connection: Arc<dyn ObsConnection>,
+}
+
 #[derive(Clone)]
 pub struct ObsInstallSeed {
     sink: Arc<forge_obs::SwitchableObsSink>,
-    live: Arc<std::sync::RwLock<Option<Arc<forge_obs::ObsClient>>>>,
+    live: Arc<std::sync::RwLock<Option<LiveObs>>>,
     builtins: BuiltinRegistry,
 }
 
@@ -160,8 +182,20 @@ impl ObsInstallSeed {
         self.sink.install(Arc::clone(&client));
         self.builtins
             .install(obs_builtin_object(Arc::clone(&client)));
+        let connection: Arc<dyn ObsConnection> = client.clone();
         let mut guard = self.live.write_recover();
-        *guard = Some(client);
+        *guard = Some(LiveObs {
+            client: Some(client),
+            connection,
+        });
+    }
+
+    pub fn install_connection(&self, connection: Arc<dyn ObsConnection>) {
+        let mut guard = self.live.write_recover();
+        *guard = Some(LiveObs {
+            client: None,
+            connection,
+        });
     }
 
     pub fn clear(&self) {
@@ -176,8 +210,8 @@ impl ObsInstallSeed {
             let mut guard = self.live.write_recover();
             guard.take()
         };
-        if let Some(client) = previous
-            && let Err(err) = client.disconnect().await
+        if let Some(live) = previous
+            && let Err(err) = live.connection.disconnect().await
         {
             tracing::warn!(error = %err, "disconnecting the live client failed");
         }
@@ -185,11 +219,15 @@ impl ObsInstallSeed {
 
     pub fn live(&self) -> Option<Arc<forge_obs::ObsClient>> {
         let guard = self.live.read_recover();
-        guard.clone()
+        guard.as_ref().and_then(|live| live.client.clone())
     }
 
     pub fn connect_failure(&self) -> Option<MessageRef> {
-        self.live()?.connect_failure()
+        let connection = {
+            let guard = self.live.read_recover();
+            Arc::clone(&guard.as_ref()?.connection)
+        };
+        connection.connect_failure()
     }
 }
 
@@ -563,6 +601,7 @@ mod tests {
     use crate::integration_factories::TWITCH_EVENT_RELAY;
     use crate::test_support::{every_registry_entry, yield_until};
     use forge_events::{Event, EventChannel, EventSource};
+    use forge_types::MessageCode;
 
     use forge_platform_core::ConnectionState;
     use forge_runtime::NullEventLogRepo;
@@ -654,6 +693,49 @@ mod tests {
         assert_eq!(
             (before, installed, cleared, serves_options(&registry)),
             (false, true, false, false)
+        );
+    }
+
+    #[derive(Default)]
+    struct RecordedConnection {
+        disconnects: std::sync::atomic::AtomicUsize,
+    }
+
+    #[async_trait::async_trait]
+    impl ObsConnection for RecordedConnection {
+        fn connect_failure(&self) -> Option<MessageRef> {
+            Some(MessageRef::new(MessageCode::from_static("obs", "refused")))
+        }
+
+        async fn disconnect(&self) -> ControlOutcome {
+            self.disconnects
+                .fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+            Ok(())
+        }
+    }
+
+    #[tokio::test]
+    async fn retiring_an_installed_connection_disconnects_it_once_and_forgets_its_failure() {
+        let seed = ObsInstallSeed::new(
+            forge_obs::SwitchableObsSink::new(),
+            BuiltinRegistry::default(),
+        );
+        let connection = Arc::new(RecordedConnection::default());
+        seed.install_connection(connection.clone());
+        let before = seed.connect_failure().is_some();
+
+        seed.disconnect_live().await;
+        seed.disconnect_live().await;
+
+        assert_eq!(
+            (
+                before,
+                seed.connect_failure().is_some(),
+                connection
+                    .disconnects
+                    .load(std::sync::atomic::Ordering::SeqCst)
+            ),
+            (true, false, 1)
         );
     }
 

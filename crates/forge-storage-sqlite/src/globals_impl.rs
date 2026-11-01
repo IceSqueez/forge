@@ -115,6 +115,37 @@ where
     Ok(())
 }
 
+async fn rename_row(
+    tx: &mut sqlx::SqliteConnection,
+    old_name: &str,
+    new_name: &str,
+) -> Result<(), StorageError> {
+    let collision: Option<(i64,)> = sqlx::query_as("SELECT 1 FROM globals WHERE name = ?")
+        .bind(new_name)
+        .fetch_optional(&mut *tx)
+        .await
+        .map_err(SqliteStorageError::Sqlx)?;
+    if collision.is_some() {
+        return Err(StorageError::NameCollision {
+            name: new_name.to_string(),
+        });
+    }
+
+    let result = sqlx::query("UPDATE globals SET name = ? WHERE name = ?")
+        .bind(new_name)
+        .bind(old_name)
+        .execute(&mut *tx)
+        .await
+        .map_err(SqliteStorageError::Sqlx)?;
+
+    if result.rows_affected() == 0 {
+        return Err(StorageError::NotFound {
+            key: old_name.to_string(),
+        });
+    }
+    Ok(())
+}
+
 async fn replace_value<'e, E>(executor: E, name: &str, value: &Variant) -> Result<(), StorageError>
 where
     E: sqlx::SqliteExecutor<'e>,
@@ -209,32 +240,36 @@ impl GlobalsRepo for SqliteGlobalsRepo {
             .await
             .map_err(SqliteStorageError::Sqlx)?;
 
-        let collision: Option<(i64,)> = sqlx::query_as("SELECT 1 FROM globals WHERE name = ?")
-            .bind(new_name)
-            .fetch_optional(&mut *tx)
-            .await
-            .map_err(SqliteStorageError::Sqlx)?;
-        if collision.is_some() {
-            return Err(StorageError::NameCollision {
-                name: new_name.to_string(),
-            });
-        }
-
-        let result = sqlx::query("UPDATE globals SET name = ? WHERE name = ?")
-            .bind(new_name)
-            .bind(old_name)
-            .execute(&mut *tx)
-            .await
-            .map_err(SqliteStorageError::Sqlx)?;
-
-        if result.rows_affected() == 0 {
-            return Err(StorageError::NotFound {
-                key: old_name.to_string(),
-            });
-        }
+        rename_row(&mut tx, old_name, new_name).await?;
 
         tx.commit().await.map_err(SqliteStorageError::Sqlx)?;
         self.read_tally.rename(old_name, new_name);
+        Ok(())
+    }
+
+    async fn rename_and_set(
+        &self,
+        old_name: &str,
+        new_name: &str,
+        value: Variant,
+        persisted: bool,
+    ) -> Result<(), StorageError> {
+        let mut tx = self
+            .db
+            .writer()
+            .begin_with("BEGIN IMMEDIATE")
+            .await
+            .map_err(SqliteStorageError::Sqlx)?;
+
+        if old_name != new_name {
+            rename_row(&mut tx, old_name, new_name).await?;
+        }
+        upsert(&mut *tx, new_name, &value, persisted).await?;
+
+        tx.commit().await.map_err(SqliteStorageError::Sqlx)?;
+        if old_name != new_name {
+            self.read_tally.rename(old_name, new_name);
+        }
         Ok(())
     }
 

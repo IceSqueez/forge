@@ -976,10 +976,12 @@ mod tests {
         idle_supervisor, install_presentation, link, nav_log, owned_sub_actions, owned_triggers,
         pump, pump_until, runtime, sandboxed_over, sandboxed_provider, seed_action, seed_trigger,
         settle_until, settle_until_tasks_drain_to, step, test_backend,
-        test_backend_with_actions_and_triggers, trigger_of, yield_until,
+        test_backend_with_actions_and_triggers, trigger_of,
     };
     use forge_components::Toasts;
+    use forge_host::integrations::ObsConnection;
     use forge_runtime::LifecycleStates;
+    use forge_types::MessageCode;
 
     const OBS_SCENE: &str = "obs.scene.set";
     const TWITCH_CHAT: &str = "twitch.chat";
@@ -1492,25 +1494,25 @@ mod tests {
         assert_eq!(retried, HashSet::from([twitch(), kick()]));
     }
 
-    fn refused_obs_seed(rt: &tokio::runtime::Runtime) -> ObsInstallSeed {
+    struct RefusedObs;
+
+    #[async_trait::async_trait]
+    impl ObsConnection for RefusedObs {
+        fn connect_failure(&self) -> Option<MessageRef> {
+            Some(MessageRef::new(MessageCode::from_static(
+                "obs",
+                "connect_refused",
+            )))
+        }
+
+        async fn disconnect(&self) -> ControlOutcome {
+            Ok(())
+        }
+    }
+
+    fn refused_obs_seed() -> ObsInstallSeed {
         let seed = ObsInstallSeed::new(forge_obs::SwitchableObsSink::new(), Default::default());
-        rt.block_on(async {
-            let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
-            let port = listener.local_addr().unwrap().port();
-            drop(listener);
-            let client = Arc::new(
-                forge_obs::ObsClient::connect(
-                    &format!("127.0.0.1:{port}"),
-                    None,
-                    Arc::new(forge_events::test_support::NullPublisher),
-                )
-                .await
-                .unwrap(),
-            );
-            client.set_auto_reconnect(false);
-            seed.install(client);
-            yield_until(|| seed.connect_failure().is_some()).await;
-        });
+        seed.install_connection(Arc::new(RefusedObs));
         seed
     }
 
@@ -1528,7 +1530,7 @@ mod tests {
             sub_actions: Arc::new(owned_sub_actions(&[])),
             triggers: Arc::new(owned_triggers(&[])),
             rt_handle: rt.handle().clone(),
-            obs_install_seed: refused_obs_seed(&rt),
+            obs_install_seed: refused_obs_seed(),
             vtube_install_seed: VTubeInstallSeed::new(
                 forge_vtube::SwitchableVTubeSink::new(),
                 Default::default(),

@@ -1,7 +1,6 @@
 use forge_components::STICKY_TOAST;
 use std::path::PathBuf;
 use std::sync::Arc;
-use std::time::Duration;
 
 use forge_components::{
     ActivePresentation, OverlayPosition, PushToast, ToastAction, ToastKind, overlay, tr,
@@ -21,8 +20,8 @@ use crate::repo_failure::RepoFailure;
 use crate::restore_close::RestoreClose;
 use crate::restore_problem::RestoreProblem;
 use crate::setup_confirm::{SetupConfirmCard, SetupCount, setup_counts};
+use crate::setup_export::SETUP_TOAST_DURATION;
 
-const SETUP_TOAST_DURATION: Duration = Duration::from_secs(10);
 const DISCARD_CONTEXT: &str = "staged setup discard";
 
 pub(crate) enum SetupApplied {

@@ -18,6 +18,7 @@ use forge_registry::TriggerRegistry;
 use forge_server::{ServerSettings, settings as server_settings};
 use forge_storage::{CredentialId, CredentialsRepo, DataProvider, SERVER_BEARER_CREDENTIAL_ID};
 use forge_storage_sqlite::SqliteBackend;
+use forge_storage_sqlite::test_support::open_existing;
 use forge_types::{SubActionStep, Variant};
 use tempfile::TempDir;
 use tokio::io::AsyncWriteExt;
@@ -40,34 +41,12 @@ async fn stored_bearer_token(backend: &SqliteBackend) -> Option<String> {
         .unwrap()
 }
 
-async fn reopen(dir: &Path) -> SqliteBackend {
-    let hex = std::fs::read_to_string(dir.join(forge_paths::CREDENTIALS_KEY_FILE_NAME)).unwrap();
-    let hex = hex.trim();
-    assert_eq!(
-        hex.len(),
-        64,
-        "credential key file holds {} chars",
-        hex.len()
-    );
-    let mut key = [0u8; 32];
-    for (byte, pair) in key.iter_mut().zip(hex.as_bytes().chunks(2)) {
-        *byte = u8::from_str_radix(std::str::from_utf8(pair).unwrap(), 16).unwrap();
-    }
-    let url = format!(
-        "sqlite://{}?mode=rw",
-        dir.join(forge_storage::DATABASE_FILE_NAME).display()
-    );
-    SqliteBackend::open_for_test(&url, key, dir.join(forge_paths::MEDIA_DIR_NAME), None)
-        .await
-        .unwrap()
-}
-
 async fn seed_and_reopen(
     fixture: &Fixture,
     integration: &forge_types::IntegrationId,
 ) -> (TempDir, Arc<SqliteBackend>, bool) {
     let (dir, _) = seed_fresh(fixture).await;
-    let backend = Arc::new(reopen(dir.path()).await);
+    let backend = Arc::new(open_existing(dir.path()).await);
     let configured = forge_storage::has_credentials_for(backend.as_ref(), integration)
         .await
         .unwrap();
@@ -103,7 +82,7 @@ fn entries(dir: &Path) -> Vec<PathBuf> {
 #[tokio::test]
 async fn seeded_server_is_explicitly_enabled_on_the_reported_loopback_port() {
     let (dir, report) = seed_fresh(&Fixture::default()).await;
-    let backend = reopen(dir.path()).await;
+    let backend = open_existing(dir.path()).await;
     let loaded = ServerSettings::load(&backend).await.unwrap();
     let stored = backend.stored_setting_rows().await.unwrap();
     backend.shutdown().await;
@@ -126,7 +105,7 @@ async fn seeded_server_is_explicitly_enabled_on_the_reported_loopback_port() {
 #[tokio::test]
 async fn seeded_bearer_token_is_the_one_stored_under_the_server_bearer_credential() {
     let (dir, report) = seed_fresh(&Fixture::default()).await;
-    let backend = reopen(dir.path()).await;
+    let backend = open_existing(dir.path()).await;
     let stored = stored_bearer_token(&backend).await;
     backend.shutdown().await;
 
@@ -146,7 +125,7 @@ async fn seeded_twitch_credential_loads_with_the_fixture_identity_and_no_refresh
         ..Fixture::default()
     };
     let (dir, report) = seed_fresh(&fixture).await;
-    let backend = reopen(dir.path()).await;
+    let backend = open_existing(dir.path()).await;
     let stored = forge_platform_twitch::credentials::load(&backend)
         .await
         .unwrap()
@@ -167,7 +146,7 @@ async fn seeded_twitch_credential_loads_with_the_fixture_identity_and_no_refresh
 #[tokio::test]
 async fn seeded_twitch_access_token_is_served_without_entering_the_refresh_path() {
     let (dir, report) = seed_fresh(&Fixture::chat_command_mvp()).await;
-    let backend = Arc::new(reopen(dir.path()).await);
+    let backend = Arc::new(open_existing(dir.path()).await);
     let client_id = report.twitch.expect("mvp fixture seeds twitch").client_id;
     let unroutable_oauth = forge_platform_core::PlatformEndpoints::resolve(
         &forge_emulator::endpoint_surfaces(),
@@ -200,7 +179,7 @@ async fn seeded_twitch_access_token_is_served_without_entering_the_refresh_path(
 #[tokio::test]
 async fn server_only_fixture_stores_no_twitch_credential() {
     let (dir, report) = seed_fresh(&Fixture::default()).await;
-    let backend = reopen(dir.path()).await;
+    let backend = open_existing(dir.path()).await;
     let stored = forge_platform_twitch::credentials::load(&backend)
         .await
         .unwrap();
@@ -223,7 +202,7 @@ async fn seeded_chat_command_action_is_enabled_on_the_default_queue_with_its_ste
         ..Fixture::default()
     };
     let (dir, report) = seed_fresh(&fixture).await;
-    let backend = reopen(dir.path()).await;
+    let backend = open_existing(dir.path()).await;
     let action = backend
         .action_repo()
         .get(report.chat_commands[0].action_id)
@@ -257,7 +236,7 @@ async fn an_action_naming_a_fixture_queue_is_stored_on_it_with_the_declared_conc
         ..Fixture::default()
     };
     let (dir, report) = seed_fresh(&fixture).await;
-    let backend = reopen(dir.path()).await;
+    let backend = open_existing(dir.path()).await;
     let action = backend
         .action_repo()
         .get(report.event_triggers[0].action_id)
@@ -280,7 +259,7 @@ async fn an_action_naming_a_fixture_queue_is_stored_on_it_with_the_declared_conc
 async fn seeded_chat_command_trigger_is_linked_to_its_action_and_matched_by_forge() {
     let (dir, report) = seed_fresh(&Fixture::chat_command_mvp()).await;
     let seeded = &report.chat_commands[0];
-    let backend = reopen(dir.path()).await;
+    let backend = open_existing(dir.path()).await;
     let linked = backend
         .trigger_instance_repo()
         .list_for_action(seeded.action_id)
@@ -316,7 +295,7 @@ async fn seeding_an_already_seeded_directory_is_refused_and_keeps_the_first_seed
         "got {second:?}"
     );
 
-    let backend = reopen(dir.path()).await;
+    let backend = open_existing(dir.path()).await;
     let stored = stored_bearer_token(&backend).await;
     backend.shutdown().await;
     assert_eq!(stored, Some(first.server.bearer_token));
@@ -472,7 +451,7 @@ async fn a_seeded_overlay_is_enabled_and_stored_with_the_fixture_config_under_it
 {
     let (dir, report) = seed_fresh(&alert_fixture()).await;
     let seeded = &report.overlays[0];
-    let backend = reopen(dir.path()).await;
+    let backend = open_existing(dir.path()).await;
     let stored = backend
         .overlay_repo()
         .get(&forge_storage::OverlayId::new(&seeded.id))
@@ -497,7 +476,7 @@ async fn a_seeded_overlay_is_enabled_and_stored_with_the_fixture_config_under_it
 async fn the_page_credential_the_report_names_is_the_one_the_overlay_row_answers_to() {
     let (dir, report) = seed_fresh(&alert_fixture()).await;
     let seeded = &report.overlays[0];
-    let backend = reopen(dir.path()).await;
+    let backend = open_existing(dir.path()).await;
     let found = backend
         .overlay_repo()
         .get_by_credential(&forge_types::OverlayCredential::new(&seeded.credential))
@@ -513,7 +492,7 @@ async fn the_page_credential_the_report_names_is_the_one_the_overlay_row_answers
 async fn an_overlay_send_step_reaches_storage_addressed_by_identity_rather_than_display_name() {
     let (dir, report) = seed_fresh(&alert_fixture()).await;
     let seeded = report.overlays[0].clone();
-    let backend = reopen(dir.path()).await;
+    let backend = open_existing(dir.path()).await;
     let action = backend
         .action_repo()
         .get(report.chat_commands[0].action_id)
@@ -577,7 +556,7 @@ async fn seeded_event_trigger_is_the_named_descriptor_carrying_its_config_and_bo
     };
     let (dir, report) = seed_fresh(&fixture).await;
     let seeded = &report.event_triggers[0];
-    let backend = reopen(dir.path()).await;
+    let backend = open_existing(dir.path()).await;
     let linked = backend
         .trigger_instance_repo()
         .list_for_action(seeded.action_id)
@@ -620,7 +599,7 @@ async fn an_event_triggers_overlay_send_step_reaches_storage_addressed_by_the_mi
     };
     let (dir, report) = seed_fresh(&fixture).await;
     let minted = report.overlays[0].id.clone();
-    let backend = reopen(dir.path()).await;
+    let backend = open_existing(dir.path()).await;
     let action = backend
         .action_repo()
         .get(report.event_triggers[0].action_id)
@@ -651,7 +630,7 @@ fn go_live_webhook(url: &str) -> Fixture {
 async fn a_seeded_discord_webhook_is_the_one_forge_discord_lists_and_loads() {
     let url = "https://discord.com/api/webhooks/1300000000000000001/fake-discord-token-0";
     let (dir, _) = seed_fresh(&go_live_webhook(url)).await;
-    let backend = Arc::new(reopen(dir.path()).await);
+    let backend = Arc::new(open_existing(dir.path()).await);
     let client = forge_discord::DiscordClient::new(
         forge_platform_core::PlatformEndpoints::default()
             .base_url(forge_discord::endpoint_surfaces::DISCORD_API),
@@ -693,7 +672,7 @@ fn obs_connection(port: u16) -> Fixture {
 #[tokio::test]
 async fn a_seeded_obs_connection_is_the_one_forge_obs_dials_at_boot() {
     let (dir, _) = seed_fresh(&obs_connection(4455)).await;
-    let backend = reopen(dir.path()).await;
+    let backend = open_existing(dir.path()).await;
 
     let configured =
         forge_storage::has_credentials_for(&backend, &forge_obs::OBS_INTEGRATION.id).await;
@@ -738,7 +717,7 @@ fn vtube_connection(port: u16) -> Fixture {
 #[tokio::test]
 async fn a_seeded_vtube_connection_is_the_one_forge_vtube_dials_at_boot() {
     let (dir, _) = seed_fresh(&vtube_connection(8123)).await;
-    let backend = reopen(dir.path()).await;
+    let backend = open_existing(dir.path()).await;
 
     let configured =
         forge_storage::has_credentials_for(&backend, &forge_vtube::VTUBE_INTEGRATION.id).await;

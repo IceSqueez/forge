@@ -137,6 +137,16 @@ mod tests {
             Err(forge_storage::StorageError::NotReady)
         }
 
+        async fn rename_and_set(
+            &self,
+            _old_name: &str,
+            _new_name: &str,
+            _value: Variant,
+            _persisted: bool,
+        ) -> Result<(), forge_storage::StorageError> {
+            Err(forge_storage::StorageError::NotReady)
+        }
+
         async fn count(&self) -> Result<usize, forge_storage::StorageError> {
             Ok(forge_storage::GlobalsRepo::list(self).await?.len())
         }
@@ -237,6 +247,16 @@ mod tests {
             &self,
             _old_name: &str,
             _new_name: &str,
+        ) -> Result<(), forge_storage::StorageError> {
+            Err(forge_storage::StorageError::NotReady)
+        }
+
+        async fn rename_and_set(
+            &self,
+            _old_name: &str,
+            _new_name: &str,
+            _value: Variant,
+            _persisted: bool,
         ) -> Result<(), forge_storage::StorageError> {
             Err(forge_storage::StorageError::NotReady)
         }

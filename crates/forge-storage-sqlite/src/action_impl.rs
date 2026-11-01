@@ -143,6 +143,62 @@ impl SqliteActionRepo {
     }
 }
 
+impl SqliteActionRepo {
+    pub(crate) async fn telemetry_at(
+        &self,
+        id: ActionId,
+        now: OffsetDateTime,
+        start_of_today: i64,
+    ) -> Result<ActionTelemetry, StorageError> {
+        let id_str = id.to_string();
+        let start_of_7d = (now - time::Duration::days(7)).unix_timestamp();
+
+        #[derive(sqlx::FromRow)]
+        struct TelemetryRow {
+            last_fired_at: Option<i64>,
+            runs_today: i64,
+            avg_duration_ms: Option<f64>,
+            errors_7d: i64,
+        }
+
+        let row: TelemetryRow = sqlx::query_as(
+            "WITH \
+               lf AS (SELECT MAX(started_at) AS v \
+                      FROM action_executions WHERE action_id = ?), \
+               rt AS (SELECT COUNT(*) AS v \
+                      FROM action_executions \
+                      WHERE action_id = ? AND started_at >= ?), \
+               ad AS (SELECT AVG(duration_ms) AS v \
+                      FROM (SELECT duration_ms FROM action_executions \
+                            WHERE action_id = ? ORDER BY started_at DESC LIMIT ?)), \
+               e7 AS (SELECT COUNT(*) AS v \
+                      FROM action_executions \
+                      WHERE action_id = ? AND status = 'err' AND started_at >= ?) \
+             SELECT lf.v AS last_fired_at, rt.v AS runs_today, \
+                    ad.v AS avg_duration_ms, e7.v AS errors_7d FROM lf, rt, ad, e7",
+        )
+        .bind(&id_str)
+        .bind(&id_str)
+        .bind(start_of_today)
+        .bind(&id_str)
+        .bind(crate::epoch::TELEMETRY_AVERAGE_WINDOW)
+        .bind(&id_str)
+        .bind(start_of_7d)
+        .fetch_one(self.db.reader())
+        .await
+        .map_err(SqliteStorageError::Sqlx)?;
+
+        Ok(ActionTelemetry {
+            last_fired_at: row
+                .last_fired_at
+                .and_then(|ts| OffsetDateTime::from_unix_timestamp(ts).ok()),
+            runs_today: row.runs_today.max(0) as u64,
+            avg_duration_ms: row.avg_duration_ms.map(|v| v.round() as u64),
+            errors_7d: row.errors_7d.max(0) as u64,
+        })
+    }
+}
+
 #[async_trait]
 impl ActionRepo for SqliteActionRepo {
     async fn list(&self) -> Result<Vec<Action>, StorageError> {
@@ -334,54 +390,9 @@ impl ActionRepo for SqliteActionRepo {
     }
 
     async fn telemetry(&self, id: ActionId) -> Result<ActionTelemetry, StorageError> {
-        let id_str = id.to_string();
         let now = OffsetDateTime::now_utc();
-        let start_of_today = crate::epoch::start_of_local_day_secs(now);
-        let start_of_7d = (now - time::Duration::days(7)).unix_timestamp();
-
-        #[derive(sqlx::FromRow)]
-        struct TelemetryRow {
-            last_fired_at: Option<i64>,
-            runs_today: i64,
-            avg_duration_ms: Option<f64>,
-            errors_7d: i64,
-        }
-
-        let row: TelemetryRow = sqlx::query_as(
-            "WITH \
-               lf AS (SELECT MAX(started_at) AS v \
-                      FROM action_executions WHERE action_id = ?), \
-               rt AS (SELECT COUNT(*) AS v \
-                      FROM action_executions \
-                      WHERE action_id = ? AND started_at >= ?), \
-               ad AS (SELECT AVG(duration_ms) AS v \
-                      FROM (SELECT duration_ms FROM action_executions \
-                            WHERE action_id = ? ORDER BY started_at DESC LIMIT ?)), \
-               e7 AS (SELECT COUNT(*) AS v \
-                      FROM action_executions \
-                      WHERE action_id = ? AND status = 'err' AND started_at >= ?) \
-             SELECT lf.v AS last_fired_at, rt.v AS runs_today, \
-                    ad.v AS avg_duration_ms, e7.v AS errors_7d FROM lf, rt, ad, e7",
-        )
-        .bind(&id_str)
-        .bind(&id_str)
-        .bind(start_of_today)
-        .bind(&id_str)
-        .bind(crate::epoch::TELEMETRY_AVERAGE_WINDOW)
-        .bind(&id_str)
-        .bind(start_of_7d)
-        .fetch_one(self.db.reader())
-        .await
-        .map_err(SqliteStorageError::Sqlx)?;
-
-        Ok(ActionTelemetry {
-            last_fired_at: row
-                .last_fired_at
-                .and_then(|ts| OffsetDateTime::from_unix_timestamp(ts).ok()),
-            runs_today: row.runs_today.max(0) as u64,
-            avg_duration_ms: row.avg_duration_ms.map(|v| v.round() as u64),
-            errors_7d: row.errors_7d.max(0) as u64,
-        })
+        self.telemetry_at(id, now, crate::epoch::start_of_system_day_secs(now))
+            .await
     }
 
     async fn set_enabled(&self, id: ActionId, enabled: bool) -> Result<bool, StorageError> {

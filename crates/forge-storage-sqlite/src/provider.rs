@@ -1,3 +1,4 @@
+use std::future::Future;
 use std::sync::Arc;
 use std::time::Duration;
 
@@ -5,18 +6,18 @@ use async_trait::async_trait;
 use forge_paths::AppPaths;
 use forge_storage::settings::core_settings;
 use forge_storage::{
-    ActionRepo, BanLedgerRepo, CatalogRevision, ChatHistoryRepo, CredentialId, CredentialsKeyLoss,
-    CredentialsRepo, DataProvider, DonationRepo, EXPECTED_SCHEMA_VERSION, EventLogRepo,
-    ExecutionStatus, GlobalEntry, GlobalTransit, GlobalsRepo, HistoryRepo, LatestValueRepo,
-    MediaRepo, OverlayRepo, QueueRepo, RevisingActionRepo, RevisingQueueRepo,
+    ActionRepo, ActionTelemetry, BanLedgerRepo, CatalogRevision, ChatHistoryRepo, CredentialId,
+    CredentialsKeyLoss, CredentialsRepo, DataProvider, DonationRepo, EXPECTED_SCHEMA_VERSION,
+    EventLogRepo, ExecutionStatus, GlobalEntry, GlobalTransit, GlobalsRepo, HistoryRepo,
+    LatestValueRepo, MediaRepo, OverlayRepo, QueueRepo, RevisingActionRepo, RevisingQueueRepo,
     RevisingScheduledRunRepo, RevisingScriptRepo, RevisingTriggerInstanceRepo, RowClasses, RowGate,
     ScheduledRunRepo, ScriptRecord, ScriptReferences, ScriptRepo, ScriptTelemetry, SettingRow,
     SettingsRepo, SoundboardClipsRepo, StorageError, StoreChange, TriggerInstanceRepo,
     TtsFiltersRepo, UserGlobalEntry, UserGlobalsRepo, ViewerRepo, VoiceAliasRepo,
 };
-use forge_types::{ScriptId, Variant};
+use forge_types::{ActionId, ScriptId, Variant};
 use time::OffsetDateTime;
-use tokio::sync::Notify;
+use tokio::sync::{Notify, watch};
 use tokio::task::AbortHandle;
 
 use crate::checkpoint_task::spawn_checkpoint_task;
@@ -98,6 +99,7 @@ pub struct SqliteBackend {
     ban_ledger: Arc<SqliteBanLedgerRepo>,
     retention_window_changed: Arc<Notify>,
     shutdown: Arc<Notify>,
+    retention_running: watch::Receiver<()>,
     checkpoint: AbortHandle,
 }
 
@@ -192,6 +194,7 @@ impl SqliteBackend {
             pool.writer().clone(),
             pool.busy_timeout(),
         );
+        let (retention_alive, retention_running) = watch::channel(());
         spawn_retention_task(
             RetentionTargets {
                 event_log: Arc::new(SqliteEventLogRepo::new(pool.clone())),
@@ -206,6 +209,7 @@ impl SqliteBackend {
                 window_changed: Arc::clone(&retention_window_changed),
                 shutdown: Arc::clone(&shutdown),
             },
+            retention_alive,
         );
 
         let media = Arc::new(SqliteMediaRepo::new(pool.clone(), media_root));
@@ -254,8 +258,26 @@ impl SqliteBackend {
             credentials,
             retention_window_changed,
             shutdown,
+            retention_running,
             pool,
         }
+    }
+
+    #[doc(hidden)]
+    pub async fn action_telemetry_at_for_test(
+        &self,
+        id: ActionId,
+        now: OffsetDateTime,
+        start_of_today: i64,
+    ) -> Result<ActionTelemetry, StorageError> {
+        SqliteActionRepo::new(self.pool.clone())
+            .telemetry_at(id, now, start_of_today)
+            .await
+    }
+
+    pub fn retention_pruner_stopped(&self) -> impl Future<Output = ()> + Send + 'static {
+        let mut running = self.retention_running.clone();
+        async move { while running.changed().await.is_ok() {} }
     }
 
     #[doc(hidden)]
@@ -311,6 +333,18 @@ impl GlobalsRepo for SqliteBackend {
 
     async fn rename(&self, old_name: &str, new_name: &str) -> Result<(), StorageError> {
         self.globals.rename(old_name, new_name).await
+    }
+
+    async fn rename_and_set(
+        &self,
+        old_name: &str,
+        new_name: &str,
+        value: Variant,
+        persisted: bool,
+    ) -> Result<(), StorageError> {
+        self.globals
+            .rename_and_set(old_name, new_name, value, persisted)
+            .await
     }
 
     async fn delete(&self, name: &str) -> Result<bool, StorageError> {

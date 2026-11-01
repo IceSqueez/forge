@@ -1,6 +1,7 @@
 #![expect(clippy::expect_used, reason = "test fixtures")]
-use forge_storage::{DataProvider, ExecutionStatus};
-use std::future::Future;
+use forge_storage::{ActionTelemetry, DataProvider, ExecutionStatus};
+use forge_storage_sqlite::SqliteBackend;
+use forge_types::ActionId;
 
 use time::OffsetDateTime;
 
@@ -11,22 +12,14 @@ fn at(secs: i64) -> OffsetDateTime {
     OffsetDateTime::from_unix_timestamp(secs).expect("valid unix timestamp")
 }
 
-fn local_midnight() -> i64 {
-    jiff::Zoned::now()
-        .start_of_day()
-        .expect("the local day has a start")
-        .timestamp()
-        .as_second()
-}
+const MIDNIGHT: i64 = 1_772_582_400;
+const NOON: i64 = MIDNIGHT + 12 * 3_600;
 
-async fn within_one_local_day<T, Fut: Future<Output = T>>(body: impl Fn() -> Fut) -> T {
-    loop {
-        let day = local_midnight();
-        let observed = body().await;
-        if local_midnight() == day {
-            return observed;
-        }
-    }
+async fn telemetry_at_noon(backend: &SqliteBackend, id: ActionId) -> ActionTelemetry {
+    backend
+        .action_telemetry_at_for_test(id, at(NOON), MIDNIGHT)
+        .await
+        .expect("telemetry")
 }
 
 #[tokio::test]
@@ -51,29 +44,19 @@ async fn telemetry_returns_defaults_for_action_with_no_executions() {
 
 #[tokio::test]
 async fn record_execution_success_reflects_in_telemetry() {
-    let (telemetry, midnight) = within_one_local_day(|| async {
-        let backend = setup().await;
-        let queue_id = default_queue_id(&backend).await;
-        let action = action_named("success_action", queue_id);
-        let action_id = action.id;
-        backend.action_repo().save(&action).await.expect("save");
+    let backend = setup().await;
+    let queue_id = default_queue_id(&backend).await;
+    let action = action_named("success_action", queue_id);
+    let action_id = action.id;
+    backend.action_repo().save(&action).await.expect("save");
 
-        let midnight = local_midnight();
-        let started = at(midnight + 5);
-        backend
-            .action_repo()
-            .record_execution(action_id, started, 250, ExecutionStatus::Success)
-            .await
-            .expect("record success");
+    backend
+        .action_repo()
+        .record_execution(action_id, at(MIDNIGHT + 5), 250, ExecutionStatus::Success)
+        .await
+        .expect("record success");
 
-        let telemetry = backend
-            .action_repo()
-            .telemetry(action_id)
-            .await
-            .expect("telemetry");
-        (telemetry, midnight)
-    })
-    .await;
+    let telemetry = telemetry_at_noon(&backend, action_id).await;
 
     assert_eq!(
         telemetry.runs_today, 1,
@@ -81,7 +64,7 @@ async fn record_execution_success_reflects_in_telemetry() {
     );
     assert_eq!(
         telemetry.last_fired_at.map(|t| t.unix_timestamp()),
-        Some(midnight + 5),
+        Some(MIDNIGHT + 5),
         "last_fired reflects the recorded started_at",
     );
     assert_eq!(
@@ -97,27 +80,19 @@ async fn record_execution_success_reflects_in_telemetry() {
 
 #[tokio::test]
 async fn record_execution_error_is_counted_in_errors_7d() {
-    let telemetry = within_one_local_day(|| async {
-        let backend = setup().await;
-        let queue_id = default_queue_id(&backend).await;
-        let action = action_named("error_action", queue_id);
-        let action_id = action.id;
-        backend.action_repo().save(&action).await.expect("save");
+    let backend = setup().await;
+    let queue_id = default_queue_id(&backend).await;
+    let action = action_named("error_action", queue_id);
+    let action_id = action.id;
+    backend.action_repo().save(&action).await.expect("save");
 
-        let started = OffsetDateTime::now_utc();
-        backend
-            .action_repo()
-            .record_execution(action_id, started, 50, ExecutionStatus::Error)
-            .await
-            .expect("record error");
+    backend
+        .action_repo()
+        .record_execution(action_id, at(NOON), 50, ExecutionStatus::Error)
+        .await
+        .expect("record error");
 
-        backend
-            .action_repo()
-            .telemetry(action_id)
-            .await
-            .expect("telemetry")
-    })
-    .await;
+    let telemetry = telemetry_at_noon(&backend, action_id).await;
 
     assert_eq!(
         telemetry.errors_7d, 1,
@@ -128,39 +103,36 @@ async fn record_execution_error_is_counted_in_errors_7d() {
 
 #[tokio::test]
 async fn telemetry_aggregates_multiple_recorded_executions() {
-    let (telemetry, midnight) = within_one_local_day(|| async {
-        let backend = setup().await;
-        let queue_id = default_queue_id(&backend).await;
-        let action = action_named("stats_action", queue_id);
-        let action_id = action.id;
-        backend.action_repo().save(&action).await.expect("save");
+    let backend = setup().await;
+    let queue_id = default_queue_id(&backend).await;
+    let action = action_named("stats_action", queue_id);
+    let action_id = action.id;
+    backend.action_repo().save(&action).await.expect("save");
 
-        let now = OffsetDateTime::now_utc();
-        let midnight = local_midnight();
-
-        let rows = [
-            (at(midnight + 10), 100, ExecutionStatus::Success),
-            (at(midnight + 20), 200, ExecutionStatus::Success),
-            (at(midnight + 30), 150, ExecutionStatus::Error),
-            (now - time::Duration::days(3), 300, ExecutionStatus::Error),
-            (now - time::Duration::days(8), 400, ExecutionStatus::Error),
-        ];
-        for (started, dur, status) in rows {
-            backend
-                .action_repo()
-                .record_execution(action_id, started, dur, status)
-                .await
-                .expect("record");
-        }
-
-        let telemetry = backend
+    let rows = [
+        (at(MIDNIGHT + 10), 100, ExecutionStatus::Success),
+        (at(MIDNIGHT + 20), 200, ExecutionStatus::Success),
+        (at(MIDNIGHT + 30), 150, ExecutionStatus::Error),
+        (
+            at(NOON) - time::Duration::days(3),
+            300,
+            ExecutionStatus::Error,
+        ),
+        (
+            at(NOON) - time::Duration::days(8),
+            400,
+            ExecutionStatus::Error,
+        ),
+    ];
+    for (started, dur, status) in rows {
+        backend
             .action_repo()
-            .telemetry(action_id)
+            .record_execution(action_id, started, dur, status)
             .await
-            .expect("telemetry");
-        (telemetry, midnight)
-    })
-    .await;
+            .expect("record");
+    }
+
+    let telemetry = telemetry_at_noon(&backend, action_id).await;
 
     assert_eq!(
         telemetry.runs_today, 3,
@@ -174,37 +146,28 @@ async fn telemetry_aggregates_multiple_recorded_executions() {
     );
     assert_eq!(
         telemetry.last_fired_at.map(|t| t.unix_timestamp()),
-        Some(midnight + 30),
+        Some(MIDNIGHT + 30),
         "last_fired is the max started_at",
     );
 }
 
 #[tokio::test]
 async fn today_starts_at_local_midnight_to_the_second() {
-    let (telemetry, _) = within_one_local_day(|| async {
-        let backend = setup().await;
-        let queue_id = default_queue_id(&backend).await;
-        let action = action_named("midnight_action", queue_id);
-        let action_id = action.id;
-        backend.action_repo().save(&action).await.expect("save");
+    let backend = setup().await;
+    let queue_id = default_queue_id(&backend).await;
+    let action = action_named("midnight_action", queue_id);
+    let action_id = action.id;
+    backend.action_repo().save(&action).await.expect("save");
 
-        let midnight = local_midnight();
-        for started in [midnight - 1, midnight] {
-            backend
-                .action_repo()
-                .record_execution(action_id, at(started), 10, ExecutionStatus::Success)
-                .await
-                .expect("record");
-        }
-
-        let telemetry = backend
+    for started in [MIDNIGHT - 1, MIDNIGHT] {
+        backend
             .action_repo()
-            .telemetry(action_id)
+            .record_execution(action_id, at(started), 10, ExecutionStatus::Success)
             .await
-            .expect("telemetry");
-        (telemetry, midnight)
-    })
-    .await;
+            .expect("record");
+    }
+
+    let telemetry = telemetry_at_noon(&backend, action_id).await;
 
     assert_eq!(telemetry.runs_today, 1);
 }

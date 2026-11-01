@@ -7,7 +7,7 @@ use forge_storage::{
     action_history_retention_days, clamp_action_history_retention_days, event_log_retention_days,
 };
 use time::OffsetDateTime;
-use tokio::sync::Notify;
+use tokio::sync::{Notify, watch};
 
 use crate::error::SqliteStorageError;
 use crate::{SqliteEventLogRepo, SqliteHistoryRepo};
@@ -45,8 +45,10 @@ pub(crate) fn spawn_retention_task(
     targets: RetentionTargets,
     interval: Duration,
     signals: RetentionSignals,
+    alive: watch::Sender<()>,
 ) -> tokio::task::JoinHandle<()> {
     tokio::spawn(async move {
+        let _alive_until_this_task_ends = alive;
         tokio::select! {
             _ = tokio::time::sleep(interval.min(FIRST_SWEEP_DELAY)) => {}
             _ = signals.shutdown.notified() => return,

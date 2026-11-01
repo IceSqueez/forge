@@ -1,5 +1,6 @@
 #![expect(clippy::expect_used, reason = "test fixtures")]
 use std::ops::Deref;
+use std::path::Path;
 
 use tempfile::TempDir;
 
@@ -38,6 +39,18 @@ impl<T> Deref for Sandboxed<T> {
     fn deref(&self) -> &T {
         &self.inner
     }
+}
+
+pub async fn open_existing(data_dir: &Path) -> SqliteBackend {
+    let key_file = data_dir.join(forge_paths::CREDENTIALS_KEY_FILE_NAME);
+    let key = crate::crypto::read_key_file(&key_file).expect("a readable credential key file");
+    let url = format!(
+        "sqlite://{}?mode=rw",
+        data_dir.join(forge_storage::DATABASE_FILE_NAME).display()
+    );
+    SqliteBackend::open_for_test(&url, key, data_dir.join(forge_paths::MEDIA_DIR_NAME), None)
+        .await
+        .expect("a backend over the existing data directory")
 }
 
 pub async fn sandboxed_backend_at(url: &str, key: [u8; 32]) -> Sandboxed<SqliteBackend> {

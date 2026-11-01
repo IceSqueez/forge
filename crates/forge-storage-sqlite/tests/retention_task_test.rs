@@ -1,7 +1,6 @@
 #![expect(clippy::expect_used, clippy::unwrap_used, reason = "test fixtures")]
 mod common;
 use common::TEST_KEY;
-use std::fmt::Debug;
 use std::future::Future;
 use std::sync::Arc;
 use std::time::Duration;
@@ -18,7 +17,6 @@ use forge_types::{
 use sqlx::SqlitePool;
 use sqlx::sqlite::SqlitePoolOptions;
 use time::OffsetDateTime;
-use tokio::sync::Notify;
 
 const RUN_DURATION_MS: u64 = 5;
 const CADENCE: Duration = Duration::from_millis(50);
@@ -257,55 +255,16 @@ async fn shrinking_the_event_window_makes_the_running_pruner_apply_the_new_windo
     );
 }
 
-struct PrunerStopWatch(Arc<Notify>);
-
-struct StopMessage(bool);
-
-impl tracing::field::Visit for StopMessage {
-    fn record_debug(&mut self, field: &tracing::field::Field, value: &dyn Debug) {
-        if field.name() == "message" && format!("{value:?}") == "retention pruner stopped" {
-            self.0 = true;
-        }
-    }
-}
-
-impl tracing::Subscriber for PrunerStopWatch {
-    fn enabled(&self, _: &tracing::Metadata<'_>) -> bool {
-        true
-    }
-
-    fn new_span(&self, _: &tracing::span::Attributes<'_>) -> tracing::span::Id {
-        tracing::span::Id::from_u64(1)
-    }
-
-    fn record(&self, _: &tracing::span::Id, _: &tracing::span::Record<'_>) {}
-
-    fn record_follows_from(&self, _: &tracing::span::Id, _: &tracing::span::Id) {}
-
-    fn event(&self, event: &tracing::Event<'_>) {
-        let mut message = StopMessage(false);
-        event.record(&mut message);
-        if message.0 {
-            self.0.notify_one();
-        }
-    }
-
-    fn enter(&self, _: &tracing::span::Id) {}
-
-    fn exit(&self, _: &tracing::span::Id) {}
-}
-
 #[tokio::test]
 async fn dropping_the_backend_stops_its_pruner() {
-    let stopped = Arc::new(Notify::new());
-    let _watch = tracing::subscriber::set_default(PrunerStopWatch(Arc::clone(&stopped)));
     let db = open().await;
     db.after_a_full_sweep().await;
+    let stopped = db.backend.retention_pruner_stopped();
 
     drop(db.backend);
 
     assert!(
-        within_hang_guard(stopped.notified()).await.is_some(),
+        within_hang_guard(stopped).await.is_some(),
         "a dropped backend's pruner must stop"
     );
 }

@@ -96,6 +96,10 @@ struct TokenSite<'a> {
     index: usize,
 }
 
+fn content_list_scope(list: &ContentList) -> SharedString {
+    SharedString::from(format!("content-list-{}", list.title.code_or_text()))
+}
+
 fn content_list_row_h(list: &ContentList) -> f32 {
     f32::from(list.row_padding_y_px) * 2.0 + (f32::from(ROW_NAME_FONT) * LINE_HEIGHT_RATIO).round()
 }
@@ -739,7 +743,7 @@ fn content_list_panel(
 ) -> AnyElement {
     let row_h = content_list_row_h(list);
     let rows = RowHooks {
-        scope: SharedString::from(format!("content-list-{}", list.title.code_or_text())),
+        scope: content_list_scope(list),
         pad_y: f32::from(list.row_padding_y_px),
         run_step: hooks.run_step.clone(),
     };
@@ -861,6 +865,7 @@ fn content_list_item_row(
     }
 
     let content = div()
+        .debug_selector(|| rows.element_id("row", row_index).to_string())
         .w_full()
         .flex()
         .items_center()
@@ -1431,10 +1436,12 @@ fn trailing_token_elem(
                 row: SharedString::from(site.row.to_owned()),
                 step: step.clone(),
             };
+            let element_id = site
+                .hooks
+                .element_id(&format!("token-{}", site.index), site.row_index);
             div()
-                .id(site
-                    .hooks
-                    .element_id(&format!("token-{}", site.index), site.row_index))
+                .debug_selector(|| element_id.to_string())
+                .id(element_id.clone())
                 .flex_none()
                 .size(ROW_TRAILING_GLYPH)
                 .cursor_pointer()
@@ -1634,7 +1641,7 @@ mod tests {
     use std::cell::RefCell;
 
     use forge_components::FORGE_DEFAULT;
-    use gpui::{Modifiers, TestAppContext, VisualTestContext, point, size};
+    use gpui::{Modifiers, TestAppContext, size};
 
     use super::*;
 
@@ -1642,7 +1649,6 @@ mod tests {
 
     const WINDOW_W: f32 = 720.0;
     const WINDOW_H: f32 = 360.0;
-    const SCAN_STEP: f32 = 4.0;
 
     fn step(kind_id: &str) -> SubActionStep {
         SubActionStep {
@@ -1720,7 +1726,30 @@ mod tests {
         }
     }
 
-    fn click_everywhere(left: ContentList, right: ContentList, cx: &mut TestAppContext) -> Fired {
+    fn clickable_parts(list: &ContentList) -> Vec<&'static str> {
+        let hooks = RowHooks {
+            scope: content_list_scope(list),
+            pad_y: 0.0,
+            run_step: None,
+        };
+        let mut parts = Vec::new();
+        for (row_index, item) in list.items.iter().enumerate() {
+            parts.push(hooks.element_id("row", row_index));
+            for index in 0..item.trailing.len() {
+                parts.push(hooks.element_id(&format!("token-{index}"), row_index));
+            }
+        }
+        parts
+            .into_iter()
+            .map(|part| &*part.to_string().leak())
+            .collect()
+    }
+
+    fn click_every_part(left: ContentList, right: ContentList, cx: &mut TestAppContext) -> Fired {
+        let parts: Vec<&'static str> = [&left, &right]
+            .into_iter()
+            .flat_map(clickable_parts)
+            .collect();
         let fired: Fired = Rc::default();
         let host_fired = Rc::clone(&fired);
         crate::test_support::install_presentation(cx);
@@ -1733,21 +1762,12 @@ mod tests {
         });
         vcx.simulate_resize(size(px(WINDOW_W), px(WINDOW_H)));
         vcx.run_until_parked();
-        scan(vcx, &fired);
-        fired
-    }
-
-    fn scan(vcx: &mut VisualTestContext, fired: &Fired) {
-        let mut y = 0.0;
-        while y < WINDOW_H {
-            let mut x = 0.0;
-            while x < WINDOW_W {
-                fired.borrow_mut().push(Vec::new());
-                vcx.simulate_click(point(px(x), px(y)), Modifiers::none());
-                x += SCAN_STEP;
-            }
-            y += SCAN_STEP;
+        for part in parts {
+            fired.borrow_mut().push(Vec::new());
+            let center = vcx.debug_bounds(part).expect("the part paints").center();
+            vcx.simulate_click(center, Modifiers::none());
         }
+        fired
     }
 
     fn distinct(fired: &Fired) -> Vec<(String, String)> {
@@ -1759,7 +1779,7 @@ mod tests {
 
     #[gpui::test]
     fn only_rows_and_glyphs_that_carry_a_step_run_it_on_click(cx: &mut TestAppContext) {
-        let fired = click_everywhere(
+        let fired = click_every_part(
             list(
                 "Scenes",
                 vec![
@@ -1789,7 +1809,7 @@ mod tests {
 
     #[gpui::test]
     fn a_glyph_click_inside_an_actionable_row_runs_only_the_glyph_step(cx: &mut TestAppContext) {
-        let fired = click_everywhere(
+        let fired = click_every_part(
             list(
                 "Scenes",
                 vec![with_action_glyph(
@@ -1819,7 +1839,7 @@ mod tests {
 
     #[gpui::test]
     fn equal_row_names_in_two_lists_each_run_their_own_step(cx: &mut TestAppContext) {
-        let fired = click_everywhere(
+        let fired = click_every_part(
             list(
                 "Scenes",
                 vec![row("Mic", false, Some("obs.scene.set_current"))],
@@ -1846,7 +1866,7 @@ mod tests {
             with_action_glyph(row("Mic", false, None), "obs.source.set_visibility"),
             "obs.source.set_lock",
         );
-        let fired = click_everywhere(
+        let fired = click_every_part(
             list("Sources", vec![source]),
             list("Scenes", Vec::new()),
             cx,
@@ -1863,7 +1883,7 @@ mod tests {
 
     #[gpui::test]
     fn equal_row_names_in_one_list_each_run_only_their_own_step(cx: &mut TestAppContext) {
-        let fired = click_everywhere(
+        let fired = click_every_part(
             list(
                 "Sources",
                 vec![

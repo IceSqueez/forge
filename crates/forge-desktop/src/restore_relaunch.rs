@@ -1,6 +1,6 @@
 use std::path::PathBuf;
 use std::process::{Command, Stdio};
-use std::time::{Duration, Instant};
+use std::time::Duration;
 
 use forge_update::{
     InstallEnvironment, InstallKind, InstallLayout, ManualReason, UpdatableInstall,
@@ -10,8 +10,8 @@ use sysinfo::{Pid, ProcessRefreshKind, ProcessStatus, ProcessesToUpdate, System}
 
 pub(crate) const PREVIOUS_INSTANCE_FLAG: &str = "--forge-restore-after";
 
-const PREVIOUS_EXIT_BUDGET: Duration = Duration::from_secs(10);
 const PREVIOUS_EXIT_POLL: Duration = Duration::from_millis(100);
+const PREVIOUS_EXIT_WAITS: u32 = 100;
 
 const MAC_OPEN_PROGRAM: &str = "open";
 const MAC_OPEN_NEW_INSTANCE: &str = "-n";
@@ -86,14 +86,21 @@ pub(crate) fn previous_instance(args: impl IntoIterator<Item = String>) -> Optio
 
 pub(crate) fn await_previous_exit(previous: u32) -> bool {
     let pid = Pid::from_u32(previous);
-    let started = Instant::now();
-    while is_running(pid) {
-        if started.elapsed() >= PREVIOUS_EXIT_BUDGET {
-            return false;
+    exits_within(
+        PREVIOUS_EXIT_WAITS,
+        || is_running(pid),
+        || std::thread::sleep(PREVIOUS_EXIT_POLL),
+    )
+}
+
+fn exits_within(waits: u32, mut is_running: impl FnMut() -> bool, mut wait: impl FnMut()) -> bool {
+    for _ in 0..waits {
+        if !is_running() {
+            return true;
         }
-        std::thread::sleep(PREVIOUS_EXIT_POLL);
+        wait();
     }
-    true
+    !is_running()
 }
 
 fn is_running(pid: Pid) -> bool {
@@ -110,9 +117,11 @@ fn is_running(pid: Pid) -> bool {
 
 #[cfg(test)]
 mod tests {
-    use std::process::{Command, Stdio};
+    use std::cell::Cell;
 
-    use super::{PREVIOUS_INSTANCE_FLAG, await_previous_exit, previous_instance};
+    use sysinfo::Pid;
+
+    use super::{PREVIOUS_INSTANCE_FLAG, exits_within, is_running, previous_instance};
 
     fn previous(args: &[&str]) -> Option<u32> {
         previous_instance(args.iter().map(|arg| (*arg).to_owned()))
@@ -153,16 +162,38 @@ mod tests {
     }
 
     #[test]
-    fn an_already_exited_previous_instance_is_not_waited_for() {
-        let mut child = Command::new(std::env::current_exe().unwrap())
-            .arg("--list")
-            .stdin(Stdio::null())
-            .stdout(Stdio::null())
-            .stderr(Stdio::null())
-            .spawn()
-            .unwrap();
-        child.wait().unwrap();
+    fn the_wait_ends_as_soon_as_the_probe_reports_the_exit_and_stops_at_the_budget() {
+        for (running_checks, waits, exited, waited) in [
+            (0, 3, true, 0),
+            (1, 3, true, 1),
+            (3, 3, true, 3),
+            (4, 3, false, 3),
+            (u32::MAX, 3, false, 3),
+            (u32::MAX, 0, false, 0),
+            (0, 0, true, 0),
+        ] {
+            let checks = Cell::new(0);
+            let waited_for = Cell::new(0);
 
-        assert!(await_previous_exit(child.id()));
+            let outcome = exits_within(
+                waits,
+                || {
+                    checks.set(checks.get() + 1);
+                    checks.get() <= running_checks
+                },
+                || waited_for.set(waited_for.get() + 1),
+            );
+
+            assert_eq!(
+                (outcome, waited_for.get()),
+                (exited, waited),
+                "running for {running_checks} checks with {waits} waits"
+            );
+        }
+    }
+
+    #[test]
+    fn this_process_counts_as_running() {
+        assert!(is_running(Pid::from_u32(std::process::id())));
     }
 }

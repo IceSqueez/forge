@@ -29,7 +29,7 @@ fn key_file_error(error: impl std::fmt::Display) -> SqliteStorageError {
     }
 }
 
-fn read_key_file(path: &std::path::Path) -> Result<[u8; 32], SqliteStorageError> {
+pub(crate) fn read_key_file(path: &std::path::Path) -> Result<[u8; 32], SqliteStorageError> {
     let hex = std::fs::read_to_string(path).map_err(key_file_error)?;
     hex_to_key(hex.trim())
 }

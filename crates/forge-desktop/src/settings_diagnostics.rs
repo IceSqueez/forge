@@ -1,3 +1,4 @@
+use std::rc::Rc;
 use std::sync::Arc;
 use std::time::Duration;
 
@@ -45,6 +46,8 @@ const FOLLOW_SLACK: Pixels = px(24.0);
 const NOTE_GLYPH: Pixels = px(14.0);
 const PREVIEW_WIDTH: Pixels = px(600.0);
 
+type LevelApplier = Rc<dyn Fn(&LogLevel) -> bool>;
+
 pub(crate) struct SettingsDiagnosticsView {
     tail: LogTail,
     backend: Arc<dyn DataProvider>,
@@ -56,6 +59,7 @@ pub(crate) struct SettingsDiagnosticsView {
     level_load: Loadable<()>,
     level_picked: bool,
     env_overridden: bool,
+    apply_level: LevelApplier,
     scroll: ScrollHandle,
     active: bool,
     clear_pending: bool,
@@ -87,6 +91,7 @@ impl SettingsDiagnosticsView {
             level_load: Loadable::Loading,
             level_picked: false,
             env_overridden: crate::log_level::env_overridden(),
+            apply_level: Rc::new(crate::log_level::apply),
             scroll: ScrollHandle::new(),
             active: initial_active,
             clear_pending: false,
@@ -106,6 +111,13 @@ impl SettingsDiagnosticsView {
     #[must_use]
     pub(crate) fn with_storage_changes(mut self, scheduled: ScheduledBackupHandle) -> Self {
         self.storage_changes = Some(scheduled);
+        self
+    }
+
+    #[cfg(test)]
+    #[must_use]
+    fn with_level_applier(mut self, apply_level: LevelApplier) -> Self {
+        self.apply_level = apply_level;
         self
     }
 
@@ -148,7 +160,7 @@ impl SettingsDiagnosticsView {
         if self.env_overridden || self.level == level {
             return;
         }
-        if !crate::log_level::apply(&level) {
+        if !(self.apply_level)(&level) {
             cx.push_toast(
                 ToastKind::Error,
                 tr!("settings_diagnostics_level_apply_failed"),
@@ -164,7 +176,7 @@ impl SettingsDiagnosticsView {
             previous,
             async move { set_diagnostic_log_level(repo.as_ref(), &level).await },
             |this, previous, _, cx| {
-                crate::log_level::apply(&previous);
+                (this.apply_level)(&previous);
                 this.level = previous;
                 cx.push_toast(ToastKind::Error, tr!("settings_persist_failed"));
             },
@@ -903,11 +915,20 @@ mod tests {
 
     struct LevelRig {
         rt: tokio::runtime::Runtime,
+        backend: std::sync::Arc<forge_host::test_support::TestBackend>,
         writes: tokio::sync::mpsc::UnboundedReceiver<crate::test_support::SettingWrite>,
         view: gpui::Entity<super::SettingsDiagnosticsView>,
     }
 
     fn mount_with_stored(stored: LogLevel, cx: &mut gpui::TestAppContext) -> LevelRig {
+        mount_applying(stored, std::rc::Rc::new(|_| true), cx)
+    }
+
+    fn mount_applying(
+        stored: LogLevel,
+        apply_level: super::LevelApplier,
+        cx: &mut gpui::TestAppContext,
+    ) -> LevelRig {
         use gpui::AppContext as _;
 
         crate::test_support::install_presentation(cx);
@@ -924,15 +945,21 @@ mod tests {
             cx.new(|cx| {
                 super::SettingsDiagnosticsView::new(
                     crate::log_tail::LogTail::new(),
-                    backend as std::sync::Arc<dyn forge_storage::DataProvider>,
+                    backend.clone() as std::sync::Arc<dyn forge_storage::DataProvider>,
                     forge_host::integrations::BuiltinRegistry::default(),
                     rt.handle().clone(),
                     false,
                     cx,
                 )
+                .with_level_applier(apply_level)
             })
         });
-        LevelRig { rt, writes, view }
+        LevelRig {
+            rt,
+            backend,
+            writes,
+            view,
+        }
     }
 
     impl LevelRig {
@@ -949,23 +976,74 @@ mod tests {
     fn a_level_that_cannot_be_applied_is_neither_shown_nor_persisted(
         cx: &mut gpui::TestAppContext,
     ) {
-        let mut rig = mount_with_stored(LogLevel::Debug, cx);
+        let mut rig = mount_applying(LogLevel::Debug, std::rc::Rc::new(|_| false), cx);
         rig.settle(cx);
 
         rig.view
             .update(cx, |view, cx| view.select_level(LogLevel::Trace, cx));
         rig.settle(cx);
 
-        let errors = cx.update(|cx| {
-            cx.global::<forge_components::Toasts>()
-                .items()
-                .iter()
-                .filter(|toast| toast.kind == forge_components::ToastKind::Error)
-                .count()
-        });
+        let errors = cx.update(|cx| crate::test_support::error_toasts(cx));
         assert_eq!(
             (rig.level(cx), rig.writes.try_recv().is_err(), errors),
             (LogLevel::Debug, true, 1)
+        );
+    }
+
+    fn recording_applier() -> (
+        std::rc::Rc<std::cell::RefCell<Vec<LogLevel>>>,
+        super::LevelApplier,
+    ) {
+        let applied = std::rc::Rc::<std::cell::RefCell<Vec<LogLevel>>>::default();
+        let recorded = std::rc::Rc::clone(&applied);
+        let apply: super::LevelApplier = std::rc::Rc::new(move |level: &LogLevel| {
+            recorded.borrow_mut().push(level.clone());
+            true
+        });
+        (applied, apply)
+    }
+
+    #[gpui::test]
+    fn an_applied_level_is_shown_and_persisted(cx: &mut gpui::TestAppContext) {
+        let (applied, apply) = recording_applier();
+        let mut rig = mount_applying(LogLevel::Debug, apply, cx);
+        rig.settle(cx);
+
+        rig.view
+            .update(cx, |view, cx| view.select_level(LogLevel::Trace, cx));
+        rig.settle(cx);
+
+        assert_eq!(
+            (
+                rig.level(cx),
+                rig.writes.try_recv().is_ok(),
+                applied.borrow().clone()
+            ),
+            (LogLevel::Trace, true, vec![LogLevel::Trace])
+        );
+    }
+
+    #[gpui::test]
+    fn a_level_that_cannot_be_persisted_rolls_back_on_screen_and_in_the_filter(
+        cx: &mut gpui::TestAppContext,
+    ) {
+        let (applied, apply) = recording_applier();
+        let rig = mount_applying(LogLevel::Debug, apply, cx);
+        rig.settle(cx);
+        rig.backend
+            .fail_writes(forge_storage::settings::core_settings::DIAGNOSTICS_LOG_LEVEL.name());
+
+        rig.view
+            .update(cx, |view, cx| view.select_level(LogLevel::Trace, cx));
+        rig.settle(cx);
+
+        assert_eq!(
+            (
+                rig.level(cx),
+                applied.borrow().clone(),
+                cx.update(|cx| crate::test_support::error_toasts(cx))
+            ),
+            (LogLevel::Debug, vec![LogLevel::Trace, LogLevel::Debug], 1)
         );
     }
 

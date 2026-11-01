@@ -517,16 +517,15 @@ impl GlobalsView {
         async_bridge::run_async(
             &self.rt_handle,
             async move {
-                if let Some(old) = rename_from {
-                    backend
-                        .rename(&old, &target)
-                        .await
-                        .map_err(RepoFailure::from)?;
+                match rename_from {
+                    Some(old) => {
+                        backend
+                            .rename_and_set(&old, &target, variant, persisted)
+                            .await
+                    }
+                    None => backend.set(&target, variant, persisted).await,
                 }
-                backend
-                    .set(&target, variant, persisted)
-                    .await
-                    .map_err(RepoFailure::from)?;
+                .map_err(RepoFailure::from)?;
                 backend.list().await.map_err(RepoFailure::from)
             },
             |this, result, cx| match result {
@@ -843,6 +842,47 @@ mod tests {
             view.read_with(cx, |view, _| !matches!(view.list_load, Loadable::Loading))
         });
         (globals, view)
+    }
+
+    #[gpui::test]
+    fn saving_a_renamed_global_writes_the_name_and_value_in_one_call(cx: &mut TestAppContext) {
+        with_toasts(cx);
+        let rt = runtime();
+        let bus = EventBus::new(Arc::new(StubEventLog));
+        let saved = Arc::new(Mutex::new(Vec::new()));
+        let recorded = Arc::clone(&saved);
+        let mut repo = MockGlobalsRepo::new();
+        repo.expect_list().returning(|| Ok(Vec::new()));
+        repo.expect_rename_and_set()
+            .returning(move |old, new, value, persisted| {
+                recorded
+                    .lock()
+                    .unwrap()
+                    .push((old.to_owned(), new.to_owned(), value, persisted));
+                Ok(())
+            });
+        let (_globals, view) = mount(cx, &rt, Arc::new(repo), &bus);
+
+        view.update(cx, |view, cx| {
+            view.persist_editor(
+                &GlobalDraft {
+                    name: "total".to_owned(),
+                    variant: Variant::Int(2),
+                    persisted: true,
+                    rename_from: Some(SCORE.to_owned()),
+                },
+                cx,
+            );
+        });
+        pump_until(&rt, || {
+            cx.run_until_parked();
+            !saved.lock().unwrap().is_empty()
+        });
+
+        assert_eq!(
+            saved.lock().unwrap().clone(),
+            vec![(SCORE.to_owned(), "total".to_owned(), Variant::Int(2), true)]
+        );
     }
 
     fn publish(rt: &tokio::runtime::Runtime, bus: &EventBus, event: forge_events::Event) {

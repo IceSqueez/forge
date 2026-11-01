@@ -125,7 +125,7 @@ pub(crate) struct PackExportModal {
     selected: BTreeSet<ActionId>,
     closure: Option<PackSelection>,
     closure_failure: Option<String>,
-    resolving: bool,
+    resolving: Option<u64>,
     generation: Generation,
     search: SearchState,
     name: Entity<TextInput>,
@@ -175,7 +175,7 @@ impl PackExportModal {
             selected: preselected.into_iter().collect(),
             closure: None,
             closure_failure: None,
-            resolving: false,
+            resolving: None,
             generation: Generation::default(),
             search,
             name,
@@ -216,16 +216,16 @@ impl PackExportModal {
         self.closure_failure = None;
         let Loadable::Loaded(ready) = &self.source else {
             self.closure = None;
-            self.resolving = false;
+            self.resolving = None;
             return;
         };
         let roots = ordered_roots(&ready.choices, &self.selected);
         if roots.is_empty() {
             self.closure = None;
-            self.resolving = false;
+            self.resolving = None;
             return;
         }
-        self.resolving = true;
+        self.resolving = Some(ticket);
         let services = self.services.clone();
         let source = ready.source.clone();
         async_bridge::run_blocking(
@@ -245,10 +245,10 @@ impl PackExportModal {
         result: Result<PackSelection, RepoFailure>,
         cx: &mut Context<Self>,
     ) {
-        if !self.generation.is_current(ticket) {
+        if self.resolving != Some(ticket) {
             return;
         }
-        self.resolving = false;
+        self.resolving = None;
         match result {
             Ok(selection) => self.closure = Some(selection),
             Err(message) => {
@@ -264,7 +264,7 @@ impl PackExportModal {
     }
 
     pub(crate) fn can_export(&self, cx: &Context<Self>) -> bool {
-        !self.resolving && self.closure.is_some() && !self.pack_name(cx).is_empty()
+        self.resolving.is_none() && self.closure.is_some() && !self.pack_name(cx).is_empty()
     }
 
     pub(crate) fn take_draft(&mut self, cx: &mut Context<Self>) -> Option<PackDraft> {
@@ -508,7 +508,7 @@ impl PackExportModal {
                 cx,
             ),
             (Some(selection), None) => self.render_closure(selection, palette, density, cx),
-            (None, None) if self.resolving => summary_line(
+            (None, None) if self.resolving.is_some() => summary_line(
                 tr!("pack_export_summary_resolving"),
                 palette.text_muted,
                 Icon::Refresh,
@@ -796,10 +796,10 @@ mod tests {
         rig
     }
 
-    fn current_ticket(modal: &PackExportModal) -> u64 {
-        (0..=u64::from(u16::MAX))
-            .find(|ticket| modal.generation.is_current(*ticket))
-            .expect("the generation stays small in a test")
+    fn in_flight_ticket(cx: &mut TestAppContext, rig: &Rig) -> u64 {
+        rig.modal
+            .read_with(cx, |modal, _| modal.resolving)
+            .expect("a resolve is in flight")
     }
 
     fn deliver_closure(cx: &mut TestAppContext, rig: &Rig) {
@@ -808,13 +808,13 @@ mod tests {
                 panic!("the inventory is not loaded");
             };
             (
-                current_ticket(modal),
+                modal.resolving,
                 ordered_roots(&ready.choices, &modal.selected),
             )
         });
-        if roots.is_empty() {
+        let Some(ticket) = ticket else {
             return;
-        }
+        };
         let source = rig.rt.block_on(rig.world.services.load_source()).unwrap();
         let closure = resolve_pack_closure(
             &source.inventory,
@@ -919,7 +919,7 @@ mod tests {
             (
                 modal.selected.is_empty(),
                 modal.closure.is_none(),
-                modal.resolving,
+                modal.resolving.is_some(),
             )
         });
         assert_eq!(state, (true, true, false));
@@ -957,18 +957,22 @@ mod tests {
         rig.modal
             .update(cx, |modal, cx| modal.toggle(rig.greeter, cx));
 
-        let state = rig
-            .modal
-            .read_with(cx, |modal, _| (modal.closure.is_none(), modal.resolving));
+        let state = rig.modal.read_with(cx, |modal, _| {
+            (modal.closure.is_none(), modal.resolving.is_some())
+        });
         assert_eq!(state, (true, false));
     }
 
     #[gpui::test]
     fn a_closure_result_for_an_earlier_selection_is_discarded(cx: &mut TestAppContext) {
         let rig = rig(cx, |greeter| vec![greeter]);
-        let earlier = rig.modal.read_with(cx, |modal, _| current_ticket(modal));
         rig.modal
             .update(cx, |modal, cx| modal.toggle(rig.farewell, cx));
+        let earlier = in_flight_ticket(cx, &rig);
+        rig.modal
+            .update(cx, |modal, cx| modal.toggle(rig.greeter, cx));
+        rig.modal
+            .update(cx, |modal, cx| modal.toggle(rig.greeter, cx));
         let stale = PackSelection {
             actions: BTreeSet::from([rig.greeter]),
             ..PackSelection::default()
@@ -976,7 +980,9 @@ mod tests {
 
         rig.modal
             .update(cx, |modal, cx| modal.resolved(earlier, Ok(stale), cx));
-        let still_resolving = rig.modal.read_with(cx, |modal, _| modal.resolving);
+        let still_resolving = rig
+            .modal
+            .read_with(cx, |modal, _| modal.resolving.is_some());
         deliver_closure(cx, &rig);
 
         assert_eq!(
@@ -991,7 +997,7 @@ mod tests {
         name_pack(cx, &rig, "Alerts pack");
         rig.modal
             .update(cx, |modal, cx| modal.toggle(rig.farewell, cx));
-        let ticket = rig.modal.read_with(cx, |modal, _| current_ticket(modal));
+        let ticket = in_flight_ticket(cx, &rig);
         let failure = crate::repo_failure::RepoFailure::operation("unreadable action");
         let shown = crate::test_support::shown_in_english(failure.clone());
 

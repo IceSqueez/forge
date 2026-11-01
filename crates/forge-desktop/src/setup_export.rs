@@ -16,7 +16,7 @@ use crate::pack_services::PackServices;
 use crate::repo_failure::RepoFailure;
 use crate::restore_confirm::statement;
 
-const SETUP_TOAST_DURATION: Duration = Duration::from_secs(10);
+pub(crate) const SETUP_TOAST_DURATION: Duration = Duration::from_secs(10);
 const SETUP_FILE_STEM: &str = "forge-setup";
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]

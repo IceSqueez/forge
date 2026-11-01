@@ -254,7 +254,7 @@ impl ScriptRepo for SqliteScriptRepo {
     async fn telemetry(&self, id: ScriptId) -> Result<ScriptTelemetry, StorageError> {
         let id_str = id.to_string();
         let now = OffsetDateTime::now_utc();
-        let start_of_today = crate::epoch::start_of_local_day_secs(now);
+        let start_of_today = crate::epoch::start_of_system_day_secs(now);
 
         #[derive(sqlx::FromRow)]
         struct TelemetryRow {

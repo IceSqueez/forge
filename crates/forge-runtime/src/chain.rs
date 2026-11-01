@@ -177,8 +177,12 @@ pub(crate) async fn execute_step(
 }
 
 pub(crate) fn pick_steps(action: &Action) -> Vec<SubActionStep> {
+    pick_steps_with(action, &mut rand::rng())
+}
+
+fn pick_steps_with(action: &Action, rng: &mut impl RngExt) -> Vec<SubActionStep> {
     if action.execution_mode == ExecutionMode::RandomPick && !action.sub_actions.is_empty() {
-        let idx = rand::rng().random_range(0..action.sub_actions.len());
+        let idx = rng.random_range(0..action.sub_actions.len());
         return vec![action.sub_actions[idx].clone()];
     }
     action.sub_actions.clone()
@@ -510,6 +514,61 @@ mod tests {
     use super::*;
 
     use forge_events::test_support::CapturingPublisher;
+    use rand::SeedableRng;
+    use rand::rngs::StdRng;
+
+    fn random_pick_action(kinds: &[&str]) -> Action {
+        Action {
+            id: forge_types::ActionId::new(),
+            name: "pick".to_owned(),
+            group: None,
+            queue_id: forge_types::DEFAULT_QUEUE_ID,
+            enabled: true,
+            concurrent: false,
+            bypass_pause: false,
+            execution_mode: ExecutionMode::RandomPick,
+            description: None,
+            sub_actions: kinds
+                .iter()
+                .map(|kind| SubActionStep {
+                    kind_id: (*kind).to_owned(),
+                    config: Default::default(),
+                    enabled: true,
+                    continue_on_error: false,
+                    condition: None,
+                    label: None,
+                })
+                .collect(),
+        }
+    }
+
+    #[test]
+    fn a_random_pick_reaches_every_step_and_runs_one_at_a_time() {
+        let mut action = random_pick_action(&["step.a", "step.b", "step.c"]);
+        let mut rng = StdRng::seed_from_u64(7);
+        let mut reached = std::collections::BTreeSet::new();
+
+        for _ in 0..64 {
+            let picked = pick_steps_with(&action, &mut rng);
+            assert_eq!(picked.len(), 1, "{picked:?}");
+            reached.extend(picked.into_iter().map(|step| step.kind_id));
+        }
+
+        assert_eq!(
+            reached.into_iter().collect::<Vec<_>>(),
+            vec!["step.a", "step.b", "step.c"]
+        );
+
+        action.execution_mode = ExecutionMode::Sequential;
+        assert_eq!(pick_steps_with(&action, &mut rng).len(), 3);
+    }
+
+    #[test]
+    fn a_random_pick_with_no_steps_picks_nothing() {
+        let action = random_pick_action(&[]);
+
+        assert!(pick_steps_with(&action, &mut StdRng::seed_from_u64(7)).is_empty());
+    }
 
     struct ScriptedRunner {
         id: String,

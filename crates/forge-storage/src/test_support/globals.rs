@@ -162,6 +162,28 @@ impl GlobalsRepo for MemoryGlobals {
         Ok(())
     }
 
+    async fn rename_and_set(
+        &self,
+        old_name: &str,
+        new_name: &str,
+        value: Variant,
+        persisted: bool,
+    ) -> Result<(), StorageError> {
+        let mut rows = self.rows();
+        if old_name != new_name && rows.contains_key(new_name) {
+            return Err(StorageError::NameCollision {
+                name: new_name.to_owned(),
+            });
+        }
+        if rows.remove(old_name).is_none() {
+            return Err(StorageError::NotFound {
+                key: old_name.to_owned(),
+            });
+        }
+        rows.insert(new_name.to_owned(), (value, persisted));
+        Ok(())
+    }
+
     async fn count(&self) -> Result<usize, StorageError> {
         Ok(self.rows().len())
     }

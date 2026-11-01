@@ -15,7 +15,7 @@ use gpui::{
 };
 
 use crate::actions::{SHORTCUTS, ShortcutEntry, shortcut_entry};
-use crate::async_bridge::{self, Loadable, SnapshotWriter, WriteOutcome};
+use crate::async_bridge::{self, ErrorSink, Loadable, SnapshotWriter, WriteOutcome};
 use crate::navigation::SettingsSection;
 use crate::repo_failure::RepoFailure;
 use crate::settings_pane_header::SettingsPaneHeader;
@@ -175,10 +175,13 @@ impl SettingsShortcutsView {
             client.set_hold_ceiling(ceiling);
         }
         let repo = Arc::clone(&self.backend) as Arc<dyn SettingsRepo>;
-        self.hold_ceiling_debounce
-            .schedule(&self.rt_handle, "hotkey hold ceiling", async move {
-                save_hold_ceiling(repo.as_ref(), ceiling).await
-            });
+        self.hold_ceiling_debounce.schedule_reporting(
+            &self.rt_handle,
+            tr!("settings_persist_failed"),
+            async move { save_hold_ceiling(repo.as_ref(), ceiling).await },
+            ErrorSink::Toast,
+            cx,
+        );
         cx.notify();
     }
 

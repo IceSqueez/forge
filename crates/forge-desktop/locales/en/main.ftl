@@ -335,6 +335,7 @@ settings_notifications_connection_loss_hint = System sound when a platform/app l
 settings_notifications_scheduled_backup_failure_label = Notify when a scheduled backup fails
 settings_notifications_scheduled_backup_failure_hint = OS-native notification on the first failure of a scheduled backup
 settings_notifications_persist_failed = Could not save the notification setting
+settings_persist_failed = Could not save the setting. It will revert on restart.
 settings_nav_audio = Audio
 
 ## Settings → Diagnostics pane
@@ -4089,6 +4090,7 @@ integration_refs_triggers = { $count ->
 integration_refs_used_by = used by { $parts }
 integration_retry = Retry
 integration_retry_failed = Could not restart { $name }
+integration_enable_failed = Could not enable { $name }
 integration_connect_failed = Could not connect { $name }
 integration_disconnect_failed = Could not disconnect { $name }
 integration_failed_title = { $name } could not start

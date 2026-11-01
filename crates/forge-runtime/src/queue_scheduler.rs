@@ -573,6 +573,13 @@ impl QueueSchedulerHandle {
         rx.await.map_err(|_| RuntimeError::SchedulerChannelClosed)
     }
 
+    pub async fn ensure_live(&self, queue: Queue) -> Result<MembershipOutcome, RuntimeError> {
+        match self.register(queue.clone()).await? {
+            MembershipOutcome::AlreadyRegistered => self.reconfigure(queue).await,
+            outcome => Ok(outcome),
+        }
+    }
+
     pub async fn reconfigure(&self, queue: Queue) -> Result<MembershipOutcome, RuntimeError> {
         let (tx, rx) = oneshot::channel();
         self.sender

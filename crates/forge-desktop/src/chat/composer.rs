@@ -8,7 +8,7 @@ use forge_types::{EventId, PlatformId};
 use gpui::{AppContext, Context, Entity, IntoElement, Render, SharedString, Subscription, Window};
 
 use super::platform_display_name;
-use super::platform_gate::platform_integration;
+use super::platform_gate::{platform_integration, platform_is_running, platform_switched_on};
 use super::send_plan::{
     CHAT_SEND_RESPONSE_TIMEOUT, DeliveryResult, PlatformReach, SendPlan, SendRefusal, SendReport,
     collect_delivery, plan_send,
@@ -18,7 +18,6 @@ use crate::home_stats::HomeStats;
 use crate::integration_lifecycle::IntegrationLifecycle;
 use crate::twitch_bot_presence::TwitchBotPresence;
 use forge_components::PushToast;
-use forge_runtime::LifecycleState;
 
 const BOT_SWITCH_OPTION: usize = 1;
 
@@ -139,21 +138,14 @@ impl ChatComposer {
         let lifecycle = self.lifecycle.as_ref().map(|lifecycle| lifecycle.read(cx));
         let enabled: Vec<PlatformId> = PlatformId::ALL
             .into_iter()
-            .filter(|platform| {
-                lifecycle.is_none_or(|lifecycle| {
-                    lifecycle.is_on(&platform_integration(*platform).builtin_id())
-                })
-            })
+            .filter(|platform| platform_switched_on(lifecycle, *platform))
             .collect();
         let connected = enabled
             .iter()
             .copied()
             .filter(|platform| {
-                let running = lifecycle.is_none_or(|lifecycle| {
-                    lifecycle.state_of(&platform_integration(*platform).builtin_id())
-                        == LifecycleState::Running
-                });
-                running && stats.is_connected(platform_integration(*platform))
+                platform_is_running(lifecycle, *platform)
+                    && stats.is_connected(platform_integration(*platform))
             })
             .collect();
         PlatformReach { enabled, connected }

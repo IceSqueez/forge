@@ -82,27 +82,27 @@ impl SubActionRunner for StreamSendCaptionRunner {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::runners::test_support::{MockSink, make_ctx};
+    use crate::runners::test_support::{RecordingSink, make_ctx};
     use forge_types::SubActionOutcome;
     use forge_types::Variant;
     use std::collections::BTreeMap;
-
-    fn runner() -> StreamSendCaptionRunner {
-        StreamSendCaptionRunner::new(Arc::new(MockSink))
-    }
 
     fn config_with(text: &str) -> SubActionConfig {
         BTreeMap::from([("caption_text".to_owned(), Variant::String(text.to_owned()))])
     }
 
     #[tokio::test]
-    async fn execute_reports_success_with_correct_kind() {
+    async fn execute_sends_the_configured_caption() {
+        let sink = RecordingSink::new();
         let stack = ArgStack::new();
-        let (tel, extra) = runner()
+        let (tel, extra) = StreamSendCaptionRunner::new(sink.clone())
             .execute(&config_with("On screen now"), &make_ctx(&stack))
             .await;
         assert_eq!(tel.outcome, SubActionOutcome::Success);
-        assert_eq!(tel.kind, "obs.streaming.send_caption");
+        assert_eq!(
+            sink.calls(),
+            vec!["send_stream_caption(On screen now)".to_owned()]
+        );
         assert!(extra.is_none());
     }
 }

@@ -247,6 +247,39 @@ fn build_input_stream(
     ctx: CallbackContext,
 ) -> Result<cpal::Stream, AudioError> {
     use cpal::SampleFormat;
+    use cpal::{I24, U24};
+
+    let stream = match sample_format {
+        SampleFormat::I8 => typed_input_stream::<i8>(device, stream_config, ctx),
+        SampleFormat::I16 => typed_input_stream::<i16>(device, stream_config, ctx),
+        SampleFormat::I24 => typed_input_stream::<I24>(device, stream_config, ctx),
+        SampleFormat::I32 => typed_input_stream::<i32>(device, stream_config, ctx),
+        SampleFormat::I64 => typed_input_stream::<i64>(device, stream_config, ctx),
+        SampleFormat::U8 => typed_input_stream::<u8>(device, stream_config, ctx),
+        SampleFormat::U16 => typed_input_stream::<u16>(device, stream_config, ctx),
+        SampleFormat::U24 => typed_input_stream::<U24>(device, stream_config, ctx),
+        SampleFormat::U32 => typed_input_stream::<u32>(device, stream_config, ctx),
+        SampleFormat::U64 => typed_input_stream::<u64>(device, stream_config, ctx),
+        SampleFormat::F32 => typed_input_stream::<f32>(device, stream_config, ctx),
+        SampleFormat::F64 => typed_input_stream::<f64>(device, stream_config, ctx),
+        other => {
+            return Err(AudioError::UnsupportedSampleFormat(format!("{other:?}")));
+        }
+    };
+
+    stream.map_err(|e| AudioError::Host(e.to_string()))
+}
+
+fn typed_input_stream<T>(
+    device: &cpal::Device,
+    stream_config: cpal::StreamConfig,
+    ctx: CallbackContext,
+) -> Result<cpal::Stream, cpal::Error>
+where
+    T: cpal::SizedSample,
+    f32: cpal::FromSample<T>,
+{
+    use cpal::FromSample;
     use cpal::traits::DeviceTrait;
 
     let CallbackContext {
@@ -257,78 +290,25 @@ fn build_input_stream(
         state_tx,
         failure_tx,
     } = ctx;
-
-    let stream = match sample_format {
-        SampleFormat::F32 => {
-            let error_tx = state_tx.clone();
-            let error_control = failure_tx.clone();
-            device.build_input_stream(
-                stream_config,
-                move |data: &[f32], _: &cpal::InputCallbackInfo| {
-                    let peak = data.iter().fold(0.0f32, |acc, s| acc.max(s.abs()));
-                    gate_tick(
-                        peak,
-                        epoch,
-                        &shared,
-                        &is_active,
-                        &last_active_nanos,
-                        &state_tx,
-                    );
-                },
-                move |err| input_stream_error_fn(err, &error_tx, &error_control),
-                None,
-            )
-        }
-        SampleFormat::I16 => {
-            let error_tx = state_tx.clone();
-            let error_control = failure_tx.clone();
-            device.build_input_stream(
-                stream_config,
-                move |data: &[i16], _: &cpal::InputCallbackInfo| {
-                    let peak = data
-                        .iter()
-                        .fold(0.0f32, |acc, s| acc.max((*s as f32 / 32767.0).abs()));
-                    gate_tick(
-                        peak,
-                        epoch,
-                        &shared,
-                        &is_active,
-                        &last_active_nanos,
-                        &state_tx,
-                    );
-                },
-                move |err| input_stream_error_fn(err, &error_tx, &error_control),
-                None,
-            )
-        }
-        SampleFormat::I32 => {
-            let error_tx = state_tx.clone();
-            let error_control = failure_tx.clone();
-            device.build_input_stream(
-                stream_config,
-                move |data: &[i32], _: &cpal::InputCallbackInfo| {
-                    let peak = data.iter().fold(0.0f32, |acc, s| {
-                        acc.max((*s as f32 / i32::MAX as f32).abs())
-                    });
-                    gate_tick(
-                        peak,
-                        epoch,
-                        &shared,
-                        &is_active,
-                        &last_active_nanos,
-                        &state_tx,
-                    );
-                },
-                move |err| input_stream_error_fn(err, &error_tx, &error_control),
-                None,
-            )
-        }
-        other => {
-            return Err(AudioError::UnsupportedSampleFormat(format!("{other:?}")));
-        }
-    };
-
-    stream.map_err(|e| AudioError::Host(e.to_string()))
+    let error_tx = state_tx.clone();
+    device.build_input_stream(
+        stream_config,
+        move |data: &[T], _: &cpal::InputCallbackInfo| {
+            let peak = data.iter().fold(0.0f32, |acc, s| {
+                acc.max(<f32 as FromSample<T>>::from_sample_(*s).abs())
+            });
+            gate_tick(
+                peak,
+                epoch,
+                &shared,
+                &is_active,
+                &last_active_nanos,
+                &state_tx,
+            );
+        },
+        move |err| input_stream_error_fn(err, &error_tx, &failure_tx),
+        None,
+    )
 }
 
 fn find_input_device(host: &cpal::Host, id: Option<&DeviceId>) -> Option<cpal::Device> {

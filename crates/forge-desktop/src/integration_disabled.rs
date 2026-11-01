@@ -30,9 +30,12 @@ use crate::navigation::Screen;
 use forge_components::grow_cell;
 use forge_host::integration_catalog::declaration_of;
 
+use crate::async_bridge;
 use crate::hub_crumb::hub_crumb;
+use crate::integration_switch::integration_name;
+use forge_components::{PushToast, ToastKind};
 use forge_host::integrations::BuiltinObject;
-use forge_runtime::{IntegrationSlot, LifecycleState};
+use forge_runtime::{IntegrationSlot, IntegrationStartError, LifecycleState};
 
 const BODY_PAD_V: Pixels = px(18.0);
 const BODY_PAD_H: Pixels = px(22.0);
@@ -156,15 +159,30 @@ impl IntegrationDisabledView {
         };
     }
 
-    pub(crate) fn enable(&mut self, _cx: &mut Context<Self>) {
+    pub(crate) fn enable(&mut self, cx: &mut Context<Self>) {
         let Some(slot) = self.launch.slot.clone() else {
             return;
         };
-        self.launch.rt_handle.spawn(async move {
-            if let Err(e) = slot.set_enabled(true).await {
-                tracing::warn!(integration = %slot.id(), error = %e, "could not enable the integration");
-            }
-        });
+        async_bridge::run_async(
+            &self.launch.rt_handle,
+            async move { slot.set_enabled(true).await },
+            |this, outcome, cx| this.apply_enable_outcome(outcome, cx),
+            cx,
+        );
+    }
+
+    fn apply_enable_outcome(
+        &mut self,
+        outcome: Result<LifecycleState, IntegrationStartError>,
+        cx: &mut Context<Self>,
+    ) {
+        if let Err(e) = outcome {
+            tracing::warn!(integration = %self.id, error = %e, "could not enable the integration");
+            cx.push_toast(
+                ToastKind::Error,
+                tr!("integration_enable_failed", name = self.name().to_string()),
+            );
+        }
     }
 
     fn go(&mut self, screen: Screen, cx: &mut Context<Self>) {
@@ -172,10 +190,7 @@ impl IntegrationDisabledView {
     }
 
     fn name(&self) -> SharedString {
-        match &self.declaration {
-            Some(declaration) => SharedString::new_static(declaration.brand_name),
-            None => SharedString::from(self.id.as_str().to_owned()),
-        }
+        integration_name(&self.id)
     }
 
     fn state(&self, cx: &Context<Self>) -> LifecycleState {

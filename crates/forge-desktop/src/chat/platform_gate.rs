@@ -15,6 +15,22 @@ pub(crate) fn platform_integration(platform: PlatformId) -> Integration {
     }
 }
 
+pub(crate) fn platform_switched_on(
+    lifecycle: Option<&IntegrationLifecycle>,
+    platform: PlatformId,
+) -> bool {
+    lifecycle.is_none_or(|lifecycle| lifecycle.is_on(&platform_integration(platform).builtin_id()))
+}
+
+pub(crate) fn platform_is_running(
+    lifecycle: Option<&IntegrationLifecycle>,
+    platform: PlatformId,
+) -> bool {
+    lifecycle.is_none_or(|lifecycle| {
+        lifecycle.state_of(&platform_integration(platform).builtin_id()) == LifecycleState::Running
+    })
+}
+
 impl ChatView {
     #[must_use]
     pub(crate) fn with_lifecycle(
@@ -58,12 +74,7 @@ impl ChatView {
     }
 
     pub(crate) fn platform_enabled(&self, platform: PlatformId, cx: &App) -> bool {
-        match &self.lifecycle {
-            Some(lifecycle) => lifecycle
-                .read(cx)
-                .is_on(&platform_integration(platform).builtin_id()),
-            None => true,
-        }
+        platform_switched_on(self.lifecycle.as_ref().map(|l| l.read(cx)), platform)
     }
 
     pub(crate) fn filter_offered(&self, filter: PlatformFilter, cx: &App) -> bool {
@@ -88,14 +99,6 @@ impl ChatView {
 
 impl ViewerDrawer {
     pub(super) fn platform_running(&self, platform: PlatformId, cx: &App) -> bool {
-        match &self.lifecycle {
-            Some(lifecycle) => {
-                lifecycle
-                    .read(cx)
-                    .state_of(&platform_integration(platform).builtin_id())
-                    == LifecycleState::Running
-            }
-            None => true,
-        }
+        platform_is_running(self.lifecycle.as_ref().map(|l| l.read(cx)), platform)
     }
 }

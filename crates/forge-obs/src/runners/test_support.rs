@@ -102,8 +102,8 @@ impl ObsSink for MockSink {
             duration_ms: 45_000,
         })
     }
-    async fn get_current_scene(&self) -> Result<Option<String>, ObsError> {
-        Ok(Some("Gameplay".to_owned()))
+    async fn get_current_scene(&self) -> Result<String, ObsError> {
+        Ok("Gameplay".to_owned())
     }
     async fn get_input_settings(&self, _: &str) -> Result<InputSettings, ObsError> {
         let mut settings = BTreeMap::new();
@@ -285,9 +285,9 @@ impl ObsSink for RecordingSink {
     async fn get_stream_status(&self) -> Result<StreamStatus, ObsError> {
         self.record_query("get_stream_status".to_owned())
     }
-    async fn get_current_scene(&self) -> Result<Option<String>, ObsError> {
+    async fn get_current_scene(&self) -> Result<String, ObsError> {
         self.record("get_current_scene".to_owned())?;
-        Ok(Some("Gameplay".to_owned()))
+        Ok("Gameplay".to_owned())
     }
     async fn get_input_settings(&self, input: &str) -> Result<InputSettings, ObsError> {
         self.record(format!("get_input_settings({input})"))?;

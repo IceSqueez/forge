@@ -21,7 +21,6 @@ mod quick_action_builders;
 mod reconnect;
 mod sample_donation;
 mod sender;
-pub use auth::AuthFlow;
 pub use ban_list::{
     BanDuration, BanEntry, BanListOutcome, BanListSource, BanListUnavailable, BanPage,
     BanPageToken, UnbanAbility, UnbanRefusal,
@@ -55,7 +54,7 @@ pub use donation_poll::{
     PollWorker, PolledDonationProvider, RunningPoller, parse_header_token, poll_metrics,
 };
 pub use endpoints::{EndpointRefusal, EndpointSurface, PlatformEndpoints};
-pub use error::{DeviceAuthEnd, HTTP_UNAUTHORIZED, PlatformError};
+pub use error::{DeviceAuthEnd, PlatformError};
 pub use follow_lookup::{FollowLookup, FollowStatus};
 pub use integration::{
     CatalogLabel, ConnectionAffordance, IntegrationCatalogGroup, IntegrationCategory,

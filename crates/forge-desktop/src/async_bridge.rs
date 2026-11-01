@@ -358,14 +358,6 @@ impl Debounced {
         }
     }
 
-    pub(crate) fn schedule<F, E>(&self, handle: &Handle, context: impl Into<SharedString>, fut: F)
-    where
-        F: Future<Output = Result<(), E>> + Send + 'static,
-        E: Display + Send + 'static,
-    {
-        self.spawn_debounced(handle, context.into(), fut, |_| {});
-    }
-
     pub(crate) fn schedule_reporting<V, F, E>(
         &self,
         handle: &Handle,

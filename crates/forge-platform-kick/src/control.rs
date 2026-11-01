@@ -1,7 +1,7 @@
 use async_trait::async_trait;
 use forge_platform_core::{
     BuiltinControl, ChatPlatform, ConnectionState, ControlFailure, ControlOutcome, CredentialState,
-    HTTP_UNAUTHORIZED, PlatformError,
+    PlatformError,
 };
 
 use crate::builtin::KickIntegrationBundle;
@@ -64,7 +64,7 @@ impl KickIntegrationBundle {
             Ok(_) => Ok(()),
             Err(PlatformError::ReauthRequired { .. }) => Err(ControlFailure::Unauthorized),
             Err(PlatformError::Http {
-                status: HTTP_UNAUTHORIZED,
+                status: forge_net::status::UNAUTHORIZED,
                 ..
             }) => Err(ControlFailure::Unauthorized),
             Err(PlatformError::Auth { .. }) => Err(ControlFailure::Unauthorized),

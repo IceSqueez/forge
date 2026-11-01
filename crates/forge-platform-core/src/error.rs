@@ -4,8 +4,6 @@ use thiserror::Error;
 use crate::endpoints::EndpointRefusal;
 use crate::sender::SenderPreference;
 
-pub const HTTP_UNAUTHORIZED: u16 = forge_net::status::UNAUTHORIZED;
-
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum DeviceAuthEnd {
     Cancelled,

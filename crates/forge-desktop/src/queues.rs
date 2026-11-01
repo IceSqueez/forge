@@ -765,7 +765,6 @@ impl QueuesView {
                 .unwrap_or(NonZeroU32::MIN),
         };
         let id = queue.id;
-        let is_edit = editing.is_some();
         if let Some(modal) = self.modal.as_ref() {
             modal.update(cx, |m, cx| {
                 m.saving = true;
@@ -780,11 +779,7 @@ impl QueuesView {
             &self.rt_handle,
             async move {
                 queue_repo.save(&queue).await.map_err(RepoFailure::from)?;
-                let membership = if is_edit {
-                    scheduler.reconfigure(queue).await
-                } else {
-                    scheduler.register(queue).await
-                };
+                let membership = scheduler.ensure_live(queue).await;
                 Ok::<_, RepoFailure>(membership.map_err(RepoFailure::from))
             },
             move |this, result, cx| match result {

@@ -1,5 +1,4 @@
 use std::sync::Arc;
-use std::time::Duration;
 
 use async_trait::async_trait;
 use forge_platform_core::{
@@ -7,8 +6,8 @@ use forge_platform_core::{
     PlatformEndpoints, QuickActions,
 };
 use forge_runtime::{
-    DEFAULT_TEARDOWN_GRACE, DonationIngest, EventBus, IntegrationFactory, IntegrationStartError,
-    RunningIntegration, TaskGroup,
+    DonationIngest, EventBus, IntegrationFactory, IntegrationStartError, RunningIntegration,
+    TaskGroup,
 };
 use forge_storage::{CredentialsRepo, DataProvider, StorageError, has_credentials_for};
 use forge_types::IntegrationId;
@@ -46,10 +45,6 @@ impl<P> DonationFactory<P> {
 impl<P: DonationIntegration + 'static> IntegrationFactory<BuiltinObject> for DonationFactory<P> {
     fn id(&self) -> IntegrationId {
         DonationProvider::provider(self.provider.as_ref()).clone()
-    }
-
-    fn teardown_grace(&self) -> Duration {
-        DEFAULT_TEARDOWN_GRACE
     }
 
     async fn is_configured(&self) -> Result<bool, StorageError> {

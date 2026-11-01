@@ -10,6 +10,8 @@ use crate::error::AudioError;
 pub(crate) const CANONICAL_OUTPUT_CHAIN: &[&str] = &["default", "pipewire", "pulse"];
 pub(crate) const CANONICAL_INPUT_CHAIN: &[&str] = &["default", "pipewire", "pulse"];
 
+const NULL_DEVICE_ID: &str = "null";
+
 const NOISE_ID_PREFIXES: &[&str] = &[
     "sysdefault",
     "dmix",
@@ -35,7 +37,7 @@ const NOISE_ID_PREFIXES: &[&str] = &[
 ];
 
 fn is_noise_device_id(id_str: &str) -> bool {
-    id_str == "null"
+    id_str == NULL_DEVICE_ID
         || NOISE_ID_PREFIXES
             .iter()
             .any(|prefix| id_str.starts_with(prefix))
@@ -45,8 +47,10 @@ pub use forge_types::OutputDevice;
 
 const DEVICE_CACHE_TTL: Duration = Duration::from_secs(5);
 
-static DEVICE_CACHE: Mutex<Option<(Instant, Vec<DeviceInfo>)>> = Mutex::new(None);
-static INPUT_DEVICE_CACHE: Mutex<Option<(Instant, Vec<DeviceInfo>)>> = Mutex::new(None);
+type DeviceCache = Mutex<Option<(Instant, Vec<DeviceInfo>)>>;
+
+static DEVICE_CACHE: DeviceCache = Mutex::new(None);
+static INPUT_DEVICE_CACHE: DeviceCache = Mutex::new(None);
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub struct DeviceId(String);
@@ -69,141 +73,95 @@ pub struct DeviceInfo {
 }
 
 pub fn list_output_devices() -> Result<Vec<DeviceInfo>, AudioError> {
-    if let Some((stamp, ref devices)) = *DEVICE_CACHE.lock_recover()
-        && stamp.elapsed() < DEVICE_CACHE_TTL
-    {
-        return Ok(devices.clone());
-    }
-    let fresh = enumerate_uncached()?;
-    {
-        let mut guard = DEVICE_CACHE.lock_recover();
-        *guard = Some((Instant::now(), fresh.clone()));
-    }
-    Ok(fresh)
+    cached_devices(DeviceDirection::Output)
 }
 
 pub(crate) fn forget_output_devices() {
     {
-        let mut guard = DEVICE_CACHE.lock_recover();
+        let mut guard = DeviceDirection::Output.cache().lock_recover();
         *guard = None;
     }
 }
 
 pub fn refresh_output_devices() -> Result<Vec<DeviceInfo>, AudioError> {
-    let fresh = enumerate_uncached()?;
-    {
-        let mut guard = DEVICE_CACHE.lock_recover();
-        *guard = Some((Instant::now(), fresh.clone()));
-    }
-    Ok(fresh)
-}
-
-fn enumerate_uncached() -> Result<Vec<DeviceInfo>, AudioError> {
-    use cpal::traits::{DeviceTrait, HostTrait};
-
-    let host = cpal::default_host();
-    let default_name: String = host
-        .default_output_device()
-        .and_then(|d| d.description().ok())
-        .map(|d| d.name().to_owned())
-        .unwrap_or_default();
-
-    let devices = host
-        .output_devices()
-        .map_err(|e| AudioError::Host(e.to_string()))?;
-
-    let mut all = Vec::new();
-    for device in devices {
-        let Ok(desc) = device.description() else {
-            continue;
-        };
-        let name = desc.name().to_owned();
-        let id_str = device
-            .id()
-            .map(|id| id.id().to_owned())
-            .unwrap_or_else(|_| name.clone());
-        let is_default = !default_name.is_empty() && name == default_name;
-        all.push(DeviceInfo {
-            id: DeviceId::new(id_str),
-            name,
-            is_default,
-        });
-    }
-
-    let default_entry = all.iter().find(|d| d.is_default).cloned();
-
-    let mut out = Vec::new();
-    let mut seen_names: HashSet<String> = HashSet::new();
-    for device in all {
-        if is_noise_device_id(device.id.as_str()) {
-            continue;
-        }
-        if !seen_names.insert(device.name.clone()) {
-            continue;
-        }
-        out.push(device);
-    }
-
-    if !out.iter().any(|d| d.is_default)
-        && let Some(default_entry) = default_entry
-        && !is_noise_device_id(default_entry.id.as_str())
-    {
-        out.push(default_entry);
-    }
-
-    Ok(out)
+    refreshed_devices(DeviceDirection::Output)
 }
 
 pub fn pick_default_output_device(devices: &[DeviceInfo]) -> Option<DeviceId> {
-    CANONICAL_OUTPUT_CHAIN
-        .iter()
-        .find_map(|preferred| devices.iter().find(|d| d.id.as_str() == *preferred))
-        .or_else(|| {
-            devices
-                .iter()
-                .find(|d| d.is_default && d.id.as_str() != "null")
-        })
-        .or_else(|| devices.iter().find(|d| d.id.as_str() != "null"))
-        .or_else(|| devices.first())
-        .map(|d| d.id.clone())
+    pick_default_device(CANONICAL_OUTPUT_CHAIN, devices)
 }
 
 pub fn list_input_devices() -> Result<Vec<DeviceInfo>, AudioError> {
-    if let Some((stamp, ref devices)) = *INPUT_DEVICE_CACHE.lock_recover()
+    cached_devices(DeviceDirection::Input)
+}
+
+pub fn refresh_input_devices() -> Result<Vec<DeviceInfo>, AudioError> {
+    refreshed_devices(DeviceDirection::Input)
+}
+
+pub fn pick_default_input_device(devices: &[DeviceInfo]) -> Option<DeviceId> {
+    pick_default_device(CANONICAL_INPUT_CHAIN, devices)
+}
+
+#[derive(Clone, Copy)]
+enum DeviceDirection {
+    Output,
+    Input,
+}
+
+impl DeviceDirection {
+    fn cache(self) -> &'static DeviceCache {
+        match self {
+            Self::Output => &DEVICE_CACHE,
+            Self::Input => &INPUT_DEVICE_CACHE,
+        }
+    }
+
+    fn host_devices(
+        self,
+        host: &cpal::Host,
+    ) -> Result<(Option<cpal::Device>, Vec<cpal::Device>), AudioError> {
+        use cpal::traits::HostTrait;
+
+        let listing = match self {
+            Self::Output => host
+                .output_devices()
+                .map(|devices| (host.default_output_device(), devices.collect())),
+            Self::Input => host
+                .input_devices()
+                .map(|devices| (host.default_input_device(), devices.collect())),
+        };
+        listing.map_err(|e| AudioError::Host(e.to_string()))
+    }
+}
+
+fn cached_devices(direction: DeviceDirection) -> Result<Vec<DeviceInfo>, AudioError> {
+    if let Some((stamp, ref devices)) = *direction.cache().lock_recover()
         && stamp.elapsed() < DEVICE_CACHE_TTL
     {
         return Ok(devices.clone());
     }
-    let fresh = enumerate_input_uncached()?;
+    refreshed_devices(direction)
+}
+
+fn refreshed_devices(direction: DeviceDirection) -> Result<Vec<DeviceInfo>, AudioError> {
+    let fresh = enumerate_uncached(direction)?;
     {
-        let mut guard = INPUT_DEVICE_CACHE.lock_recover();
+        let mut guard = direction.cache().lock_recover();
         *guard = Some((Instant::now(), fresh.clone()));
     }
     Ok(fresh)
 }
 
-pub fn refresh_input_devices() -> Result<Vec<DeviceInfo>, AudioError> {
-    let fresh = enumerate_input_uncached()?;
-    {
-        let mut guard = INPUT_DEVICE_CACHE.lock_recover();
-        *guard = Some((Instant::now(), fresh.clone()));
-    }
-    Ok(fresh)
-}
-
-fn enumerate_input_uncached() -> Result<Vec<DeviceInfo>, AudioError> {
-    use cpal::traits::{DeviceTrait, HostTrait};
+fn enumerate_uncached(direction: DeviceDirection) -> Result<Vec<DeviceInfo>, AudioError> {
+    use cpal::traits::DeviceTrait;
 
     let host = cpal::default_host();
-    let default_name: String = host
-        .default_input_device()
+    let (default_device, devices) = direction.host_devices(&host)?;
+    let default_name: String = default_device
         .and_then(|d| d.description().ok())
         .map(|d| d.name().to_owned())
         .unwrap_or_default();
-
-    let devices = host
-        .input_devices()
-        .map_err(|e| AudioError::Host(e.to_string()))?;
 
     let mut all = Vec::new();
     for device in devices {
@@ -222,7 +180,10 @@ fn enumerate_input_uncached() -> Result<Vec<DeviceInfo>, AudioError> {
             is_default,
         });
     }
+    Ok(selectable_devices(all))
+}
 
+fn selectable_devices(all: Vec<DeviceInfo>) -> Vec<DeviceInfo> {
     let default_entry = all.iter().find(|d| d.is_default).cloned();
 
     let mut out = Vec::new();
@@ -244,19 +205,19 @@ fn enumerate_input_uncached() -> Result<Vec<DeviceInfo>, AudioError> {
         out.push(default_entry);
     }
 
-    Ok(out)
+    out
 }
 
-pub fn pick_default_input_device(devices: &[DeviceInfo]) -> Option<DeviceId> {
-    CANONICAL_INPUT_CHAIN
+fn pick_default_device(chain: &[&str], devices: &[DeviceInfo]) -> Option<DeviceId> {
+    chain
         .iter()
         .find_map(|preferred| devices.iter().find(|d| d.id.as_str() == *preferred))
         .or_else(|| {
             devices
                 .iter()
-                .find(|d| d.is_default && d.id.as_str() != "null")
+                .find(|d| d.is_default && d.id.as_str() != NULL_DEVICE_ID)
         })
-        .or_else(|| devices.iter().find(|d| d.id.as_str() != "null"))
+        .or_else(|| devices.iter().find(|d| d.id.as_str() != NULL_DEVICE_ID))
         .or_else(|| devices.first())
         .map(|d| d.id.clone())
 }

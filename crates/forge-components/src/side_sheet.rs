@@ -1,13 +1,12 @@
 use crate::key_activation::KeyActivated;
 use crate::presentation::ActivePresentation;
-use crate::resize_handle::clamp_extent;
+use crate::resize_handle::{ResizeEdge, ResizeRange, install_resize};
 use crate::tokens::Density;
 use crate::tokens::Spacing;
 use crate::tokens::spacing;
 use gpui::{
-    AnyElement, App, AppContext, ClickEvent, Context, CursorStyle, DragMoveEvent, ElementId,
-    InteractiveElement, IntoElement, ParentElement, Pixels, Render, RenderOnce, Rgba, SharedString,
-    StatefulInteractiveElement, Styled, Window, div, px,
+    AnyElement, App, ClickEvent, ElementId, InteractiveElement, IntoElement, ParentElement, Pixels,
+    RenderOnce, Rgba, SharedString, StatefulInteractiveElement, Styled, Window, div, px,
 };
 
 use crate::icons::{Icon, icon};
@@ -20,10 +19,6 @@ const HEADER_TILE: Pixels = px(28.0);
 const HEADER_TILE_ICON: Pixels = px(15.0);
 const CLOSE_HIT: Pixels = px(32.0);
 const DIVIDER_H: Pixels = BORDER_THIN;
-const RESIZE_VISUAL_W: Pixels = BORDER_THIN;
-const RESIZE_HIT_W: Pixels = px(8.0);
-
-const RESIZE_GROUP: &str = "forge-side-sheet-resize";
 
 #[derive(Clone, Copy, Debug)]
 pub struct SheetWidth {
@@ -59,7 +54,7 @@ type CloseHandler = Box<dyn Fn(&ClickEvent, &mut Window, &mut App) + 'static>;
 type ResizeHandler = Box<dyn Fn(&Pixels, &mut Window, &mut App) + 'static>;
 
 struct ResizeConfig {
-    id: ElementId,
+    id: &'static str,
     min: Pixels,
     max: Pixels,
     handler: ResizeHandler,
@@ -67,22 +62,13 @@ struct ResizeConfig {
 
 struct SheetResizeDrag;
 
-struct DragGhost;
-
-impl Render for DragGhost {
-    fn render(&mut self, _window: &mut Window, _cx: &mut Context<Self>) -> impl IntoElement {
-        div()
-    }
-}
-
 #[derive(IntoElement)]
 pub struct SideSheet {
     content: AnyElement,
     width: Pixels,
+    palette: ForgePalette,
     surface_bg: Rgba,
     border: Rgba,
-    handle_rest: Rgba,
-    handle_hover: Rgba,
     tile_bg: Rgba,
     title_color: Rgba,
     subtitle_color: Rgba,
@@ -99,10 +85,9 @@ pub fn side_sheet(width: Pixels, content: impl IntoElement, palette: &ForgePalet
     SideSheet {
         content: content.into_any_element(),
         width,
+        palette: *palette,
         surface_bg: palette.shell,
         border: palette.border_regular,
-        handle_rest: palette.border_input,
-        handle_hover: palette.border_active,
         tile_bg: palette.surface_overlay,
         title_color: palette.text_primary,
         subtitle_color: palette.text_secondary,
@@ -149,12 +134,12 @@ impl SideSheet {
     #[must_use]
     pub fn on_resize(
         mut self,
-        id: impl Into<ElementId>,
+        id: &'static str,
         bounds: SheetWidth,
         handler: impl Fn(&Pixels, &mut Window, &mut App) + 'static,
     ) -> Self {
         self.resize = Some(ResizeConfig {
-            id: id.into(),
+            id,
             min: px(bounds.min),
             max: px(bounds.max),
             handler: Box::new(handler),
@@ -225,32 +210,6 @@ impl SideSheet {
 
         row.into_any_element()
     }
-
-    fn render_resize_edge(&self, id: ElementId) -> AnyElement {
-        let rest = self.handle_rest;
-        let hover = self.handle_hover;
-
-        let line = div()
-            .w(RESIZE_VISUAL_W)
-            .h_full()
-            .bg(rest)
-            .group_hover(RESIZE_GROUP, move |s| s.bg(hover));
-
-        div()
-            .absolute()
-            .top_0()
-            .h_full()
-            .w(RESIZE_HIT_W)
-            .flex()
-            .left_0()
-            .justify_start()
-            .group(RESIZE_GROUP)
-            .cursor(CursorStyle::ResizeLeftRight)
-            .id(id)
-            .on_drag(SheetResizeDrag, |_, _, _, cx| cx.new(|_| DragGhost))
-            .child(line)
-            .into_any_element()
-    }
 }
 
 impl RenderOnce for SideSheet {
@@ -273,7 +232,8 @@ impl RenderOnce for SideSheet {
 
         let resize = self.resize.take();
 
-        let mut panel = div()
+        let palette = self.palette;
+        let panel = div()
             .relative()
             .flex()
             .flex_col()
@@ -281,28 +241,26 @@ impl RenderOnce for SideSheet {
             .h_full()
             .bg(self.surface_bg)
             .border(BORDER_THIN)
-            .border_color(self.border);
+            .border_color(self.border)
+            .children(header)
+            .child(content);
 
-        if let Some(ResizeConfig {
-            id,
-            min,
-            max,
-            handler,
-        }) = resize
-        {
-            let edge = self.render_resize_edge(id);
-            panel = panel
-                .on_drag_move(move |e: &DragMoveEvent<SheetResizeDrag>, window, cx| {
-                    let raw = e.bounds.right() - e.event.position.x;
-                    handler(&clamp_extent(raw, min, max), window, cx);
-                })
-                .children(header)
-                .child(content)
-                .child(edge);
-        } else {
-            panel = panel.children(header).child(content);
+        match resize {
+            Some(ResizeConfig {
+                id,
+                min,
+                max,
+                handler,
+            }) => install_resize(
+                panel,
+                SheetResizeDrag,
+                id,
+                ResizeEdge::Left,
+                ResizeRange { min, max },
+                &palette,
+                handler,
+            ),
+            None => panel,
         }
-
-        panel
     }
 }

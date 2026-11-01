@@ -17,7 +17,7 @@ use gpui::{
     prelude::*, px, relative,
 };
 
-use crate::async_bridge::{self, Loadable};
+use crate::async_bridge::{self, ErrorSink, Loadable};
 use crate::load_notice::{LoadNotice, NoticeWidth, load_notice};
 use crate::repo_failure::RepoFailure;
 use crate::settings_audio::DeviceRow;
@@ -290,10 +290,13 @@ impl SettingsVoiceGateView {
         self.owner.reconfigure(self.config());
         let settings = Arc::clone(&self.backend) as Arc<dyn SettingsRepo>;
         let value = self.threshold;
-        self.threshold_debounce
-            .schedule(&self.rt_handle, "voice gate threshold", async move {
-                forge_storage::set_voice_gate_threshold(settings.as_ref(), value).await
-            });
+        self.threshold_debounce.schedule_reporting(
+            &self.rt_handle,
+            tr!("settings_persist_failed"),
+            async move { forge_storage::set_voice_gate_threshold(settings.as_ref(), value).await },
+            ErrorSink::Toast,
+            cx,
+        );
         cx.notify();
     }
 
@@ -311,10 +314,13 @@ impl SettingsVoiceGateView {
             self.hold_ms = hold_ms;
             self.owner.reconfigure(self.config());
             let settings = Arc::clone(&self.backend) as Arc<dyn SettingsRepo>;
-            self.hold_debounce
-                .schedule(&self.rt_handle, "voice gate hold", async move {
-                    forge_storage::set_voice_gate_hold_ms(settings.as_ref(), hold_ms).await
-                });
+            self.hold_debounce.schedule_reporting(
+                &self.rt_handle,
+                tr!("settings_persist_failed"),
+                async move { forge_storage::set_voice_gate_hold_ms(settings.as_ref(), hold_ms).await },
+                ErrorSink::Toast,
+                cx,
+            );
         }
         cx.notify();
     }

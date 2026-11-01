@@ -781,10 +781,6 @@ impl forge_runtime::IntegrationFactory<forge_host::integrations::BuiltinObject> 
         self.0.clone()
     }
 
-    fn teardown_grace(&self) -> std::time::Duration {
-        forge_runtime::DEFAULT_TEARDOWN_GRACE
-    }
-
     async fn is_configured(&self) -> Result<bool, StorageError> {
         Ok(true)
     }

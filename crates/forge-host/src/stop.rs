@@ -893,10 +893,6 @@ mod tests {
             self.id.clone()
         }
 
-        fn teardown_grace(&self) -> Duration {
-            forge_runtime::DEFAULT_TEARDOWN_GRACE
-        }
-
         async fn is_configured(&self) -> Result<bool, StorageError> {
             Ok(true)
         }
@@ -928,10 +924,6 @@ mod tests {
     {
         fn id(&self) -> forge_types::IntegrationId {
             forge_types::IntegrationId::from_static("kick")
-        }
-
-        fn teardown_grace(&self) -> Duration {
-            forge_runtime::DEFAULT_TEARDOWN_GRACE
         }
 
         async fn is_configured(&self) -> Result<bool, StorageError> {

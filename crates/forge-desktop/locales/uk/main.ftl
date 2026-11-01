@@ -343,6 +343,7 @@ settings_notifications_connection_loss_hint = Системний звук, ко�
 settings_notifications_scheduled_backup_failure_label = Сповіщати, коли запланована копія не вдалася
 settings_notifications_scheduled_backup_failure_hint = Сповіщення ОС при першій невдачі запланованої резервної копії
 settings_notifications_persist_failed = Не вдалося зберегти налаштування сповіщень
+settings_persist_failed = Не вдалося зберегти налаштування. Після перезапуску повернеться попереднє значення.
 settings_nav_audio = Аудіо
 
 ## Налаштування → панель діагностики
@@ -4185,6 +4186,7 @@ integration_refs_triggers = { $count ->
 integration_refs_used_by = використовують { $parts }
 integration_retry = Повторити
 integration_retry_failed = Не вдалося перезапустити { $name }
+integration_enable_failed = Не вдалося увімкнути { $name }
 integration_connect_failed = Не вдалося підключити { $name }
 integration_disconnect_failed = Не вдалося відключити { $name }
 integration_failed_title = { $name } не вдалося запустити

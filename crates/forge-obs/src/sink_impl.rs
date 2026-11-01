@@ -340,7 +340,7 @@ impl ObsSink for ObsClient {
         })
     }
 
-    async fn get_current_scene(&self) -> Result<Option<String>, ObsError> {
+    async fn get_current_scene(&self) -> Result<String, ObsError> {
         let session = self.active_session().await?;
         let current = session
             .request(
@@ -348,7 +348,7 @@ impl ObsSink for ObsClient {
                 session.obs().scenes().current_program_scene(),
             )
             .await?;
-        Ok(Some(current.id.name))
+        Ok(current.id.name)
     }
 
     async fn get_input_settings(&self, input: &str) -> Result<InputSettings, ObsError> {

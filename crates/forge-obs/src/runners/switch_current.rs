@@ -67,7 +67,7 @@ impl SubActionRunner for SwitchCurrentSceneRunner {
 
         let already_current = matches!(
             self.sink.get_current_scene().await,
-            Ok(Some(current)) if current == scene
+            Ok(current) if current == scene
         );
         let outcome = if already_current {
             SubActionOutcome::Success

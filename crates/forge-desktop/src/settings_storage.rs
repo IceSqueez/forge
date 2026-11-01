@@ -1,9 +1,9 @@
 use std::sync::Arc;
 
 use forge_components::{
-    ActivePresentation, Density, FONT_SM, ForgePalette, InputEvent, SettingRow, Spacing, TextInput,
-    primary_button, secondary_button, segment, segmented, setting_groups, setting_row,
-    setting_rows, setting_value_row, spacing, tr,
+    ActivePresentation, Density, FONT_SM, ForgePalette, InputEvent, PushToast, SettingRow, Spacing,
+    TextInput, ToastKind, primary_button, secondary_button, segment, segmented, setting_groups,
+    setting_row, setting_rows, setting_value_row, spacing, tr,
 };
 use forge_runtime::ChatHistoryRetentionHandle;
 use forge_storage::{
@@ -260,7 +260,7 @@ impl SettingsStorageView {
         self.custom_selected = false;
         self.per_viewer_input
             .update(cx, |i, cx| i.set_content(limit.to_string(), cx));
-        self.apply_per_viewer_limit(limit);
+        self.apply_per_viewer_limit(limit, cx);
         cx.notify();
     }
 
@@ -277,7 +277,7 @@ impl SettingsStorageView {
                 }
                 self.per_viewer_input
                     .update(cx, |i, cx| i.set_content(value.to_string(), cx));
-                self.apply_per_viewer_limit(value);
+                self.apply_per_viewer_limit(value, cx);
             }
             None => {
                 let restore = self.per_viewer_limit.to_string();
@@ -288,18 +288,28 @@ impl SettingsStorageView {
         cx.notify();
     }
 
-    fn apply_per_viewer_limit(&mut self, limit: u32) {
-        if self.per_viewer_limit == limit {
+    fn apply_per_viewer_limit(&mut self, limit: u32, cx: &mut Context<Self>) {
+        let previous = self.per_viewer_limit;
+        if previous == limit {
             return;
         }
         self.per_viewer_limit = limit;
         self.retention.set_per_viewer_limit(limit);
         let repo = Arc::clone(&self.backend) as Arc<dyn SettingsRepo>;
-        self.rt_handle.spawn(async move {
-            if let Err(e) = set_chat_history_per_viewer_limit(repo.as_ref(), limit).await {
-                tracing::warn!(error = %e, "failed to persist chat history per-viewer limit");
-            }
-        });
+        async_bridge::optimistic(
+            &self.rt_handle,
+            "chat history per-viewer limit",
+            previous,
+            async move { set_chat_history_per_viewer_limit(repo.as_ref(), limit).await },
+            |this, previous, _, cx| {
+                this.per_viewer_limit = previous;
+                this.retention.set_per_viewer_limit(previous);
+                this.per_viewer_input
+                    .update(cx, |i, cx| i.set_content(previous.to_string(), cx));
+                cx.push_toast(ToastKind::Error, tr!("settings_persist_failed"));
+            },
+            cx,
+        );
     }
 
     fn per_viewer_field(
@@ -369,15 +379,24 @@ impl SettingsStorageView {
     fn commit_display(&mut self, cx: &mut Context<Self>) {
         match parse_limit(self.display_input.read(cx).content()) {
             Some(value) => {
+                let previous = self.display_limit;
                 self.display_limit = value;
                 self.display_input
                     .update(cx, |i, cx| i.set_content(value.to_string(), cx));
                 let repo = Arc::clone(&self.backend) as Arc<dyn SettingsRepo>;
-                self.rt_handle.spawn(async move {
-                    if let Err(e) = set_chat_history_display_limit(repo.as_ref(), value).await {
-                        tracing::warn!(error = %e, "failed to persist chat history display limit");
-                    }
-                });
+                async_bridge::optimistic(
+                    &self.rt_handle,
+                    "chat history display limit",
+                    previous,
+                    async move { set_chat_history_display_limit(repo.as_ref(), value).await },
+                    |this, previous, _, cx| {
+                        this.display_limit = previous;
+                        this.display_input
+                            .update(cx, |i, cx| i.set_content(previous.to_string(), cx));
+                        cx.push_toast(ToastKind::Error, tr!("settings_persist_failed"));
+                    },
+                    cx,
+                );
             }
             None => {
                 let restore = self.display_limit.to_string();
@@ -391,6 +410,7 @@ impl SettingsStorageView {
     fn commit_retention(&mut self, cx: &mut Context<Self>) {
         match parse_retention_days(self.retention_input.read(cx).content()) {
             Some(value) => {
+                let previous = self.retention_days;
                 self.retention_days = value;
                 self.retention_input
                     .update(cx, |i, cx| i.set_content(value.to_string(), cx));
@@ -398,14 +418,18 @@ impl SettingsStorageView {
                 async_bridge::run_async(
                     &self.rt_handle,
                     persist_event_log_retention(repo, value),
-                    |this, result, cx| match result {
-                        Ok(history_days) => {
-                            this.show_history_retention(history_days, cx);
-                            cx.notify();
+                    move |this, result, cx| {
+                        match result {
+                            Ok(history_days) => this.show_history_retention(history_days, cx),
+                            Err(e) => {
+                                tracing::warn!(error = %e, "failed to persist event log retention days");
+                                this.retention_days = previous;
+                                this.retention_input
+                                    .update(cx, |i, cx| i.set_content(previous.to_string(), cx));
+                                cx.push_toast(ToastKind::Error, tr!("settings_persist_failed"));
+                            }
                         }
-                        Err(e) => {
-                            tracing::warn!(error = %e, "failed to persist event log retention days");
-                        }
+                        cx.notify();
                     },
                     cx,
                 );
@@ -422,13 +446,20 @@ impl SettingsStorageView {
     fn commit_history_retention(&mut self, cx: &mut Context<Self>) {
         match parse_history_retention_days(self.history_retention_input.read(cx).content()) {
             Some(value) => {
+                let previous = self.history_retention_days;
                 self.show_history_retention(value, cx);
                 let repo = Arc::clone(&self.backend) as Arc<dyn SettingsRepo>;
-                self.rt_handle.spawn(async move {
-                    if let Err(e) = set_action_history_retention_days(repo.as_ref(), value).await {
-                        tracing::warn!(error = %e, "failed to persist action history retention days");
-                    }
-                });
+                async_bridge::optimistic(
+                    &self.rt_handle,
+                    "action history retention days",
+                    previous,
+                    async move { set_action_history_retention_days(repo.as_ref(), value).await },
+                    |this, previous, _, cx| {
+                        this.show_history_retention(previous, cx);
+                        cx.push_toast(ToastKind::Error, tr!("settings_persist_failed"));
+                    },
+                    cx,
+                );
             }
             None => {
                 let restore = self.history_retention_days.to_string();

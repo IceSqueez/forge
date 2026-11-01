@@ -157,7 +157,7 @@ impl ResolvedConfig {
             .enabled(self.is_enabled)
             .user_input_required(self.is_user_input_required)
             .skip_request_queue(self.should_redemptions_skip_request_queue);
-        if self.is_user_input_required && !self.prompt.is_empty() {
+        if !self.prompt.is_empty() {
             body = body.prompt(self.prompt.clone());
         }
         if !self.background_color_hex.is_empty() {
@@ -372,11 +372,11 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn prompt_included_only_when_user_input_required_and_non_empty() {
+    async fn prompt_included_whenever_non_empty() {
         for (label, requires, prompt, expect_prompt) in [
             ("required + text", true, "answer me", true),
             ("required + empty", true, "", false),
-            ("not required + text", false, "answer me", false),
+            ("not required + text", false, "answer me", true),
             ("not required + empty", false, "", false),
         ] {
             let mut cfg = full_cfg();

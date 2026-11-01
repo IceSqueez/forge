@@ -36,7 +36,7 @@ use gpui::{
     relative,
 };
 
-use crate::async_bridge;
+use crate::async_bridge::{self, ErrorSink};
 use crate::speak_state::{NowSpeaking, QueueItem, SessionStats, SpeakState};
 use crate::tts_engine_roster::{RosterEngine, engine_class_label, load_engine_roster};
 use forge_components::{PushToast, ToastKind};
@@ -335,10 +335,13 @@ impl TtsDashboardView {
         self.volume = volume;
         self.dispatch(SpeakCommand::SetVolume(volume));
         let settings = Arc::clone(&self.settings);
-        self.volume_debounce
-            .schedule(&self.rt_handle, "tts master volume", async move {
-                forge_storage::set_master_volume(settings.as_ref(), volume).await
-            });
+        self.volume_debounce.schedule_reporting(
+            &self.rt_handle,
+            tr!("settings_persist_failed"),
+            async move { forge_storage::set_master_volume(settings.as_ref(), volume).await },
+            ErrorSink::Toast,
+            cx,
+        );
         cx.notify();
     }
 

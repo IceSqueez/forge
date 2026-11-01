@@ -1,11 +1,10 @@
-use crate::endpoint_surfaces::TWITCH_OAUTH;
 use std::time::{Duration, SystemTime};
 
 use tokio::sync::watch;
 use tokio::time::Instant;
 
 use forge_net::{Gateway, GatewayRequest};
-use forge_platform_core::{AuthFlow, DeviceAuthEnd, PlatformEndpoints, PlatformError};
+use forge_platform_core::{DeviceAuthEnd, PlatformError};
 use forge_types::OAuthToken;
 use forge_types::Secret;
 use serde::Deserialize;
@@ -18,8 +17,6 @@ use crate::oauth_client::{
     DevicePoll, TokenGrant, TwitchOAuthClient, ValidatedToken, decode, oauth_error,
 };
 
-const TWITCH_DEVICE_PATH: &str = "/device";
-const TWITCH_TOKEN_PATH: &str = "/token";
 const HELIX_USERS_PATH: &str = "/helix/users";
 
 const DEFAULT_POLL_INTERVAL: Duration = Duration::from_secs(5);
@@ -76,25 +73,6 @@ pub(crate) const TWITCH_BOT_SCOPES: &[&str] = &[
 ];
 
 const DEVICE_LIFETIME_OUT_OF_RANGE_REASON: &str = "device code lifetime out of range";
-
-pub(crate) fn twitch_device_endpoint(endpoints: &PlatformEndpoints) -> String {
-    format!("{}{TWITCH_DEVICE_PATH}", endpoints.base_url(TWITCH_OAUTH))
-}
-
-pub(crate) fn twitch_token_endpoint(endpoints: &PlatformEndpoints) -> String {
-    format!("{}{TWITCH_TOKEN_PATH}", endpoints.base_url(TWITCH_OAUTH))
-}
-
-pub fn twitch_auth_flow(endpoints: &PlatformEndpoints) -> AuthFlow {
-    AuthFlow::DeviceCode {
-        user_code_endpoint: twitch_device_endpoint(endpoints),
-        token_endpoint: twitch_token_endpoint(endpoints),
-        scopes: TWITCH_BROADCASTER_SCOPES
-            .iter()
-            .map(|s| (*s).to_owned())
-            .collect(),
-    }
-}
 
 #[derive(Debug, Clone)]
 pub struct UserInfo {
@@ -874,16 +852,6 @@ mod tests {
                 "runtime={runtime:?} compile={compile:?}",
             );
         }
-    }
-
-    #[test]
-    fn twitch_auth_flow_is_device_code_grant() {
-        let AuthFlow::DeviceCode { scopes, .. } =
-            twitch_auth_flow(&crate::endpoints_test_support::unreachable_endpoints())
-        else {
-            panic!("twitch must use the device-code auth flow");
-        };
-        assert!(!scopes.is_empty(), "device grant must request scopes");
     }
 
     const POLL_INTERVAL: Duration = Duration::from_millis(150);

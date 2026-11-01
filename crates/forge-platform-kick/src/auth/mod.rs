@@ -7,8 +7,6 @@ use std::time::Duration;
 
 use forge_net::{Gateway, GatewayRequest};
 use forge_platform_core::PlatformError;
-#[cfg(test)]
-use forge_platform_core::{AuthFlow, CALLBACK_PATH};
 use forge_platform_core::{PkceAuthorizeConfig, PkceLoopback};
 use forge_types::{OAuthToken, Secret};
 use serde::Deserialize;
@@ -40,16 +38,6 @@ const KICK_SCOPES: &[&str] = &[
     "moderation:chat_message:manage",
     "moderation:ban",
 ];
-
-#[cfg(test)]
-pub(crate) fn kick_auth_flow() -> AuthFlow {
-    AuthFlow::LocalCallback {
-        authorize_url: KICK_AUTHORIZE_ENDPOINT.to_owned(),
-        token_endpoint: KICK_TOKEN_ENDPOINT.to_owned(),
-        redirect_path: CALLBACK_PATH.to_owned(),
-        scopes: KICK_SCOPES.iter().map(|s| (*s).to_owned()).collect(),
-    }
-}
 
 #[derive(Debug, Clone)]
 pub struct LoopbackCode {
@@ -418,20 +406,7 @@ mod tests {
     }
 
     #[test]
-    fn kick_auth_flow_yields_local_callback_variant() {
-        let flow = kick_auth_flow();
-        let AuthFlow::LocalCallback {
-            authorize_url,
-            token_endpoint,
-            redirect_path,
-            scopes,
-        } = flow
-        else {
-            unreachable!("kick_auth_flow must return LocalCallback variant");
-        };
-        assert_eq!(authorize_url, KICK_AUTHORIZE_ENDPOINT);
-        assert_eq!(token_endpoint, KICK_TOKEN_ENDPOINT);
-        assert_eq!(redirect_path, CALLBACK_PATH);
+    fn kick_sign_in_requests_every_scope_the_official_api_needs() {
         for required in [
             "chat:write",
             "moderation:ban",
@@ -441,7 +416,7 @@ mod tests {
             "channel:rewards:write",
         ] {
             assert!(
-                scopes.iter().any(|s| s == required),
+                KICK_SCOPES.contains(&required),
                 "requested scopes must contain {required}"
             );
         }

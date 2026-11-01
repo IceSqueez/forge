@@ -8,14 +8,14 @@ use forge_components::{
     radius, spacing, tr,
 };
 use forge_platform_core::{BanListSource, BanPageToken};
-use forge_runtime::{ActionEngineHandle, EventBus, LifecycleState};
+use forge_runtime::{ActionEngineHandle, EventBus};
 use gpui::{
     AnyElement, App, Context, Entity, FocusHandle, Pixels, ScrollHandle, Subscription, Task,
     Window, div, prelude::*, px,
 };
 
 use super::ban_labels::changed_platforms;
-use super::platform_gate::platform_integration;
+use super::platform_gate::{platform_integration, platform_is_running};
 use crate::async_bridge::{self, EventBatch};
 use crate::integration_lifecycle::IntegrationLifecycle;
 use crate::navigable_list::{ListCursor, navigable_list};
@@ -110,15 +110,7 @@ impl BannedPanel {
     }
 
     fn platform_running(&self, platform: PlatformId, cx: &App) -> bool {
-        match &self.lifecycle {
-            Some(lifecycle) => {
-                lifecycle
-                    .read(cx)
-                    .state_of(&platform_integration(platform).builtin_id())
-                    == LifecycleState::Running
-            }
-            None => true,
-        }
+        platform_is_running(self.lifecycle.as_ref().map(|l| l.read(cx)), platform)
     }
 
     fn source_for(&self, platform: PlatformId) -> Option<Arc<dyn BanListSource>> {

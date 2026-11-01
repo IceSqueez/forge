@@ -103,7 +103,9 @@ impl<O> RunningIntegration<O> {
 #[async_trait]
 pub trait IntegrationFactory<O>: Send + Sync {
     fn id(&self) -> IntegrationId;
-    fn teardown_grace(&self) -> Duration;
+    fn teardown_grace(&self) -> Duration {
+        DEFAULT_TEARDOWN_GRACE
+    }
     async fn is_configured(&self) -> Result<bool, StorageError>;
     async fn start(&self) -> Result<RunningIntegration<O>, IntegrationStartError>;
 }

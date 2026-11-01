@@ -155,14 +155,21 @@ impl SettingsDiagnosticsView {
             );
             return;
         }
-        self.level = level.clone();
+        let previous = std::mem::replace(&mut self.level, level.clone());
         self.level_picked = true;
         let repo = Arc::clone(&self.backend) as Arc<dyn SettingsRepo>;
-        self.rt_handle.spawn(async move {
-            if let Err(e) = set_diagnostic_log_level(repo.as_ref(), &level).await {
-                tracing::warn!(error = %e, "could not persist the diagnostics log level");
-            }
-        });
+        async_bridge::optimistic(
+            &self.rt_handle,
+            "diagnostics log level",
+            previous,
+            async move { set_diagnostic_log_level(repo.as_ref(), &level).await },
+            |this, previous, _, cx| {
+                crate::log_level::apply(&previous);
+                this.level = previous;
+                cx.push_toast(ToastKind::Error, tr!("settings_persist_failed"));
+            },
+            cx,
+        );
         cx.notify();
     }
 

@@ -8,8 +8,8 @@ use forge_obs::{OBS_AUTO_RECONNECT, OBS_CONNECT_ON_LAUNCH};
 use forge_platform_core::{ChatPlatform, PlatformEndpoints};
 use forge_registry::SubActionRegistry;
 use forge_runtime::{
-    DEFAULT_TEARDOWN_GRACE, EventBus, IntegrationFactory, IntegrationStartError,
-    RunningIntegration, TaskGroup, spawn_chat_send_router,
+    EventBus, IntegrationFactory, IntegrationStartError, RunningIntegration, TaskGroup,
+    spawn_chat_send_router,
 };
 use forge_storage::{
     CredentialsRepo, DataProvider, Flag, Setting, SettingsRepo, SoundboardClipsRepo, StorageError,
@@ -198,10 +198,6 @@ impl IntegrationFactory<BuiltinObject> for YoutubeFactory {
         forge_platform_youtube::YOUTUBE_INTEGRATION.id
     }
 
-    fn teardown_grace(&self) -> Duration {
-        DEFAULT_TEARDOWN_GRACE
-    }
-
     async fn is_configured(&self) -> Result<bool, StorageError> {
         has_credentials_for(self.creds.as_ref(), &self.id()).await
     }
@@ -375,10 +371,6 @@ impl IntegrationFactory<BuiltinObject> for KickFactory {
         forge_platform_kick::KICK_INTEGRATION.id
     }
 
-    fn teardown_grace(&self) -> Duration {
-        DEFAULT_TEARDOWN_GRACE
-    }
-
     async fn is_configured(&self) -> Result<bool, StorageError> {
         has_credentials_for(self.creds.as_ref(), &self.id()).await
     }
@@ -503,10 +495,6 @@ impl IntegrationFactory<BuiltinObject> for ObsFactory {
         forge_obs::OBS_INTEGRATION.id
     }
 
-    fn teardown_grace(&self) -> Duration {
-        DEFAULT_TEARDOWN_GRACE
-    }
-
     async fn is_configured(&self) -> Result<bool, StorageError> {
         has_credentials_for(self.creds.as_ref(), &self.id()).await
     }
@@ -580,10 +568,6 @@ impl VTubeFactory {
 impl IntegrationFactory<BuiltinObject> for VTubeFactory {
     fn id(&self) -> IntegrationId {
         forge_vtube::VTUBE_INTEGRATION.id
-    }
-
-    fn teardown_grace(&self) -> Duration {
-        DEFAULT_TEARDOWN_GRACE
     }
 
     async fn is_configured(&self) -> Result<bool, StorageError> {
@@ -661,10 +645,6 @@ impl IntegrationFactory<BuiltinObject> for DiscordFactory {
         forge_discord::DISCORD_INTEGRATION.id
     }
 
-    fn teardown_grace(&self) -> Duration {
-        DEFAULT_TEARDOWN_GRACE
-    }
-
     async fn is_configured(&self) -> Result<bool, StorageError> {
         has_credentials_for(self.creds.as_ref(), &self.id()).await
     }
@@ -723,10 +703,6 @@ impl MidiFactory {
 impl IntegrationFactory<BuiltinObject> for MidiFactory {
     fn id(&self) -> IntegrationId {
         forge_midi::MIDI_INTEGRATION.id
-    }
-
-    fn teardown_grace(&self) -> Duration {
-        DEFAULT_TEARDOWN_GRACE
     }
 
     async fn is_configured(&self) -> Result<bool, StorageError> {
@@ -814,10 +790,6 @@ impl HotkeyFactory {
 impl IntegrationFactory<BuiltinObject> for HotkeyFactory {
     fn id(&self) -> IntegrationId {
         forge_hotkey::HOTKEY_INTEGRATION.id
-    }
-
-    fn teardown_grace(&self) -> Duration {
-        DEFAULT_TEARDOWN_GRACE
     }
 
     async fn is_configured(&self) -> Result<bool, StorageError> {

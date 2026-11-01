@@ -171,15 +171,18 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn execute_reports_success_with_correct_kind() {
+    async fn execute_sets_the_configured_level_on_the_configured_source() {
+        let sink = RecordingSink::new();
         let stack = ArgStack::new();
         let config = BTreeMap::from([
             ("source".to_owned(), Variant::String("Mic".to_owned())),
             ("volume_db".to_owned(), Variant::String("-6.0".to_owned())),
         ]);
-        let (tel, extra) = runner().execute(&config, &make_ctx(&stack)).await;
+        let (tel, extra) = SetVolumeRunner::new(sink.clone())
+            .execute(&config, &make_ctx(&stack))
+            .await;
         assert_eq!(tel.outcome, SubActionOutcome::Success);
-        assert_eq!(tel.kind, "obs.audio.set_volume");
+        assert_eq!(sink.calls(), vec!["set_input_volume_db(Mic,-6)".to_owned()]);
         assert!(extra.is_none());
     }
 }

@@ -19,8 +19,6 @@ mod custom_rewards;
 #[path = "../../forge-platform-core/test_support/emitted_codes.rs"]
 mod emitted_codes;
 pub mod endpoint_surfaces;
-#[cfg(test)]
-mod endpoints_test_support;
 mod error;
 mod follow_lookup;
 mod helix;
@@ -42,7 +40,7 @@ pub use account::identity::BroadcasterTier;
 pub use assembly::TwitchAssembly;
 pub use auth::{
     DeviceCodeInfo, PollCadence, TWITCH_BROADCASTER_SCOPES, TWITCH_CLIENT_ID_ENV, TwitchAuthFlow,
-    TwitchSignIn, UserInfo, client_id, twitch_auth_flow,
+    TwitchSignIn, UserInfo, client_id,
 };
 pub use bot_account::{BotModerator, BotStatus, BotUnavailable, TwitchBotAccount};
 pub use builtin::TwitchIntegrationBundle;

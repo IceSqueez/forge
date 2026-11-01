@@ -82,11 +82,7 @@ pub(super) async fn apply_queue_live(
         .into_iter()
         .find(|q| q.id == id)
         .ok_or(LiveApplyFailure::QueueMissing)?;
-    let outcome = match scheduler.register(queue.clone()).await {
-        Ok(MembershipOutcome::AlreadyRegistered) => scheduler.reconfigure(queue).await,
-        other => other,
-    };
-    match outcome {
+    match scheduler.ensure_live(queue).await {
         Ok(MembershipOutcome::Applied | MembershipOutcome::AlreadyRegistered) => Ok(()),
         Ok(MembershipOutcome::NotFound) => Err(LiveApplyFailure::SchedulerLostQueue),
         Err(error) => Err(LiveApplyFailure::Failed(error.into())),

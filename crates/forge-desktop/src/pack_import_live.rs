@@ -85,13 +85,7 @@ async fn refresh_queues(services: &PackServices, ids: &[String]) -> bool {
 }
 
 async fn bring_queue_live(services: &PackServices, queue: &Queue) -> bool {
-    let outcome = match services.scheduler.register(queue.clone()).await {
-        Ok(MembershipOutcome::AlreadyRegistered) => {
-            services.scheduler.reconfigure(queue.clone()).await
-        }
-        other => other,
-    };
-    match outcome {
+    match services.scheduler.ensure_live(queue.clone()).await {
         Ok(MembershipOutcome::Applied | MembershipOutcome::AlreadyRegistered) => true,
         Ok(MembershipOutcome::NotFound) => {
             tracing::warn!(queue = %queue.id, "imported queue is unknown to the scheduler");

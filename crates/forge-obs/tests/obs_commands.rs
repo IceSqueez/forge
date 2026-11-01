@@ -350,7 +350,7 @@ fn query_table() -> Vec<(Query, &'static str, Value, Variant)> {
             |c| {
                 Box::pin(async move {
                     let scene = c.get_current_scene().await?;
-                    Ok(Variant::String(scene.unwrap_or_default()))
+                    Ok(Variant::String(scene))
                 })
             },
             "GetCurrentProgramScene",

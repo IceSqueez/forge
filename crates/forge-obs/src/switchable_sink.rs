@@ -202,7 +202,7 @@ impl ObsSink for SwitchableObsSink {
         client.get_input_settings(input).await
     }
 
-    async fn get_current_scene(&self) -> Result<Option<String>, ObsError> {
+    async fn get_current_scene(&self) -> Result<String, ObsError> {
         let client = self.get()?;
         client.get_current_scene().await
     }

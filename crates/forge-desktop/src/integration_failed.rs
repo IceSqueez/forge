@@ -16,6 +16,7 @@ use crate::async_bridge;
 use crate::hub_crumb::hub_crumb;
 use crate::integration_disabled::{disclaimer_block, hero_card};
 use crate::integration_lifecycle::{CardStatus, IntegrationLifecycle};
+use crate::integration_switch::integration_name;
 use crate::integrations_hub::card_status_badge;
 use crate::navigation::NavRequested;
 use crate::navigation::Screen;
@@ -106,10 +107,7 @@ impl IntegrationFailedView {
     }
 
     fn name(&self) -> SharedString {
-        match &self.declaration {
-            Some(declaration) => SharedString::new_static(declaration.brand_name),
-            None => SharedString::from(self.id.as_str().to_owned()),
-        }
+        integration_name(&self.id)
     }
 
     fn state(&self, cx: &Context<Self>) -> LifecycleState {

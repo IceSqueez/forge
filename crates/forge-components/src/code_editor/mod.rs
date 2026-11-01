@@ -143,10 +143,6 @@ impl CodeEditor {
         self.lines.len()
     }
 
-    pub fn language(&self) -> Language {
-        self.lines.language()
-    }
-
     pub fn set_content(&mut self, text: impl Into<SharedString>, cx: &mut Context<Self>) {
         let text = text.into();
         self.committed = text.clone();

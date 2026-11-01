@@ -4,13 +4,12 @@ use std::sync::Arc;
 use std::time::{Duration, SystemTime};
 
 use forge_net::TokenBucketRateLimiter;
-use forge_platform_core::{AuthFlow, PlatformEndpoints};
+use forge_platform_core::PlatformEndpoints;
 use forge_platform_twitch::credentials::{StoredCredential, store_credential};
 use forge_platform_twitch::{
     BroadcasterTier, DeviceTiming, HELIX_BUDGET_CAPACITY, HELIX_BUDGET_WINDOW,
     TWITCH_OAUTH_BUDGET_CAPACITY, TWITCH_OAUTH_BUDGET_WINDOW, TwitchAuthFlow,
-    TwitchCredentialsManager, TwitchOAuthClient, helix_gateway, twitch_auth_flow,
-    twitch_oauth_gateway,
+    TwitchCredentialsManager, TwitchOAuthClient, helix_gateway, twitch_oauth_gateway,
 };
 use forge_storage::test_support::MemoryCredentials;
 use forge_types::OAuthToken;
@@ -180,27 +179,5 @@ async fn overrides_carry_the_whole_sign_in_through_the_oauth_and_helix_hosts() {
             ("GET", "/oauth2/validate"),
             ("GET", "/helix/users"),
         ]),
-    );
-}
-
-#[test]
-fn oauth_override_carries_the_advertised_device_flow_endpoints() {
-    let endpoints = oauth_override("http://127.0.0.1:9/oauth2".to_owned());
-
-    let AuthFlow::DeviceCode {
-        user_code_endpoint,
-        token_endpoint,
-        ..
-    } = twitch_auth_flow(&endpoints)
-    else {
-        panic!("twitch must advertise the device-code flow");
-    };
-
-    assert_eq!(
-        (user_code_endpoint.as_str(), token_endpoint.as_str()),
-        (
-            "http://127.0.0.1:9/oauth2/device",
-            "http://127.0.0.1:9/oauth2/token"
-        ),
     );
 }

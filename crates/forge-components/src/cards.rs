@@ -395,7 +395,6 @@ const TITLE_META_GAP: Pixels = px(2.0);
 pub(crate) enum RowState {
     Idle,
     Hover,
-    Selected,
 }
 
 #[derive(Clone, Copy)]
@@ -403,8 +402,6 @@ pub(crate) struct RowCardColors {
     pub(crate) idle_bg: Rgba,
     pub(crate) hover_bg: Rgba,
     pub(crate) hover_border: Rgba,
-    pub(crate) selected_bg: Rgba,
-    pub(crate) accent: Rgba,
     pub(crate) idle_border: Option<Rgba>,
     pub(crate) text: Rgba,
 }
@@ -414,7 +411,6 @@ impl RowCardColors {
         match state {
             RowState::Idle => (self.idle_bg, self.idle_border),
             RowState::Hover => (self.hover_bg, self.idle_border),
-            RowState::Selected => (self.selected_bg, Some(self.accent)),
         }
     }
 }
@@ -425,7 +421,6 @@ pub struct RowCard {
     title: AnyElement,
     meta: Option<AnyElement>,
     trailing: Option<AnyElement>,
-    selected: bool,
     pub(crate) colors: RowCardColors,
     border_width: Pixels,
     corner_radius: Pixels,
@@ -444,13 +439,10 @@ pub fn row_card(title: impl IntoElement, palette: &ForgePalette) -> RowCard {
         title: title.into_any_element(),
         meta: None,
         trailing: None,
-        selected: false,
         colors: RowCardColors {
             idle_bg: TRANSPARENT,
             hover_bg: palette.surface_overlay,
             hover_border: palette.border_input,
-            selected_bg: palette.elevated,
-            accent: palette.brand,
             idle_border: None,
             text: palette.text_primary,
         },
@@ -482,12 +474,6 @@ impl RowCard {
     #[must_use]
     pub fn trailing(mut self, el: impl IntoElement) -> Self {
         self.trailing = Some(el.into_any_element());
-        self
-    }
-
-    #[must_use]
-    pub fn accent(mut self, color: Rgba) -> Self {
-        self.colors.accent = color;
         self
     }
 
@@ -545,7 +531,6 @@ impl RenderOnce for RowCard {
     fn render(self, _window: &mut Window, cx: &mut App) -> impl IntoElement {
         let d = self.density.unwrap_or_else(|| cx.density());
         let colors = self.colors;
-        let selected = self.selected;
 
         let mut title_col = div()
             .flex()
@@ -556,12 +541,7 @@ impl RenderOnce for RowCard {
             title_col = title_col.child(meta);
         }
 
-        let rest_state = if selected {
-            RowState::Selected
-        } else {
-            RowState::Idle
-        };
-        let (rest_bg, rest_border) = colors.resolve(rest_state);
+        let (rest_bg, rest_border) = colors.resolve(RowState::Idle);
 
         let aligned = div().w_full().flex();
         let aligned = if self.align_top {
@@ -608,18 +588,16 @@ impl RenderOnce for RowCard {
         match (self.id, self.on_click) {
             (Some(id), Some(handler)) => {
                 let mut r = root.id(id).key_activated(colors.text).cursor_pointer();
-                if !selected {
-                    if rest_border.is_some() {
-                        let hover_border = colors.hover_border;
-                        r = r
-                            .hover(move |s| s.border_color(hover_border))
-                            .active(move |s| s.border_color(hover_border));
-                    } else {
-                        let (hover_bg, _) = colors.resolve(RowState::Hover);
-                        r = r
-                            .hover(move |s| s.bg(hover_bg))
-                            .active(move |s| s.bg(hover_bg));
-                    }
+                if rest_border.is_some() {
+                    let hover_border = colors.hover_border;
+                    r = r
+                        .hover(move |s| s.border_color(hover_border))
+                        .active(move |s| s.border_color(hover_border));
+                } else {
+                    let (hover_bg, _) = colors.resolve(RowState::Hover);
+                    r = r
+                        .hover(move |s| s.bg(hover_bg))
+                        .active(move |s| s.bg(hover_bg));
                 }
                 r.on_click(handler).into_any_element()
             }
@@ -1124,10 +1102,9 @@ mod tests {
     #[test]
     fn resolve_maps_each_state_to_its_keyed_fill_and_border() {
         let c = default_colors();
-        let cases: [(RowState, Rgba, Option<Rgba>); 3] = [
+        let cases: [(RowState, Rgba, Option<Rgba>); 2] = [
             (RowState::Idle, TRANSPARENT, None),
             (RowState::Hover, P.surface_overlay, None),
-            (RowState::Selected, P.elevated, Some(P.brand)),
         ];
         for (state, want_fill, want_border) in cases {
             let (fill, border) = c.resolve(state);
@@ -1140,24 +1117,16 @@ mod tests {
     }
 
     #[test]
-    fn idle_hover_and_selected_fills_are_distinguishable_hues() {
+    fn idle_and_hover_fills_are_distinguishable_hues() {
         let c = default_colors();
-        let idle = c.resolve(RowState::Idle).0;
-        let hover = c.resolve(RowState::Hover).0;
-        let selected = c.resolve(RowState::Selected).0;
-        assert!(!same_rgba(idle, hover), "idle and hover fills collapsed");
         assert!(
-            !same_rgba(hover, selected),
-            "hover and selected fills collapsed"
-        );
-        assert!(
-            !same_rgba(idle, selected),
-            "idle and selected fills collapsed"
+            !same_rgba(c.resolve(RowState::Idle).0, c.resolve(RowState::Hover).0),
+            "idle and hover fills collapsed"
         );
     }
 
     #[test]
-    fn bordered_gives_idle_a_persistent_border_that_selected_overrides() {
+    fn bordered_keeps_its_border_while_hovered() {
         let border_color = P.border_regular;
         let c = row_card(SharedString::from("row"), &P)
             .bordered(border_color, px(1.0), px(6.0))
@@ -1171,11 +1140,6 @@ mod tests {
             c.resolve(RowState::Hover).1,
             Some(border_color),
             "bordered hover",
-        );
-        assert_border(
-            c.resolve(RowState::Selected).1,
-            Some(P.brand),
-            "bordered selected",
         );
     }
 }

@@ -128,6 +128,16 @@ mod tests {
                 CardStatus::NotConnected,
             ),
             (
+                ConnectionAffordance::Configured,
+                true,
+                CardStatus::Connected,
+            ),
+            (
+                ConnectionAffordance::Configured,
+                false,
+                CardStatus::NotConnected,
+            ),
+            (
                 ConnectionAffordance::Connectionless,
                 true,
                 CardStatus::Active,

@@ -275,7 +275,7 @@ impl Picker {
     }
 }
 
-pub(crate) fn item_matches(label: &str, sublabel: Option<&str>, query: &str) -> bool {
+pub fn item_matches(label: &str, sublabel: Option<&str>, query: &str) -> bool {
     if query.is_empty() {
         return true;
     }

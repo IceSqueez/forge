@@ -109,7 +109,14 @@ impl ViewerDrawer {
         let editing = existing.as_ref().map(|alias| alias.id.clone());
         let values = existing.as_ref().map(AliasValues::of).unwrap_or_default();
         let roster = load_engine_roster(self.services.speak.as_ref());
-        let view = cx.new(|cx| AliasForm::new(editing, Some(identity), true, values, roster, cx));
+        let voices = self
+            .services
+            .speak
+            .as_ref()
+            .map(|speak| speak.available_voices())
+            .unwrap_or_default();
+        let view =
+            cx.new(|cx| AliasForm::new(editing, Some(identity), true, values, roster, voices, cx));
         focus_inside_modal(window, cx, |window, cx| {
             view.update(cx, |form, cx| form.focus(window, cx))
         });

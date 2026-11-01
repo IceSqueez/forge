@@ -28,6 +28,7 @@ use gpui::{
 };
 
 use crate::app::async_bridge::{self, Loadable, SnapshotWriter, WriteOutcome};
+use crate::audio::engine_voice_choices::voice_row_sublabel;
 use crate::audio::tts_engine_roster::load_engine_roster;
 use crate::audio::voice_alias_form::{
     AliasForm, AliasFormEvent, AliasIdentity, AliasScope, AliasValues, alias_key_scope,
@@ -361,7 +362,7 @@ impl VoiceAliasesView {
             .map(|(index, voice)| PickerItem {
                 id: index.to_string().into(),
                 label: voice.name.clone().into(),
-                sublabel: Some(engine_display_name(&voice.engine_id.0).into()),
+                sublabel: Some(voice_row_sublabel(voice).into()),
                 icon: None,
             })
             .collect();
@@ -448,8 +449,18 @@ impl VoiceAliasesView {
 
     fn open_assign(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         let roster = load_engine_roster(self.speak.as_ref());
-        let form =
-            cx.new(|cx| AliasForm::new(None, None, false, AliasValues::default(), roster, cx));
+        let voices = self.available_voices();
+        let form = cx.new(|cx| {
+            AliasForm::new(
+                None,
+                None,
+                false,
+                AliasValues::default(),
+                roster,
+                voices,
+                cx,
+            )
+        });
         self.mount_form(form, window, cx);
     }
 
@@ -473,8 +484,18 @@ impl VoiceAliasesView {
         };
         let id = row.id.clone();
         let roster = load_engine_roster(self.speak.as_ref());
-        let form =
-            cx.new(|cx| AliasForm::new(Some(id), Some(identity), id_keyed, values, roster, cx));
+        let voices = self.available_voices();
+        let form = cx.new(|cx| {
+            AliasForm::new(
+                Some(id),
+                Some(identity),
+                id_keyed,
+                values,
+                roster,
+                voices,
+                cx,
+            )
+        });
         self.mount_form(form, window, cx);
     }
 

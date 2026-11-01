@@ -99,7 +99,7 @@ impl VoiceListing {
                 count: voices.len(),
             })
             .collect();
-        languages.sort_by_cached_key(|language| language.name.to_lowercase());
+        languages.sort_by_cached_key(|language| alphabet_key(&language.name));
 
         let selected_language = filter
             .language
@@ -119,7 +119,7 @@ impl VoiceListing {
                     .copied()
                     .filter(|(_, voice)| filter.accepts(voice))
                     .collect();
-                matching.sort_by_cached_key(|(_, voice)| voice.name.to_lowercase());
+                matching.sort_by_cached_key(|(_, voice)| alphabet_key(&voice.name));
                 (!matching.is_empty()).then(|| VoiceGroup {
                     name: language.name.clone(),
                     voice_indices: matching.into_iter().map(|(index, _)| index).collect(),
@@ -154,6 +154,20 @@ impl VoiceListing {
             .find(|language| language.key == *selected)
             .map(|language| language.name.as_str())
     }
+}
+
+pub(crate) fn alphabet_key(text: &str) -> Vec<(char, u8)> {
+    text.to_lowercase()
+        .chars()
+        .filter(|letter| !matches!(letter, '\'' | '\u{2019}'))
+        .map(|letter| match letter {
+            'ґ' => ('г', 1),
+            'є' => ('е', 1),
+            'і' => ('и', 1),
+            'ї' => ('и', 2),
+            other => (other, 0),
+        })
+        .collect()
 }
 
 fn language_key(locale: &str) -> String {

@@ -134,7 +134,7 @@ pub use page_frame::{header_stat, header_stats, header_status, page_frame};
 pub use palette::{
     AccentColor, FORGE_DEFAULT, ForgePalette, PaletteColor, ThemeId, accent_swatch, with_alpha,
 };
-pub use picker::{Picker, PickerEvent, PickerItem, PickerLabels, bind_picker_keys};
+pub use picker::{Picker, PickerEvent, PickerItem, PickerLabels, bind_picker_keys, item_matches};
 pub use platform_hero::platform_hero;
 pub use presentation::{ActivePresentation, FontFamilies, Presentation};
 pub use progress_bar::{ProgressBar, progress_bar};

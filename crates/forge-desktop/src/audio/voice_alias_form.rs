@@ -1,17 +1,19 @@
 use forge_components::{
     ActivePresentation, Density, FONT_SM, FONT_XS, ForgePalette, InputEvent, OverlayPosition,
-    Spacing, TextInput, field_label, modal, overlay, primary_button, secondary_button, segment,
-    segmented, spacing, toggle, tr,
+    Picker, PickerEvent, PickerLabels, Spacing, TextInput, choice_trigger, dropdown, field_label,
+    modal, overlay, primary_button, secondary_button, segment, segmented, spacing, toggle, tr,
 };
 use forge_speak_queue::AliasKey;
 use forge_speech_types::{AliasId, VoiceAlias};
-use forge_speech_types::{AliasState, EngineId, VoiceId};
+use forge_speech_types::{AliasState, EngineId, TtsVoice, VoiceId};
 use forge_types::PlatformId;
 use gpui::{
     AnyElement, App, ClickEvent, Context, Entity, EventEmitter, Pixels, SharedString, Subscription,
     Window, div, prelude::*, px,
 };
+use std::sync::Arc;
 
+use crate::audio::engine_voice_choices::{alias_voice_choices, alias_voice_field};
 use crate::audio::tts_engine_roster::RosterEngine;
 use crate::shared::option_choices::ChoiceOption;
 
@@ -156,12 +158,19 @@ pub(crate) enum AliasFormEvent {
     Cancel,
 }
 
+struct VoicePickerPopover {
+    picker: Entity<Picker>,
+    _sub: Subscription,
+}
+
 pub(crate) struct AliasForm {
     editing: Option<AliasId>,
     platform: AliasScope,
     locked_key: Option<String>,
     viewer: Entity<TextInput>,
-    voice: Entity<TextInput>,
+    voice: String,
+    voices: Arc<Vec<TtsVoice>>,
+    voice_picker: Option<VoicePickerPopover>,
     pitch: Entity<TextInput>,
     rate: Entity<TextInput>,
     engine: Option<String>,
@@ -180,6 +189,7 @@ impl AliasForm {
         locked: bool,
         values: AliasValues,
         roster: Vec<RosterEngine>,
+        voices: Arc<Vec<TtsVoice>>,
         cx: &mut Context<Self>,
     ) -> Self {
         let (platform, viewer_name, locked_key) = match identity {
@@ -196,12 +206,6 @@ impl AliasForm {
             locked_key.is_some(),
             cx,
         );
-        let voice = text_field(
-            tr!("tts_aliases_form_voice_placeholder"),
-            &values.voice,
-            false,
-            cx,
-        );
         let pitch = text_field(
             tr!("tts_aliases_form_pitch_placeholder"),
             &values.pitch,
@@ -215,7 +219,7 @@ impl AliasForm {
             cx,
         );
 
-        let subs = [&viewer, &voice, &pitch, &rate]
+        let subs = [&viewer, &pitch, &rate]
             .into_iter()
             .map(|field| {
                 cx.subscribe(field, |this, _input, event: &InputEvent, cx| match event {
@@ -235,7 +239,9 @@ impl AliasForm {
             platform,
             locked_key,
             viewer,
-            voice,
+            voice: values.voice,
+            voices,
+            voice_picker: None,
             pitch,
             rate,
             engines: alias_engine_choices(roster, values.engine.as_deref()),
@@ -247,12 +253,7 @@ impl AliasForm {
     }
 
     pub(crate) fn focus(&self, window: &mut Window, cx: &mut Context<Self>) {
-        let field = if self.locked_key.is_some() {
-            &self.voice
-        } else {
-            &self.viewer
-        };
-        field.update(cx, |f, cx| f.focus(window, cx));
+        self.viewer.update(cx, |f, cx| f.focus(window, cx));
     }
 
     pub(crate) fn is_editing(&self) -> bool {
@@ -266,6 +267,62 @@ impl AliasForm {
 
     fn set_engine(&mut self, id: String, cx: &mut Context<Self>) {
         self.engine = Some(id);
+        self.voice_picker = None;
+        cx.notify();
+    }
+
+    fn open_voice_picker(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        if self.voice_picker.is_some() {
+            self.close_voice_picker(window, cx);
+            return;
+        }
+        let choices = alias_voice_choices(&self.voices, self.engine.as_deref(), &self.voice);
+        let empty = if choices.items.is_empty() {
+            tr!("tts_aliases_strategy_no_voices")
+        } else {
+            tr!("widget_picker_no_results")
+        };
+        let labels = PickerLabels {
+            placeholder: tr!("tts_aliases_strategy_voice_search").into(),
+            empty: empty.into(),
+            loading: tr!("widget_picker_loading").into(),
+        };
+        let picker =
+            cx.new(|cx| Picker::new(labels, choices.items, cx).with_current(choices.current));
+        let sub = cx.subscribe_in(&picker, window, Self::on_voice_picker_event);
+        picker.update(cx, |p, cx| p.focus(window, cx));
+        self.voice_picker = Some(VoicePickerPopover { picker, _sub: sub });
+        cx.notify();
+    }
+
+    fn on_voice_picker_event(
+        &mut self,
+        _picker: &Entity<Picker>,
+        event: &PickerEvent,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        if let PickerEvent::Selected(id) = event {
+            self.pick_voice(id, cx);
+        }
+        self.close_voice_picker(window, cx);
+    }
+
+    fn pick_voice(&mut self, item_id: &str, cx: &mut Context<Self>) {
+        let picked = item_id
+            .parse::<usize>()
+            .ok()
+            .and_then(|index| self.voices.get(index));
+        if let Some(voice) = picked {
+            self.voice = voice.id.0.clone();
+            self.engine = Some(voice.engine_id.0.clone());
+            cx.notify();
+        }
+    }
+
+    fn close_voice_picker(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        self.voice_picker = None;
+        self.focus(window, cx);
         cx.notify();
     }
 
@@ -279,6 +336,7 @@ impl AliasForm {
 
     fn toggle_blocked(&mut self, cx: &mut Context<Self>) {
         self.blocked = !self.blocked;
+        self.voice_picker = None;
         cx.notify();
     }
 
@@ -381,6 +439,39 @@ impl AliasForm {
             .into_any_element()
     }
 
+    fn render_voice_field(
+        &self,
+        palette: &ForgePalette,
+        density: Density,
+        cx: &mut Context<Self>,
+    ) -> AnyElement {
+        let field = alias_voice_field(&self.voices, self.engine.as_deref(), &self.voice);
+        let has_selection = field.is_some();
+        let trigger = choice_trigger(
+            "va-form-voice",
+            field
+                .unwrap_or_else(|| tr!("tts_aliases_form_voice_placeholder"))
+                .into(),
+            has_selection,
+            palette,
+            cx.listener(|this, _: &ClickEvent, window, cx| this.open_voice_picker(window, cx)),
+            density,
+            cx,
+        );
+        let popover = self.voice_picker.as_ref().map(|open| {
+            let view = cx.entity();
+            dropdown(open.picker.clone()).on_dismiss(move |window, cx| {
+                view.update(cx, |this, cx| this.close_voice_picker(window, cx));
+            })
+        });
+        div()
+            .relative()
+            .w_full()
+            .child(trigger)
+            .children(popover)
+            .into_any_element()
+    }
+
     fn render_voice_config(
         &self,
         palette: &ForgePalette,
@@ -420,7 +511,7 @@ impl AliasForm {
             );
             let voice_block = labelled(
                 tr!("tts_aliases_form_voice_label"),
-                self.voice.clone(),
+                self.render_voice_field(palette, density, cx),
                 palette,
                 density,
             );
@@ -568,7 +659,6 @@ fn text_field(
 fn form_to_alias(form: &AliasForm, cx: &App) -> VoiceAlias {
     let viewer = form.viewer.read(cx).content().trim().to_owned();
     let engine = form.engine.clone().unwrap_or_default();
-    let voice = form.voice.read(cx).content().trim().to_owned();
     let pitch = parse_pitch(form.pitch.read(cx).content()).unwrap_or_default();
     let rate = parse_rate(form.rate.read(cx).content()).unwrap_or_default();
     VoiceAlias {
@@ -579,7 +669,7 @@ fn form_to_alias(form: &AliasForm, cx: &App) -> VoiceAlias {
             .unwrap_or_else(|| AliasKey::new(form.platform.kind(), &viewer).to_stored()),
         viewer_name: viewer,
         engine_id: EngineId(engine),
-        voice_id: VoiceId(voice),
+        voice_id: VoiceId(form.voice.clone()),
         pitch_semitones: pitch,
         rate_multiplier: rate,
         state: if form.blocked {

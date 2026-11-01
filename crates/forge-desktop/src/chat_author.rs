@@ -56,7 +56,10 @@ impl AuthorKey {
             AuthorHandle::ViewerId(id) => ("id", id),
             AuthorHandle::Name(name) => ("name", name),
         };
-        SharedString::from(format!("{prefix}-{:?}-{kind}-{value}", self.platform))
+        SharedString::from(format!(
+            "{prefix}-{platform}-{kind}-{value}",
+            platform = self.platform.as_str()
+        ))
     }
 }
 

@@ -909,7 +909,7 @@ action_editor_branch_else = Else
 action_editor_branch_body = Body
 action_editor_branch_default = Default
 action_editor_branch_fallback = Branch
-action_editor_branch_case = Case
+action_editor_branch_case = Case { $number }
 action_editor_branch_chain = Chain
 action_editor_add_case = Add case
 action_editor_case_multi = multi-value match (read-only)
@@ -1054,7 +1054,7 @@ action_editor_kind_read_file = Read file
 action_editor_kind_random_int = Random int
 action_editor_kind_incr_global = Increment global
 action_editor_kind_run_script = Run script
-action_editor_persisted_note = (persisted)
+action_editor_global_increment_detail = { $name } += { $amount } (persisted)
 action_editor_kind_sub_action = Step
 
 ## Triggers registry - page header / filters

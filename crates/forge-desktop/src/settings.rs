@@ -1,4 +1,8 @@
+mod launch;
 mod panes;
+
+use launch::SettingsServices;
+pub(crate) use launch::{SettingsAudioLaunch, SettingsLaunch};
 
 use forge_components::FONT_MICRO;
 use forge_components::FONT_ROW;
@@ -27,7 +31,6 @@ use crate::backup_schedule::BackupScheduleView;
 use crate::navigation::SettingsSection;
 use crate::presentation::{ActiveDisplayFormats, ActiveLanguage};
 use crate::problem_report::ProblemReport;
-use crate::runtime_handles::RuntimeHandles;
 use crate::safety_copies::SafetyCopiesView;
 use crate::settings_about::SettingsAboutView;
 use crate::settings_audio::SettingsAudioView;
@@ -161,7 +164,7 @@ fn density_meta(density: Density) -> (String, String) {
 
 pub(crate) struct SettingsView {
     section: SettingsSection,
-    handles: Arc<RuntimeHandles>,
+    services: SettingsServices,
     awake: Entity<AwakeState>,
     stay_awake_pending: Option<bool>,
     update_flow: Entity<UpdateFlow>,
@@ -196,7 +199,7 @@ const FONT_DEFAULT_ID: &str = "__forge_default_font__";
 
 impl SettingsView {
     pub(crate) fn new(
-        handles: Arc<RuntimeHandles>,
+        launch: SettingsLaunch,
         awake: Entity<AwakeState>,
         update_flow: Entity<UpdateFlow>,
         problem_report: Entity<ProblemReport>,
@@ -210,77 +213,84 @@ impl SettingsView {
             cx.notify();
         })
         .detach();
+        let SettingsLaunch {
+            services,
+            audio,
+            log_tail,
+            server,
+            overlays,
+            overlay_samples,
+            hotkey_client,
+            notification_policy,
+            scheduled_backups,
+            transfer_exclusivity,
+            chat_history_retention,
+            builtins,
+            boot_warnings,
+        } = launch;
+        let backend = Arc::clone(&services.backend);
+        let rt_handle = services.rt_handle.clone();
         let section = preselect.unwrap_or(NAV_GROUPS[0].1[0]);
         let audio =
-            cx.new(|cx| SettingsAudioView::new(&handles, section == SettingsSection::Audio, cx));
-        let scripting = cx.new(|cx| {
-            SettingsScriptingView::new(Arc::clone(&handles.backend), handles.rt_handle.clone(), cx)
-        });
+            cx.new(|cx| SettingsAudioView::new(audio, section == SettingsSection::Audio, cx));
+        let scripting =
+            cx.new(|cx| SettingsScriptingView::new(Arc::clone(&backend), rt_handle.clone(), cx));
         let websocket = cx.new(|cx| {
             SettingsWebSocketView::new(
-                Arc::clone(&handles.backend),
-                handles.rt_handle.clone(),
-                handles.server.clone(),
-                handles.overlays.service.clone(),
-                Arc::clone(&handles.overlays.samples),
+                Arc::clone(&backend),
+                rt_handle.clone(),
+                server,
+                overlays,
+                overlay_samples,
                 cx,
             )
         });
         let shortcuts = cx.new(|cx| {
-            SettingsShortcutsView::new(
-                Arc::clone(&handles.backend),
-                handles.rt_handle.clone(),
-                handles.integrations.hotkey_client.clone(),
-                cx,
-            )
+            SettingsShortcutsView::new(Arc::clone(&backend), rt_handle.clone(), hotkey_client, cx)
         });
         let notifications = cx.new(|cx| {
             SettingsNotificationsView::new(
-                Arc::clone(&handles.backend) as Arc<dyn SettingsRepo>,
-                handles.rt_handle.clone(),
-                handles.core.notification_policy.clone(),
+                Arc::clone(&backend) as Arc<dyn SettingsRepo>,
+                rt_handle.clone(),
+                notification_policy,
             )
             .with_backup_failure_notice(cx)
         });
         let schedule = cx.new(|cx| {
             BackupScheduleView::new(
-                Arc::clone(&handles.backend),
-                handles.rt_handle.clone(),
-                handles.core.scheduled_backups.clone(),
-                handles.core.transfer_exclusivity.clone(),
+                Arc::clone(&backend),
+                rt_handle.clone(),
+                scheduled_backups.clone(),
+                transfer_exclusivity.clone(),
                 crate::app_paths::app_paths().data_dir(),
                 cx,
             )
         });
         let safety_copies = cx.new(|cx| {
             SafetyCopiesView::new(
-                Arc::clone(&handles.backend),
-                handles.rt_handle.clone(),
-                handles.core.transfer_exclusivity.clone(),
-                handles.core.scheduled_backups.clone(),
+                Arc::clone(&backend),
+                rt_handle.clone(),
+                transfer_exclusivity.clone(),
+                scheduled_backups.clone(),
                 crate::app_paths::app_paths().data_dir(),
                 cx,
             )
         });
         let storage = cx.new(|cx| {
             let mut storage = SettingsStorageView::new(
-                Arc::clone(&handles.backend),
-                handles.rt_handle.clone(),
-                handles.core.chat_history_retention.clone(),
+                Arc::clone(&backend),
+                rt_handle.clone(),
+                chat_history_retention,
                 cx,
             );
             storage.attach_schedule(schedule, cx);
             storage.attach_safety_copies(safety_copies, cx);
-            storage.follow_transfer_lock(&handles.core.transfer_exclusivity, cx);
+            storage.follow_transfer_lock(&transfer_exclusivity, cx);
             storage
         });
         let about = cx.new(|cx| {
-            let mut about = SettingsAboutView::new(
-                Arc::clone(&handles.backend),
-                handles.rt_handle.clone(),
-                problem_report,
-                cx,
-            );
+            let mut about =
+                SettingsAboutView::new(Arc::clone(&backend), rt_handle.clone(), problem_report, cx);
             if section == SettingsSection::About {
                 about.begin_collection(cx);
             }
@@ -288,28 +298,28 @@ impl SettingsView {
         });
         let diagnostics = cx.new(|cx| {
             SettingsDiagnosticsView::new(
-                handles.log_tail.clone(),
-                Arc::clone(&handles.backend),
-                handles.integrations.builtins.clone(),
-                handles.rt_handle.clone(),
+                log_tail,
+                Arc::clone(&backend),
+                builtins,
+                rt_handle.clone(),
                 section == SettingsSection::Diagnostics,
                 cx,
             )
-            .with_storage_changes(handles.core.scheduled_backups.clone())
-            .with_boot_warnings(handles.boot_warnings.clone())
+            .with_storage_changes(scheduled_backups)
+            .with_boot_warnings(boot_warnings)
         });
         let region = cx.new(|cx| {
             SettingsRegionView::new(
-                Arc::clone(&handles.backend) as Arc<dyn SettingsRepo>,
-                handles.rt_handle.clone(),
+                Arc::clone(&backend) as Arc<dyn SettingsRepo>,
+                rt_handle.clone(),
                 cx.global::<ActiveDisplayFormats>().0,
                 cx,
             )
         });
-        let appearance_writers = KeyedSnapshotWriters::new(&handles.rt_handle);
+        let appearance_writers = KeyedSnapshotWriters::new(&rt_handle);
         Self {
             section,
-            handles,
+            services,
             awake,
             stay_awake_pending: None,
             update_flow,
@@ -338,7 +348,7 @@ impl SettingsView {
     fn toggle_stay_awake(&mut self, cx: &mut Context<Self>) {
         let enabled = !self.stay_awake_enabled(cx);
         self.stay_awake_pending = Some(enabled);
-        let stay_awake = self.handles.stay_awake.clone();
+        let stay_awake = self.services.stay_awake.clone();
         stay_awake.set_enabled(
             enabled,
             |this: &mut Self, outcome, cx| this.stay_awake_settled(outcome, cx),
@@ -459,7 +469,7 @@ impl SettingsView {
             FontTarget::Mono => set_mono_family(family.clone()),
         }
 
-        let backend = Arc::clone(&self.handles.backend) as Arc<dyn SettingsRepo>;
+        let backend = Arc::clone(&self.services.backend) as Arc<dyn SettingsRepo>;
         let persisted = family.map(|f| f.to_string());
         let target = pending.target;
         let writer_key = match target {
@@ -549,7 +559,7 @@ impl SettingsView {
         let accent = cx.accent();
         cx.set_global(Presentation::accented(theme, accent, density));
 
-        let backend = Arc::clone(&self.handles.backend) as Arc<dyn SettingsRepo>;
+        let backend = Arc::clone(&self.services.backend) as Arc<dyn SettingsRepo>;
         let key = theme.storage_key().to_owned();
         self.appearance_writers.write_reporting(
             "theme",
@@ -569,7 +579,7 @@ impl SettingsView {
         let density = cx.density();
         cx.set_global(Presentation::accented(theme, accent, density));
 
-        let backend = Arc::clone(&self.handles.backend) as Arc<dyn SettingsRepo>;
+        let backend = Arc::clone(&self.services.backend) as Arc<dyn SettingsRepo>;
         let key = accent.storage_key().to_owned();
         self.appearance_writers.write_reporting(
             "accent",
@@ -587,15 +597,15 @@ impl SettingsView {
         }
         self.language = lang;
         crate::i18n::install_process_language(lang);
-        self.handles
+        self.services
             .anonymous_donor
             .store(tr!(crate::i18n::ANONYMOUS_DONOR_KEY));
-        self.handles
+        self.services
             .date_names
             .set_language(crate::i18n::date_names_language(lang));
         cx.set_global(ActiveLanguage(lang));
 
-        let backend = Arc::clone(&self.handles.backend) as Arc<dyn SettingsRepo>;
+        let backend = Arc::clone(&self.services.backend) as Arc<dyn SettingsRepo>;
         self.appearance_writers.write_reporting(
             "language",
             async move {
@@ -619,7 +629,7 @@ impl SettingsView {
         let accent = cx.accent();
         cx.set_global(Presentation::accented(theme, accent, density));
 
-        let backend = Arc::clone(&self.handles.backend) as Arc<dyn SettingsRepo>;
+        let backend = Arc::clone(&self.services.backend) as Arc<dyn SettingsRepo>;
         let key = density.storage_key().to_owned();
         self.appearance_writers.write_reporting(
             "density",
@@ -636,8 +646,8 @@ impl SettingsView {
             return;
         }
         self.update_check = UpdateCheckStatus::Checking;
-        let backend = Arc::clone(&self.handles.backend);
-        let rt_handle = self.handles.rt_handle.clone();
+        let backend = Arc::clone(&self.services.backend);
+        let rt_handle = self.services.rt_handle.clone();
         let flow = self.update_flow.clone();
         cx.spawn(async move |this, cx| {
             let result = run_update_check(cx, backend, &rt_handle, None, &flow).await;
@@ -658,7 +668,7 @@ impl SettingsView {
 
     fn open_releases_page(&mut self, cx: &mut Context<Self>) {
         async_bridge::open_external(
-            &self.handles.rt_handle,
+            &self.services.rt_handle,
             RELEASES_URL,
             ErrorSink::Toast,
             tr!("settings_check_updates_failed"),

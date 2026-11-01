@@ -13,7 +13,7 @@ use forge_storage::{
 };
 use forge_storage_sqlite::SqliteBackend;
 use forge_types::{
-    Action, ActionId, ExecutionMode, OAuthToken, PermissionRung, PlatformScope, Queue, QueueId,
+    Action, ActionId, ExecutionMode, OAuthToken, Queue, QueueId,
     SubActionStep, TriggerConfig, TriggerInstance, TriggerInstanceId, Variant,
 };
 
@@ -489,18 +489,8 @@ async fn seed_triggered_action(
         .await
         .map_err(storage_error)?;
 
-    let instance = TriggerInstance {
-        id: TriggerInstanceId::new(),
-        kind_id: spec.kind_id.to_owned(),
-        name: spec.instance_name.to_owned(),
-        overrides: spec.overrides,
-        enabled: true,
-        user_defined: true,
-        platform_scope: PlatformScope::Any,
-        cooldown_secs: 0,
-        cooldown_global: true,
-        permission_rung: PermissionRung::Everyone,
-    };
+    let instance =
+        TriggerInstance::new_user_defined(spec.kind_id, spec.instance_name, spec.overrides);
     let triggers = provider.trigger_instance_repo();
     triggers.save(&instance).await.map_err(storage_error)?;
     triggers

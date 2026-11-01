@@ -35,6 +35,76 @@ fn trigger_unlink_btn(
         .into_any_element()
 }
 
+fn trigger_card_condition(
+    instance: &TriggerInstance,
+    descriptor: Option<&dyn TriggerKindDescriptor>,
+) -> String {
+    let mut condition = crate::triggers_screen::condition_display(descriptor, &instance.overrides);
+    if crate::triggers_screen::cooldown_applies(descriptor) {
+        condition.push_str(&crate::triggers_screen::cooldown_suffix(
+            instance.cooldown_secs,
+            instance.cooldown_global,
+        ));
+    }
+    if let Some(permission) = descriptor
+        .and_then(TriggerKindDescriptor::chat_trigger_family)
+        .and_then(|_| crate::triggers_screen::permission_suffix(instance.permission_rung))
+    {
+        condition.push_str(&permission);
+    }
+    condition
+}
+
+fn trigger_card_title(
+    instance: &TriggerInstance,
+    descriptor: Option<&dyn TriggerKindDescriptor>,
+    palette: &ForgePalette,
+    density: Density,
+) -> gpui::Div {
+    let name_color = if instance.enabled {
+        palette.text_primary
+    } else {
+        palette.text_faint
+    };
+    let kind_label = descriptor
+        .map(crate::kind_copy::trigger_name)
+        .unwrap_or_else(|| instance.kind_id.clone());
+    div()
+        .min_w_0()
+        .flex()
+        .items_center()
+        .gap(spacing(Spacing::Xs, density))
+        .child(
+            div()
+                .font_family(body_family())
+                .font_weight(FontWeight::SEMIBOLD)
+                .text_size(FONT_XS)
+                .flex_none()
+                .text_color(name_color)
+                .child(crate::kind_copy::trigger_instance_name(
+                    &instance.name,
+                    descriptor,
+                )),
+        )
+        .child(
+            div()
+                .font_family(body_family())
+                .text_size(FONT_XXS)
+                .flex_none()
+                .text_color(palette.text_faint)
+                .child(kind_label),
+        )
+        .child(
+            div()
+                .font_family(mono_family())
+                .text_size(FONT_XXS)
+                .min_w_0()
+                .truncate()
+                .text_color(palette.accent_peach)
+                .child(trigger_card_condition(instance, descriptor)),
+        )
+}
+
 impl ActionEditor {
     fn unlink_trigger(&mut self, instance_id: TriggerInstanceId, cx: &mut Context<Self>) {
         let Some(action_id) = self.selected else {
@@ -166,28 +236,6 @@ impl ActionEditor {
         } else {
             palette.disabled
         };
-        let name_color = if instance.enabled {
-            palette.text_primary
-        } else {
-            palette.text_faint
-        };
-        let kind_label = descriptor
-            .map(crate::kind_copy::trigger_name)
-            .unwrap_or_else(|| instance.kind_id.clone());
-        let mut condition =
-            crate::triggers_screen::condition_display(descriptor, &instance.overrides);
-        if crate::triggers_screen::cooldown_applies(descriptor) {
-            condition.push_str(&crate::triggers_screen::cooldown_suffix(
-                instance.cooldown_secs,
-                instance.cooldown_global,
-            ));
-        }
-        if let Some(permission) = descriptor
-            .and_then(TriggerKindDescriptor::chat_trigger_family)
-            .and_then(|_| crate::triggers_screen::permission_suffix(instance.permission_rung))
-        {
-            condition.push_str(&permission);
-        }
         let glyph = Icon::from_name(
             descriptor
                 .map(TriggerKindDescriptor::icon_name)
@@ -201,40 +249,7 @@ impl ActionEditor {
             .child(status_dot(accent, TRIGGER_DOT))
             .child(icon(glyph, TRIGGER_GLYPH, accent));
 
-        let title = div()
-            .min_w_0()
-            .flex()
-            .items_center()
-            .gap(spacing(Spacing::Xs, density))
-            .child(
-                div()
-                    .font_family(body_family())
-                    .font_weight(FontWeight::SEMIBOLD)
-                    .text_size(FONT_XS)
-                    .flex_none()
-                    .text_color(name_color)
-                    .child(crate::kind_copy::trigger_instance_name(
-                        &instance.name,
-                        descriptor,
-                    )),
-            )
-            .child(
-                div()
-                    .font_family(body_family())
-                    .text_size(FONT_XXS)
-                    .flex_none()
-                    .text_color(palette.text_faint)
-                    .child(kind_label),
-            )
-            .child(
-                div()
-                    .font_family(mono_family())
-                    .text_size(FONT_XXS)
-                    .min_w_0()
-                    .truncate()
-                    .text_color(palette.accent_peach)
-                    .child(condition),
-            )
+        let title = trigger_card_title(instance, descriptor, palette, density)
             .children(
                 switched_off_owner
                     .as_ref()

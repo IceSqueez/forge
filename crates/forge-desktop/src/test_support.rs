@@ -768,18 +768,7 @@ pub(crate) fn action_running(name: &str, steps: Vec<forge_types::SubActionStep>)
 }
 
 pub(crate) fn trigger_of(kind_id: &str) -> forge_types::TriggerInstance {
-    forge_types::TriggerInstance {
-        id: forge_types::TriggerInstanceId::new(),
-        kind_id: kind_id.to_owned(),
-        name: kind_id.to_owned(),
-        overrides: TriggerConfig::new(),
-        enabled: true,
-        user_defined: true,
-        platform_scope: forge_types::PlatformScope::default(),
-        cooldown_secs: 0,
-        cooldown_global: true,
-        permission_rung: forge_types::PermissionRung::Everyone,
-    }
+    forge_types::TriggerInstance::new_user_defined(kind_id, kind_id, TriggerConfig::new())
 }
 
 pub(crate) const STORAGE_KEY: [u8; 32] = [0x11; 32];

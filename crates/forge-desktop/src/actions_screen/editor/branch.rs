@@ -7,16 +7,17 @@ use forge_components::{
     body_family, icon, mono_family, spacing, tr,
 };
 use forge_registry::FormField;
+use forge_runtime::{DEFAULT_CHAIN_KEY, ELSE_CHAIN_KEY, LOOP_BODY_KEY, THEN_CHAIN_KEY};
 use forge_types::SubActionStep;
 use gpui::{AnyElement, App, ClickEvent, Context, ElementId, SharedString, Window, div};
 use std::collections::BTreeMap;
 
 fn branch_field_label(chain_key: &str) -> String {
     match chain_key {
-        "then_chain" => tr!("action_editor_branch_then"),
-        "else_chain" => tr!("action_editor_branch_else"),
-        "body" => tr!("action_editor_branch_body"),
-        "default_chain" => tr!("action_editor_branch_default"),
+        THEN_CHAIN_KEY => tr!("action_editor_branch_then"),
+        ELSE_CHAIN_KEY => tr!("action_editor_branch_else"),
+        LOOP_BODY_KEY => tr!("action_editor_branch_body"),
+        DEFAULT_CHAIN_KEY => tr!("action_editor_branch_default"),
         _ => tr!("action_editor_branch_fallback"),
     }
 }
@@ -256,7 +257,7 @@ impl ActionEditor {
                 })
                 .unwrap_or_else(|| tr!("action_editor_kind_sub_action"));
             let branch_label = match frame.case_index {
-                Some(ci) => format!("{} {}", tr!("action_editor_branch_case"), ci + 1),
+                Some(ci) => tr!("action_editor_branch_case", number = ci + 1),
                 None => enclosing
                     .and_then(|s| {
                         let runner = self.deps.sub_action_registry.get(&s.kind_id)?;

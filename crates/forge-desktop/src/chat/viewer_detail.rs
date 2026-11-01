@@ -266,7 +266,7 @@ impl ViewerDrawer {
             );
 
         let target = ViewerTarget::new(&summary.key, summary.username.clone());
-        let can_whisper = target.supports(&ViewerAction::Whisper(String::new()));
+        let can_whisper = target.can_whisper();
         let shoutout_target = target.clone();
         let whisper_key = summary.key.clone();
         let actions = div()

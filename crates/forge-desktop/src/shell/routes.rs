@@ -21,7 +21,7 @@ use crate::queues::QueuesView;
 use crate::runtime_handles::RuntimeHandles;
 use crate::script_editor::ScriptEditorView;
 use crate::server_console::ServerConsoleView;
-use crate::settings::SettingsView;
+use crate::settings::{SettingsLaunch, SettingsView};
 use crate::soundboard::SoundboardView;
 use crate::topics::Topics;
 use crate::triggers_screen::TriggersRegistryView;
@@ -158,11 +158,11 @@ impl AppShell {
         handles: &Arc<RuntimeHandles>,
         cx: &mut Context<Self>,
     ) -> RoutedContent {
-        let handles = Arc::clone(handles);
+        let launch = SettingsLaunch::of(handles);
         let awake = topics.awake.clone();
         let update_flow = topics.update_flow.clone();
         let problem_report = topics.problem_report.clone();
-        cx.new(|cx| SettingsView::new(handles, awake, update_flow, problem_report, preselect, cx))
+        cx.new(|cx| SettingsView::new(launch, awake, update_flow, problem_report, preselect, cx))
             .into()
     }
 
@@ -292,12 +292,7 @@ impl AppShell {
     ) -> RoutedContent {
         let action_repo = handles.backend.action_repo();
         let queue_repo = handles.backend.queue_repo();
-        let actions_service = Arc::new(forge_runtime::ActionsService::new(
-            handles.backend.action_repo(),
-            handles.backend.queue_repo(),
-            handles.backend.history_repo(),
-            handles.backend.trigger_instance_repo(),
-        ));
+        let actions_service = Arc::clone(&handles.overlays.actions);
         let trigger_instance_repo = HotkeySyncedTriggerRepo::wrap(
             handles.backend.trigger_instance_repo(),
             handles.integrations.hotkey_reconciler.clone(),

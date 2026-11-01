@@ -19,7 +19,7 @@ use crate::async_bridge::{self, Loadable};
 use crate::load_notice::{LoadNotice, NoticeWidth, load_notice};
 use crate::navigation::SettingsSection;
 use crate::repo_failure::RepoFailure;
-use crate::runtime_handles::RuntimeHandles;
+use crate::settings::SettingsAudioLaunch;
 use crate::settings_audio_routing::SettingsAudioRoutingView;
 use crate::settings_pane_header::SettingsPaneHeader;
 use crate::settings_voice_gate::SettingsVoiceGateView;
@@ -77,21 +77,27 @@ pub(crate) struct SettingsAudioView {
 
 impl SettingsAudioView {
     pub(crate) fn new(
-        handles: &RuntimeHandles,
+        launch: SettingsAudioLaunch,
         initial_active: bool,
         cx: &mut Context<Self>,
     ) -> Self {
-        let backend = Arc::clone(&handles.backend);
-        let rt_handle = handles.rt_handle.clone();
-        let speech_output = Arc::clone(&handles.speech.speech_output);
+        let SettingsAudioLaunch {
+            backend,
+            rt_handle,
+            speech_output,
+            overlays,
+            audio_router,
+            server_available,
+            voice_gate,
+        } = launch;
         let routing = cx.new(|cx| {
             SettingsAudioRoutingView::new(
                 Arc::clone(&backend) as Arc<dyn SettingsRepo>,
                 backend.overlay_repo(),
-                handles.overlays.service.clone(),
+                overlays,
                 rt_handle.clone(),
-                Arc::clone(&handles.audio.audio_router),
-                handles.server.is_some(),
+                audio_router,
+                server_available,
                 cx,
             )
         });
@@ -99,7 +105,7 @@ impl SettingsAudioView {
             SettingsVoiceGateView::new(
                 Arc::clone(&backend),
                 rt_handle.clone(),
-                Arc::clone(&handles.speech.voice_gate),
+                voice_gate,
                 initial_active,
                 cx,
             )

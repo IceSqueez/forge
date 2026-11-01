@@ -37,7 +37,7 @@ impl NavigableList for ViewerDrawer {
 
     fn activate_list(&mut self, _window: &mut Window, cx: &mut Context<Self>) {
         if let Some(key) = self.drawer_list_keys.activation_target(&self.drawer_keys) {
-            self.select_viewer(key, cx);
+            self.open_viewer(key, cx);
         }
     }
 
@@ -194,7 +194,7 @@ impl ViewerDrawer {
                 }),
             )
             .icon(Icon::MessageCircle)
-            .disabled(!target.supports(&ViewerAction::Whisper(String::new())))
+            .disabled(!target.can_whisper())
             .into(),
             menu_item(
                 "chat-drawer-menu-tts-voice",
@@ -410,7 +410,7 @@ impl ViewerDrawer {
             .border_color(stripe)
             .cursor_pointer()
             .on_click(
-                cx.listener(move |this, _: &ClickEvent, _, cx| this.select_viewer(key.clone(), cx)),
+                cx.listener(move |this, _: &ClickEvent, _, cx| this.open_viewer(key.clone(), cx)),
             )
             .child(avatar)
             .child(name_col)

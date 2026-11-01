@@ -245,11 +245,6 @@ impl ViewerDrawer {
         }
     }
 
-    pub(super) fn select_viewer(&mut self, key: AuthorKey, cx: &mut Context<Self>) {
-        self.point_at_viewer(key, cx);
-        cx.notify();
-    }
-
     pub(super) fn displayed_target(&self, cx: &App) -> Option<ViewerTarget> {
         let authors = self.feed.read(cx).authors();
         let key = displayed_viewer(self.selected_viewer.as_ref(), authors)?;

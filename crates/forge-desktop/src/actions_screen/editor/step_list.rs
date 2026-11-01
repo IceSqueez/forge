@@ -2,6 +2,7 @@ use super::cards::{add_row_button, empty_placeholder_card};
 use super::step_presentation::variable_text;
 use super::*;
 use crate::actions_screen::config_problem_text::config_problem_text;
+use crate::integration_switch::ClosedGate;
 use crate::integration_switch::integration_name;
 use crate::user_text::resolve_user_text;
 use forge_components::ROW_OFF_OPACITY;
@@ -292,6 +293,62 @@ impl ActionEditor {
             .into_any_element()
     }
 
+    fn render_step_meta(
+        &self,
+        detail: &str,
+        closed_gate: Option<&ClosedGate>,
+        i: usize,
+        depth: usize,
+        palette: &ForgePalette,
+        cx: &mut Context<Self>,
+    ) -> AnyElement {
+        let Some(gate) = closed_gate else {
+            return variable_text(detail, palette).into_any_element();
+        };
+        div()
+            .flex()
+            .flex_col()
+            .child(variable_text(detail, palette))
+            .child(
+                div()
+                    .mt(STEP_NOTICE_MT)
+                    .child(self.render_closed_gate_notice(
+                        gate,
+                        SharedString::from(format!("actions-step-enable-{depth}-{i}")),
+                        palette,
+                        cx,
+                    )),
+            )
+            .into_any_element()
+    }
+
+    fn with_branch_affordances(
+        &self,
+        step_row: gpui::Div,
+        step: &SubActionStep,
+        i: usize,
+        depth: usize,
+        palette: &ForgePalette,
+        cx: &mut Context<Self>,
+    ) -> AnyElement {
+        let density = cx.density();
+        match self.render_branch_affordances(step, i, depth, palette, cx) {
+            Some(branches) => {
+                let indented = div()
+                    .pl(STEP_COL_W + spacing(Spacing::Xs, density))
+                    .pt(spacing(Spacing::Xxs, density))
+                    .child(branches);
+                div()
+                    .flex()
+                    .flex_col()
+                    .child(step_row)
+                    .child(indented)
+                    .into_any_element()
+            }
+            None => step_row.into_any_element(),
+        }
+    }
+
     fn render_step_block(
         &self,
         step: &SubActionStep,
@@ -354,24 +411,7 @@ impl ActionEditor {
 
         let enabled = step.enabled;
         let closed_gate = self.closed_step_gate(step);
-        let meta = match &closed_gate {
-            Some(gate) => div()
-                .flex()
-                .flex_col()
-                .child(variable_text(&detail_str, palette))
-                .child(
-                    div()
-                        .mt(STEP_NOTICE_MT)
-                        .child(self.render_closed_gate_notice(
-                            gate,
-                            SharedString::from(format!("actions-step-enable-{depth}-{i}")),
-                            palette,
-                            cx,
-                        )),
-                )
-                .into_any_element(),
-            None => variable_text(&detail_str, palette).into_any_element(),
-        };
+        let meta = self.render_step_meta(&detail_str, closed_gate.as_ref(), i, depth, palette, cx);
         let mut card = row_card(title_el, palette)
             .leading(
                 div()
@@ -410,21 +450,7 @@ impl ActionEditor {
                     .child(card),
             );
 
-        let block: AnyElement = match self.render_branch_affordances(step, i, depth, palette, cx) {
-            Some(branches) => {
-                let indented = div()
-                    .pl(STEP_COL_W + spacing(Spacing::Xs, density))
-                    .pt(spacing(Spacing::Xxs, density))
-                    .child(branches);
-                div()
-                    .flex()
-                    .flex_col()
-                    .child(step_row)
-                    .child(indented)
-                    .into_any_element()
-            }
-            None => step_row.into_any_element(),
-        };
+        let block = self.with_branch_affordances(step_row, step, i, depth, palette, cx);
 
         let row = div()
             .w_full()

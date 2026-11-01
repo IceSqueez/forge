@@ -28,8 +28,10 @@ const CASES: StepChainField = StepChainField {
     seeds_empty_list: true,
 };
 
+pub const DEFAULT_CHAIN_KEY: &str = "default_chain";
+
 const DEFAULT_CHAIN: StepChainField = StepChainField {
-    key: "default_chain",
+    key: DEFAULT_CHAIN_KEY,
     label: "Default",
     layout: ChainLayout::Steps,
     seeds_empty_list: false,

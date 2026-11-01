@@ -2,9 +2,7 @@ use std::collections::{BTreeMap, BTreeSet};
 use std::sync::Arc;
 
 use forge_storage::{DataProvider, TriggerChanges};
-use forge_types::{
-    ActionId, PermissionRung, PlatformScope, TriggerInstance, TriggerInstanceId, Variant,
-};
+use forge_types::{ActionId, TriggerInstance, TriggerInstanceId, Variant};
 
 use crate::backend::HotkeyId;
 use crate::binding::{BindingHalf, BindingRow, COMBO_FIELD, HotkeyEdge};
@@ -142,18 +140,7 @@ async fn remove_combo_edge(
 fn binding_instance(combo: String, edge: HotkeyEdge) -> TriggerInstance {
     let mut overrides = BTreeMap::new();
     overrides.insert(COMBO_FIELD.to_owned(), Variant::String(combo.clone()));
-    TriggerInstance {
-        id: TriggerInstanceId::new(),
-        kind_id: edge.kind_id().to_owned(),
-        name: combo,
-        overrides,
-        enabled: true,
-        user_defined: true,
-        platform_scope: PlatformScope::default(),
-        cooldown_secs: 0,
-        cooldown_global: true,
-        permission_rung: PermissionRung::Everyone,
-    }
+    TriggerInstance::new_user_defined(edge.kind_id(), combo, overrides)
 }
 
 pub fn bound_hotkey_combos(instances: &[TriggerInstance]) -> BTreeSet<String> {

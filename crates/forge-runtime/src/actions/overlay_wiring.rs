@@ -8,8 +8,8 @@ use forge_overlay::{
 use forge_registry::{TriggerKindDescriptor, declared_variables};
 use forge_storage::{OVERLAY_ALERT_QUEUE_NAME, OverlayDefinition};
 use forge_types::{
-    Action, ActionId, ExecutionMode, PermissionRung, PlatformScope, Queue, QueueId,
-    SubActionConfig, SubActionStep, TriggerConfig, TriggerInstance, TriggerInstanceId, Variant,
+    Action, ActionId, ExecutionMode, Queue, QueueId, SubActionConfig, SubActionStep, TriggerConfig,
+    TriggerInstance, TriggerInstanceId, Variant,
 };
 
 use crate::sub_action_runners::{
@@ -152,18 +152,11 @@ pub fn plan_overlay_wiring(
                 &effective_overlay_config(kind, &overlay.config),
             ),
         },
-        trigger: TriggerInstance {
-            id: TriggerInstanceId::new(),
-            kind_id: trigger.id().to_owned(),
-            name: trigger_name(&overlay.display_name, trigger.label()),
-            overrides: TriggerConfig::new(),
-            enabled: true,
-            user_defined: true,
-            platform_scope: PlatformScope::Any,
-            cooldown_secs: 0,
-            cooldown_global: true,
-            permission_rung: PermissionRung::Everyone,
-        },
+        trigger: TriggerInstance::new_user_defined(
+            trigger.id(),
+            trigger_name(&overlay.display_name, trigger.label()),
+            TriggerConfig::new(),
+        ),
     })
 }
 

@@ -27,6 +27,39 @@ impl Render for TriggerList {
     }
 }
 
+fn row_used_count(
+    instance: &TriggerInstanceRow,
+    palette: &ForgePalette,
+    density: Density,
+) -> AnyElement {
+    if instance.used_in_count > 0 {
+        div()
+            .flex()
+            .items_center()
+            .gap(spacing(Spacing::Xxs, density))
+            .font_family(body_family())
+            .text_size(USED_FS)
+            .text_color(palette.text_primary)
+            .child(tr!("triggers_used_in_prefix"))
+            .child(
+                div()
+                    .font_family(body_family())
+                    .font_weight(FontWeight::MEDIUM)
+                    .text_color(palette.success)
+                    .child(instance.used_in_count.to_string()),
+            )
+            .into_any_element()
+    } else {
+        div()
+            .italic()
+            .font_family(body_family())
+            .text_size(USED_FS)
+            .text_color(palette.text_faint)
+            .child(tr!("triggers_row_unused"))
+            .into_any_element()
+    }
+}
+
 impl TriggerList {
     pub(in crate::triggers_screen) fn render_stats(
         &self,
@@ -293,18 +326,14 @@ impl TriggerList {
             .into_any_element()
     }
 
-    fn render_row(
+    fn render_row_kind(
         &self,
         instance: &TriggerInstanceRow,
+        dot_color: Rgba,
+        gate_badges: Vec<AnyElement>,
         palette: &ForgePalette,
-        cx: &mut Context<Self>,
-    ) -> AnyElement {
-        let density = cx.density();
-        let id = instance.id;
-        let selected = self.selected == Some(id);
-        let cursor = self.list_cursor == Some(id);
-        let hovered = self.hovered == Some(id);
-        let dot_color = platform_dot_color(&instance.kind_id, &self.deps.registry, palette);
+        density: Density,
+    ) -> gpui::Div {
         let descriptor = self.deps.registry.get(&instance.kind_id);
         let kind_glyph = descriptor
             .map(|d| Icon::from_name(d.icon_name()))
@@ -312,22 +341,6 @@ impl TriggerList {
         let kind_label = descriptor
             .map(crate::kind_copy::trigger_name)
             .unwrap_or_else(|| instance.kind_id.clone());
-
-        let stripe_color = if selected || cursor {
-            dot_color
-        } else {
-            gpui::transparent_black().into()
-        };
-        let row_bg: Rgba = if selected || cursor || hovered {
-            palette.elevated
-        } else {
-            gpui::transparent_black().into()
-        };
-        let name_color = if !instance.enabled {
-            palette.text_muted
-        } else {
-            palette.text_primary
-        };
 
         let mut kind = div()
             .flex()
@@ -358,14 +371,7 @@ impl TriggerList {
                 BADGE_FS,
             ));
         }
-        let switched_off_owner = self.switched_off_owner(&instance.kind_id);
-        if let Some(owner) = &switched_off_owner {
-            kind = kind.child(inactive_badge(owner, palette, density));
-        }
-        let uncovered_category = self.uncovered_category(&instance.kind_id);
-        if let Some(category) = uncovered_category {
-            kind = kind.child(category_inactive_badge(category, palette, density));
-        }
+        kind = kind.children(gate_badges);
         let gate = if cooldown_applies(descriptor) {
             cooldown_suffix(instance.cooldown_secs, instance.cooldown_global)
         } else {
@@ -393,36 +399,22 @@ impl TriggerList {
                     .child(permission),
             );
         }
+        kind
+    }
 
-        let used: AnyElement = if instance.used_in_count > 0 {
-            div()
-                .flex()
-                .items_center()
-                .gap(spacing(Spacing::Xxs, density))
-                .font_family(body_family())
-                .text_size(USED_FS)
-                .text_color(palette.text_primary)
-                .child(tr!("triggers_used_in_prefix"))
-                .child(
-                    div()
-                        .font_family(body_family())
-                        .font_weight(FontWeight::MEDIUM)
-                        .text_color(palette.success)
-                        .child(instance.used_in_count.to_string()),
-                )
-                .into_any_element()
+    fn render_row_name(
+        &self,
+        instance: &TriggerInstanceRow,
+        palette: &ForgePalette,
+        cx: &mut Context<Self>,
+    ) -> AnyElement {
+        let id = instance.id;
+        let name_color = if !instance.enabled {
+            palette.text_muted
         } else {
-            div()
-                .italic()
-                .font_family(body_family())
-                .text_size(USED_FS)
-                .text_color(palette.text_faint)
-                .child(tr!("triggers_row_unused"))
-                .into_any_element()
+            palette.text_primary
         };
-
-        let renaming = self.rename.as_ref().is_some_and(|r| r.id == id);
-        let name_cell: AnyElement = match self.rename.as_ref().filter(|r| r.id == id) {
+        match self.rename.as_ref().filter(|r| r.id == id) {
             Some(rename) => div()
                 .w(COL_NAME)
                 .flex_none()
@@ -446,8 +438,46 @@ impl TriggerList {
                 )
                 .child(instance.name.clone())
                 .into_any_element(),
+        }
+    }
+
+    fn render_row(
+        &self,
+        instance: &TriggerInstanceRow,
+        palette: &ForgePalette,
+        cx: &mut Context<Self>,
+    ) -> AnyElement {
+        let density = cx.density();
+        let id = instance.id;
+        let selected = self.selected == Some(id);
+        let cursor = self.list_cursor == Some(id);
+        let hovered = self.hovered == Some(id);
+        let dot_color = platform_dot_color(&instance.kind_id, &self.deps.registry, palette);
+
+        let stripe_color = if selected || cursor {
+            dot_color
+        } else {
+            gpui::transparent_black().into()
+        };
+        let row_bg: Rgba = if selected || cursor || hovered {
+            palette.elevated
+        } else {
+            gpui::transparent_black().into()
         };
 
+        let switched_off_owner = self.switched_off_owner(&instance.kind_id);
+        let uncovered_category = self.uncovered_category(&instance.kind_id);
+        let gate_badges: Vec<AnyElement> = switched_off_owner
+            .iter()
+            .map(|owner| inactive_badge(owner, palette, density).into_any_element())
+            .chain(uncovered_category.iter().map(|category| {
+                category_inactive_badge(*category, palette, density).into_any_element()
+            }))
+            .collect();
+        let kind = self.render_row_kind(instance, dot_color, gate_badges, palette, density);
+        let used = row_used_count(instance, palette, density);
+
+        let renaming = self.rename.as_ref().is_some_and(|r| r.id == id);
         let mut select_region = div()
             .id(SharedString::from(format!("triggers-row-select-{id}")))
             .flex_1()
@@ -463,7 +493,7 @@ impl TriggerList {
                     .items_center()
                     .child(status_dot(dot_color, ROW_DOT)),
             )
-            .child(name_cell)
+            .child(self.render_row_name(instance, palette, cx))
             .child(div().flex_1().min_w(px(0.0)).child(kind))
             .child(
                 div()

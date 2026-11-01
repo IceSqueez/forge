@@ -189,6 +189,54 @@ fn free_text(key: &str, placeholder: SharedString) -> InputSpec<'_> {
     }
 }
 
+fn build_integer_input<V: 'static>(
+    key: &str,
+    range: RangeInclusive<i64>,
+    one_based: bool,
+    gate: Option<String>,
+    ctx: &FoldContext<'_, V>,
+    cx: &mut Context<V>,
+) -> ConfigField {
+    let optional = !ctx.defaults.contains_key(key);
+    let placeholder = if optional {
+        SharedString::from(tr!("config_form_auto_placeholder"))
+    } else {
+        SharedString::from(INTEGER_PLACEHOLDER)
+    };
+    build_config_input(
+        InputSpec {
+            key,
+            placeholder,
+            integer: Some(range),
+            one_based,
+            optional,
+        },
+        gate,
+        ctx,
+        cx,
+    )
+}
+
+fn build_choice<V: 'static>(
+    key: &str,
+    options: Option<Vec<(String, String)>>,
+    dependency: Option<ChoiceDependency>,
+    gate: Option<String>,
+    ctx: &FoldContext<'_, V>,
+    cx: &mut Context<V>,
+) -> ConfigField {
+    match options {
+        Some(options) => ConfigField::Choice {
+            key: key.to_owned(),
+            gate,
+            options,
+            selected: read_text(ctx.config, key),
+            dependency,
+        },
+        None => build_config_input(free_text(key, SharedString::default()), gate, ctx, cx),
+    }
+}
+
 pub(crate) fn fold_config_field<V: 'static>(
     spec: &FormField,
     gate: Option<String>,
@@ -219,44 +267,10 @@ pub(crate) fn fold_config_field<V: 'static>(
             ..
         } => out.push(build_config_code(key, *language, *kind, gate, ctx, cx)),
         FormField::Integer { key, min, max, .. } => {
-            let optional = !ctx.defaults.contains_key(*key);
-            let placeholder = if optional {
-                SharedString::from(tr!("config_form_auto_placeholder"))
-            } else {
-                SharedString::from(INTEGER_PLACEHOLDER)
-            };
-            out.push(build_config_input(
-                InputSpec {
-                    key,
-                    placeholder,
-                    integer: Some(*min..=*max),
-                    one_based: false,
-                    optional,
-                },
-                gate,
-                ctx,
-                cx,
-            ));
+            out.push(build_integer_input(key, *min..=*max, false, gate, ctx, cx))
         }
         FormField::OneBasedInteger { key, count, .. } => {
-            let optional = !ctx.defaults.contains_key(*key);
-            let placeholder = if optional {
-                SharedString::from(tr!("config_form_auto_placeholder"))
-            } else {
-                SharedString::from(INTEGER_PLACEHOLDER)
-            };
-            out.push(build_config_input(
-                InputSpec {
-                    key,
-                    placeholder,
-                    integer: Some(1..=*count),
-                    one_based: true,
-                    optional,
-                },
-                gate,
-                ctx,
-                cx,
-            ));
+            out.push(build_integer_input(key, 1..=*count, true, gate, ctx, cx))
         }
         FormField::UnitAmount { key, .. } | FormField::Duration { key, .. } => {
             if let Some(scale) = AmountScale::of(spec) {
@@ -289,76 +303,49 @@ pub(crate) fn fold_config_field<V: 'static>(
                 .collect(),
             selected: read_text(ctx.config, key),
         }),
-        FormField::Select { key, options, .. } => match choices {
-            ChoiceSupport::Text => out.push(build_config_input(
-                free_text(key, SharedString::default()),
-                gate,
-                ctx,
-                cx,
-            )),
-            ChoiceSupport::Picker(_) => out.push(ConfigField::Choice {
-                key: (*key).to_owned(),
-                gate,
-                options: options
+        FormField::Select { key, options, .. } => {
+            let choice = matches!(choices, ChoiceSupport::Picker(_)).then(|| {
+                options
                     .iter()
                     .map(|opt| {
                         let label = crate::option_labels::option_label(ctx.kind_id, key, opt);
                         ((*opt).to_owned(), label)
                     })
-                    .collect(),
-                selected: read_text(ctx.config, key),
-                dependency: None,
-            }),
-        },
+                    .collect()
+            });
+            out.push(build_choice(key, choice, None, gate, ctx, cx));
+        }
         FormField::DynamicSelect {
             key, options_key, ..
-        } => match choices {
-            ChoiceSupport::Picker(map) => out.push(ConfigField::Choice {
-                key: (*key).to_owned(),
-                gate,
-                options: map.get(*options_key).cloned().unwrap_or_default(),
-                selected: read_text(ctx.config, key),
-                dependency: None,
-            }),
-            ChoiceSupport::Text if has_options_provider(options_key) => {
-                out.push(ConfigField::Choice {
-                    key: (*key).to_owned(),
-                    gate,
-                    options: Vec::new(),
-                    selected: read_text(ctx.config, key),
-                    dependency: None,
-                })
-            }
-            ChoiceSupport::Text => out.push(build_config_input(
-                free_text(key, SharedString::default()),
-                gate,
-                ctx,
-                cx,
-            )),
-        },
+        } => {
+            let choice = match choices {
+                ChoiceSupport::Picker(map) => {
+                    Some(map.get(*options_key).cloned().unwrap_or_default())
+                }
+                ChoiceSupport::Text => has_options_provider(options_key).then(Vec::new),
+            };
+            out.push(build_choice(key, choice, None, gate, ctx, cx));
+        }
         FormField::DependentSelect {
             key,
             options_prefix,
             depends_on,
             ..
-        } => match choices {
-            ChoiceSupport::Text => out.push(build_config_input(
-                free_text(key, SharedString::default()),
-                gate,
-                ctx,
-                cx,
-            )),
-            ChoiceSupport::Picker(map) => out.push(ConfigField::Choice {
-                key: (*key).to_owned(),
-                gate,
-                options: dependent_options(map, options_prefix, &read_text(ctx.config, depends_on)),
-                selected: read_text(ctx.config, key),
-                dependency: Some(ChoiceDependency {
-                    options_prefix: (*options_prefix).to_owned(),
-                    depends_on: (*depends_on).to_owned(),
-                }),
-            }),
-        },
+        } => {
+            let choice = match choices {
+                ChoiceSupport::Text => None,
+                ChoiceSupport::Picker(map) => Some(dependent_options(
+                    map,
+                    options_prefix,
+                    &read_text(ctx.config, depends_on),
+                )),
+            };
+            let dependency = ChoiceDependency {
+                options_prefix: (*options_prefix).to_owned(),
+                depends_on: (*depends_on).to_owned(),
+            };
+            out.push(build_choice(key, choice, Some(dependency), gate, ctx, cx));
+        }
         FormField::FilePicker { key, .. } | FormField::DateTime { key, .. } => out.push(
             build_config_input(free_text(key, SharedString::default()), gate, ctx, cx),
         ),
@@ -911,6 +898,23 @@ pub(crate) fn code_field_editor<V: 'static>(
     })
 }
 
+fn store_integer(
+    key: &str,
+    text: &str,
+    range: &RangeInclusive<i64>,
+    one_based: bool,
+    optional: bool,
+    buffer: &mut FieldConfig,
+) {
+    let typed = text.trim();
+    if let Ok(number) = typed.parse::<i64>() {
+        let stored = within(number, range) - i64::from(one_based);
+        buffer.insert(key.to_owned(), Variant::Int(stored));
+    } else if optional && typed.is_empty() {
+        buffer.remove(key);
+    }
+}
+
 pub(crate) fn collect_field_values(fields: &[ConfigField], buffer: &mut FieldConfig, cx: &App) {
     let bool_vals: HashMap<&str, bool> = fields
         .iter()
@@ -999,17 +1003,11 @@ pub(crate) fn collect_field_values(fields: &[ConfigField], buffer: &mut FieldCon
                     continue;
                 }
                 let text = input.read(cx).content().to_owned();
-                let Some(range) = integer else {
-                    buffer.insert(key.clone(), Variant::String(text));
-                    continue;
-                };
-                let typed = text.trim();
-                if let Ok(number) = typed.parse::<i64>() {
-                    let bounded = within(number, range);
-                    let stored = bounded - i64::from(*one_based);
-                    buffer.insert(key.clone(), Variant::Int(stored));
-                } else if *optional && typed.is_empty() {
-                    buffer.remove(key);
+                match integer {
+                    Some(range) => store_integer(key, &text, range, *one_based, *optional, buffer),
+                    None => {
+                        buffer.insert(key.clone(), Variant::String(text));
+                    }
                 }
             }
             ConfigField::UnitAmount {

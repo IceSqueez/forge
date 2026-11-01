@@ -127,10 +127,12 @@ pub(crate) use core_log_write::CoreLogWriteRunner;
 pub use core_log_write::{LOG_DEFAULT_LEVEL, LOG_LEVEL_KEY, LOG_MESSAGE_KEY, LOG_WRITE_KIND_ID};
 pub use core_logic_break_loop::CoreLogicBreakLoopRunner;
 pub use core_logic_continue_loop::CoreLogicContinueLoopRunner;
-pub use core_logic_if_then_else::CoreLogicIfThenElseRunner;
-pub use core_logic_loop::{CoreLogicLoopRunner, MAX_FOREACH_ITERATIONS, MAX_RECORDED_ITERATIONS};
+pub use core_logic_if_then_else::{CoreLogicIfThenElseRunner, ELSE_CHAIN_KEY, THEN_CHAIN_KEY};
+pub use core_logic_loop::{
+    CoreLogicLoopRunner, LOOP_BODY_KEY, MAX_FOREACH_ITERATIONS, MAX_RECORDED_ITERATIONS,
+};
 pub use core_logic_stop::CoreLogicStopRunner;
-pub use core_logic_switch_case::CoreLogicSwitchCaseRunner;
+pub use core_logic_switch_case::{CoreLogicSwitchCaseRunner, DEFAULT_CHAIN_KEY};
 pub use core_logic_wait::{CoreLogicWaitRunner, WAIT_KIND_ID, WAIT_MS_KEY};
 pub use core_logic_wait_until::CoreLogicWaitUntilRunner;
 pub use core_math_evaluate::CoreMathEvaluateRunner;

@@ -80,6 +80,10 @@ impl ViewerTarget {
         self.step(action).is_some()
     }
 
+    pub(crate) fn can_whisper(&self) -> bool {
+        self.supports(&ViewerAction::Whisper(String::new()))
+    }
+
     pub(crate) fn label(&self, action: &ViewerAction) -> String {
         let name = self.name.as_str();
         match action {

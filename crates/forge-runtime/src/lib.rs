@@ -203,7 +203,10 @@ pub use sub_action_runners::{
     RANDOM_INT_TARGET_VAR_KEY, SCHEDULE_ACTION_KIND_ID, SCRIPT_TARGET_VAR_KEY,
     ScriptRunInlineRunner, ServerBroadcastRunner, SystemNotifyPort, WAIT_KIND_ID, WAIT_MS_KEY,
 };
-pub use sub_action_runners::{MAX_FOREACH_ITERATIONS, MAX_RECORDED_ITERATIONS};
+pub use sub_action_runners::{
+    DEFAULT_CHAIN_KEY, ELSE_CHAIN_KEY, LOOP_BODY_KEY, MAX_FOREACH_ITERATIONS,
+    MAX_RECORDED_ITERATIONS, THEN_CHAIN_KEY,
+};
 pub use triggers::{
     DONATION_PROVIDER_OPTIONS_KEY, DonationReceivedDescriptor, TIMER_TICK_KIND, TimerSchedule,
     TimerTickDescriptor, timer_every_message,

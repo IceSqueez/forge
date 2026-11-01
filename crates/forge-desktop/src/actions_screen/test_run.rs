@@ -130,6 +130,81 @@ pub(super) struct TestRunModal {
 
 impl EventEmitter<TestRunEvent> for TestRunModal {}
 
+struct TestRowLook {
+    mark_glyph: String,
+    mark_bg: Rgba,
+    mark_fg: Rgba,
+    label: String,
+    label_color: Rgba,
+    border: Rgba,
+    row_bg: Rgba,
+    opacity: f32,
+}
+
+impl TestRowLook {
+    fn of(row: &TestRunRow, palette: &ForgePalette) -> Self {
+        let number = (row.index + 1).to_string();
+        match &row.status {
+            RowStatus::Queued => Self {
+                mark_glyph: number,
+                mark_bg: palette.surface_overlay,
+                mark_fg: palette.text_faint,
+                label: tr!("action_editor_test_run_status_queued"),
+                label_color: palette.text_faint,
+                border: palette.border_regular,
+                row_bg: palette.shell,
+                opacity: ROW_OFF_OPACITY,
+            },
+            RowStatus::Running => Self {
+                mark_glyph: number,
+                mark_bg: palette.brand,
+                mark_fg: palette.shell,
+                label: tr!("action_editor_test_run_status_running"),
+                label_color: palette.brand,
+                border: palette.brand,
+                row_bg: palette.shell,
+                opacity: 1.0,
+            },
+            RowStatus::Ok { ms } => Self {
+                mark_glyph: "\u{2713}".to_owned(),
+                mark_bg: palette.success,
+                mark_fg: palette.shell,
+                label: tr!(
+                    "action_editor_test_run_status_ms",
+                    ms = i64::try_from(*ms).unwrap_or(i64::MAX)
+                ),
+                label_color: palette.success,
+                border: palette.border_regular,
+                row_bg: palette.shell,
+                opacity: 1.0,
+            },
+            RowStatus::Failed { .. } => Self {
+                mark_glyph: "\u{00d7}".to_owned(),
+                mark_bg: palette.danger,
+                mark_fg: palette.shell,
+                label: tr!("action_editor_test_run_status_failed"),
+                label_color: palette.danger,
+                border: palette.danger,
+                row_bg: Rgba {
+                    a: FAIL_TINT_ALPHA,
+                    ..palette.danger
+                },
+                opacity: 1.0,
+            },
+            RowStatus::Skipped => Self {
+                mark_glyph: number,
+                mark_bg: palette.surface_overlay,
+                mark_fg: palette.text_faint,
+                label: tr!("action_editor_test_run_status_skipped"),
+                label_color: palette.text_muted,
+                border: palette.border_regular,
+                row_bg: palette.shell,
+                opacity: ROW_OFF_OPACITY,
+            },
+        }
+    }
+}
+
 impl TestRunModal {
     pub(super) fn new(
         launch: TestRunLaunch,
@@ -544,66 +619,7 @@ impl TestRunModal {
         palette: &ForgePalette,
         density: Density,
     ) -> AnyElement {
-        let number = (row.index + 1).to_string();
-        let (mark_glyph, mark_bg, mark_fg, label, label_color, border, row_bg, opacity) =
-            match &row.status {
-                RowStatus::Queued => (
-                    number.clone(),
-                    palette.surface_overlay,
-                    palette.text_faint,
-                    tr!("action_editor_test_run_status_queued"),
-                    palette.text_faint,
-                    palette.border_regular,
-                    palette.shell,
-                    ROW_OFF_OPACITY,
-                ),
-                RowStatus::Running => (
-                    number.clone(),
-                    palette.brand,
-                    palette.shell,
-                    tr!("action_editor_test_run_status_running"),
-                    palette.brand,
-                    palette.brand,
-                    palette.shell,
-                    1.0,
-                ),
-                RowStatus::Ok { ms } => (
-                    "\u{2713}".to_owned(),
-                    palette.success,
-                    palette.shell,
-                    tr!(
-                        "action_editor_test_run_status_ms",
-                        ms = i64::try_from(*ms).unwrap_or(i64::MAX)
-                    ),
-                    palette.success,
-                    palette.border_regular,
-                    palette.shell,
-                    1.0,
-                ),
-                RowStatus::Failed { .. } => (
-                    "\u{00d7}".to_owned(),
-                    palette.danger,
-                    palette.shell,
-                    tr!("action_editor_test_run_status_failed"),
-                    palette.danger,
-                    palette.danger,
-                    Rgba {
-                        a: FAIL_TINT_ALPHA,
-                        ..palette.danger
-                    },
-                    1.0,
-                ),
-                RowStatus::Skipped => (
-                    number.clone(),
-                    palette.surface_overlay,
-                    palette.text_faint,
-                    tr!("action_editor_test_run_status_skipped"),
-                    palette.text_muted,
-                    palette.border_regular,
-                    palette.shell,
-                    ROW_OFF_OPACITY,
-                ),
-            };
+        let look = TestRowLook::of(row, palette);
 
         let mark = div()
             .flex_none()
@@ -612,13 +628,13 @@ impl TestRunModal {
             .justify_center()
             .size(MARK)
             .rounded(radius(Radius::Pill))
-            .bg(mark_bg)
+            .bg(look.mark_bg)
             .child(
                 div()
                     .font_family(mono_family())
                     .text_size(FONT_XXS)
-                    .text_color(mark_fg)
-                    .child(mark_glyph),
+                    .text_color(look.mark_fg)
+                    .child(look.mark_glyph),
             );
 
         div()
@@ -629,10 +645,10 @@ impl TestRunModal {
             .py(scaled(ROW_PAD_V, density))
             .px(scaled(ROW_PAD_H, density))
             .rounded(radius(Radius::Md))
-            .bg(row_bg)
+            .bg(look.row_bg)
             .border(BORDER_THIN)
-            .border_color(border)
-            .opacity(opacity)
+            .border_color(look.border)
+            .opacity(look.opacity)
             .child(mark)
             .child(icon(row.icon, ROW_GLYPH, row.color))
             .child(
@@ -650,8 +666,8 @@ impl TestRunModal {
                     .flex_none()
                     .font_family(mono_family())
                     .text_size(FONT_XXS)
-                    .text_color(label_color)
-                    .child(label),
+                    .text_color(look.label_color)
+                    .child(look.label),
             )
             .into_any_element()
     }

@@ -44,7 +44,6 @@ pub(super) enum ActionFormEvent {
 }
 
 pub(super) struct ActionFormModal {
-    editing: Option<ActionId>,
     base: Option<Action>,
     name: Entity<TextInput>,
     group: Entity<TextInput>,
@@ -112,17 +111,15 @@ impl ActionFormModal {
             area
         });
         let name_sub = cx.subscribe(&name, |_this, _f, _e: &InputEvent, cx| cx.notify());
-        let (editing, enabled, concurrent, bypass_pause, random_pick, preselect_queue) = match &base
-        {
+        let (enabled, concurrent, bypass_pause, random_pick, preselect_queue) = match &base {
             Some(a) => (
-                Some(a.id),
                 a.enabled,
                 a.concurrent,
                 a.bypass_pause,
                 a.execution_mode == ExecutionMode::RandomPick,
                 Some(a.queue_id),
             ),
-            None => (None, true, false, false, false, None),
+            None => (true, false, false, false, None),
         };
         async_bridge::run_async(
             rt_handle,
@@ -134,7 +131,6 @@ impl ActionFormModal {
             cx,
         );
         Self {
-            editing,
             base,
             name,
             group,
@@ -272,7 +268,7 @@ impl ActionFormModal {
             .child(behavior_header)
             .children(self.behavior_rows(palette, density, cx));
 
-        let modal_title = if self.editing.is_some() {
+        let modal_title = if self.base.is_some() {
             tr!("actions_modal_edit_action_title")
         } else {
             tr!("actions_modal_new_action_title")
@@ -460,7 +456,7 @@ impl ActionFormModal {
             "actions-modal-cancel",
             cx.listener(|this, _: &ClickEvent, _, cx| this.cancel(cx)),
         );
-        let submit_label = if self.editing.is_some() {
+        let submit_label = if self.base.is_some() {
             tr!("actions_modal_save_btn")
         } else {
             tr!("actions_modal_create_btn")
@@ -537,7 +533,7 @@ impl ActionFormModal {
     }
 
     pub(super) fn editing_id(&self) -> Option<ActionId> {
-        self.editing
+        self.base.as_ref().map(|action| action.id)
     }
 
     pub(super) fn name_text(&self, cx: &App) -> String {

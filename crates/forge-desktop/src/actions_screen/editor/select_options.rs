@@ -12,6 +12,9 @@ use forge_registry::{
 use forge_registry::{ENGINE_VOICE_OPTIONS_KEY, FormSchemaSource};
 use forge_runtime::DONATION_PROVIDER_OPTIONS_KEY;
 use forge_runtime::{ENGINE_OPTIONS_KEY, VOICE_OPTIONS_PREFIX};
+use forge_soundboard::ClipLibrary;
+use forge_speak_queue::SpeakQueueHandle;
+use forge_storage::{GlobalsRepo, OverlayRepo, QueueRepo, ScriptRepo};
 use gpui::Context;
 use std::collections::HashMap;
 
@@ -50,166 +53,190 @@ fn mark_unavailable_clips(
     }
 }
 
+struct SelectOptionSources {
+    action_repo: Arc<dyn ActionRepo>,
+    queue_repo: Arc<dyn QueueRepo>,
+    trigger_instance_repo: Arc<dyn TriggerInstanceRepo>,
+    script_repo: Arc<dyn ScriptRepo>,
+    clip_library: Arc<ClipLibrary>,
+    globals_repo: Arc<dyn GlobalsRepo>,
+    overlay_repo: Arc<dyn OverlayRepo>,
+    overlay_schema: Arc<overlay_schema::OverlayContentSchema>,
+    speak: Option<SpeakQueueHandle>,
+}
+
+impl SelectOptionsFetch {
+    fn seeded() -> Self {
+        Self {
+            options: HashMap::from([(
+                DONATION_PROVIDER_OPTIONS_KEY.to_owned(),
+                donation_provider_options(),
+            )]),
+            failed_keys: Vec::new(),
+            overlay_kind_by_identity: HashMap::new(),
+            concurrent_queue_ids: HashSet::new(),
+            unavailable_clip_ids: HashSet::new(),
+        }
+    }
+
+    fn listed<T, E: std::fmt::Display>(
+        &mut self,
+        result: Result<T, E>,
+        key: &'static str,
+    ) -> Option<T> {
+        loaded_options(result, key, &mut self.failed_keys)
+    }
+
+    fn put(&mut self, key: &str, entries: impl Iterator<Item = (String, String)>) {
+        self.options.insert(key.to_owned(), entries.collect());
+    }
+}
+
+impl SelectOptionSources {
+    async fn fetch(self) -> SelectOptionsFetch {
+        let mut fetch = SelectOptionsFetch::seeded();
+        self.add_actions(&mut fetch).await;
+        self.add_queues(&mut fetch).await;
+        self.add_trigger_instances(&mut fetch).await;
+        self.add_scripts(&mut fetch).await;
+        self.add_clips(&mut fetch).await;
+        self.add_globals(&mut fetch).await;
+        self.add_overlays(&mut fetch).await;
+        self.add_speech(&mut fetch);
+        fetch
+    }
+
+    async fn add_actions(&self, fetch: &mut SelectOptionsFetch) {
+        if let Some(actions) = fetch.listed(self.action_repo.list().await, ACTION_OPTIONS_KEY) {
+            fetch.put(
+                ACTION_OPTIONS_KEY,
+                actions.into_iter().map(|a| (a.id.to_string(), a.name)),
+            );
+        }
+    }
+
+    async fn add_queues(&self, fetch: &mut SelectOptionsFetch) {
+        if let Some(queues) = fetch.listed(self.queue_repo.list().await, QUEUE_OPTIONS_KEY) {
+            fetch.concurrent_queue_ids = queues
+                .iter()
+                .filter(|q| !q.is_serial())
+                .map(|q| q.id.to_string())
+                .collect();
+            fetch.put(
+                QUEUE_OPTIONS_KEY,
+                queues.into_iter().map(|q| (q.id.to_string(), q.name)),
+            );
+        }
+    }
+
+    async fn add_trigger_instances(&self, fetch: &mut SelectOptionsFetch) {
+        if let Some(instances) = fetch.listed(
+            self.trigger_instance_repo.list_all().await,
+            TRIGGER_INSTANCE_OPTIONS_KEY,
+        ) {
+            fetch.put(
+                TRIGGER_INSTANCE_OPTIONS_KEY,
+                instances.into_iter().map(|ti| (ti.id.to_string(), ti.name)),
+            );
+        }
+    }
+
+    async fn add_scripts(&self, fetch: &mut SelectOptionsFetch) {
+        if let Some(scripts) = fetch.listed(self.script_repo.list().await, SCRIPT_OPTIONS_KEY) {
+            fetch.put(
+                SCRIPT_OPTIONS_KEY,
+                scripts.into_iter().map(|s| (s.name.clone(), s.name)),
+            );
+        }
+    }
+
+    async fn add_clips(&self, fetch: &mut SelectOptionsFetch) {
+        if let Some(clips) = fetch.listed(self.clip_library.list().await, CLIP_OPTIONS_KEY) {
+            fetch.unavailable_clip_ids = self
+                .clip_library
+                .availability_of(&clips)
+                .await
+                .into_iter()
+                .filter(|(_, availability)| !availability.is_playable())
+                .map(|(id, _)| id.to_string())
+                .collect();
+            fetch.put(
+                CLIP_OPTIONS_KEY,
+                clips.into_iter().map(|c| (c.id.to_string(), c.name)),
+            );
+        }
+    }
+
+    async fn add_globals(&self, fetch: &mut SelectOptionsFetch) {
+        if let Some(globals) = fetch.listed(self.globals_repo.list().await, GLOBAL_OPTIONS_KEY) {
+            fetch.put(
+                GLOBAL_OPTIONS_KEY,
+                globals.into_iter().map(|g| (g.name.clone(), g.name)),
+            );
+        }
+    }
+
+    async fn add_overlays(&self, fetch: &mut SelectOptionsFetch) {
+        if let Some(overlays) = fetch.listed(self.overlay_repo.list().await, OVERLAY_OPTIONS_KEY) {
+            fetch.put(
+                OVERLAY_OPTIONS_KEY,
+                overlays
+                    .iter()
+                    .filter(|o| self.overlay_schema.takes_sends(&o.kind_id))
+                    .map(|o| (o.id.to_string(), o.display_name.clone())),
+            );
+            fetch.overlay_kind_by_identity = overlays
+                .into_iter()
+                .map(|o| (o.id.to_string(), o.kind_id))
+                .collect();
+        }
+    }
+
+    fn add_speech(&self, fetch: &mut SelectOptionsFetch) {
+        let Some(speak) = &self.speak else {
+            return;
+        };
+        fetch.put(
+            ENGINE_OPTIONS_KEY,
+            speak
+                .registered_engine_ids()
+                .into_iter()
+                .map(|id| (id.0.clone(), id.0)),
+        );
+        let voices = speak.available_voices();
+        for voice in voices.iter() {
+            fetch
+                .options
+                .entry(dependent_options_key(
+                    VOICE_OPTIONS_PREFIX,
+                    &voice.engine_id.0,
+                ))
+                .or_default()
+                .push((voice.id.0.clone(), voice.name.clone()));
+        }
+        fetch.options.insert(
+            ENGINE_VOICE_OPTIONS_KEY.to_owned(),
+            engine_voice_options(&voices),
+        );
+    }
+}
+
 impl ActionEditor {
     pub(in crate::actions_screen) fn fetch_select_options(&self, cx: &mut Context<Self>) {
-        let action_repo = Arc::clone(&self.deps.action_repo);
-        let queue_repo = Arc::clone(&self.deps.queue_repo);
-        let ti_repo = Arc::clone(&self.deps.trigger_instance_repo);
-        let script_repo = Arc::clone(&self.deps.script_repo);
-        let clip_library = Arc::clone(&self.deps.clip_library);
-        let globals_repo = Arc::clone(&self.deps.globals_repo);
-        let overlay_repo = Arc::clone(&self.deps.overlay_repo);
-        let overlay_schema = Arc::clone(&self.overlay_schema);
-        let speak = self.deps.speak.clone();
+        let sources = SelectOptionSources {
+            action_repo: Arc::clone(&self.deps.action_repo),
+            queue_repo: Arc::clone(&self.deps.queue_repo),
+            trigger_instance_repo: Arc::clone(&self.deps.trigger_instance_repo),
+            script_repo: Arc::clone(&self.deps.script_repo),
+            clip_library: Arc::clone(&self.deps.clip_library),
+            globals_repo: Arc::clone(&self.deps.globals_repo),
+            overlay_repo: Arc::clone(&self.deps.overlay_repo),
+            overlay_schema: Arc::clone(&self.overlay_schema),
+            speak: self.deps.speak.clone(),
+        };
         async_bridge::run_async(
             &self.deps.rt_handle,
-            async move {
-                let mut map: HashMap<String, Vec<(String, String)>> = HashMap::new();
-                let mut failed_keys: Vec<&'static str> = Vec::new();
-                map.insert(
-                    DONATION_PROVIDER_OPTIONS_KEY.to_owned(),
-                    donation_provider_options(),
-                );
-                let mut overlay_kind_by_identity: HashMap<String, String> = HashMap::new();
-                let mut concurrent_queue_ids: HashSet<String> = HashSet::new();
-                if let Some(actions) = loaded_options(
-                    action_repo.list().await,
-                    ACTION_OPTIONS_KEY,
-                    &mut failed_keys,
-                ) {
-                    map.insert(
-                        ACTION_OPTIONS_KEY.to_owned(),
-                        actions
-                            .into_iter()
-                            .map(|a| (a.id.to_string(), a.name))
-                            .collect(),
-                    );
-                }
-                if let Some(queues) =
-                    loaded_options(queue_repo.list().await, QUEUE_OPTIONS_KEY, &mut failed_keys)
-                {
-                    concurrent_queue_ids = queues
-                        .iter()
-                        .filter(|q| !q.is_serial())
-                        .map(|q| q.id.to_string())
-                        .collect();
-                    map.insert(
-                        QUEUE_OPTIONS_KEY.to_owned(),
-                        queues
-                            .into_iter()
-                            .map(|q| (q.id.to_string(), q.name))
-                            .collect(),
-                    );
-                }
-                if let Some(instances) = loaded_options(
-                    ti_repo.list_all().await,
-                    TRIGGER_INSTANCE_OPTIONS_KEY,
-                    &mut failed_keys,
-                ) {
-                    map.insert(
-                        TRIGGER_INSTANCE_OPTIONS_KEY.to_owned(),
-                        instances
-                            .into_iter()
-                            .map(|ti| (ti.id.to_string(), ti.name))
-                            .collect(),
-                    );
-                }
-                if let Some(scripts) = loaded_options(
-                    script_repo.list().await,
-                    SCRIPT_OPTIONS_KEY,
-                    &mut failed_keys,
-                ) {
-                    map.insert(
-                        SCRIPT_OPTIONS_KEY.to_owned(),
-                        scripts
-                            .into_iter()
-                            .map(|s| (s.name.clone(), s.name))
-                            .collect(),
-                    );
-                }
-                let mut unavailable_clip_ids: HashSet<String> = HashSet::new();
-                if let Some(clips) = loaded_options(
-                    clip_library.list().await,
-                    CLIP_OPTIONS_KEY,
-                    &mut failed_keys,
-                ) {
-                    unavailable_clip_ids = clip_library
-                        .availability_of(&clips)
-                        .await
-                        .into_iter()
-                        .filter(|(_, availability)| !availability.is_playable())
-                        .map(|(id, _)| id.to_string())
-                        .collect();
-                    map.insert(
-                        CLIP_OPTIONS_KEY.to_owned(),
-                        clips
-                            .into_iter()
-                            .map(|c| (c.id.to_string(), c.name))
-                            .collect(),
-                    );
-                }
-                if let Some(globals) = loaded_options(
-                    globals_repo.list().await,
-                    GLOBAL_OPTIONS_KEY,
-                    &mut failed_keys,
-                ) {
-                    map.insert(
-                        GLOBAL_OPTIONS_KEY.to_owned(),
-                        globals
-                            .into_iter()
-                            .map(|g| (g.name.clone(), g.name))
-                            .collect(),
-                    );
-                }
-                if let Some(overlays) = loaded_options(
-                    overlay_repo.list().await,
-                    OVERLAY_OPTIONS_KEY,
-                    &mut failed_keys,
-                ) {
-                    map.insert(
-                        OVERLAY_OPTIONS_KEY.to_owned(),
-                        overlays
-                            .iter()
-                            .filter(|o| overlay_schema.takes_sends(&o.kind_id))
-                            .map(|o| (o.id.to_string(), o.display_name.clone()))
-                            .collect(),
-                    );
-                    overlay_kind_by_identity = overlays
-                        .into_iter()
-                        .map(|o| (o.id.to_string(), o.kind_id))
-                        .collect();
-                }
-                if let Some(speak) = speak {
-                    map.insert(
-                        ENGINE_OPTIONS_KEY.to_owned(),
-                        speak
-                            .registered_engine_ids()
-                            .into_iter()
-                            .map(|id| (id.0.clone(), id.0))
-                            .collect(),
-                    );
-                    let voices = speak.available_voices();
-                    for voice in voices.iter() {
-                        map.entry(dependent_options_key(
-                            VOICE_OPTIONS_PREFIX,
-                            &voice.engine_id.0,
-                        ))
-                        .or_default()
-                        .push((voice.id.0.clone(), voice.name.clone()));
-                    }
-                    map.insert(
-                        ENGINE_VOICE_OPTIONS_KEY.to_owned(),
-                        engine_voice_options(&voices),
-                    );
-                }
-                SelectOptionsFetch {
-                    options: map,
-                    failed_keys,
-                    overlay_kind_by_identity,
-                    concurrent_queue_ids,
-                    unavailable_clip_ids,
-                }
-            },
+            sources.fetch(),
             |this, fetch, cx| this.on_select_options_fetched(fetch, cx),
             cx,
         );

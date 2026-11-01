@@ -747,7 +747,7 @@ mod tests {
 
         view.update(vcx, |view, cx| {
             view.drawer.update(cx, |drawer, cx| {
-                drawer.select_viewer(AuthorKey::by_viewer_id(PlatformId::Twitch, "1"), cx)
+                drawer.open_viewer(AuthorKey::by_viewer_id(PlatformId::Twitch, "1"), cx)
             })
         });
         vcx.run_until_parked();

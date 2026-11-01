@@ -15,9 +15,8 @@ use forge_registry::{
 use forge_storage::{GlobalEntry, OverlayDefinition, OverlayId, ScriptRecord, StoredClip};
 use forge_types::{
     Action, ActionId, ArgStack, ClipId, ExecutionMode, IntegrationId, OutputDevice,
-    OverlayCredential, PermissionRung, PlatformScope, Queue, QueueId, ScriptContract, ScriptId,
-    SubActionConfig, SubActionStep, SubActionTelemetry, TriggerConfig, TriggerInstance,
-    TriggerInstanceId, Variant,
+    OverlayCredential, Queue, QueueId, ScriptContract, ScriptId, SubActionConfig, SubActionStep,
+    SubActionTelemetry, TriggerConfig, TriggerInstance, Variant,
 };
 use time::OffsetDateTime;
 
@@ -221,16 +220,8 @@ pub(crate) fn action(name: &str, queue_id: QueueId, sub_actions: Vec<SubActionSt
 
 pub(crate) fn trigger(kind_id: &str, name: &str, user_defined: bool) -> TriggerInstance {
     TriggerInstance {
-        id: TriggerInstanceId::new(),
-        kind_id: kind_id.to_owned(),
-        name: name.to_owned(),
-        overrides: TriggerConfig::new(),
-        enabled: true,
         user_defined,
-        platform_scope: PlatformScope::default(),
-        cooldown_secs: 0,
-        cooldown_global: true,
-        permission_rung: PermissionRung::default(),
+        ..TriggerInstance::new_user_defined(kind_id, name, TriggerConfig::new())
     }
 }
 

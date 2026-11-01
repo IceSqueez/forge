@@ -95,8 +95,10 @@ const MAX_ITERATIONS: IntegerField = IntegerField {
     },
 };
 
+pub const LOOP_BODY_KEY: &str = "body";
+
 const BODY: StepChainField = StepChainField {
-    key: "body",
+    key: LOOP_BODY_KEY,
     label: "Body",
     layout: ChainLayout::Steps,
     seeds_empty_list: false,

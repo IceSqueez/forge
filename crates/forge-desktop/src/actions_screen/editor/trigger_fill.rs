@@ -16,7 +16,7 @@ use forge_components::{
     PickerEvent, Radius, Spacing, TextInput, body_family, ghost_button_with_icon, modal,
     mono_family, overlay, primary_button, radius, secondary_button, spacing, tr,
 };
-use forge_types::{PermissionRung, PlatformScope, TriggerInstance, TriggerInstanceId};
+use forge_types::TriggerInstance;
 use gpui::{AnyElement, ClickEvent, Context, Entity, SharedString, WeakEntity, Window, div};
 
 pub(super) struct TriggerFillDeps {
@@ -209,18 +209,7 @@ impl TriggerFillModal {
         collect_field_values(&self.fields, &mut buffer, cx);
         let overrides = sparse_overrides(&default, &buffer);
 
-        let instance = TriggerInstance {
-            id: TriggerInstanceId::new(),
-            kind_id,
-            name,
-            overrides,
-            enabled: true,
-            user_defined: true,
-            platform_scope: PlatformScope::Any,
-            cooldown_secs: 0,
-            cooldown_global: true,
-            permission_rung: PermissionRung::Everyone,
-        };
+        let instance = TriggerInstance::new_user_defined(kind_id, name, overrides);
 
         self.saving = true;
         cx.notify();

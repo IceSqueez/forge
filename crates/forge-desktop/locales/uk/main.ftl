@@ -930,7 +930,7 @@ action_editor_branch_else = Інакше
 action_editor_branch_body = Тіло
 action_editor_branch_default = За замовчуванням
 action_editor_branch_fallback = Гілка
-action_editor_branch_case = Випадок
+action_editor_branch_case = Випадок { $number }
 action_editor_branch_chain = Ланцюг
 action_editor_add_case = Додати випадок
 action_editor_case_multi = багатозначне зіставлення (лише читання)
@@ -1078,7 +1078,7 @@ action_editor_kind_read_file = Читати файл
 action_editor_kind_random_int = Випадкове число
 action_editor_kind_incr_global = Збільшити змінну
 action_editor_kind_run_script = Запустити скрипт
-action_editor_persisted_note = (збережено)
+action_editor_global_increment_detail = { $name } += { $amount } (збережено)
 action_editor_kind_sub_action = Крок
 
 ## Реєстр тригерів - заголовок / фільтри

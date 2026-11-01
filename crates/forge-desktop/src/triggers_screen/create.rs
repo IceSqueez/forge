@@ -26,7 +26,7 @@ use forge_host::integration_catalog::{declaration_of, declarations};
 use forge_host::integrations::BuiltinRegistry;
 use forge_platform_core::IntegrationDeclaration;
 use forge_registry::{TriggerCategory, TriggerKindDescriptor, TriggerRegistry};
-use forge_types::{PermissionRung, PlatformScope, TriggerInstance, TriggerInstanceId};
+use forge_types::{TriggerInstance, TriggerInstanceId};
 use gpui::Rgba;
 use gpui::{
     AnyElement, ClickEvent, Context, Entity, EventEmitter, SharedString, Subscription, Window, div,
@@ -320,19 +320,8 @@ impl TriggerCreateFlow {
         }
         let overrides = sparse_overrides(&default, &buffer);
 
-        let new_id = TriggerInstanceId::new();
-        let instance = TriggerInstance {
-            id: new_id,
-            kind_id,
-            name,
-            overrides,
-            enabled: true,
-            user_defined: true,
-            platform_scope: PlatformScope::Any,
-            cooldown_secs: 0,
-            cooldown_global: true,
-            permission_rung: PermissionRung::Everyone,
-        };
+        let instance = TriggerInstance::new_user_defined(kind_id, name, overrides);
+        let new_id = instance.id;
 
         if let Some(CreateStage::Fill(form)) = self.stage.as_mut() {
             form.saving = true;

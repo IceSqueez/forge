@@ -95,9 +95,10 @@ pub(in crate::actions_screen) fn sub_action_summary(
             (
                 "variable",
                 tr!("action_editor_kind_incr_global"),
-                Some(format!(
-                    "{name} += {amount} {note}",
-                    note = tr!("action_editor_persisted_note")
+                Some(tr!(
+                    "action_editor_global_increment_detail",
+                    name = name,
+                    amount = amount
                 )),
             )
         }

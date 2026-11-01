@@ -317,23 +317,13 @@ impl AliasForm {
     }
 }
 
-impl Render for AliasForm {
-    fn render(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
-        let palette = cx.palette();
-        let density = cx.density();
-        let title = if self.editing.is_some() {
-            tr!("tts_aliases_form_title_edit")
-        } else {
-            tr!("tts_aliases_form_title_assign")
-        };
-
-        let viewer_field = labelled(
-            tr!("tts_aliases_form_viewer_label"),
-            self.viewer.clone(),
-            &palette,
-            density,
-        );
-
+impl AliasForm {
+    fn render_platform_field(
+        &self,
+        palette: &ForgePalette,
+        density: Density,
+        cx: &mut Context<Self>,
+    ) -> AnyElement {
         let locked = self.locked_key.is_some();
         let platform_segments = AliasScope::ALL
             .into_iter()
@@ -350,14 +340,22 @@ impl Render for AliasForm {
                 .disabled(locked && self.platform != scope)
             })
             .collect();
-        let platform_field = labelled(
+        labelled(
             tr!("tts_aliases_form_platform_label"),
-            div().flex().child(segmented(platform_segments, &palette)),
-            &palette,
+            div().flex().child(segmented(platform_segments, palette)),
+            palette,
             density,
-        );
+        )
+        .into_any_element()
+    }
 
-        let block_row = div()
+    fn render_block_row(
+        &self,
+        palette: &ForgePalette,
+        density: Density,
+        cx: &mut Context<Self>,
+    ) -> AnyElement {
+        div()
             .flex()
             .items_center()
             .gap(spacing(Spacing::Sm, density))
@@ -382,12 +380,20 @@ impl Render for AliasForm {
                             .child(tr!("tts_aliases_form_block_desc")),
                     ),
             )
-            .child(toggle(self.blocked, &palette).on_click(
+            .child(toggle(self.blocked, palette).on_click(
                 "va-form-block",
                 cx.listener(|this, _: &ClickEvent, _, cx| this.toggle_blocked(cx)),
-            ));
+            ))
+            .into_any_element()
+    }
 
-        let config: AnyElement = if self.blocked {
+    fn render_voice_config(
+        &self,
+        palette: &ForgePalette,
+        density: Density,
+        cx: &mut Context<Self>,
+    ) -> AnyElement {
+        if self.blocked {
             div()
                 .font_family(mono_family())
                 .text_size(FONT_SM)
@@ -408,29 +414,29 @@ impl Render for AliasForm {
                     )
                 })
                 .collect();
-            let chips = segmented(engine_segments, &palette).wrap(spacing(Spacing::Xxs, density));
+            let chips = segmented(engine_segments, palette).wrap(spacing(Spacing::Xxs, density));
             let engine_block = labelled(
                 tr!("tts_aliases_form_engine_label"),
                 chips,
-                &palette,
+                palette,
                 density,
             );
             let voice_block = labelled(
                 tr!("tts_aliases_form_voice_label"),
                 self.voice.clone(),
-                &palette,
+                palette,
                 density,
             );
             let pitch_block = labelled(
                 tr!("tts_aliases_form_pitch_label"),
                 self.pitch.clone(),
-                &palette,
+                palette,
                 density,
             );
             let rate_block = labelled(
                 tr!("tts_aliases_form_rate_label"),
                 self.rate.clone(),
-                &palette,
+                palette,
                 density,
             );
             div()
@@ -447,7 +453,57 @@ impl Render for AliasForm {
                         .child(div().flex_1().child(rate_block)),
                 )
                 .into_any_element()
+        }
+    }
+
+    fn render_footer(&self, palette: &ForgePalette, cx: &mut Context<Self>) -> AnyElement {
+        let save_label = if self.editing.is_some() {
+            tr!("common_save")
+        } else {
+            tr!("tts_aliases_form_create")
         };
+        div()
+            .w_full()
+            .flex()
+            .items_center()
+            .justify_between()
+            .child(secondary_button(tr!("common_cancel"), palette).on_click(
+                "va-form-cancel",
+                cx.listener(|this, _: &ClickEvent, _, cx| this.cancel(cx)),
+            ))
+            .child(
+                primary_button(save_label, palette)
+                    .disabled(!self.is_saveable(cx))
+                    .on_click(
+                        "va-form-save",
+                        cx.listener(|this, _: &ClickEvent, _, cx| this.submit(cx)),
+                    ),
+            )
+            .into_any_element()
+    }
+}
+
+impl Render for AliasForm {
+    fn render(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+        let palette = cx.palette();
+        let density = cx.density();
+        let title = if self.editing.is_some() {
+            tr!("tts_aliases_form_title_edit")
+        } else {
+            tr!("tts_aliases_form_title_assign")
+        };
+
+        let viewer_field = labelled(
+            tr!("tts_aliases_form_viewer_label"),
+            self.viewer.clone(),
+            &palette,
+            density,
+        );
+
+        let platform_field = self.render_platform_field(&palette, density, cx);
+        let block_row = self.render_block_row(&palette, density, cx);
+        let config = self.render_voice_config(&palette, density, cx);
+        let footer = self.render_footer(&palette, cx);
 
         let body = div()
             .flex()
@@ -457,29 +513,6 @@ impl Render for AliasForm {
             .child(viewer_field)
             .child(block_row)
             .child(config);
-
-        let save_label = if self.editing.is_some() {
-            tr!("common_save")
-        } else {
-            tr!("tts_aliases_form_create")
-        };
-        let footer = div()
-            .w_full()
-            .flex()
-            .items_center()
-            .justify_between()
-            .child(secondary_button(tr!("common_cancel"), &palette).on_click(
-                "va-form-cancel",
-                cx.listener(|this, _: &ClickEvent, _, cx| this.cancel(cx)),
-            ))
-            .child(
-                primary_button(save_label, &palette)
-                    .disabled(!self.is_saveable(cx))
-                    .on_click(
-                        "va-form-save",
-                        cx.listener(|this, _: &ClickEvent, _, cx| this.submit(cx)),
-                    ),
-            );
 
         let card = modal(title, body, &palette)
             .width(MODAL_W)

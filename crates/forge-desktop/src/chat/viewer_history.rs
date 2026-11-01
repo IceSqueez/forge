@@ -936,7 +936,7 @@ mod tests {
         });
         view.update(cx, |view, cx| {
             view.drawer
-                .update(cx, |drawer, cx| drawer.select_viewer(viewer("11"), cx))
+                .update(cx, |drawer, cx| drawer.open_viewer(viewer("11"), cx))
         });
         push_each(cx, &feed, vec![chatter(2, "12")]);
         settle(cx, &rt);
@@ -984,7 +984,7 @@ mod tests {
 
         view.update(cx, |view, cx| {
             view.drawer
-                .update(cx, |drawer, cx| drawer.select_viewer(viewer("11"), cx))
+                .update(cx, |drawer, cx| drawer.open_viewer(viewer("11"), cx))
         });
         push_each(cx, &feed, vec![chatter(1, "11")]);
         settle(cx, &rt);

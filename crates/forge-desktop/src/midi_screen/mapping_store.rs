@@ -9,7 +9,7 @@ use forge_storage::{
     ActionRepo, JsonDocument, Setting, StorageError, TriggerInstanceRepo, read_stored_setting,
     write_setting,
 };
-use forge_types::{ActionId, PermissionRung, PlatformScope, TriggerInstance, TriggerInstanceId};
+use forge_types::{ActionId, TriggerInstance};
 use gpui::Context;
 use std::collections::HashMap;
 use std::sync::Arc;
@@ -82,18 +82,11 @@ pub(super) async fn save_mapping(
             id
         }
         None => {
-            let instance = TriggerInstance {
-                id: TriggerInstanceId::new(),
-                kind_id: draft.signal.kind_id.clone(),
-                name: draft.name,
+            let instance = TriggerInstance::new_user_defined(
+                draft.signal.kind_id.clone(),
+                draft.name,
                 overrides,
-                enabled: true,
-                user_defined: true,
-                platform_scope: PlatformScope::Any,
-                cooldown_secs: 0,
-                cooldown_global: true,
-                permission_rung: PermissionRung::Everyone,
-            };
+            );
             triggers.save(&instance).await.map_err(RepoFailure::from)?;
             instance.id
         }

@@ -29,15 +29,18 @@ const UNDEFINED_IS_FALSE: ToggleField = ToggleField {
     default: true,
 };
 
+pub const THEN_CHAIN_KEY: &str = "then_chain";
+pub const ELSE_CHAIN_KEY: &str = "else_chain";
+
 const THEN_CHAIN: StepChainField = StepChainField {
-    key: "then_chain",
+    key: THEN_CHAIN_KEY,
     label: "Then",
     layout: ChainLayout::Steps,
     seeds_empty_list: false,
 };
 
 const ELSE_CHAIN: StepChainField = StepChainField {
-    key: "else_chain",
+    key: ELSE_CHAIN_KEY,
     label: "Else",
     layout: ChainLayout::Steps,
     seeds_empty_list: false,

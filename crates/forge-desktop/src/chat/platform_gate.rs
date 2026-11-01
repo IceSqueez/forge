@@ -1,10 +1,11 @@
 use super::viewer_drawer::ViewerDrawer;
-use super::*;
+use super::{ChatView, PlatformFilter};
 use crate::home_stats::Integration;
 use crate::integration_lifecycle::IntegrationLifecycle;
 use forge_runtime::LifecycleState;
 use forge_types::PlatformId;
-use gpui::App;
+use gpui::{App, Context, Entity};
+use std::sync::Arc;
 
 pub(crate) fn platform_integration(platform: PlatformId) -> Integration {
     match platform {

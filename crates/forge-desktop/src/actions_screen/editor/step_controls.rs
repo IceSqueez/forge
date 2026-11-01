@@ -13,62 +13,45 @@ struct RemovedStep {
     item: nav::ChainItem,
 }
 
+pub(super) fn moved_within(chain: &mut Vec<nav::ChainItem>, from: usize, to: usize) {
+    if from < chain.len() && to < chain.len() {
+        let step = chain.remove(from);
+        chain.insert(to, step);
+    }
+}
+
 impl ActionEditor {
-    fn move_step_up(&mut self, i: usize, cx: &mut Context<Self>) {
+    fn relocate_step(
+        &mut self,
+        from: usize,
+        destination: impl FnOnce(usize) -> usize,
+        cx: &mut Context<Self>,
+    ) {
         self.step_open = None;
         self.persist_chain_mutation(
             move |chain| {
-                if i > 0 && i < chain.len() {
-                    let step = chain.remove(i);
-                    chain.insert(i - 1, step);
-                }
+                let to = destination(chain.len());
+                moved_within(chain, from, to);
             },
             cx,
         );
         cx.notify();
+    }
+
+    fn move_step_up(&mut self, i: usize, cx: &mut Context<Self>) {
+        self.relocate_step(i, |_| i.saturating_sub(1), cx);
     }
 
     fn move_step_down(&mut self, i: usize, cx: &mut Context<Self>) {
-        self.step_open = None;
-        self.persist_chain_mutation(
-            move |chain| {
-                if i + 1 < chain.len() {
-                    let step = chain.remove(i);
-                    chain.insert(i + 1, step);
-                }
-            },
-            cx,
-        );
-        cx.notify();
+        self.relocate_step(i, |_| i + 1, cx);
     }
 
     fn move_step_top(&mut self, i: usize, cx: &mut Context<Self>) {
-        self.step_open = None;
-        self.persist_chain_mutation(
-            move |chain| {
-                if i != 0 && i < chain.len() {
-                    let step = chain.remove(i);
-                    chain.insert(0, step);
-                }
-            },
-            cx,
-        );
-        cx.notify();
+        self.relocate_step(i, |_| 0, cx);
     }
 
     fn move_step_bottom(&mut self, i: usize, cx: &mut Context<Self>) {
-        self.step_open = None;
-        self.persist_chain_mutation(
-            move |chain| {
-                let len = chain.len();
-                if len > 0 && i < len - 1 {
-                    let step = chain.remove(i);
-                    chain.insert(len - 1, step);
-                }
-            },
-            cx,
-        );
-        cx.notify();
+        self.relocate_step(i, |len| len.saturating_sub(1), cx);
     }
 
     fn duplicate_step(&mut self, i: usize, cx: &mut Context<Self>) {

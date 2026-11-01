@@ -165,12 +165,7 @@ impl ActionEditor {
             return;
         };
         self.persist_chain_mutation(
-            move |chain| {
-                if from < chain.len() && to < chain.len() {
-                    let step = chain.remove(from);
-                    chain.insert(to, step);
-                }
-            },
+            move |chain| super::step_controls::moved_within(chain, from, to),
             cx,
         );
         cx.notify();

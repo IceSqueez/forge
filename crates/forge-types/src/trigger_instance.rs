@@ -22,6 +22,27 @@ pub struct TriggerInstance {
     pub permission_rung: PermissionRung,
 }
 
+impl TriggerInstance {
+    pub fn new_user_defined(
+        kind_id: impl Into<String>,
+        name: impl Into<String>,
+        overrides: TriggerConfig,
+    ) -> Self {
+        Self {
+            id: TriggerInstanceId::new(),
+            kind_id: kind_id.into(),
+            name: name.into(),
+            overrides,
+            enabled: true,
+            user_defined: true,
+            platform_scope: PlatformScope::default(),
+            cooldown_secs: 0,
+            cooldown_global: default_cooldown_global(),
+            permission_rung: PermissionRung::default(),
+        }
+    }
+}
+
 fn default_cooldown_global() -> bool {
     true
 }

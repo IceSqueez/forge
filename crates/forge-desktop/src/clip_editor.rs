@@ -1,7 +1,7 @@
 use forge_components::FONT_LABEL;
 use forge_components::FONT_XXS;
-use forge_components::TINT_BORDER_ALPHA;
 use forge_components::TINT_FILL_ALPHA;
+use forge_components::{Density, ForgePalette, TINT_BORDER_ALPHA};
 use std::path::PathBuf;
 
 use forge_components::{
@@ -465,10 +465,13 @@ impl ClipEditor {
     }
 }
 
-impl Render for ClipEditor {
-    fn render(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
-        let palette = cx.palette();
-        let density = cx.density();
+impl ClipEditor {
+    fn render_file_row(
+        &self,
+        palette: &ForgePalette,
+        density: Density,
+        cx: &mut Context<Self>,
+    ) -> AnyElement {
         let file_set = self.file_path.is_some();
         let file_label: String = self
             .file_path
@@ -480,14 +483,14 @@ impl Render for ClipEditor {
         let browse = ghost_button_with_icon(
             Icon::FolderOpen,
             tr!("soundboard_modal_browse_btn"),
-            &palette,
+            palette,
         )
         .density(density)
         .on_click(
             "sb-modal-browse",
             cx.listener(|this, _: &ClickEvent, _, cx| this.browse_file(cx)),
         );
-        let file_row = div()
+        div()
             .flex()
             .items_center()
             .gap(spacing(Spacing::Sm, density))
@@ -506,18 +509,26 @@ impl Render for ClipEditor {
                     })
                     .child(file_label),
             )
-            .child(browse);
+            .child(browse)
+            .into_any_element()
+    }
 
-        let mut category_row = div()
+    fn render_category_row(
+        &self,
+        palette: &ForgePalette,
+        density: Density,
+        cx: &mut Context<Self>,
+    ) -> AnyElement {
+        let mut row = div()
             .flex()
             .items_center()
             .gap(spacing(Spacing::Xxs, density));
         for (idx, cat) in CATEGORY_ORDER.iter().enumerate() {
             let active = self.category == *cat;
-            let color = category_color(cat, &palette);
+            let color = category_color(cat, palette);
             let value = (*cat).to_owned();
-            category_row = category_row.child(
-                chip(category_label(cat), ChipGlyph::Dot(color), active, &palette).on_click(
+            row = row.child(
+                chip(category_label(cat), ChipGlyph::Dot(color), active, palette).on_click(
                     ("sb-modal-cat", idx),
                     cx.listener(move |this, _: &ClickEvent, _, cx| {
                         this.set_category(value.clone(), cx)
@@ -525,8 +536,16 @@ impl Render for ClipEditor {
                 ),
             );
         }
+        row.into_any_element()
+    }
 
-        let loop_row = div()
+    fn render_loop_row(
+        &self,
+        palette: &ForgePalette,
+        density: Density,
+        cx: &mut Context<Self>,
+    ) -> AnyElement {
+        div()
             .w_full()
             .flex()
             .items_center()
@@ -551,11 +570,94 @@ impl Render for ClipEditor {
                             .child(tr!("soundboard_modal_loop_hint")),
                     ),
             )
-            .child(toggle(self.loop_playback, &palette).on_click(
+            .child(toggle(self.loop_playback, palette).on_click(
                 "sb-modal-loop",
                 cx.listener(|this, _: &ClickEvent, _, cx| this.toggle_loop(cx)),
-            ));
+            ))
+            .into_any_element()
+    }
 
+    fn render_footer(
+        &self,
+        palette: &ForgePalette,
+        density: Density,
+        cx: &mut Context<Self>,
+    ) -> AnyElement {
+        let saveable = self.is_saveable(cx);
+        let hint = div()
+            .flex_1()
+            .font_family(body_family())
+            .text_size(LABEL_FS)
+            .text_color(palette.text_faint)
+            .child(if !saveable {
+                tr!("soundboard_modal_fill_required")
+            } else if self.edit_id.is_some() {
+                tr!("soundboard_modal_ready_edit")
+            } else {
+                tr!("soundboard_modal_ready")
+            });
+        let cancel = secondary_button(tr!("soundboard_modal_cancel_btn"), palette).on_click(
+            "sb-modal-cancel",
+            cx.listener(|this, _: &ClickEvent, _, cx| this.cancel(cx)),
+        );
+        let save = primary_button(tr!("soundboard_modal_save_btn"), palette)
+            .disabled(!saveable)
+            .on_click(
+                "sb-modal-save",
+                cx.listener(|this, _: &ClickEvent, _, cx| this.submit(cx)),
+            );
+        div()
+            .w_full()
+            .flex()
+            .items_center()
+            .justify_between()
+            .gap(spacing(Spacing::Sm, density))
+            .child(hint)
+            .child(
+                div()
+                    .flex()
+                    .items_center()
+                    .gap(spacing(Spacing::Xs, density))
+                    .child(cancel)
+                    .child(save),
+            )
+            .into_any_element()
+    }
+}
+
+fn clip_error_banner(
+    error: SharedString,
+    palette: &ForgePalette,
+    density: Density,
+) -> impl IntoElement {
+    div()
+        .w_full()
+        .flex()
+        .items_center()
+        .gap(spacing(Spacing::Xs, density))
+        .p(spacing(Spacing::Xs, density))
+        .rounded(radius(Radius::Sm))
+        .bg(with_alpha(palette.danger, TINT_FILL_ALPHA))
+        .border(BORDER_THIN)
+        .border_color(with_alpha(palette.danger, TINT_BORDER_ALPHA))
+        .child(icon(Icon::InfoCircle, FONT_XS, palette.danger))
+        .child(
+            div()
+                .font_family(body_family())
+                .text_size(FONT_XS)
+                .text_color(palette.text_primary)
+                .child(error),
+        )
+}
+
+impl Render for ClipEditor {
+    fn render(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+        let palette = cx.palette();
+        let density = cx.density();
+        let file_row = self.render_file_row(&palette, density, cx);
+        let category_row = self.render_category_row(&palette, density, cx);
+        let loop_row = self.render_loop_row(&palette, density, cx);
+        let footer = self.render_footer(&palette, density, cx);
         let key_field = self.key.as_ref().map(|key| self.render_key_field(key, cx));
 
         let mut body = div()
@@ -598,66 +700,8 @@ impl Render for ClipEditor {
         }
 
         if let Some(error) = self.error.clone() {
-            body = body.child(
-                div()
-                    .w_full()
-                    .flex()
-                    .items_center()
-                    .gap(spacing(Spacing::Xs, density))
-                    .p(spacing(Spacing::Xs, density))
-                    .rounded(radius(Radius::Sm))
-                    .bg(with_alpha(palette.danger, TINT_FILL_ALPHA))
-                    .border(BORDER_THIN)
-                    .border_color(with_alpha(palette.danger, TINT_BORDER_ALPHA))
-                    .child(icon(Icon::InfoCircle, FONT_XS, palette.danger))
-                    .child(
-                        div()
-                            .font_family(body_family())
-                            .text_size(FONT_XS)
-                            .text_color(palette.text_primary)
-                            .child(error),
-                    ),
-            );
+            body = body.child(clip_error_banner(error, &palette, density));
         }
-
-        let saveable = self.is_saveable(cx);
-        let hint = div()
-            .flex_1()
-            .font_family(body_family())
-            .text_size(LABEL_FS)
-            .text_color(palette.text_faint)
-            .child(if !saveable {
-                tr!("soundboard_modal_fill_required")
-            } else if self.edit_id.is_some() {
-                tr!("soundboard_modal_ready_edit")
-            } else {
-                tr!("soundboard_modal_ready")
-            });
-        let cancel = secondary_button(tr!("soundboard_modal_cancel_btn"), &palette).on_click(
-            "sb-modal-cancel",
-            cx.listener(|this, _: &ClickEvent, _, cx| this.cancel(cx)),
-        );
-        let save = primary_button(tr!("soundboard_modal_save_btn"), &palette)
-            .disabled(!saveable)
-            .on_click(
-                "sb-modal-save",
-                cx.listener(|this, _: &ClickEvent, _, cx| this.submit(cx)),
-            );
-        let footer = div()
-            .w_full()
-            .flex()
-            .items_center()
-            .justify_between()
-            .gap(spacing(Spacing::Sm, density))
-            .child(hint)
-            .child(
-                div()
-                    .flex()
-                    .items_center()
-                    .gap(spacing(Spacing::Xs, density))
-                    .child(cancel)
-                    .child(save),
-            );
 
         let title = if self.edit_id.is_some() {
             tr!("soundboard_modal_title_edit")

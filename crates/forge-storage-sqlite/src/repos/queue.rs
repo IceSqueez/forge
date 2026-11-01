@@ -8,6 +8,12 @@ use crate::codec::wire_label::parse_label;
 use crate::error::SqliteStorageError;
 use crate::pool::SqlitePools;
 
+macro_rules! queue_columns {
+    () => {
+        "id, name, description, concurrency"
+    };
+}
+
 fn parse_queue_id(s: &str) -> Result<QueueId, SqliteStorageError> {
     parse_label(s).map_err(|e| SqliteStorageError::Decode(format!("invalid queue id '{s}': {e}")))
 }
@@ -133,11 +139,14 @@ impl SqliteQueueRepo {
 #[async_trait]
 impl QueueRepo for SqliteQueueRepo {
     async fn list(&self) -> Result<Vec<Queue>, StorageError> {
-        let rows: Vec<QueueRow> =
-            sqlx::query_as("SELECT id, name, description, concurrency FROM queues ORDER BY name")
-                .fetch_all(self.db.reader())
-                .await
-                .map_err(SqliteStorageError::Sqlx)?;
+        let rows: Vec<QueueRow> = sqlx::query_as(concat!(
+            "SELECT ",
+            queue_columns!(),
+            " FROM queues ORDER BY name"
+        ))
+        .fetch_all(self.db.reader())
+        .await
+        .map_err(SqliteStorageError::Sqlx)?;
 
         rows.into_iter()
             .map(|row| decode_row(row).map_err(StorageError::from))
@@ -146,24 +155,30 @@ impl QueueRepo for SqliteQueueRepo {
 
     async fn get(&self, id: QueueId) -> Result<Option<Queue>, StorageError> {
         let id_str = id.to_string();
-        let row: Option<QueueRow> =
-            sqlx::query_as("SELECT id, name, description, concurrency FROM queues WHERE id = ?")
-                .bind(&id_str)
-                .fetch_optional(self.db.reader())
-                .await
-                .map_err(SqliteStorageError::Sqlx)?;
+        let row: Option<QueueRow> = sqlx::query_as(concat!(
+            "SELECT ",
+            queue_columns!(),
+            " FROM queues WHERE id = ?"
+        ))
+        .bind(&id_str)
+        .fetch_optional(self.db.reader())
+        .await
+        .map_err(SqliteStorageError::Sqlx)?;
 
         row.map(|row| decode_row(row).map_err(StorageError::from))
             .transpose()
     }
 
     async fn get_by_name(&self, name: &str) -> Result<Option<Queue>, StorageError> {
-        let row: Option<QueueRow> =
-            sqlx::query_as("SELECT id, name, description, concurrency FROM queues WHERE name = ?")
-                .bind(name)
-                .fetch_optional(self.db.reader())
-                .await
-                .map_err(SqliteStorageError::Sqlx)?;
+        let row: Option<QueueRow> = sqlx::query_as(concat!(
+            "SELECT ",
+            queue_columns!(),
+            " FROM queues WHERE name = ?"
+        ))
+        .bind(name)
+        .fetch_optional(self.db.reader())
+        .await
+        .map_err(SqliteStorageError::Sqlx)?;
 
         row.map(|row| decode_row(row).map_err(StorageError::from))
             .transpose()
@@ -181,13 +196,15 @@ impl QueueRepo for SqliteQueueRepo {
         &self,
         adoptable_name: &str,
     ) -> Result<Option<Queue>, StorageError> {
-        let row: Option<QueueRow> = sqlx::query_as(
-            "SELECT id, name, description, concurrency FROM queues
+        let row: Option<QueueRow> = sqlx::query_as(concat!(
+            "SELECT ",
+            queue_columns!(),
+            " FROM queues
              WHERE role = ?
                 OR (name = ? AND NOT EXISTS (SELECT 1 FROM queues WHERE role = ?))
              ORDER BY role IS NULL, id
-             LIMIT 1",
-        )
+             LIMIT 1"
+        ))
         .bind(OVERLAY_ALERT_ROLE)
         .bind(adoptable_name)
         .bind(OVERLAY_ALERT_ROLE)

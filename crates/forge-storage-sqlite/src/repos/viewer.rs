@@ -12,6 +12,20 @@ use crate::pool::SqlitePools;
 
 const VIEWER_COLUMNS: usize = 6;
 
+macro_rules! viewer_columns {
+    () => {
+        "platform, viewer_id, username, first_seen_at, last_seen_at, custom_greeting"
+    };
+}
+
+macro_rules! viewer_upsert_on_conflict {
+    () => {
+        " ON CONFLICT(platform, viewer_id) DO UPDATE SET
+                username     = excluded.username,
+                last_seen_at = excluded.last_seen_at"
+    };
+}
+
 struct ViewerTally<'a> {
     platform: &'static str,
     viewer_id: &'a str,
@@ -58,12 +72,13 @@ fn row_to_viewer(row: ViewerRow) -> Result<Viewer, StorageError> {
 #[async_trait]
 impl ViewerRepo for SqliteViewerRepo {
     async fn list(&self) -> Result<Vec<Viewer>, StorageError> {
-        let rows: Vec<ViewerRow> = sqlx::query_as(
-            "SELECT platform, viewer_id, username, first_seen_at, last_seen_at,
-                    custom_greeting
+        let rows: Vec<ViewerRow> = sqlx::query_as(concat!(
+            "SELECT ",
+            viewer_columns!(),
+            "
              FROM viewers
-             ORDER BY last_seen_at DESC",
-        )
+             ORDER BY last_seen_at DESC"
+        ))
         .fetch_all(self.db.reader())
         .await
         .map_err(SqliteStorageError::Sqlx)?;
@@ -88,11 +103,12 @@ impl ViewerRepo for SqliteViewerRepo {
         platform: PlatformId,
         viewer_id: &str,
     ) -> Result<Option<Viewer>, StorageError> {
-        let row: Option<ViewerRow> = sqlx::query_as(
-            "SELECT platform, viewer_id, username, first_seen_at, last_seen_at,
-                    custom_greeting
-             FROM viewers WHERE platform = ? AND viewer_id = ?",
-        )
+        let row: Option<ViewerRow> = sqlx::query_as(concat!(
+            "SELECT ",
+            viewer_columns!(),
+            "
+             FROM viewers WHERE platform = ? AND viewer_id = ?"
+        ))
         .bind(platform.as_str())
         .bind(viewer_id)
         .fetch_optional(self.db.reader())
@@ -109,14 +125,12 @@ impl ViewerRepo for SqliteViewerRepo {
         username: &str,
     ) -> Result<(), StorageError> {
         let now_ms = to_epoch_ms(OffsetDateTime::now_utc());
-        sqlx::query(
-            "INSERT INTO viewers
-                (platform, viewer_id, username, first_seen_at, last_seen_at, custom_greeting)
-             VALUES (?, ?, ?, ?, ?, 0)
-             ON CONFLICT(platform, viewer_id) DO UPDATE SET
-                username     = excluded.username,
-                last_seen_at = excluded.last_seen_at",
-        )
+        sqlx::query(concat!(
+            "INSERT INTO viewers (",
+            viewer_columns!(),
+            ") VALUES (?, ?, ?, ?, ?, 0)",
+            viewer_upsert_on_conflict!()
+        ))
         .bind(platform.as_str())
         .bind(viewer_id)
         .bind(username)
@@ -161,12 +175,9 @@ impl ViewerRepo for SqliteViewerRepo {
             .map_err(SqliteStorageError::Sqlx)?;
         insert_rows(
             &mut tx,
-            "INSERT INTO viewers
-                (platform, viewer_id, username, first_seen_at, last_seen_at, custom_greeting) ",
+            concat!("INSERT INTO viewers (", viewer_columns!(), ") "),
             VIEWER_COLUMNS,
-            " ON CONFLICT(platform, viewer_id) DO UPDATE SET
-                username     = excluded.username,
-                last_seen_at = excluded.last_seen_at",
+            viewer_upsert_on_conflict!(),
             &tallies,
             |values, tally| {
                 values

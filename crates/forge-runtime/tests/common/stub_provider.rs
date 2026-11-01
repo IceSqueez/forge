@@ -394,8 +394,14 @@ impl ScriptRepo for StubProvider {
         self.script_repo.telemetry(id).await
     }
 
-    async fn prune_executions_before(&self, cutoff: OffsetDateTime) -> Result<u64, StorageError> {
-        self.script_repo.prune_executions_before(cutoff).await
+    async fn prune_executions_before(
+        &self,
+        cutoff: OffsetDateTime,
+        chunk_rows: u32,
+    ) -> Result<u64, StorageError> {
+        self.script_repo
+            .prune_executions_before(cutoff, chunk_rows)
+            .await
     }
 
     async fn rename_cascading(

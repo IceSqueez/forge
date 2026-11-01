@@ -56,10 +56,6 @@ pub(super) fn is_authenticated(ctx: &DispatchContext) -> bool {
         .is_some_and(|generation| generation == ctx.services.auth_state.token_generation())
 }
 
-pub(super) fn read_refused(ctx: &DispatchContext) -> bool {
-    ctx.services.auth_state.reads_required() && !is_authenticated(ctx)
-}
-
 pub(super) fn unauthenticated() -> WsResponse {
     WsResponse::error(WsErrorCode::Unauthenticated, "authentication required")
 }

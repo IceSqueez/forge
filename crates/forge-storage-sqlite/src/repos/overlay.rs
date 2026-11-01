@@ -12,6 +12,12 @@ use crate::codec::row_int::decode_u32;
 use crate::error::SqliteStorageError;
 use crate::pool::SqlitePools;
 
+macro_rules! overlay_columns {
+    () => {
+        "id, display_name, kind_id, enabled, position, config, config_schema_version, generator_version, source_overrides, credential, created_at, updated_at"
+    };
+}
+
 #[derive(sqlx::FromRow)]
 struct OverlayRow {
     id: String,
@@ -108,13 +114,12 @@ pub(crate) async fn insert_new_overlay(
     let credential = generate_credential();
     let now_ms = epoch_ms_now();
 
-    sqlx::query(
-        "INSERT INTO overlays
-             (id, display_name, kind_id, enabled, position, config,
-              config_schema_version, generator_version, source_overrides,
-              credential, created_at, updated_at)
-         VALUES (?, ?, ?, ?, ?, ?, ?, 0, ?, ?, ?, ?)",
-    )
+    sqlx::query(concat!(
+        "INSERT INTO overlays (",
+        overlay_columns!(),
+        ")
+         VALUES (?, ?, ?, ?, ?, ?, ?, 0, ?, ?, ?, ?)"
+    ))
     .bind(overlay.id.as_str())
     .bind(&overlay.display_name)
     .bind(&overlay.kind_id)
@@ -208,13 +213,13 @@ pub(crate) async fn update_overlay<'e>(
 #[async_trait]
 impl OverlayRepo for SqliteOverlayRepo {
     async fn list(&self) -> Result<Vec<OverlayDefinition>, StorageError> {
-        let rows: Vec<OverlayRow> = sqlx::query_as(
-            "SELECT id, display_name, kind_id, enabled, position, config,
-                    config_schema_version, generator_version, source_overrides,
-                    credential, created_at, updated_at
+        let rows: Vec<OverlayRow> = sqlx::query_as(concat!(
+            "SELECT ",
+            overlay_columns!(),
+            "
              FROM overlays
-             ORDER BY position ASC, display_name ASC",
-        )
+             ORDER BY position ASC, display_name ASC"
+        ))
         .fetch_all(self.db.reader())
         .await
         .map_err(SqliteStorageError::Sqlx)?;
@@ -225,12 +230,12 @@ impl OverlayRepo for SqliteOverlayRepo {
     }
 
     async fn get(&self, id: &OverlayId) -> Result<Option<OverlayDefinition>, StorageError> {
-        let row: Option<OverlayRow> = sqlx::query_as(
-            "SELECT id, display_name, kind_id, enabled, position, config,
-                    config_schema_version, generator_version, source_overrides,
-                    credential, created_at, updated_at
-             FROM overlays WHERE id = ?",
-        )
+        let row: Option<OverlayRow> = sqlx::query_as(concat!(
+            "SELECT ",
+            overlay_columns!(),
+            "
+             FROM overlays WHERE id = ?"
+        ))
         .bind(id.as_str())
         .fetch_optional(self.db.reader())
         .await
@@ -244,12 +249,12 @@ impl OverlayRepo for SqliteOverlayRepo {
         &self,
         credential: &OverlayCredential,
     ) -> Result<Option<OverlayDefinition>, StorageError> {
-        let row: Option<OverlayRow> = sqlx::query_as(
-            "SELECT id, display_name, kind_id, enabled, position, config,
-                    config_schema_version, generator_version, source_overrides,
-                    credential, created_at, updated_at
-             FROM overlays WHERE credential = ?",
-        )
+        let row: Option<OverlayRow> = sqlx::query_as(concat!(
+            "SELECT ",
+            overlay_columns!(),
+            "
+             FROM overlays WHERE credential = ?"
+        ))
         .bind(credential.expose())
         .fetch_optional(self.db.reader())
         .await
@@ -309,13 +314,12 @@ impl OverlayRepo for SqliteOverlayRepo {
         let credential = generate_credential();
         let now_ms = epoch_ms_now();
 
-        sqlx::query(
-            "INSERT INTO overlays
-                 (id, display_name, kind_id, enabled, position, config,
-                  config_schema_version, generator_version, source_overrides,
-                  credential, created_at, updated_at)
-             VALUES (?, ?, ?, 1, ?, '{}', ?, 0, '[]', ?, ?, ?)",
-        )
+        sqlx::query(concat!(
+            "INSERT INTO overlays (",
+            overlay_columns!(),
+            ")
+             VALUES (?, ?, ?, 1, ?, '{}', ?, 0, '[]', ?, ?, ?)"
+        ))
         .bind(id.as_str())
         .bind(display_name)
         .bind(kind_id)
@@ -356,11 +360,10 @@ impl OverlayRepo for SqliteOverlayRepo {
         let source_overrides_json = serde_json::to_string(&definition.source_overrides)
             .map_err(StorageError::Serialization)?;
 
-        sqlx::query(
-            "INSERT INTO overlays
-                 (id, display_name, kind_id, enabled, position, config,
-                  config_schema_version, generator_version, source_overrides,
-                  credential, created_at, updated_at)
+        sqlx::query(concat!(
+            "INSERT INTO overlays (",
+            overlay_columns!(),
+            ")
              VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
              ON CONFLICT(id) DO UPDATE SET
                  display_name          = excluded.display_name,
@@ -373,8 +376,8 @@ impl OverlayRepo for SqliteOverlayRepo {
                  source_overrides      = excluded.source_overrides,
                  credential            = excluded.credential,
                  created_at            = excluded.created_at,
-                 updated_at            = excluded.updated_at",
-        )
+                 updated_at            = excluded.updated_at"
+        ))
         .bind(definition.id.as_str())
         .bind(&definition.display_name)
         .bind(&definition.kind_id)

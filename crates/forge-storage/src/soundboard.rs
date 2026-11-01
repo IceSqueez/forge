@@ -8,7 +8,7 @@ use time::OffsetDateTime;
 
 use crate::{MediaBlobId, MediaReferrer, MediaReferrerKind, MediaRepo, StorageError};
 
-pub const CLIP_SOURCE_SLOT: &str = "source";
+const CLIP_SOURCE_SLOT: &str = "source";
 
 pub fn clip_source_referrer(clip_id: ClipId) -> MediaReferrer {
     MediaReferrer::new(

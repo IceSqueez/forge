@@ -12,6 +12,7 @@ use forge_storage::{
 use forge_types::PlatformId;
 
 use crate::DeliveryHub;
+use crate::ServerError;
 use crate::lifecycle::handle::CONNECTION_DRAIN_BUDGET;
 use crate::lifecycle::listener::REQUEST_READ_TIMEOUT;
 use crate::routes::ws::PRE_AUTH_WINDOW;
@@ -162,6 +163,23 @@ impl ServerSettings {
             additional_origins,
             additional_origins_unreadable,
         })
+    }
+
+    pub fn bind_socket(&self) -> Result<SocketAddr, ServerError> {
+        let ip: IpAddr =
+            self.bind_address
+                .parse()
+                .map_err(|_| ServerError::InvalidBindAddress {
+                    addr: self.bind_address.clone(),
+                })?;
+        Ok(SocketAddr::new(ip, self.port))
+    }
+
+    pub fn overlay_root_override(&self) -> Option<PathBuf> {
+        self.overlay_root
+            .as_deref()
+            .filter(|root| !root.is_empty())
+            .map(PathBuf::from)
     }
 
     pub async fn save_enabled(repo: &dyn SettingsRepo, enabled: bool) -> Result<(), StorageError> {

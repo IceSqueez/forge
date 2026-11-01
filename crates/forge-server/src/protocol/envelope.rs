@@ -1,3 +1,4 @@
+use crate::access::policy::RequestAccess;
 use forge_types::{OverlayCredential, Secret};
 use serde::{Deserialize, Serialize};
 
@@ -70,13 +71,6 @@ pub enum WsRequest {
         #[serde(default)]
         recursive: bool,
     },
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(crate) enum RequestAccess {
-    Open,
-    Read,
-    Write,
 }
 
 impl WsRequest {

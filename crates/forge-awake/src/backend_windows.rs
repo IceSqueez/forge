@@ -169,7 +169,6 @@ impl WindowsBackend {
 #[async_trait]
 impl AwakeBackend for WindowsBackend {
     async fn acquire(&mut self, aspect: Aspect) -> Result<(), AwakeError> {
-        self.release(aspect).await;
         match aspect {
             Aspect::Display => {
                 self.display = Some(PowerRequest::create(&self.reason, &DISPLAY_REQUESTS)?);

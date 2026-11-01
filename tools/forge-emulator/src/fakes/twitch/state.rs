@@ -179,6 +179,7 @@ impl Inner {
     pub(crate) fn tap_requests(&mut self) -> mpsc::UnboundedReceiver<TappedRequest> {
         let (tap, requests) = mpsc::unbounded_channel();
         self.request_tap = Some(tap);
+        self.ledger.requests.push(RecordedRequest::tap_sentinel());
         requests
     }
 }

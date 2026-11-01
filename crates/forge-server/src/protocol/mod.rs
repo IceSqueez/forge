@@ -6,8 +6,8 @@ mod introspect;
 
 use crate::delivery::bus_adapter::ClientFilterSet;
 
+use crate::access::policy::RequestAccess;
 pub(crate) use context::{DispatchContext, Services, Session};
-use envelope::RequestAccess;
 pub(crate) use envelope::merge_payload;
 pub use envelope::{WireEventFilter, WsEnvelope, WsRequest};
 pub(crate) use envelope::{WsErrorCode, WsResponse, serialize_response_frame};
@@ -17,7 +17,7 @@ pub(crate) use handlers::{
     handle_get_user_globals, handle_replay_event, handle_set_global, handle_trigger_code_event,
 };
 
-use context::{handle_authenticate, is_authenticated, read_refused, unauthenticated};
+use context::{handle_authenticate, is_authenticated, unauthenticated};
 use helpers::parse_wire_filters;
 
 const MAX_SUBSCRIPTIONS_PER_CLIENT: usize = 256;
@@ -84,11 +84,7 @@ async fn route(req: WsRequest, ctx: &DispatchContext) -> WsResponse {
 }
 
 fn access_refused(access: RequestAccess, ctx: &DispatchContext) -> bool {
-    match access {
-        RequestAccess::Open => false,
-        RequestAccess::Read => read_refused(ctx),
-        RequestAccess::Write => !is_authenticated(ctx),
-    }
+    access.needs_credential(&ctx.services.auth_state) && !is_authenticated(ctx)
 }
 
 async fn handle_subscribe(events: Vec<WireEventFilter>, ctx: &DispatchContext) -> WsResponse {

@@ -231,6 +231,7 @@ mod tests {
         async fn prune_executions_before(
             &self,
             _cutoff: OffsetDateTime,
+            _chunk_rows: u32,
         ) -> Result<u64, StorageError> {
             Ok(0)
         }

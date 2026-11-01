@@ -634,7 +634,10 @@ async fn prune_removes_only_resolved_runs_strictly_before_the_cutoff() {
     long_overdue.scheduled_at = at_ms(-2_000_000);
     let pending = place(&repo, &long_overdue).await;
 
-    let pruned = repo.prune_resolved_before(at_ms(5_000)).await.unwrap();
+    let pruned = repo
+        .prune_resolved_before(at_ms(5_000), u32::MAX)
+        .await
+        .unwrap();
 
     let mut survivors = Vec::new();
     for id in [before, on_cutoff, after, pending] {
@@ -882,7 +885,7 @@ async fn every_schedule_write_advances_the_schedule_revision_and_never_the_catal
     bumps(
         &backend,
         "prune",
-        repo.prune_resolved_before(at_min(60)),
+        repo.prune_resolved_before(at_min(60), u32::MAX),
         true,
     )
     .await;

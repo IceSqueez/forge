@@ -1,5 +1,4 @@
-use std::net::{IpAddr, SocketAddr};
-use std::path::PathBuf;
+use std::net::SocketAddr;
 use std::sync::Arc;
 use std::time::Duration;
 
@@ -159,18 +158,9 @@ impl ServerHandle {
             return Err(ServerError::Disabled);
         }
 
-        let ip: IpAddr =
-            settings
-                .bind_address
-                .parse()
-                .map_err(|_| ServerError::InvalidBindAddress {
-                    addr: settings.bind_address.clone(),
-                })?;
-        let bind_addr = SocketAddr::new(ip, settings.port);
+        let bind_addr = settings.bind_socket()?;
         let overlay_root = settings
-            .overlay_root
-            .filter(|root| !root.is_empty())
-            .map(PathBuf::from)
+            .overlay_root_override()
             .unwrap_or_else(|| state.default_overlay_root.as_ref().clone());
 
         server::validate_lan_bind(&bind_addr, settings.lan_bind_enabled)?;

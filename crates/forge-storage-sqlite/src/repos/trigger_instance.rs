@@ -16,6 +16,12 @@ use crate::pool::SqlitePools;
 use crate::repos::action::upsert_action;
 use crate::repos::queue::{mark_overlay_alert_queue, upsert_queue};
 
+macro_rules! trigger_instance_columns {
+    () => {
+        "id, kind_id, name, overrides, enabled, user_defined, platform_scope, cooldown_secs, cooldown_global, permission_rung"
+    };
+}
+
 const REFERENCE_BLOCK_SAMPLE_NAMES: usize = 3;
 
 fn parse_id<T: serde::de::DeserializeOwned>(s: &str, label: &str) -> Result<T, SqliteStorageError> {
@@ -102,13 +108,14 @@ impl TriggerInstanceRepo for SqliteTriggerInstanceRepo {
     }
 
     async fn list_all(&self) -> Result<Vec<TriggerInstance>, StorageError> {
-        let rows: Vec<InstanceRow> = sqlx::query_as(
-            "SELECT id, kind_id, name, overrides, enabled, user_defined, platform_scope,
-                    cooldown_secs, cooldown_global, permission_rung
+        let rows: Vec<InstanceRow> = sqlx::query_as(concat!(
+            "SELECT ",
+            trigger_instance_columns!(),
+            "
              FROM trigger_instances
              WHERE archived_at IS NULL
-             ORDER BY user_defined ASC, name ASC",
-        )
+             ORDER BY user_defined ASC, name ASC"
+        ))
         .fetch_all(self.db.reader())
         .await
         .map_err(SqliteStorageError::Sqlx)?;
@@ -119,13 +126,14 @@ impl TriggerInstanceRepo for SqliteTriggerInstanceRepo {
     }
 
     async fn list_archived(&self) -> Result<Vec<TriggerInstance>, StorageError> {
-        let rows: Vec<InstanceRow> = sqlx::query_as(
-            "SELECT id, kind_id, name, overrides, enabled, user_defined, platform_scope,
-                    cooldown_secs, cooldown_global, permission_rung
+        let rows: Vec<InstanceRow> = sqlx::query_as(concat!(
+            "SELECT ",
+            trigger_instance_columns!(),
+            "
              FROM trigger_instances
              WHERE archived_at IS NOT NULL
-             ORDER BY user_defined ASC, name ASC",
-        )
+             ORDER BY user_defined ASC, name ASC"
+        ))
         .fetch_all(self.db.reader())
         .await
         .map_err(SqliteStorageError::Sqlx)?;
@@ -136,11 +144,12 @@ impl TriggerInstanceRepo for SqliteTriggerInstanceRepo {
     }
 
     async fn list_user_defined(&self) -> Result<Vec<TriggerInstance>, StorageError> {
-        let rows: Vec<InstanceRow> = sqlx::query_as(
-            "SELECT id, kind_id, name, overrides, enabled, user_defined, platform_scope,
-                    cooldown_secs, cooldown_global, permission_rung
-             FROM trigger_instances WHERE user_defined = 1 AND archived_at IS NULL ORDER BY name",
-        )
+        let rows: Vec<InstanceRow> = sqlx::query_as(concat!(
+            "SELECT ",
+            trigger_instance_columns!(),
+            "
+             FROM trigger_instances WHERE user_defined = 1 AND archived_at IS NULL ORDER BY name"
+        ))
         .fetch_all(self.db.reader())
         .await
         .map_err(SqliteStorageError::Sqlx)?;
@@ -361,11 +370,12 @@ impl TriggerInstanceRepo for SqliteTriggerInstanceRepo {
 
     async fn get(&self, id: TriggerInstanceId) -> Result<Option<TriggerInstance>, StorageError> {
         let id_str = id.to_string();
-        let row: Option<InstanceRow> = sqlx::query_as(
-            "SELECT id, kind_id, name, overrides, enabled, user_defined, platform_scope,
-                    cooldown_secs, cooldown_global, permission_rung
-             FROM trigger_instances WHERE id = ? AND archived_at IS NULL",
-        )
+        let row: Option<InstanceRow> = sqlx::query_as(concat!(
+            "SELECT ",
+            trigger_instance_columns!(),
+            "
+             FROM trigger_instances WHERE id = ? AND archived_at IS NULL"
+        ))
         .bind(&id_str)
         .fetch_optional(self.db.reader())
         .await
@@ -569,10 +579,10 @@ pub(crate) async fn upsert_instance<'e>(
     let cooldown_global = i64::from(instance.cooldown_global);
     let permission_rung = instance.permission_rung.as_str();
 
-    sqlx::query(
-        "INSERT INTO trigger_instances
-             (id, kind_id, name, overrides, enabled, user_defined, platform_scope,
-              cooldown_secs, cooldown_global, permission_rung)
+    sqlx::query(concat!(
+        "INSERT INTO trigger_instances (",
+        trigger_instance_columns!(),
+        ")
          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
          ON CONFLICT(id) DO UPDATE SET
              kind_id         = excluded.kind_id,
@@ -583,8 +593,8 @@ pub(crate) async fn upsert_instance<'e>(
              platform_scope  = excluded.platform_scope,
              cooldown_secs   = excluded.cooldown_secs,
              cooldown_global = excluded.cooldown_global,
-             permission_rung = excluded.permission_rung",
-    )
+             permission_rung = excluded.permission_rung"
+    ))
     .bind(&id_str)
     .bind(&instance.kind_id)
     .bind(&instance.name)

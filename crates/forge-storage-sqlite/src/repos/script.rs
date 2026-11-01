@@ -294,13 +294,22 @@ impl ScriptRepo for SqliteScriptRepo {
         })
     }
 
-    async fn prune_executions_before(&self, cutoff: OffsetDateTime) -> Result<u64, StorageError> {
+    async fn prune_executions_before(
+        &self,
+        cutoff: OffsetDateTime,
+        chunk_rows: u32,
+    ) -> Result<u64, StorageError> {
         let cutoff_secs = cutoff.unix_timestamp();
-        let result = sqlx::query("DELETE FROM script_executions WHERE started_at < ?")
-            .bind(cutoff_secs)
-            .execute(self.db.writer())
-            .await
-            .map_err(SqliteStorageError::Sqlx)?;
+        let result = sqlx::query(
+            "DELETE FROM script_executions WHERE rowid IN (
+                 SELECT rowid FROM script_executions WHERE started_at < ? LIMIT ?
+             )",
+        )
+        .bind(cutoff_secs)
+        .bind(i64::from(chunk_rows))
+        .execute(self.db.writer())
+        .await
+        .map_err(SqliteStorageError::Sqlx)?;
         Ok(result.rows_affected())
     }
 

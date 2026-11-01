@@ -554,8 +554,14 @@ impl ScriptRepo for TestBackend {
         self.scripts().telemetry(id).await
     }
 
-    async fn prune_executions_before(&self, cutoff: OffsetDateTime) -> Result<u64, StorageError> {
-        self.scripts().prune_executions_before(cutoff).await
+    async fn prune_executions_before(
+        &self,
+        cutoff: OffsetDateTime,
+        chunk_rows: u32,
+    ) -> Result<u64, StorageError> {
+        self.scripts()
+            .prune_executions_before(cutoff, chunk_rows)
+            .await
     }
 
     async fn rename_cascading(
@@ -882,7 +888,11 @@ impl ActionRepo for StubActions {
         unreachable!("this TestBackend was not built to runs an action")
     }
 
-    async fn prune_executions_before(&self, _: OffsetDateTime) -> Result<u64, StorageError> {
+    async fn prune_executions_before(
+        &self,
+        _: OffsetDateTime,
+        _chunk_rows: u32,
+    ) -> Result<u64, StorageError> {
         Ok(0)
     }
 

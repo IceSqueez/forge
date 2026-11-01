@@ -12,7 +12,7 @@ use support::http_status;
 
 use forge_emulator::EmulatorError;
 use forge_emulator::fakes::twitch::{
-    CredentialCheck, FakeGoal, FakeTwitch, FakeTwitchConfig, Viewer, ViewerBadge,
+    CredentialCheck, FakeGoal, FakeTwitch, FakeTwitchConfig, TAP_SENTINEL_PATH, Viewer, ViewerBadge,
 };
 use forge_emulator::fixture::TwitchAccount;
 use futures_util::StreamExt;
@@ -620,7 +620,14 @@ async fn a_tapped_fake_streams_helix_requests_to_the_tap_and_keeps_none() {
 
     assert_eq!(status, http_status::OK);
     assert_eq!(tapped.request.body, Some(body));
-    assert!(fake.ledger().requests.is_empty());
+    let ledger = fake.ledger();
+    let kept: Vec<&str> = ledger
+        .requests
+        .iter()
+        .map(|request| request.path.as_str())
+        .collect();
+    assert_eq!(kept, [TAP_SENTINEL_PATH]);
+    assert_eq!(ledger.unexpected_requests().count(), 1);
 }
 
 #[tokio::test]

@@ -57,7 +57,11 @@ pub trait ScriptRepo: Send + Sync {
         status: ExecutionStatus,
     ) -> Result<(), StorageError>;
     async fn telemetry(&self, id: ScriptId) -> Result<ScriptTelemetry, StorageError>;
-    async fn prune_executions_before(&self, cutoff: OffsetDateTime) -> Result<u64, StorageError>;
+    async fn prune_executions_before(
+        &self,
+        cutoff: OffsetDateTime,
+        chunk_rows: u32,
+    ) -> Result<u64, StorageError>;
 
     async fn rename_cascading(
         &self,

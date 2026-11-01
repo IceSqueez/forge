@@ -7,6 +7,12 @@ use crate::codec::epoch::{epoch_ms_now, from_epoch_ms};
 use crate::error::SqliteStorageError;
 use crate::pool::SqlitePools;
 
+macro_rules! user_global_columns {
+    () => {
+        "broadcaster_id, user_id, name, value, last_modified"
+    };
+}
+
 pub struct SqliteUserGlobalsRepo {
     db: SqlitePools,
 }
@@ -98,12 +104,14 @@ impl UserGlobalsRepo for SqliteUserGlobalsRepo {
         broadcaster_id: &str,
         user_id: &str,
     ) -> Result<Vec<UserGlobalEntry>, StorageError> {
-        let rows: Vec<UserGlobalRow> = sqlx::query_as(
-            "SELECT broadcaster_id, user_id, name, value, last_modified \
+        let rows: Vec<UserGlobalRow> = sqlx::query_as(concat!(
+            "SELECT ",
+            user_global_columns!(),
+            " \
              FROM user_globals \
              WHERE broadcaster_id = ? AND user_id = ? \
-             ORDER BY name",
-        )
+             ORDER BY name"
+        ))
         .bind(broadcaster_id)
         .bind(user_id)
         .fetch_all(self.db.reader())
@@ -117,12 +125,14 @@ impl UserGlobalsRepo for SqliteUserGlobalsRepo {
         &self,
         broadcaster_id: &str,
     ) -> Result<Vec<UserGlobalEntry>, StorageError> {
-        let rows: Vec<UserGlobalRow> = sqlx::query_as(
-            "SELECT broadcaster_id, user_id, name, value, last_modified \
+        let rows: Vec<UserGlobalRow> = sqlx::query_as(concat!(
+            "SELECT ",
+            user_global_columns!(),
+            " \
              FROM user_globals \
              WHERE broadcaster_id = ? \
-             ORDER BY user_id, name",
-        )
+             ORDER BY user_id, name"
+        ))
         .bind(broadcaster_id)
         .fetch_all(self.db.reader())
         .await

@@ -189,8 +189,12 @@ impl ActionRepo for RevisingActionRepo {
         self.inner.record_executions(executions).await
     }
 
-    async fn prune_executions_before(&self, cutoff: OffsetDateTime) -> Result<u64, StorageError> {
-        self.inner.prune_executions_before(cutoff).await
+    async fn prune_executions_before(
+        &self,
+        cutoff: OffsetDateTime,
+        chunk_rows: u32,
+    ) -> Result<u64, StorageError> {
+        self.inner.prune_executions_before(cutoff, chunk_rows).await
     }
 
     async fn set_enabled(&self, id: ActionId, enabled: bool) -> Result<bool, StorageError> {
@@ -546,8 +550,12 @@ impl ScriptRepo for RevisingScriptRepo {
         self.inner.telemetry(id).await
     }
 
-    async fn prune_executions_before(&self, cutoff: OffsetDateTime) -> Result<u64, StorageError> {
-        self.inner.prune_executions_before(cutoff).await
+    async fn prune_executions_before(
+        &self,
+        cutoff: OffsetDateTime,
+        chunk_rows: u32,
+    ) -> Result<u64, StorageError> {
+        self.inner.prune_executions_before(cutoff, chunk_rows).await
     }
 
     async fn rename_cascading(

@@ -1391,8 +1391,12 @@ impl ScheduledRunRepo for HookedRepo {
         self.inner.list_recent_resolved(limit).await
     }
 
-    async fn prune_resolved_before(&self, cutoff: OffsetDateTime) -> Result<u64, StorageError> {
-        self.inner.prune_resolved_before(cutoff).await
+    async fn prune_resolved_before(
+        &self,
+        cutoff: OffsetDateTime,
+        chunk_rows: u32,
+    ) -> Result<u64, StorageError> {
+        self.inner.prune_resolved_before(cutoff, chunk_rows).await
     }
 
     async fn count_pending(&self) -> Result<u64, StorageError> {

@@ -12,7 +12,6 @@ use forge_storage::{
 use time::OffsetDateTime;
 use tokio::sync::{Notify, watch};
 
-use crate::error::SqliteStorageError;
 use crate::{SqliteEventLogRepo, SqliteHistoryRepo, SqliteSettingsRepo};
 
 const FIRST_SWEEP_DELAY: Duration = Duration::from_secs(30);
@@ -120,40 +119,38 @@ async fn sweep(
     })
     .await?;
 
-    match targets.action.prune_executions_before(history_cutoff).await {
-        Ok(pruned) => log_pruned("action_executions", pruned),
-        Err(e) => tracing::warn!(
-            error = %e,
-            "action_executions pruning failed; will retry on next cycle"
-        ),
-    }
-
-    match targets.script.prune_executions_before(history_cutoff).await {
-        Ok(pruned) => log_pruned("script_executions", pruned),
-        Err(e) => tracing::warn!(
-            error = %e,
-            "script_executions pruning failed; will retry on next cycle"
-        ),
-    }
-
-    match targets.scheduled_run.prune_resolved_before(cutoff).await {
-        Ok(pruned) => log_pruned("scheduled_runs", pruned),
-        Err(e) => tracing::warn!(
-            error = %e,
-            "scheduled_runs pruning failed; will retry on next cycle"
-        ),
-    }
-    Ok(())
+    prune_in_chunks("action_executions", signals, |chunk_rows| async move {
+        targets
+            .action
+            .prune_executions_before(history_cutoff, chunk_rows)
+            .await
+    })
+    .await?;
+    prune_in_chunks("script_executions", signals, |chunk_rows| async move {
+        targets
+            .script
+            .prune_executions_before(history_cutoff, chunk_rows)
+            .await
+    })
+    .await?;
+    prune_in_chunks("scheduled_runs", signals, |chunk_rows| async move {
+        targets
+            .scheduled_run
+            .prune_resolved_before(cutoff, chunk_rows)
+            .await
+    })
+    .await
 }
 
-async fn prune_in_chunks<F, Fut>(
+async fn prune_in_chunks<F, Fut, E>(
     table: &'static str,
     signals: &RetentionSignals,
     prune_chunk: F,
 ) -> Result<(), Interrupt>
 where
     F: Fn(u32) -> Fut,
-    Fut: Future<Output = Result<u64, SqliteStorageError>>,
+    Fut: Future<Output = Result<u64, E>>,
+    E: std::fmt::Display,
 {
     let mut pruned = 0u64;
     loop {
@@ -252,6 +249,7 @@ mod tests {
     use forge_types::{ActionId, EventId, ExecutionContext, ExecutionMetadata, ExecutionOutcome};
 
     use super::*;
+    use crate::error::SqliteStorageError;
     use crate::{apply_migrations, connect};
 
     const FULL: u64 = PRUNE_CHUNK_ROWS as u64;

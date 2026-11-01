@@ -54,6 +54,23 @@ pub struct Ledger {
     pub sessions: Vec<RecordedSession>,
 }
 
+pub const TAP_SENTINEL_PATH: &str = "<requests diverted to the stress tap>";
+
+impl RecordedRequest {
+    pub(crate) fn tap_sentinel() -> Self {
+        Self {
+            method: String::new(),
+            path: TAP_SENTINEL_PATH.to_owned(),
+            query: Vec::new(),
+            body: None,
+            credentials: CredentialCheck::Accepted,
+            status: 0,
+            response: Value::Null,
+            modeled: false,
+        }
+    }
+}
+
 impl Ledger {
     pub fn unexpected_requests(&self) -> impl Iterator<Item = &RecordedRequest> {
         self.requests.iter().filter(|request| !request.modeled)

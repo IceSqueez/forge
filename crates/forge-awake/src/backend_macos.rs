@@ -52,7 +52,6 @@ impl MacBackend {
 #[async_trait]
 impl AwakeBackend for MacBackend {
     async fn acquire(&mut self, aspect: Aspect) -> Result<(), AwakeError> {
-        self.release(aspect).await;
         let assertion_type = CFString::from_str(match aspect {
             Aspect::Display => PREVENT_DISPLAY_SLEEP,
             Aspect::System => PREVENT_SYSTEM_SLEEP,

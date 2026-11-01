@@ -200,7 +200,7 @@ async fn prune_executions_before_removes_older_rows_and_telemetry_excludes_them(
 
     let removed = backend
         .action_repo()
-        .prune_executions_before(now - time::Duration::days(7))
+        .prune_executions_before(now - time::Duration::days(7), u32::MAX)
         .await
         .expect("prune");
 
@@ -252,7 +252,7 @@ async fn prune_executions_before_uses_second_precision_at_cutoff_boundary() {
 
     let removed = backend
         .action_repo()
-        .prune_executions_before(at(base))
+        .prune_executions_before(at(base), u32::MAX)
         .await
         .expect("prune");
 

@@ -12,6 +12,12 @@ use crate::codec::wire_label::{parse_label, wire_label};
 use crate::error::SqliteStorageError;
 use crate::pool::SqlitePools;
 
+macro_rules! event_log_columns {
+    () => {
+        "id, source, kind, timestamp, payload, caused_by, replay"
+    };
+}
+
 fn parse_id<T: serde::de::DeserializeOwned>(s: &str, label: &str) -> Result<T, SqliteStorageError> {
     parse_label(s).map_err(|e| SqliteStorageError::Decode(format!("invalid {label} '{s}': {e}")))
 }
@@ -109,11 +115,13 @@ impl SqliteEventLogRepo {
 impl EventLogRepo for SqliteEventLogRepo {
     async fn insert(&self, event: &Event) -> Result<(), StorageError> {
         let row = EncodedEvent::encode(event)?;
-        sqlx::query(
-            "INSERT INTO event_log (id, source, kind, timestamp, payload, caused_by, replay)
+        sqlx::query(concat!(
+            "INSERT INTO event_log (",
+            event_log_columns!(),
+            ")
              VALUES (?, ?, ?, ?, ?, ?, ?)
-             ON CONFLICT(id) DO NOTHING",
-        )
+             ON CONFLICT(id) DO NOTHING"
+        ))
         .bind(&row.id)
         .bind(&row.source)
         .bind(&row.kind)
@@ -145,7 +153,7 @@ impl EventLogRepo for SqliteEventLogRepo {
             .map_err(SqliteStorageError::Sqlx)?;
         insert_rows(
             &mut tx,
-            "INSERT INTO event_log (id, source, kind, timestamp, payload, caused_by, replay) ",
+            concat!("INSERT INTO event_log (", event_log_columns!(), ") "),
             EVENT_LOG_COLUMNS,
             " ON CONFLICT(id) DO NOTHING",
             &rows,
@@ -167,10 +175,12 @@ impl EventLogRepo for SqliteEventLogRepo {
 
     async fn get(&self, id: EventId) -> Result<Option<Event>, StorageError> {
         let id_str = id.to_string();
-        let row: Option<EventLogRow> = sqlx::query_as(
-            "SELECT id, source, kind, timestamp, payload, caused_by, replay
-             FROM event_log WHERE id = ?",
-        )
+        let row: Option<EventLogRow> = sqlx::query_as(concat!(
+            "SELECT ",
+            event_log_columns!(),
+            "
+             FROM event_log WHERE id = ?"
+        ))
         .bind(&id_str)
         .fetch_optional(self.db.reader())
         .await
@@ -181,12 +191,14 @@ impl EventLogRepo for SqliteEventLogRepo {
     }
 
     async fn recent(&self, limit: usize) -> Result<Vec<Event>, StorageError> {
-        let rows: Vec<EventLogRow> = sqlx::query_as(
-            "SELECT id, source, kind, timestamp, payload, caused_by, replay
+        let rows: Vec<EventLogRow> = sqlx::query_as(concat!(
+            "SELECT ",
+            event_log_columns!(),
+            "
              FROM event_log
              ORDER BY rowid DESC
-             LIMIT ?",
-        )
+             LIMIT ?"
+        ))
         .bind(i64::try_from(limit).unwrap_or(i64::MAX))
         .fetch_all(self.db.reader())
         .await
@@ -205,25 +217,29 @@ impl EventLogRepo for SqliteEventLogRepo {
         let rows: Vec<EventLogRow> = match since {
             Some(id) => {
                 let id_str = id.to_string();
-                sqlx::query_as(
-                    "SELECT id, source, kind, timestamp, payload, caused_by, replay
+                sqlx::query_as(concat!(
+                    "SELECT ",
+                    event_log_columns!(),
+                    "
                      FROM event_log
                      WHERE rowid > (SELECT rowid FROM event_log WHERE id = ?)
                      ORDER BY rowid DESC
-                     LIMIT ?",
-                )
+                     LIMIT ?"
+                ))
                 .bind(&id_str)
                 .bind(i64::try_from(limit).unwrap_or(i64::MAX))
                 .fetch_all(self.db.reader())
                 .await
                 .map_err(SqliteStorageError::Sqlx)?
             }
-            None => sqlx::query_as(
-                "SELECT id, source, kind, timestamp, payload, caused_by, replay
+            None => sqlx::query_as(concat!(
+                "SELECT ",
+                event_log_columns!(),
+                "
                      FROM event_log
                      ORDER BY rowid DESC
-                     LIMIT ?",
-            )
+                     LIMIT ?"
+            ))
             .bind(i64::try_from(limit).unwrap_or(i64::MAX))
             .fetch_all(self.db.reader())
             .await

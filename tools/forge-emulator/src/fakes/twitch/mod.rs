@@ -14,6 +14,7 @@ pub use chat::{Viewer, ViewerBadge};
 pub use config::{FakeGoal, FakeTwitchConfig};
 pub use fake::FakeTwitch;
 pub use ledger::{
-    CredentialCheck, Ledger, RecordedRequest, RecordedSession, RecordedSubscription, TappedRequest,
+    CredentialCheck, Ledger, RecordedRequest, RecordedSession, RecordedSubscription,
+    TAP_SENTINEL_PATH, TappedRequest,
 };
 pub use rewards::{FakeReward, MAX_CUSTOM_REWARDS};

@@ -191,7 +191,7 @@ async fn reads_and_execution_telemetry_leave_the_revision_unchanged() {
     holds!(
         revision,
         "action prune_executions_before",
-        actions.prune_executions_before(OffsetDateTime::now_utc())
+        actions.prune_executions_before(OffsetDateTime::now_utc(), u32::MAX)
     );
     holds!(revision, "action list", actions.list());
     holds!(revision, "action get", actions.get(a.id));

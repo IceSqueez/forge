@@ -13,6 +13,12 @@ use crate::pool::SqlitePools;
 use crate::repos::scheduled_run::{STATE_CANCELLED, STATE_PENDING};
 use crate::schema::registry_migration::CURRENT_ACTION_FORMAT_VERSION;
 
+macro_rules! action_columns {
+    () => {
+        "id, name, group_name, queue_id, enabled, concurrent, bypass_pause, description, sub_actions, execution_mode"
+    };
+}
+
 const ACTION_EXECUTION_COLUMNS: usize = 4;
 
 fn status_label(status: ExecutionStatus) -> &'static str {
@@ -100,8 +106,10 @@ pub(crate) async fn upsert_action<'e>(
     let bypass_pause = i64::from(action.bypass_pause);
     let execution_mode = encode_execution_mode(action.execution_mode);
 
-    sqlx::query(
-        "INSERT INTO actions (id, name, group_name, queue_id, enabled, concurrent, bypass_pause, description, sub_actions, execution_mode, format_version)
+    sqlx::query(concat!(
+        "INSERT INTO actions (",
+        action_columns!(),
+        ", format_version)
          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
          ON CONFLICT(id) DO UPDATE SET
              name           = excluded.name,
@@ -113,8 +121,8 @@ pub(crate) async fn upsert_action<'e>(
              description    = excluded.description,
              sub_actions    = excluded.sub_actions,
              execution_mode = excluded.execution_mode,
-             format_version = excluded.format_version",
-    )
+             format_version = excluded.format_version"
+    ))
     .bind(&id_str)
     .bind(&action.name)
     .bind(&group_name)
@@ -202,10 +210,12 @@ impl SqliteActionRepo {
 #[async_trait]
 impl ActionRepo for SqliteActionRepo {
     async fn list(&self) -> Result<Vec<Action>, StorageError> {
-        let rows: Vec<ActionRow> = sqlx::query_as(
-            "SELECT id, name, group_name, queue_id, enabled, concurrent, bypass_pause, description, sub_actions, execution_mode
-             FROM actions WHERE archived_at IS NULL ORDER BY name",
-        )
+        let rows: Vec<ActionRow> = sqlx::query_as(concat!(
+            "SELECT ",
+            action_columns!(),
+            "
+             FROM actions WHERE archived_at IS NULL ORDER BY name"
+        ))
         .fetch_all(self.db.reader())
         .await
         .map_err(SqliteStorageError::Sqlx)?;
@@ -238,10 +248,12 @@ impl ActionRepo for SqliteActionRepo {
 
     async fn get(&self, id: ActionId) -> Result<Option<Action>, StorageError> {
         let id_str = id.to_string();
-        let row: Option<ActionRow> = sqlx::query_as(
-            "SELECT id, name, group_name, queue_id, enabled, concurrent, bypass_pause, description, sub_actions, execution_mode
-             FROM actions WHERE id = ? AND archived_at IS NULL",
-        )
+        let row: Option<ActionRow> = sqlx::query_as(concat!(
+            "SELECT ",
+            action_columns!(),
+            "
+             FROM actions WHERE id = ? AND archived_at IS NULL"
+        ))
         .bind(&id_str)
         .fetch_optional(self.db.reader())
         .await
@@ -316,13 +328,22 @@ impl ActionRepo for SqliteActionRepo {
         Ok(())
     }
 
-    async fn prune_executions_before(&self, cutoff: OffsetDateTime) -> Result<u64, StorageError> {
+    async fn prune_executions_before(
+        &self,
+        cutoff: OffsetDateTime,
+        chunk_rows: u32,
+    ) -> Result<u64, StorageError> {
         let cutoff_secs = cutoff.unix_timestamp();
-        let result = sqlx::query("DELETE FROM action_executions WHERE started_at < ?")
-            .bind(cutoff_secs)
-            .execute(self.db.writer())
-            .await
-            .map_err(SqliteStorageError::Sqlx)?;
+        let result = sqlx::query(
+            "DELETE FROM action_executions WHERE rowid IN (
+                 SELECT rowid FROM action_executions WHERE started_at < ? LIMIT ?
+             )",
+        )
+        .bind(cutoff_secs)
+        .bind(i64::from(chunk_rows))
+        .execute(self.db.writer())
+        .await
+        .map_err(SqliteStorageError::Sqlx)?;
         Ok(result.rows_affected())
     }
 
@@ -342,10 +363,12 @@ impl ActionRepo for SqliteActionRepo {
             .await
             .map_err(SqliteStorageError::Sqlx)?;
 
-        let row: Option<ActionRow> = sqlx::query_as(
-            "SELECT id, name, group_name, queue_id, enabled, concurrent, bypass_pause, description, sub_actions, execution_mode
-             FROM actions WHERE id = ?",
-        )
+        let row: Option<ActionRow> = sqlx::query_as(concat!(
+            "SELECT ",
+            action_columns!(),
+            "
+             FROM actions WHERE id = ?"
+        ))
         .bind(&source_id_str)
         .fetch_optional(&mut *tx)
         .await
@@ -356,8 +379,8 @@ impl ActionRepo for SqliteActionRepo {
         })?;
 
         sqlx::query(
-            "INSERT INTO actions (id, name, group_name, queue_id, enabled, concurrent, bypass_pause, description, sub_actions, execution_mode, format_version)
-             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, (SELECT format_version FROM actions WHERE id = ?))",
+            concat!("INSERT INTO actions (", action_columns!(), ", format_version)
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, (SELECT format_version FROM actions WHERE id = ?))"),
         )
         .bind(&new_id_str)
         .bind(new_name)
@@ -463,10 +486,12 @@ impl ActionRepo for SqliteActionRepo {
     }
 
     async fn list_archived(&self) -> Result<Vec<Action>, StorageError> {
-        let rows: Vec<ActionRow> = sqlx::query_as(
-            "SELECT id, name, group_name, queue_id, enabled, concurrent, bypass_pause, description, sub_actions, execution_mode
-             FROM actions WHERE archived_at IS NOT NULL ORDER BY name",
-        )
+        let rows: Vec<ActionRow> = sqlx::query_as(concat!(
+            "SELECT ",
+            action_columns!(),
+            "
+             FROM actions WHERE archived_at IS NOT NULL ORDER BY name"
+        ))
         .fetch_all(self.db.reader())
         .await
         .map_err(SqliteStorageError::Sqlx)?;

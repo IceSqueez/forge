@@ -194,7 +194,11 @@ pub trait ScheduledRunRepo: Send + Sync {
 
     async fn list_recent_resolved(&self, limit: usize) -> Result<Vec<ScheduledRun>, StorageError>;
 
-    async fn prune_resolved_before(&self, cutoff: OffsetDateTime) -> Result<u64, StorageError>;
+    async fn prune_resolved_before(
+        &self,
+        cutoff: OffsetDateTime,
+        chunk_rows: u32,
+    ) -> Result<u64, StorageError>;
 
     async fn count_pending(&self) -> Result<u64, StorageError>;
 
@@ -312,11 +316,15 @@ impl ScheduledRunRepo for RevisingScheduledRunRepo {
         self.inner.list_recent_resolved(limit).await
     }
 
-    async fn prune_resolved_before(&self, cutoff: OffsetDateTime) -> Result<u64, StorageError> {
+    async fn prune_resolved_before(
+        &self,
+        cutoff: OffsetDateTime,
+        chunk_rows: u32,
+    ) -> Result<u64, StorageError> {
         let inner = Arc::clone(&self.inner);
         self.revision
             .after_when(
-                async move { inner.prune_resolved_before(cutoff).await },
+                async move { inner.prune_resolved_before(cutoff, chunk_rows).await },
                 |deleted| *deleted > 0,
             )
             .await

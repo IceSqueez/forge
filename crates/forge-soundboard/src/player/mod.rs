@@ -1,17 +1,13 @@
-use forge_types::{ClipId, OutputDevice, RecoverMutex, Shared};
+use forge_types::{ClipId, OutputDevice, Shared};
 use std::collections::HashMap;
 use std::path::Path;
 use std::sync::atomic::{AtomicU64, Ordering};
-use std::sync::{Arc, Mutex, MutexGuard};
-use std::time::Duration;
+use std::sync::{Arc, Mutex};
 
 use async_trait::async_trait;
-use forge_audio::{
-    AudioError, AudioRoute, AudioSink, AudioSinkFactory, ControlledPlayback, PlaybackHandle,
-};
+use forge_audio::{AudioError, AudioRoute, AudioSink, AudioSinkFactory};
 use forge_speech_types::PcmBuffer;
 use forge_storage::{SettingsRepo, StoredClip};
-use tokio::sync::oneshot;
 
 use crate::audio_event::{AudioEvent, AudioEventSink};
 use crate::control::SoundboardControl;
@@ -20,109 +16,18 @@ use crate::fan_out::fan_out_targets;
 use crate::library::{ClipLibrary, ClipSource};
 use crate::settings::{SoundboardSettings, SoundboardSettingsHandle};
 
+mod legs;
+mod play_state;
+
+use legs::*;
+use play_state::*;
+
 const MILLIS_PER_SECOND: u64 = 1000;
 const MAX_VOLUME: f32 = 1.0;
 
 const PLAYBACK_TAIL_MS: u64 = 200;
 
 const LOOP_MIN_CYCLE_MS: u64 = 50;
-
-fn lock<T>(mutex: &Mutex<T>) -> MutexGuard<'_, T> {
-    mutex.lock_recover()
-}
-
-#[derive(Default)]
-struct PlayLegs {
-    stopped: bool,
-    started: bool,
-    finish_claimed: bool,
-    handles: Vec<PlaybackHandle>,
-}
-
-impl PlayLegs {
-    fn claim_finish(&mut self) -> bool {
-        let owed = self.started && !self.finish_claimed;
-        if owed {
-            self.finish_claimed = true;
-        }
-        owed
-    }
-}
-
-#[derive(Default)]
-struct PlayControl {
-    legs: Mutex<PlayLegs>,
-    stop_signal: tokio::sync::Notify,
-}
-
-fn stop_handles(handles: &[PlaybackHandle]) {
-    for handle in handles {
-        handle.stop();
-    }
-}
-
-impl PlayControl {
-    fn claim_finish_on_stop(&self) -> bool {
-        let (handles, owed) = {
-            let mut legs = lock(&self.legs);
-            legs.stopped = true;
-            (std::mem::take(&mut legs.handles), legs.claim_finish())
-        };
-        self.stop_signal.notify_one();
-        stop_handles(&handles);
-        owed
-    }
-
-    fn claim_finish_after_start(&self) -> bool {
-        let mut legs = lock(&self.legs);
-        legs.started = true;
-        legs.stopped && legs.claim_finish()
-    }
-
-    fn claim_finish(&self) -> bool {
-        lock(&self.legs).claim_finish()
-    }
-
-    fn abandon(&self) {
-        let handles = {
-            let mut legs = lock(&self.legs);
-            legs.stopped = true;
-            legs.finish_claimed = true;
-            std::mem::take(&mut legs.handles)
-        };
-        self.stop_signal.notify_one();
-        stop_handles(&handles);
-    }
-
-    async fn stopped(&self) {
-        while !self.is_stopped() {
-            self.stop_signal.notified().await;
-        }
-    }
-
-    fn is_stopped(&self) -> bool {
-        lock(&self.legs).stopped
-    }
-
-    fn install(&self, handles: Vec<PlaybackHandle>) -> bool {
-        let refused = {
-            let mut legs = lock(&self.legs);
-            if legs.stopped {
-                Some(handles)
-            } else {
-                legs.handles = handles;
-                None
-            }
-        };
-        match refused {
-            Some(handles) => {
-                stop_handles(&handles);
-                false
-            }
-            None => true,
-        }
-    }
-}
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ClipToggle {
@@ -144,86 +49,11 @@ enum ToggleDecision {
     Ignore,
 }
 
-struct ActivePlay {
-    play_id: u64,
-    control: Arc<PlayControl>,
-    label: String,
-}
-
-type ActiveRegistry = Arc<Mutex<HashMap<ClipId, Vec<ActivePlay>>>>;
-
-fn retire(active: &ActiveRegistry, clip_id: ClipId, play_id: u64) -> bool {
-    let mut guard = lock(active);
-    let Some(plays) = guard.get_mut(&clip_id) else {
-        return false;
-    };
-    let before = plays.len();
-    plays.retain(|play| play.play_id != play_id);
-    let removed = plays.len() < before;
-    if plays.is_empty() {
-        guard.remove(&clip_id);
-    }
-    removed
-}
-
-struct Reservation {
-    clip_id: ClipId,
-    play_id: u64,
-    label: String,
-    control: Arc<PlayControl>,
-}
-
 struct PreparedClip {
     sinks: Vec<Arc<dyn AudioSink>>,
     buffer: PcmBuffer,
     duration_ms: u64,
     device_label: String,
-}
-
-struct StartedLegs {
-    handles: Vec<PlaybackHandle>,
-    main: ControlledPlayback,
-}
-
-#[derive(Clone)]
-struct PlayReporter {
-    active: ActiveRegistry,
-    event_sink: Arc<dyn AudioEventSink>,
-}
-
-impl PlayReporter {
-    fn fail(&self, play: &Reservation, error: String) {
-        if !retire(&self.active, play.clip_id, play.play_id) {
-            return;
-        }
-        play.control.abandon();
-        self.event_sink.emit(AudioEvent::PlaybackFailed {
-            play_id: play.play_id,
-            clip_id: Some(play.clip_id),
-            clip_label: Some(play.label.clone()),
-            error,
-        });
-    }
-
-    fn finish(&self, play: &Reservation) {
-        retire(&self.active, play.clip_id, play.play_id);
-        if play.control.claim_finish() {
-            emit_finished(
-                self.event_sink.as_ref(),
-                play.clip_id,
-                play.play_id,
-                &play.label,
-            );
-        }
-    }
-}
-
-fn emit_finished(sink: &dyn AudioEventSink, clip_id: ClipId, play_id: u64, label: &str) {
-    sink.emit(AudioEvent::PlaybackFinished {
-        play_id,
-        clip_id: Some(clip_id),
-        clip_label: Some(label.to_owned()),
-    });
 }
 
 #[derive(Clone, Default)]
@@ -593,167 +423,6 @@ impl SoundboardPlayer {
     }
 }
 
-fn reported_failure(
-    reporter: &PlayReporter,
-    play: &Reservation,
-    error: SoundboardError,
-) -> Result<PlayOutcome, SoundboardError> {
-    if play.control.is_stopped() {
-        return Ok(PlayOutcome::StoppedBeforeStart);
-    }
-    let reason = match &error {
-        SoundboardError::Audio(audio) => audio.to_string(),
-        other => other.to_string(),
-    };
-    reporter.fail(play, reason);
-    Err(error)
-}
-
-fn watch_main_leg(main: ControlledPlayback) -> oneshot::Receiver<AudioError> {
-    let (failure_tx, failure_rx) = oneshot::channel();
-    tokio::spawn(async move {
-        if let Err(e) = main.await {
-            #[expect(
-                clippy::let_underscore_must_use,
-                reason = "the player may stop watching once playback ends"
-            )]
-            let _ = failure_tx.send(e);
-        }
-    });
-    failure_rx
-}
-
-async fn main_leg_failure(failure: oneshot::Receiver<AudioError>) -> AudioError {
-    match failure.await {
-        Ok(error) => error,
-        Err(_) => std::future::pending().await,
-    }
-}
-
-async fn watch_single(
-    play: Reservation,
-    reporter: PlayReporter,
-    main: ControlledPlayback,
-    duration_ms: u64,
-) {
-    tokio::select! {
-        error = main_leg_failure(watch_main_leg(main)) => reporter.fail(&play, error.to_string()),
-        () = tokio::time::sleep(Duration::from_millis(duration_ms + PLAYBACK_TAIL_MS)) => {
-            reporter.finish(&play);
-        }
-        () = play.control.stopped() => {}
-    }
-}
-
-struct LoopPlay {
-    play: Reservation,
-    reporter: PlayReporter,
-    sinks: Vec<Arc<dyn AudioSink>>,
-    buffer: PcmBuffer,
-    cycle_ms: u64,
-    main: ControlledPlayback,
-}
-
-async fn run_loop(looped: LoopPlay) {
-    let LoopPlay {
-        play,
-        reporter,
-        sinks,
-        buffer,
-        cycle_ms,
-        main,
-    } = looped;
-    let mut failure = watch_main_leg(main);
-    loop {
-        tokio::select! {
-            error = main_leg_failure(failure) => {
-                reporter.fail(&play, error.to_string());
-                return;
-            }
-            () = wait_cycle(&play.control, cycle_ms) => {}
-        }
-        if play.control.is_stopped() {
-            break;
-        }
-        match play_target(&sinks, buffer.clone()).await {
-            Ok(legs) => {
-                if !play.control.install(legs.handles) {
-                    break;
-                }
-                failure = watch_main_leg(legs.main);
-            }
-            Err(e) => {
-                reporter.fail(&play, e.to_string());
-                return;
-            }
-        }
-    }
-    reporter.finish(&play);
-}
-
-async fn wait_cycle(control: &PlayControl, cycle_ms: u64) {
-    tokio::select! {
-        () = control.stopped() => {}
-        () = tokio::time::sleep(Duration::from_millis(cycle_ms)) => {}
-    }
-}
-
-async fn play_target(
-    sinks: &[Arc<dyn AudioSink>],
-    buffer: PcmBuffer,
-) -> Result<StartedLegs, AudioError> {
-    let Some((last_sink, other_sinks)) = sinks.split_last() else {
-        return Err(AudioError::NoRoute);
-    };
-    let other_starts = other_sinks.iter().map(|sink| {
-        let sink = Arc::clone(sink);
-        let buffer = buffer.clone();
-        async move { sink.play_controlled(buffer).await }
-    });
-    let (mut outcomes, last_outcome) = tokio::join!(
-        futures::future::join_all(other_starts),
-        last_sink.play_controlled(buffer),
-    );
-    outcomes.push(last_outcome);
-    let mut outcomes = outcomes.into_iter();
-    let Some(main) = outcomes.next() else {
-        return Err(AudioError::NoRoute);
-    };
-
-    let mut secondary = Vec::new();
-    for (idx, outcome) in outcomes.enumerate() {
-        match outcome {
-            Ok(leg) => {
-                secondary.push(leg.handle());
-                tokio::spawn(watch_secondary(idx + 1, leg));
-            }
-            Err(e) => {
-                tracing::warn!(sink_index = idx + 1, error = %e, "secondary output sink failed");
-            }
-        }
-    }
-
-    match main {
-        Ok(main) => {
-            let mut handles = vec![main.handle()];
-            handles.extend(secondary);
-            Ok(StartedLegs { handles, main })
-        }
-        Err(e) => {
-            for handle in &secondary {
-                handle.stop();
-            }
-            Err(e)
-        }
-    }
-}
-
-async fn watch_secondary(sink_index: usize, leg: ControlledPlayback) {
-    if let Err(e) = leg.await {
-        tracing::warn!(sink_index, error = %e, "secondary output sink stopped during playback");
-    }
-}
-
 fn resolve_device(
     clip_device: &OutputDevice,
     override_device: Option<OutputDevice>,
@@ -827,6 +496,8 @@ mod tests {
 
     use super::*;
     use forge_audio::AudioSinkFactory;
+    use forge_audio::ControlledPlayback;
+    use std::time::Duration;
 
     fn no_managed_media(imports: Arc<std::sync::atomic::AtomicUsize>) -> MockMediaRepo {
         let mut media = MockMediaRepo::new();

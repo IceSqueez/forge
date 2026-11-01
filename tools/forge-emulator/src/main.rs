@@ -447,9 +447,14 @@ async fn fake_twitch(
     for (variable, url) in fake.endpoint_overrides() {
         writeln!(out, "{variable}={url}").map_err(output_error)?;
     }
-    writeln!(out, "FORGE_TWITCH_CLIENT_ID={}", account.client_id)
-        .and_then(|()| out.flush())
-        .map_err(output_error)?;
+    writeln!(
+        out,
+        "{}={}",
+        forge_platform_twitch::TWITCH_CLIENT_ID_ENV,
+        account.client_id
+    )
+    .and_then(|()| out.flush())
+    .map_err(output_error)?;
     stop_requested().await;
     fake.shutdown().await;
     Ok(())

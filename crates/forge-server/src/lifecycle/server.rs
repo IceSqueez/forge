@@ -3,7 +3,7 @@ use std::net::{IpAddr, SocketAddr};
 use std::sync::Arc;
 
 use axum::extract::{Request, State};
-use axum::http::{Method, StatusCode, header};
+use axum::http::{StatusCode, header};
 use axum::middleware::Next;
 use axum::response::Response;
 use axum::routing::get;
@@ -19,6 +19,7 @@ use forge_storage::{
 
 use crate::access::auth::AuthState;
 use crate::access::origin::{accepts_host, build_allowed_origins};
+use crate::access::policy::RequestAccess;
 use crate::delivery::bus_adapter::BusAdapter;
 use crate::delivery::delivery_hub::DeliveryHub;
 use crate::files::audio_clips::AudioClipStore;
@@ -157,12 +158,7 @@ async fn metrics_middleware(
 }
 
 async fn auth_middleware(State(state): State<AppState>, request: Request, next: Next) -> Response {
-    let is_mutating = matches!(
-        *request.method(),
-        Method::POST | Method::PUT | Method::PATCH | Method::DELETE
-    );
-
-    if is_mutating || state.auth.reads_required() {
+    if RequestAccess::of_http_method(request.method()).needs_credential(&state.auth) {
         let maybe_token = request
             .headers()
             .get(header::AUTHORIZATION)

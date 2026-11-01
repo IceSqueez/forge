@@ -219,7 +219,6 @@ impl Drop for LinuxBackend {
 #[async_trait]
 impl AwakeBackend for LinuxBackend {
     async fn acquire(&mut self, aspect: Aspect) -> Result<(), AwakeError> {
-        self.release(aspect).await;
         match aspect {
             Aspect::Display => self.inhibit_screen_saver().await,
             Aspect::System => self.take_idle_lock().await,

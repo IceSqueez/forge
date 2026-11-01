@@ -17,6 +17,12 @@ use crate::codec::epoch::{from_epoch_ms, to_epoch_ms};
 use crate::error::SqliteStorageError;
 use crate::pool::SqlitePools;
 
+macro_rules! media_blob_columns {
+    () => {
+        "id, format, byte_size, label, imported_at"
+    };
+}
+
 const BLOB_FILE_EXTENSION_SEPARATOR: char = '.';
 const INCOMING_FILE_PREFIX: &str = ".incoming-";
 const INCOMING_NONCE_BYTES: usize = 8;
@@ -336,11 +342,13 @@ impl SqliteMediaRepo {
         byte_size: u64,
         label: &str,
     ) -> Result<MediaBlob, StorageError> {
-        sqlx::query(
-            "INSERT INTO media_blobs (id, format, byte_size, label, imported_at)
+        sqlx::query(concat!(
+            "INSERT INTO media_blobs (",
+            media_blob_columns!(),
+            ")
              VALUES (?, ?, ?, ?, ?)
-             ON CONFLICT(id) DO NOTHING",
-        )
+             ON CONFLICT(id) DO NOTHING"
+        ))
         .bind(id.as_str())
         .bind(format.as_str())
         .bind(i64::try_from(byte_size).unwrap_or(i64::MAX))
@@ -381,9 +389,11 @@ impl MediaRepo for SqliteMediaRepo {
     }
 
     async fn get(&self, id: &MediaBlobId) -> Result<Option<MediaBlob>, StorageError> {
-        let row: Option<MediaBlobRow> = sqlx::query_as(
-            "SELECT id, format, byte_size, label, imported_at FROM media_blobs WHERE id = ?",
-        )
+        let row: Option<MediaBlobRow> = sqlx::query_as(concat!(
+            "SELECT ",
+            media_blob_columns!(),
+            " FROM media_blobs WHERE id = ?"
+        ))
         .bind(id.as_str())
         .fetch_optional(self.db.reader())
         .await
@@ -394,11 +404,13 @@ impl MediaRepo for SqliteMediaRepo {
     }
 
     async fn list(&self) -> Result<Vec<MediaBlob>, StorageError> {
-        let rows: Vec<MediaBlobRow> = sqlx::query_as(
-            "SELECT id, format, byte_size, label, imported_at
+        let rows: Vec<MediaBlobRow> = sqlx::query_as(concat!(
+            "SELECT ",
+            media_blob_columns!(),
+            "
              FROM media_blobs
-             ORDER BY imported_at DESC, label ASC",
-        )
+             ORDER BY imported_at DESC, label ASC"
+        ))
         .fetch_all(self.db.reader())
         .await
         .map_err(SqliteStorageError::Sqlx)?;

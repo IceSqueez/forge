@@ -132,8 +132,8 @@ async fn a_second_alias_row_for_the_same_viewer_is_rejected_after_migration() {
     let insert = |id: &'static str| {
         sqlx::query(
             "INSERT INTO voice_aliases
-                (id, alias_key, viewer_name, engine_id, voice_id, created_at, updated_at)
-             VALUES (?, 'v1', 'name', 'piper', 'voice', 'x', 'x')",
+                (id, alias_key, viewer_name, engine_id, voice_id)
+             VALUES (?, 'v1', 'name', 'piper', 'voice')",
         )
         .bind(id)
     };

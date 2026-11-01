@@ -44,8 +44,8 @@ pub(crate) async fn upsert_alias(
     sqlx::query(
         "INSERT INTO voice_aliases
             (id, alias_key, viewer_name, engine_id, voice_id,
-             pitch_semitones, rate_multiplier, state, created_at, updated_at)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, datetime('now'), datetime('now'))
+             pitch_semitones, rate_multiplier, state)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?)
          ON CONFLICT(id) DO UPDATE SET
             alias_key       = excluded.alias_key,
             viewer_name     = excluded.viewer_name,
@@ -53,8 +53,7 @@ pub(crate) async fn upsert_alias(
             voice_id        = excluded.voice_id,
             pitch_semitones = excluded.pitch_semitones,
             rate_multiplier = excluded.rate_multiplier,
-            state           = excluded.state,
-            updated_at      = excluded.updated_at",
+            state           = excluded.state",
     )
     .bind(stored_id.as_str())
     .bind(&alias.alias_key)
@@ -83,12 +82,11 @@ pub(crate) async fn store_ignore_profile<'e>(
     let locales_json =
         serde_json::to_string(&profile.excluded_locales).map_err(StorageError::Serialization)?;
     sqlx::query(
-        "INSERT INTO ignore_profile(id, excluded_voice_ids, excluded_locales, updated_at)
-         VALUES(1, ?, ?, datetime('now'))
+        "INSERT INTO ignore_profile(id, excluded_voice_ids, excluded_locales)
+         VALUES(1, ?, ?)
          ON CONFLICT(id) DO UPDATE SET
             excluded_voice_ids = excluded.excluded_voice_ids,
-            excluded_locales   = excluded.excluded_locales,
-            updated_at         = excluded.updated_at",
+            excluded_locales   = excluded.excluded_locales",
     )
     .bind(&voice_ids_json)
     .bind(&locales_json)

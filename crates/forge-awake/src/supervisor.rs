@@ -97,6 +97,9 @@ impl Supervisor {
     }
 
     async fn acquire(&mut self, aspect: Aspect) {
+        if self.backend.is_held(aspect) {
+            self.backend.release(aspect).await;
+        }
         let state = match self.backend.acquire(aspect).await {
             Ok(()) => AspectState::Held,
             Err(e) => AspectState::Unavailable {

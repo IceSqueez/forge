@@ -1,5 +1,4 @@
 use std::collections::BTreeSet;
-use std::net::{IpAddr, SocketAddr};
 use std::path::PathBuf;
 use std::sync::Arc;
 
@@ -71,8 +70,8 @@ pub(crate) async fn build_server(
             return ServerBoot::unavailable(ServerUnavailable::Settings(e));
         }
     };
-    let bind_addr = match settings.bind_address.parse::<IpAddr>() {
-        Ok(ip) => Some(SocketAddr::new(ip, settings.port)),
+    let bind_addr = match settings.bind_socket() {
+        Ok(addr) => Some(addr),
         Err(e) => {
             tracing::warn!(
                 bind_address = %settings.bind_address,
@@ -110,12 +109,8 @@ pub(crate) async fn build_server(
         config.additional_origins = settings.additional_origins.clone();
         config.available_platforms = available_platforms.clone();
         config.delivery_hub = Some(delivery_hub.clone());
-        if let Some(root) = settings
-            .overlay_root
-            .as_ref()
-            .filter(|root| !root.is_empty())
-        {
-            config.overlay_root = PathBuf::from(root);
+        if let Some(root) = settings.overlay_root_override() {
+            config.overlay_root = root;
         }
         config
     };

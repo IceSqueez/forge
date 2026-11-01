@@ -125,7 +125,11 @@ impl ScriptRepo for MemoryScripts {
         Ok(ScriptTelemetry::default())
     }
 
-    async fn prune_executions_before(&self, _: OffsetDateTime) -> Result<u64, StorageError> {
+    async fn prune_executions_before(
+        &self,
+        _: OffsetDateTime,
+        _chunk_rows: u32,
+    ) -> Result<u64, StorageError> {
         Ok(0)
     }
 

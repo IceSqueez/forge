@@ -283,6 +283,7 @@ mod tests {
         async fn prune_executions_before(
             &self,
             _: OffsetDateTime,
+            _chunk_rows: u32,
         ) -> Result<u64, forge_storage::StorageError> {
             Ok(0)
         }

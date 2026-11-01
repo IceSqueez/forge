@@ -481,13 +481,22 @@ impl ScheduledRunRepo for SqliteScheduledRunRepo {
         Ok(decode_readable_rows(rows))
     }
 
-    async fn prune_resolved_before(&self, cutoff: OffsetDateTime) -> Result<u64, StorageError> {
-        let result = sqlx::query("DELETE FROM scheduled_runs WHERE state <> ? AND resolved_at < ?")
-            .bind(STATE_PENDING)
-            .bind(to_epoch_ms(cutoff))
-            .execute(self.db.writer())
-            .await
-            .map_err(SqliteStorageError::Sqlx)?;
+    async fn prune_resolved_before(
+        &self,
+        cutoff: OffsetDateTime,
+        chunk_rows: u32,
+    ) -> Result<u64, StorageError> {
+        let result = sqlx::query(
+            "DELETE FROM scheduled_runs WHERE rowid IN (
+                 SELECT rowid FROM scheduled_runs WHERE state <> ? AND resolved_at < ? LIMIT ?
+             )",
+        )
+        .bind(STATE_PENDING)
+        .bind(to_epoch_ms(cutoff))
+        .bind(i64::from(chunk_rows))
+        .execute(self.db.writer())
+        .await
+        .map_err(SqliteStorageError::Sqlx)?;
         Ok(result.rows_affected())
     }
 

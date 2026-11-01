@@ -45,7 +45,11 @@ pub trait ActionRepo: Send + Sync {
         status: ExecutionStatus,
     ) -> Result<(), StorageError>;
     async fn record_executions(&self, executions: &[ActionExecution]) -> Result<(), StorageError>;
-    async fn prune_executions_before(&self, cutoff: OffsetDateTime) -> Result<u64, StorageError>;
+    async fn prune_executions_before(
+        &self,
+        cutoff: OffsetDateTime,
+        chunk_rows: u32,
+    ) -> Result<u64, StorageError>;
 
     async fn set_enabled(&self, id: ActionId, enabled: bool) -> Result<bool, StorageError>;
 

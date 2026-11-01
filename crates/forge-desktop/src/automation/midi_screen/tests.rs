@@ -326,7 +326,11 @@ impl ActionRepo for FakeActionRepo {
         Err(StorageError::NotReady)
     }
 
-    async fn prune_executions_before(&self, _cutoff: OffsetDateTime) -> Result<u64, StorageError> {
+    async fn prune_executions_before(
+        &self,
+        _cutoff: OffsetDateTime,
+        _chunk_rows: u32,
+    ) -> Result<u64, StorageError> {
         Err(StorageError::NotReady)
     }
 

@@ -408,7 +408,11 @@ mod tests {
             std::future::pending().await
         }
 
-        async fn prune_executions_before(&self, _: OffsetDateTime) -> Result<u64, StorageError> {
+        async fn prune_executions_before(
+            &self,
+            _: OffsetDateTime,
+            _chunk_rows: u32,
+        ) -> Result<u64, StorageError> {
             std::future::pending().await
         }
 
@@ -554,7 +558,11 @@ mod tests {
             std::future::pending().await
         }
 
-        async fn prune_resolved_before(&self, _: OffsetDateTime) -> Result<u64, StorageError> {
+        async fn prune_resolved_before(
+            &self,
+            _: OffsetDateTime,
+            _chunk_rows: u32,
+        ) -> Result<u64, StorageError> {
             std::future::pending().await
         }
 

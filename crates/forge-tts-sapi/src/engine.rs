@@ -2,19 +2,10 @@ use std::sync::{Arc, mpsc};
 
 use async_trait::async_trait;
 use forge_speech_types::{EngineId, PcmBuffer, TtsVoice};
-use forge_tts_core::{
-    ENGINE_ID_SAPI, EngineCapabilities, SynthesisRequest, TtsEngine, TtsEngineFactory, TtsError,
-};
+use forge_tts_core::{ENGINE_ID_SAPI, SynthesisRequest, TtsEngine, TtsEngineFactory, TtsError};
 
 use crate::com::{StaRequest, spawn_sta_worker};
 use crate::error::SapiError;
-
-static CAPABILITIES: EngineCapabilities = EngineCapabilities {
-    ssml: true,
-    neural_voices: false,
-    streaming: false,
-    custom_lexicons: false,
-};
 
 pub(crate) struct SapiEngine {
     id: EngineId,
@@ -26,10 +17,6 @@ pub(crate) struct SapiEngine {
 impl TtsEngine for SapiEngine {
     fn engine_id(&self) -> &EngineId {
         &self.id
-    }
-
-    fn capabilities(&self) -> &EngineCapabilities {
-        &CAPABILITIES
     }
 
     async fn list_voices(&self) -> Result<Vec<TtsVoice>, TtsError> {

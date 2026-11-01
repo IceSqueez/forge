@@ -1,11 +1,10 @@
 use std::collections::HashMap;
 
+use forge_events::DONATION_PROVIDER_CONFIG_KEY;
 use forge_types::{Action, ActionId, IntegrationId, SubActionStep, TriggerInstance, Variant};
 
 use crate::registry::{SubActionRegistry, TriggerRegistry};
 use crate::step_tree::{StepNode, StepReach, walk_steps};
-
-const SERVICE_FILTER_KEY: &str = "provider";
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ReferencingAction {
@@ -63,7 +62,7 @@ fn trigger_owners(
     if let Some(owner) = trigger_kinds.owning_integration(&trigger.kind_id) {
         return vec![owner.clone()];
     }
-    let filtered = match trigger.overrides.get(SERVICE_FILTER_KEY) {
+    let filtered = match trigger.overrides.get(DONATION_PROVIDER_CONFIG_KEY) {
         Some(Variant::String(service)) if !service.trim().is_empty() => Some(service.trim()),
         _ => None,
     };

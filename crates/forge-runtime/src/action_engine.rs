@@ -20,7 +20,7 @@ use tracing::{info, warn};
 
 use crate::action_cancel::ActionCancelRegistry;
 use crate::catalog::Catalog;
-use crate::chain::ChainEngine;
+use crate::chain::{ChainEngine, pick_steps};
 use crate::core_messages;
 use crate::date_names::DateNamesHandle;
 use crate::integration_gate::{GatedLeafExecutor, IntegrationGate};
@@ -424,17 +424,7 @@ impl ActionEngine {
         let _lineage = self.bus.hold_lineage(&start_event);
         self.bus.publish(start_event);
 
-        let pick: Vec<SubActionStep> = if matches!(
-            action.execution_mode,
-            forge_types::ExecutionMode::RandomPick
-        ) && !action.sub_actions.is_empty()
-        {
-            use rand::RngExt;
-            let idx = rand::rng().random_range(0..action.sub_actions.len());
-            vec![action.sub_actions[idx].clone()]
-        } else {
-            action.sub_actions.clone()
-        };
+        let pick = pick_steps(&action);
 
         let running = RunningAction {
             action_id: action.id,

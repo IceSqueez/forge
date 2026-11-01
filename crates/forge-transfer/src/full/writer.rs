@@ -20,7 +20,8 @@ use crate::bundle::naming::{
 };
 use crate::bundle::passphrase::Passphrase;
 use crate::bundle::payload::{
-    PayloadFile, append_bytes, append_file, append_verified, collect_payload, seal_archive,
+    PayloadFile, append_bytes, append_file, append_verified, collect_payload, publish_sealed,
+    seal_archive,
 };
 use crate::bundle::protection::Protection;
 use crate::bundle::schedule_key::ScheduleKey;
@@ -280,7 +281,7 @@ fn write_bundle(input: BundleInput<'_>) -> Result<BundleOutcome, TransferError> 
     let partial = partial_path(input.destination);
     write_outer(&partial, &public, &ciphertext)?;
     std::fs::remove_file(&ciphertext)?;
-    crate::bundle::payload::publish_sealed(&partial, input.destination)?;
+    publish_sealed(&partial, input.destination)?;
     Ok(BundleOutcome {
         fingerprint,
         written: true,

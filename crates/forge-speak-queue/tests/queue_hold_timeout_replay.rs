@@ -7,9 +7,7 @@ use async_trait::async_trait;
 use forge_speak_queue::{QueueConfig, RequestId, SpeakCommand, SpeakEvent, SpeakEventStream};
 use forge_speech_types::AssignmentStrategy;
 use forge_speech_types::{EngineId, PcmBuffer, TtsVoice};
-use forge_tts_core::{
-    EngineCapabilities, SynthesisRequest, TtsEngine, TtsEngineFactory, TtsError, TtsRegistry,
-};
+use forge_tts_core::{SynthesisRequest, TtsEngine, TtsEngineFactory, TtsError, TtsRegistry};
 use tokio::sync::Notify;
 
 use common::{
@@ -37,9 +35,6 @@ struct GatedEngine {
 impl TtsEngine for GatedEngine {
     fn engine_id(&self) -> &EngineId {
         &self.id
-    }
-    fn capabilities(&self) -> &EngineCapabilities {
-        &common::PLAIN_CAPABILITIES
     }
     async fn list_voices(&self) -> Result<Vec<TtsVoice>, TtsError> {
         Ok(vec![voice("gated-voice", ENGINE)])

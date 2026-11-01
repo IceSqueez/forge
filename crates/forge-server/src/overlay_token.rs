@@ -2,8 +2,6 @@ use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
 
 use arc_swap::ArcSwap;
-use base64::{Engine as _, engine::general_purpose::URL_SAFE_NO_PAD};
-use rand::Rng as _;
 use subtle::ConstantTimeEq as _;
 
 use forge_types::Secret;
@@ -15,6 +13,7 @@ use forge_storage::{
 
 use crate::ServerError;
 use crate::auth::mask_with_prefix;
+use crate::minted_secret::{load_or_issue, mint_secret};
 use crate::settings;
 
 const OVERLAY_TOKEN_BYTE_LEN: usize = 32;
@@ -27,25 +26,7 @@ pub(crate) struct OverlayTokenState {
 impl OverlayTokenState {
     pub(crate) async fn load(creds: &dyn CredentialsRepo) -> Result<Self, ServerError> {
         let id = CredentialId::new(SERVER_OVERLAY_TOKEN_CREDENTIAL_ID);
-        let stored = match creds.load(&id).await {
-            Ok(stored) => stored,
-            Err(e) if e.stored_secret_unrecoverable() => {
-                tracing::warn!(
-                    "stored overlay token cannot be decrypted with the current credentials key; issuing a new token"
-                );
-                None
-            }
-            Err(e) => return Err(e.into()),
-        };
-        let token = match stored.filter(|t| t.starts_with(OVERLAY_TOKEN_PREFIX)) {
-            Some(t) => t,
-            None => {
-                tracing::info!("no usable overlay token stored; issuing a new token");
-                let t = generate_overlay_token();
-                creds.store(&id, &t).await?;
-                t
-            }
-        };
+        let token = load_or_issue(creds, &id, OVERLAY_TOKEN_PREFIX, generate_overlay_token).await?;
         Ok(Self::with_token(
             token,
             settings::HTTP_OVERLAY_REQUIRE_TOKEN.codec().default,
@@ -97,9 +78,10 @@ impl OverlayTokenState {
 }
 
 pub(crate) fn generate_overlay_token() -> String {
-    let mut bytes = [0u8; OVERLAY_TOKEN_BYTE_LEN];
-    rand::rng().fill_bytes(&mut bytes);
-    format!("{OVERLAY_TOKEN_PREFIX}{}", URL_SAFE_NO_PAD.encode(bytes))
+    format!(
+        "{OVERLAY_TOKEN_PREFIX}{}",
+        mint_secret::<OVERLAY_TOKEN_BYTE_LEN>()
+    )
 }
 
 pub fn masked_overlay_token(token: &str) -> String {
@@ -108,6 +90,7 @@ pub fn masked_overlay_token(token: &str) -> String {
 
 #[cfg(test)]
 mod tests {
+    use base64::{Engine as _, engine::general_purpose::URL_SAFE_NO_PAD};
     use std::sync::Mutex;
 
     use forge_storage::credentials::MockCredentialsRepo;

@@ -1776,15 +1776,6 @@ mod tests {
         fn engine_id(&self) -> &EngineId {
             &self.id
         }
-        fn capabilities(&self) -> &forge_tts_core::EngineCapabilities {
-            static CAPS: forge_tts_core::EngineCapabilities = forge_tts_core::EngineCapabilities {
-                ssml: false,
-                neural_voices: false,
-                streaming: false,
-                custom_lexicons: false,
-            };
-            &CAPS
-        }
         async fn list_voices(&self) -> Result<Vec<TtsVoice>, forge_tts_core::TtsError> {
             Ok(vec![])
         }

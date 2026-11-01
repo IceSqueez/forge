@@ -34,24 +34,6 @@ fn parse_wire_filter(wf: &WireEventFilter) -> Result<EventFilter, UnknownEventSo
     Ok(EventFilter::new(source, kind))
 }
 
-pub(crate) fn variant_to_wire_value(v: &Variant) -> serde_json::Value {
-    match v {
-        Variant::Int(n) => serde_json::json!(n),
-        Variant::Float(f) => serde_json::json!(f),
-        Variant::Bool(b) => serde_json::json!(b),
-        Variant::String(s) => serde_json::Value::String(s.clone()),
-        Variant::Datetime(dt) => serde_json::Value::String(forge_types::datetime_to_text(dt)),
-        Variant::Array(arr) => {
-            serde_json::Value::Array(arr.iter().map(variant_to_wire_value).collect())
-        }
-        Variant::Object(map) => serde_json::Value::Object(
-            map.iter()
-                .map(|(k, val)| (k.clone(), variant_to_wire_value(val)))
-                .collect(),
-        ),
-    }
-}
-
 pub(super) const MAX_CODE_EVENT_NAME_LEN: usize = 64;
 
 pub(crate) fn valid_code_event_name(name: &str) -> bool {
@@ -141,7 +123,7 @@ mod tests {
         ] {
             let nested = Variant::Array(vec![Variant::Datetime(value)]);
             assert_eq!(
-                variant_to_wire_value(&nested),
+                nested.to_plain_json(),
                 serde_json::json!([expected]),
                 "value {value:?}"
             );

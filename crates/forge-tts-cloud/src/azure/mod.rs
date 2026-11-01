@@ -4,7 +4,7 @@ mod voices;
 use async_trait::async_trait;
 use forge_speech_types::PcmBuffer;
 use forge_speech_types::{EngineId, TtsVoice};
-use forge_tts_core::{ENGINE_ID_AZURE, EngineCapabilities, SynthesisRequest, TtsEngine, TtsError};
+use forge_tts_core::{ENGINE_ID_AZURE, SynthesisRequest, TtsEngine, TtsError};
 
 use crate::credentials::AzureCredentials;
 use crate::network::{CloudGateways, ProviderGateway, ProviderLink, is_dns_label};
@@ -12,13 +12,6 @@ use crate::policy::{RetryConfig, retry_synthesize};
 
 pub(crate) const SAMPLE_RATE_HZ: u32 = 24_000;
 const INVALID_REGION: &str = "Azure region must be a single region name such as eastus";
-
-static CAPABILITIES: EngineCapabilities = EngineCapabilities {
-    ssml: true,
-    neural_voices: true,
-    streaming: false,
-    custom_lexicons: false,
-};
 
 pub struct AzureEngine {
     id: EngineId,
@@ -93,10 +86,6 @@ impl forge_tts_core::TtsEngineFactory for AzureEngineFactory {
 impl TtsEngine for AzureEngine {
     fn engine_id(&self) -> &EngineId {
         &self.id
-    }
-
-    fn capabilities(&self) -> &EngineCapabilities {
-        &CAPABILITIES
     }
 
     async fn list_voices(&self) -> Result<Vec<TtsVoice>, TtsError> {

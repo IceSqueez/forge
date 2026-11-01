@@ -1,4 +1,7 @@
-use forge_events::{DONATION_RECEIVED_KIND, DonationReceived, Event, EventSource, TypedEvent};
+use forge_events::{
+    DONATION_PROVIDER_CONFIG_KEY, DONATION_RECEIVED_KIND, DonationReceived, Event, EventSource,
+    TypedEvent,
+};
 use forge_registry::{
     ActorDeclaration, ActorIdentity, ActorRole, EventFilter, FormField, KindPlatformContract,
     LoginSlot, SourcedActor, TriggerCategory, TriggerKindDescriptor, TriggerVariables,
@@ -8,8 +11,6 @@ use forge_types::{DeclaredVariable, TriggerConfig, UserText, Variant, VariantKin
 use crate::core_messages;
 
 pub const DONATION_PROVIDER_OPTIONS_KEY: &str = "donations.provider_ids";
-
-const PROVIDER_KEY: &str = "provider";
 
 pub struct DonationReceivedDescriptor;
 
@@ -44,10 +45,10 @@ impl TriggerKindDescriptor for DonationReceivedDescriptor {
 
     fn config_fields(&self) -> Vec<FormField> {
         vec![FormField::Optional {
-            key: PROVIDER_KEY,
+            key: DONATION_PROVIDER_CONFIG_KEY,
             label: "Donation service (leave empty to match any)",
             inner: Box::new(FormField::DynamicSelect {
-                key: PROVIDER_KEY,
+                key: DONATION_PROVIDER_CONFIG_KEY,
                 label: "Donation service",
                 options_key: DONATION_PROVIDER_OPTIONS_KEY,
             }),
@@ -145,7 +146,7 @@ impl TriggerKindDescriptor for DonationReceivedDescriptor {
 
 fn configured_provider(config: &TriggerConfig) -> Option<&str> {
     config
-        .get(PROVIDER_KEY)
+        .get(DONATION_PROVIDER_CONFIG_KEY)
         .and_then(Variant::as_str)
         .map(str::trim)
         .filter(|provider| !provider.is_empty())
@@ -212,7 +213,7 @@ mod tests {
         let mut config = TriggerConfig::new();
         if let Some(provider) = provider {
             config.insert(
-                PROVIDER_KEY.to_owned(),
+                DONATION_PROVIDER_CONFIG_KEY.to_owned(),
                 Variant::String(provider.to_owned()),
             );
         }

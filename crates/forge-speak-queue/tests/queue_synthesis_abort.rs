@@ -6,9 +6,7 @@ use std::sync::Arc;
 use async_trait::async_trait;
 use forge_speak_queue::{QueueConfig, RequestId, SpeakCommand, SpeakEvent};
 use forge_speech_types::{AssignmentStrategy, EngineId, PcmBuffer, TtsVoice};
-use forge_tts_core::{
-    EngineCapabilities, SynthesisRequest, TtsEngine, TtsEngineFactory, TtsError, TtsRegistry,
-};
+use forge_tts_core::{SynthesisRequest, TtsEngine, TtsEngineFactory, TtsError, TtsRegistry};
 use tokio::sync::Notify;
 
 use common::{HANG_GUARD, make_deps, recording_sink, request, voice, wait_for};
@@ -31,9 +29,6 @@ impl TtsEngine for StuckEngine {
     fn engine_id(&self) -> &EngineId {
         static ID: std::sync::OnceLock<EngineId> = std::sync::OnceLock::new();
         ID.get_or_init(|| EngineId("stuck".into()))
-    }
-    fn capabilities(&self) -> &EngineCapabilities {
-        &common::PLAIN_CAPABILITIES
     }
     async fn list_voices(&self) -> Result<Vec<TtsVoice>, TtsError> {
         Ok(vec![voice("s-voice", "stuck")])

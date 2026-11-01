@@ -3410,7 +3410,6 @@ version = "0.6.3"
 dependencies = [
  "async-trait",
  "forge-speech-types",
- "serde",
  "thiserror 2.0.21",
  "tokio",
 ]

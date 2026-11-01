@@ -6,7 +6,7 @@ use crate::builtin::{QuickAction, QuickActionAccent, QuickActionField};
 
 pub const TEST_DONATION_SUB_ACTION: &str = "donations.test_donation";
 
-pub const TEST_DONATION_PROVIDER_KEY: &str = "provider";
+pub const TEST_DONATION_PROVIDER_KEY: &str = forge_events::DONATION_PROVIDER_CONFIG_KEY;
 pub const TEST_DONATION_DONOR_KEY: &str = "donor_name";
 pub const TEST_DONATION_AMOUNT_KEY: &str = "amount";
 pub const TEST_DONATION_CURRENCY_KEY: &str = "currency";

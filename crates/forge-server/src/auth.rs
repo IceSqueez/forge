@@ -1,8 +1,6 @@
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 
-use base64::{Engine as _, engine::general_purpose::URL_SAFE_NO_PAD};
-use rand::Rng as _;
 use subtle::ConstantTimeEq as _;
 use tokio::sync::{RwLock, watch};
 
@@ -10,6 +8,7 @@ use forge_storage::{CredentialId, CredentialsRepo};
 use forge_types::Secret;
 
 use crate::ServerError;
+use crate::minted_secret::{load_or_issue, mint_secret};
 use crate::overlay_token::OverlayTokenState;
 
 const TOKEN_BYTE_LEN: usize = 64;
@@ -30,25 +29,7 @@ impl AuthState {
         creds: &dyn CredentialsRepo,
     ) -> Result<Arc<Self>, ServerError> {
         let id = CredentialId::new(forge_storage::SERVER_BEARER_CREDENTIAL_ID);
-        let stored = match creds.load(&id).await {
-            Ok(stored) => stored,
-            Err(e) if e.stored_secret_unrecoverable() => {
-                tracing::warn!(
-                    "stored server token cannot be decrypted with the current credentials key; issuing a new token"
-                );
-                None
-            }
-            Err(e) => return Err(e.into()),
-        };
-        let token = match stored.filter(|t| t.starts_with(TOKEN_PREFIX)) {
-            Some(t) => t,
-            None => {
-                tracing::info!("no usable prefixed server token stored; issuing a new token");
-                let t = generate_token();
-                creds.store(&id, &t).await?;
-                t
-            }
-        };
+        let token = load_or_issue(creds, &id, TOKEN_PREFIX, generate_token).await?;
         let overlay_token = OverlayTokenState::load(creds).await?;
         Ok(Arc::new(Self::with_tokens(
             token,
@@ -178,9 +159,7 @@ pub(crate) fn mask_with_prefix(prefix: &str, token: &str) -> String {
 }
 
 pub fn generate_token() -> String {
-    let mut bytes = [0u8; TOKEN_BYTE_LEN];
-    rand::rng().fill_bytes(&mut bytes);
-    format!("{TOKEN_PREFIX}{}", URL_SAFE_NO_PAD.encode(bytes))
+    format!("{TOKEN_PREFIX}{}", mint_secret::<TOKEN_BYTE_LEN>())
 }
 
 #[cfg(test)]

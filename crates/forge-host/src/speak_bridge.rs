@@ -785,16 +785,6 @@ mod tests {
             &self.id
         }
 
-        fn capabilities(&self) -> &forge_tts_core::EngineCapabilities {
-            static CAPS: forge_tts_core::EngineCapabilities = forge_tts_core::EngineCapabilities {
-                ssml: false,
-                neural_voices: false,
-                streaming: false,
-                custom_lexicons: false,
-            };
-            &CAPS
-        }
-
         async fn list_voices(
             &self,
         ) -> Result<Vec<forge_speech_types::TtsVoice>, forge_tts_core::TtsError> {
@@ -1243,16 +1233,6 @@ mod tests {
     impl forge_tts_core::TtsEngine for ListedVoicesEngine {
         fn engine_id(&self) -> &EngineId {
             &self.id
-        }
-
-        fn capabilities(&self) -> &forge_tts_core::EngineCapabilities {
-            static CAPS: forge_tts_core::EngineCapabilities = forge_tts_core::EngineCapabilities {
-                ssml: false,
-                neural_voices: false,
-                streaming: false,
-                custom_lexicons: false,
-            };
-            &CAPS
         }
 
         async fn list_voices(

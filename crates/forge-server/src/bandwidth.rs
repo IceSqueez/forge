@@ -8,85 +8,68 @@ use std::time::Duration;
 
 use tokio::time::Instant;
 
-const RETENTION_SECS: u64 = 60;
-const CURRENT_WINDOW_SECS: u64 = 1;
+const CURRENT_WINDOW: Duration = Duration::from_secs(1);
 
-pub(crate) struct BandwidthTracker {
-    outbound_bytes_total: AtomicU64,
-    outbound_window: Mutex<VecDeque<(Instant, u64)>>,
-    peak_bps: AtomicU64,
+#[derive(Default)]
+struct OutboundWindow {
+    frames: VecDeque<(Instant, u64)>,
+    bytes: u64,
 }
 
-impl Default for BandwidthTracker {
-    fn default() -> Self {
-        Self::new()
+impl OutboundWindow {
+    fn push(&mut self, at: Instant, bytes: u64) {
+        self.frames.push_back((at, bytes));
+        self.bytes = self.bytes.saturating_add(bytes);
     }
+
+    fn expire(&mut self, now: Instant) -> u64 {
+        while let Some(&(at, bytes)) = self.frames.front() {
+            if now.duration_since(at) <= CURRENT_WINDOW {
+                break;
+            }
+            self.frames.pop_front();
+            self.bytes = self.bytes.saturating_sub(bytes);
+        }
+        self.bytes
+    }
+}
+
+#[derive(Default)]
+pub(crate) struct BandwidthTracker {
+    outbound_bytes_total: AtomicU64,
+    outbound_window: Mutex<OutboundWindow>,
+    peak_bytes_per_second: AtomicU64,
 }
 
 impl BandwidthTracker {
     pub(crate) fn new() -> Self {
-        Self {
-            outbound_bytes_total: AtomicU64::new(0),
-            outbound_window: Mutex::new(VecDeque::new()),
-            peak_bps: AtomicU64::new(0),
-        }
+        Self::default()
     }
 
     pub(crate) fn record(&self, bytes: u64) {
         self.outbound_bytes_total
             .fetch_add(bytes, Ordering::Relaxed);
         let now = Instant::now();
-        let Ok(mut window) = self.outbound_window.lock() else {
-            return;
+        let current = {
+            let mut window = self.outbound_window.lock_recover();
+            window.push(now, bytes);
+            window.expire(now)
         };
-        window.push_back((now, bytes));
-        while let Some(&(t, _)) = window.front() {
-            if now.duration_since(t) > Duration::from_secs(RETENTION_SECS) {
-                window.pop_front();
-            } else {
-                break;
-            }
-        }
-        let current = compute_bps(&window, now);
-        drop(window);
-
-        let mut peak = self.peak_bps.load(Ordering::Relaxed);
-        loop {
-            if current <= peak {
-                break;
-            }
-            match self.peak_bps.compare_exchange_weak(
-                peak,
-                current,
-                Ordering::Relaxed,
-                Ordering::Relaxed,
-            ) {
-                Ok(_) => break,
-                Err(v) => peak = v,
-            }
-        }
+        self.peak_bytes_per_second
+            .fetch_max(current, Ordering::Relaxed);
     }
 
-    pub(crate) fn current_bps(&self) -> u64 {
-        let now = Instant::now();
-        compute_bps(&self.outbound_window.lock_recover(), now)
+    pub(crate) fn current_bytes_per_second(&self) -> u64 {
+        self.outbound_window.lock_recover().expire(Instant::now())
     }
 
-    pub(crate) fn peak(&self) -> u64 {
-        self.peak_bps.load(Ordering::Relaxed)
+    pub(crate) fn peak_bytes_per_second(&self) -> u64 {
+        self.peak_bytes_per_second.load(Ordering::Relaxed)
     }
 
     pub(crate) fn total(&self) -> u64 {
         self.outbound_bytes_total.load(Ordering::Relaxed)
     }
-}
-
-fn compute_bps(window: &VecDeque<(Instant, u64)>, now: Instant) -> u64 {
-    window
-        .iter()
-        .filter(|(t, _)| now.duration_since(*t) <= Duration::from_secs(CURRENT_WINDOW_SECS))
-        .map(|(_, b)| *b)
-        .sum()
 }
 
 #[cfg(test)]
@@ -109,13 +92,13 @@ mod tests {
         for _ in 0..60 {
             tracker.record(1000);
         }
-        assert_eq!(tracker.current_bps(), 60_000);
+        assert_eq!(tracker.current_bytes_per_second(), 60_000);
     }
 
     #[test]
     fn current_bps_zero_on_empty() {
         let tracker = BandwidthTracker::new();
-        assert_eq!(tracker.current_bps(), 0);
+        assert_eq!(tracker.current_bytes_per_second(), 0);
     }
 
     #[tokio::test]
@@ -125,27 +108,27 @@ mod tests {
         for _ in 0..60 {
             tracker.record(1000);
         }
-        let peak_first = tracker.peak();
+        let peak_first = tracker.peak_bytes_per_second();
         assert!(peak_first > 0, "peak should be positive after recording");
 
         tokio::time::advance(Duration::from_secs(2)).await;
         tracker.record(1);
 
         assert_eq!(
-            tracker.peak(),
+            tracker.peak_bytes_per_second(),
             peak_first,
             "peak must not decrease after a smaller burst"
         );
     }
 
     #[tokio::test]
-    async fn entries_older_than_60s_are_trimmed_from_window() {
+    async fn frames_past_the_current_window_are_trimmed() {
         tokio::time::pause();
         let tracker = BandwidthTracker::new();
         tracker.record(100_000);
         tokio::time::advance(Duration::from_secs(61)).await;
         tracker.record(1);
         let window = tracker.outbound_window.lock().unwrap();
-        assert_eq!(window.len(), 1, "old entries should be trimmed after 60s");
+        assert_eq!(window.frames.len(), 1, "expired frames leave the window");
     }
 }

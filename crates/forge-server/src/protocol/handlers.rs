@@ -9,7 +9,6 @@ use super::context::DispatchContext;
 use super::envelope::WsResponse;
 use super::helpers::{
     MAX_CODE_EVENT_NAME_LEN, build_arg_stack, parse_id, runtime_failure, valid_code_event_name,
-    variant_to_wire_value,
 };
 use super::introspect::{build_connected_accounts, build_connected_clients};
 
@@ -23,7 +22,7 @@ fn global_wire_row(
     last_modified: Option<OffsetDateTime>,
 ) -> serde_json::Map<String, serde_json::Value> {
     let mut row = serde_json::Map::new();
-    row.insert("value".to_owned(), variant_to_wire_value(value));
+    row.insert("value".to_owned(), value.to_plain_json());
     row.insert("type".to_owned(), value.type_tag().to_string().into());
     if let Some(at) = last_modified {
         row.insert(
@@ -45,9 +44,9 @@ pub(crate) async fn handle_get_info(ctx: &DispatchContext) -> WsResponse {
         "available_platforms": ctx.server_info.available_platforms,
         "connected_clients": connected_clients,
         "bandwidth": {
-            "outbound_bytes_per_second": bw.current_bps(),
+            "outbound_bytes_per_second": bw.current_bytes_per_second(),
             "outbound_bytes_total": bw.total(),
-            "peak_outbound_bytes_per_second": bw.peak(),
+            "peak_outbound_bytes_per_second": bw.peak_bytes_per_second(),
         },
     }))
 }
@@ -116,10 +115,10 @@ pub(crate) async fn handle_set_global(
         .flatten();
     let changed = GlobalSet {
         key: name.clone(),
-        new_value: variant_to_wire_value(&variant),
+        new_value: variant.to_plain_json(),
         prev_value: prev_value
             .as_ref()
-            .map(variant_to_wire_value)
+            .map(Variant::to_plain_json)
             .unwrap_or(serde_json::Value::Null),
         persisted: Some(persisted),
         via: Some(WS_API_WRITER.to_owned()),

@@ -15,4 +15,3 @@ forge-speech-types = { path = "../forge-speech-types" }
 async-trait = { workspace = true }
 thiserror = { workspace = true }
 tokio = { workspace = true }
-serde = { workspace = true }

@@ -4,9 +4,7 @@ use std::time::Duration;
 
 use async_trait::async_trait;
 use forge_speech_types::{EngineId, PcmBuffer, TtsVoice, VoiceGender, VoiceId};
-use forge_tts_core::{
-    ENGINE_ID_PIPER, EngineCapabilities, SynthesisRequest, TtsEngine, TtsEngineFactory, TtsError,
-};
+use forge_tts_core::{ENGINE_ID_PIPER, SynthesisRequest, TtsEngine, TtsEngineFactory, TtsError};
 
 mod locate;
 mod subprocess;
@@ -16,13 +14,6 @@ const STDERR_DETAIL_MAX_CHARS: usize = 200;
 const MIN_RATE: f32 = 0.25;
 const MAX_RATE: f32 = 4.0;
 const NEUTRAL_RATE: f32 = 1.0;
-
-static CAPABILITIES: EngineCapabilities = EngineCapabilities {
-    ssml: false,
-    neural_voices: true,
-    streaming: false,
-    custom_lexicons: false,
-};
 
 fn piper_engine_id() -> EngineId {
     EngineId(ENGINE_ID_PIPER.into())
@@ -221,10 +212,6 @@ impl PiperEngine {
 impl TtsEngine for PiperEngine {
     fn engine_id(&self) -> &EngineId {
         &self.id
-    }
-
-    fn capabilities(&self) -> &EngineCapabilities {
-        &CAPABILITIES
     }
 
     async fn list_voices(&self) -> Result<Vec<TtsVoice>, TtsError> {

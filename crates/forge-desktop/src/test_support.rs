@@ -1202,17 +1202,6 @@ impl forge_tts_core::TtsEngine for ListedVoices {
         &self.id
     }
 
-    fn capabilities(&self) -> &forge_tts_core::EngineCapabilities {
-        static CAPABILITIES: forge_tts_core::EngineCapabilities =
-            forge_tts_core::EngineCapabilities {
-                ssml: false,
-                neural_voices: false,
-                streaming: false,
-                custom_lexicons: false,
-            };
-        &CAPABILITIES
-    }
-
     async fn list_voices(
         &self,
     ) -> Result<Vec<forge_speech_types::TtsVoice>, forge_tts_core::TtsError> {

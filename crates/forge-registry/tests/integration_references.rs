@@ -4,7 +4,7 @@ mod fakes;
 
 use std::collections::HashMap;
 
-use forge_events::DONATION_RECEIVED_KIND;
+use forge_events::{DONATION_PROVIDER_CONFIG_KEY, DONATION_RECEIVED_KIND};
 use forge_registry::{
     FormField, IntegrationReferences, ReferencingAction, SubActionRegistry, TriggerRegistry,
     tally_references,
@@ -24,7 +24,6 @@ const OBS_SCENE_CHANGED: &str = "obs.scene.changed";
 const CORE_TIMER: &str = "core.timer";
 const NESTING_KIND: &str = "fake.container";
 const NESTED_CHAIN_KEY: &str = "body";
-const SERVICE_FILTER_KEY: &str = "provider";
 
 fn sub_actions() -> SubActionRegistry {
     let mut registry = SubActionRegistry::new();
@@ -255,7 +254,7 @@ fn donation_trigger(filter: Option<&str>) -> TriggerInstance {
     let mut trigger = trigger_of(DONATION_RECEIVED_KIND);
     if let Some(service) = filter {
         trigger.overrides.insert(
-            SERVICE_FILTER_KEY.to_owned(),
+            DONATION_PROVIDER_CONFIG_KEY.to_owned(),
             Variant::String(service.to_owned()),
         );
     }

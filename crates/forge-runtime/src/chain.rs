@@ -10,9 +10,10 @@ use forge_registry::{
     SubActionRunner, TelemetrySink, effective_config, validate_declared_config,
 };
 use forge_types::{
-    ArgStack, EventId, IntegrationAvailability, SubActionOutcome, SubActionStep,
-    SubActionTelemetry, UserText, Variant, variant_preview,
+    Action, ArgStack, EventId, ExecutionMode, IntegrationAvailability, SubActionOutcome,
+    SubActionStep, SubActionTelemetry, UserText, Variant, variant_preview,
 };
+use rand::RngExt;
 use std::collections::BTreeMap;
 use tracing::warn;
 
@@ -127,6 +128,14 @@ pub(crate) async fn execute_step(
         runner.execute(&resolved, ctx),
     )
     .await
+}
+
+pub(crate) fn pick_steps(action: &Action) -> Vec<SubActionStep> {
+    if action.execution_mode == ExecutionMode::RandomPick && !action.sub_actions.is_empty() {
+        let idx = rand::rng().random_range(0..action.sub_actions.len());
+        return vec![action.sub_actions[idx].clone()];
+    }
+    action.sub_actions.clone()
 }
 
 pub struct ChainEngine {

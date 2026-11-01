@@ -4,20 +4,11 @@ mod voices;
 use async_trait::async_trait;
 use forge_speech_types::PcmBuffer;
 use forge_speech_types::{EngineId, TtsVoice};
-use forge_tts_core::{
-    ENGINE_ID_ELEVENLABS, EngineCapabilities, SynthesisRequest, TtsEngine, TtsError,
-};
+use forge_tts_core::{ENGINE_ID_ELEVENLABS, SynthesisRequest, TtsEngine, TtsError};
 
 use crate::credentials::ElevenLabsCredentials;
 use crate::network::{CloudGateways, ProviderGateway, ProviderLink};
 use crate::policy::{RetryConfig, retry_synthesize};
-
-static CAPABILITIES: EngineCapabilities = EngineCapabilities {
-    ssml: false,
-    neural_voices: true,
-    streaming: false,
-    custom_lexicons: false,
-};
 
 const DEFAULT_BASE_URL: &str = "https://api.elevenlabs.io";
 pub(crate) const SAMPLE_RATE_HZ: u32 = 24_000;
@@ -82,10 +73,6 @@ impl forge_tts_core::TtsEngineFactory for ElevenLabsEngineFactory {
 impl TtsEngine for ElevenLabsEngine {
     fn engine_id(&self) -> &EngineId {
         &self.id
-    }
-
-    fn capabilities(&self) -> &EngineCapabilities {
-        &CAPABILITIES
     }
 
     async fn list_voices(&self) -> Result<Vec<TtsVoice>, TtsError> {

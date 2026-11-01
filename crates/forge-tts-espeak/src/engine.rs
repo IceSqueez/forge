@@ -3,18 +3,10 @@ use std::path::PathBuf;
 use async_trait::async_trait;
 use forge_speech_types::{EngineId, PcmBuffer, TtsVoice};
 use forge_tts_core::{
-    ENGINE_ID_ESPEAK_NG, EngineCapabilities, SynthesisRequest, TtsEngine, TtsEngineFactory,
-    TtsError,
+    ENGINE_ID_ESPEAK_NG, SynthesisRequest, TtsEngine, TtsEngineFactory, TtsError,
 };
 
 use crate::{process, voices, wav};
-
-static CAPABILITIES: EngineCapabilities = EngineCapabilities {
-    ssml: true,
-    neural_voices: false,
-    streaming: false,
-    custom_lexicons: false,
-};
 
 fn espeak_engine_id() -> EngineId {
     EngineId(ENGINE_ID_ESPEAK_NG.into())
@@ -41,10 +33,6 @@ impl EspeakEngine {
 impl TtsEngine for EspeakEngine {
     fn engine_id(&self) -> &EngineId {
         &self.id
-    }
-
-    fn capabilities(&self) -> &EngineCapabilities {
-        &CAPABILITIES
     }
 
     async fn list_voices(&self) -> Result<Vec<TtsVoice>, TtsError> {

@@ -17,20 +17,11 @@ use forge_speech_types::{
     AliasId, AliasState, AssignmentStrategy, IgnoreProfile, SynthesisDefaults, VoiceAlias,
 };
 use forge_speech_types::{EngineId, TtsVoice, VoiceGender, VoiceId};
-use forge_tts_core::{
-    EngineCapabilities, SynthesisRequest, TtsEngine, TtsEngineFactory, TtsError, TtsRegistry,
-};
+use forge_tts_core::{SynthesisRequest, TtsEngine, TtsEngineFactory, TtsError, TtsRegistry};
 use forge_types::EventId;
 
 pub(crate) const HANG_GUARD: Duration = Duration::from_secs(30);
 const PAUSED_CLOCK_SETTLE: Duration = Duration::from_millis(1);
-
-pub(crate) static PLAIN_CAPABILITIES: EngineCapabilities = EngineCapabilities {
-    ssml: false,
-    neural_voices: false,
-    streaming: false,
-    custom_lexicons: false,
-};
 
 pub(crate) fn voice(id: &str, engine: &str) -> TtsVoice {
     TtsVoice {
@@ -53,9 +44,6 @@ struct FakeEngine {
 impl TtsEngine for FakeEngine {
     fn engine_id(&self) -> &EngineId {
         &self.id
-    }
-    fn capabilities(&self) -> &EngineCapabilities {
-        &PLAIN_CAPABILITIES
     }
     async fn list_voices(&self) -> Result<Vec<TtsVoice>, TtsError> {
         Ok(self.voices.clone())

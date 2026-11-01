@@ -13,9 +13,7 @@ use forge_speak_queue::{
 use forge_speech_types::AssignmentStrategy;
 use forge_speech_types::PcmBuffer;
 use forge_speech_types::{EngineId, TtsVoice};
-use forge_tts_core::{
-    EngineCapabilities, SynthesisRequest, TtsEngine, TtsEngineFactory, TtsError, TtsRegistry,
-};
+use forge_tts_core::{SynthesisRequest, TtsEngine, TtsEngineFactory, TtsError, TtsRegistry};
 use tokio::sync::Notify;
 
 use common::{
@@ -213,9 +211,6 @@ impl TtsEngine for GatedEngine {
     fn engine_id(&self) -> &EngineId {
         static ID: std::sync::OnceLock<EngineId> = std::sync::OnceLock::new();
         ID.get_or_init(|| EngineId("gate".into()))
-    }
-    fn capabilities(&self) -> &EngineCapabilities {
-        &common::PLAIN_CAPABILITIES
     }
     async fn list_voices(&self) -> Result<Vec<TtsVoice>, TtsError> {
         Ok(vec![voice("g-voice", "gate")])

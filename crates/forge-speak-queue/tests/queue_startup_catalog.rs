@@ -13,9 +13,7 @@ use forge_speak_queue::{
 use forge_speech_types::AssignmentStrategy;
 use forge_speech_types::PcmBuffer;
 use forge_speech_types::{EngineId, TtsVoice};
-use forge_tts_core::{
-    EngineCapabilities, SynthesisRequest, TtsEngine, TtsEngineFactory, TtsError, TtsRegistry,
-};
+use forge_tts_core::{SynthesisRequest, TtsEngine, TtsEngineFactory, TtsError, TtsRegistry};
 use tokio::sync::Semaphore;
 
 use common::{alias, make_deps, recording_sink, request, request_with_overrides, voice, wait_for};
@@ -49,9 +47,6 @@ struct ScriptedEngine {
 impl TtsEngine for ScriptedEngine {
     fn engine_id(&self) -> &EngineId {
         &self.id
-    }
-    fn capabilities(&self) -> &EngineCapabilities {
-        &common::PLAIN_CAPABILITIES
     }
     async fn list_voices(&self) -> Result<Vec<TtsVoice>, TtsError> {
         let call = self.listings.fetch_add(1, Ordering::SeqCst);

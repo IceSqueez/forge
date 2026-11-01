@@ -1,5 +1,6 @@
 use crate::error::TwitchError;
 use crate::vocabulary::labels;
+use forge_net::status::NOT_FOUND;
 use forge_types::MessageCode;
 use std::sync::Arc;
 
@@ -50,6 +51,13 @@ pub(crate) async fn resolve_user_id(
     login: &str,
 ) -> Result<String, TwitchError> {
     let login = normalize_login(login);
+    let not_found = || TwitchError::Http {
+        status: NOT_FOUND,
+        body: format!("user not found: {login}"),
+    };
+    if login.is_empty() {
+        return Err(not_found());
+    }
     let request =
         HelixRequest::new(HelixMethod::Get, "/helix/users").query("login", login.as_str());
     let resp = transport.execute(request).await?;
@@ -58,10 +66,7 @@ pub(crate) async fn resolve_user_id(
         .and_then(|arr| arr.first())
         .and_then(|u| u["id"].as_str())
         .map(|s| s.to_owned())
-        .ok_or_else(|| TwitchError::Http {
-            status: 404,
-            body: format!("user not found: {login}"),
-        })
+        .ok_or_else(not_found)
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]

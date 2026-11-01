@@ -26,7 +26,7 @@ pub use chat_send::{
     ActingSender, ChatSendFailed, ChatSendRequest, ChatSent, SENT_AS_FIELD, SenderRole, WhisperSent,
 };
 pub use connection::{ConnectionState, PlatformConnectionChanged};
-pub use donation::{DONATION_RECEIVED_KIND, DonationReceived};
+pub use donation::{DONATION_PROVIDER_CONFIG_KEY, DONATION_RECEIVED_KIND, DonationReceived};
 pub use globals::{
     GlobalArrayAppended, GlobalArrayRemoved, GlobalDecremented, GlobalDeleted, GlobalIncremented,
     GlobalSet, GlobalToggled,

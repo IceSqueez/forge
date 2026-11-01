@@ -3,7 +3,6 @@ use std::sync::Arc;
 
 use async_trait::async_trait;
 use forge_speech_types::{EngineId, PcmBuffer, TtsVoice, VoiceId};
-use serde::{Deserialize, Serialize};
 
 mod ssml;
 
@@ -47,14 +46,6 @@ pub struct SynthesisRequest {
     pub pitch_semitones: f32,
     pub rate_multiplier: f32,
     pub ssml: bool,
-}
-
-#[derive(Debug, Clone, Default, Serialize, Deserialize)]
-pub struct EngineCapabilities {
-    pub ssml: bool,
-    pub neural_voices: bool,
-    pub streaming: bool,
-    pub custom_lexicons: bool,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
@@ -106,7 +97,6 @@ pub enum TtsError {
 #[async_trait]
 pub trait TtsEngine: Send + Sync {
     fn engine_id(&self) -> &EngineId;
-    fn capabilities(&self) -> &EngineCapabilities;
     async fn list_voices(&self) -> Result<Vec<TtsVoice>, TtsError>;
     async fn synthesize(&self, request: SynthesisRequest) -> Result<PcmBuffer, TtsError>;
 
@@ -254,16 +244,12 @@ mod tests {
 
     struct NullEngine {
         id: EngineId,
-        caps: EngineCapabilities,
     }
 
     #[async_trait]
     impl TtsEngine for NullEngine {
         fn engine_id(&self) -> &EngineId {
             &self.id
-        }
-        fn capabilities(&self) -> &EngineCapabilities {
-            &self.caps
         }
         async fn list_voices(&self) -> Result<Vec<TtsVoice>, TtsError> {
             Ok(Vec::new())
@@ -276,7 +262,6 @@ mod tests {
     fn null_engine(id: &str) -> Arc<dyn TtsEngine> {
         Arc::new(NullEngine {
             id: EngineId(id.into()),
-            caps: EngineCapabilities::default(),
         })
     }
 
@@ -331,7 +316,6 @@ mod tests {
             }
             Ok(Box::new(NullEngine {
                 id: self.id.clone(),
-                caps: EngineCapabilities::default(),
             }))
         }
     }

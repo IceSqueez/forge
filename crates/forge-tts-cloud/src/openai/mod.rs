@@ -4,18 +4,11 @@ mod voices;
 use async_trait::async_trait;
 use forge_speech_types::PcmBuffer;
 use forge_speech_types::{EngineId, TtsVoice};
-use forge_tts_core::{ENGINE_ID_OPENAI, EngineCapabilities, SynthesisRequest, TtsEngine, TtsError};
+use forge_tts_core::{ENGINE_ID_OPENAI, SynthesisRequest, TtsEngine, TtsError};
 
 use crate::credentials::OpenAiCredentials;
 use crate::network::{CloudGateways, ProviderGateway, ProviderLink};
 use crate::policy::{RetryConfig, retry_synthesize};
-
-static CAPABILITIES: EngineCapabilities = EngineCapabilities {
-    ssml: false,
-    neural_voices: true,
-    streaming: false,
-    custom_lexicons: false,
-};
 
 const DEFAULT_BASE_URL: &str = "https://api.openai.com";
 
@@ -79,10 +72,6 @@ impl forge_tts_core::TtsEngineFactory for OpenAiEngineFactory {
 impl TtsEngine for OpenAiEngine {
     fn engine_id(&self) -> &EngineId {
         &self.id
-    }
-
-    fn capabilities(&self) -> &EngineCapabilities {
-        &CAPABILITIES
     }
 
     async fn list_voices(&self) -> Result<Vec<TtsVoice>, TtsError> {

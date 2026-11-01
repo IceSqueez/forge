@@ -54,9 +54,9 @@ pub(crate) async fn build_server_snapshot(
         uptime_seconds: server_info.uptime_seconds(),
         connected_clients,
         bandwidth: BandwidthSnapshot {
-            outbound_bytes_per_second: bw.current_bps(),
+            outbound_bytes_per_second: bw.current_bytes_per_second(),
             outbound_bytes_total: bw.total(),
-            peak_outbound_bytes_per_second: bw.peak(),
+            peak_outbound_bytes_per_second: bw.peak_bytes_per_second(),
         },
         aggregate_events_per_second,
         http_requests_total: server_info.http_requests(),

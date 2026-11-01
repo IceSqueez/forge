@@ -12,9 +12,7 @@ use forge_speak_queue::{
 use forge_speech_types::PcmBuffer;
 use forge_speech_types::{AssignmentStrategy, SynthesisDefaults};
 use forge_speech_types::{EngineId, TtsVoice};
-use forge_tts_core::{
-    EngineCapabilities, SynthesisRequest, TtsEngine, TtsEngineFactory, TtsError, TtsRegistry,
-};
+use forge_tts_core::{SynthesisRequest, TtsEngine, TtsEngineFactory, TtsError, TtsRegistry};
 
 use common::{HANG_GUARD, make_deps, outcome_of, recording_sink, request_with_overrides, voice};
 
@@ -30,9 +28,6 @@ struct GenerationEngine {
 impl TtsEngine for GenerationEngine {
     fn engine_id(&self) -> &EngineId {
         &self.id
-    }
-    fn capabilities(&self) -> &EngineCapabilities {
-        &common::PLAIN_CAPABILITIES
     }
     async fn list_voices(&self) -> Result<Vec<TtsVoice>, TtsError> {
         Ok(vec![voice(&format!("{}-1", self.id.0), &self.id.0)])

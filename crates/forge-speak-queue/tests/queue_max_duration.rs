@@ -8,9 +8,7 @@ use forge_speak_queue::{QueueConfig, SpeakCommand, SpeakEvent, SpeakEventStream}
 use forge_speech_types::AssignmentStrategy;
 use forge_speech_types::PcmBuffer;
 use forge_speech_types::{EngineId, TtsVoice};
-use forge_tts_core::{
-    EngineCapabilities, SynthesisRequest, TtsEngine, TtsEngineFactory, TtsError, TtsRegistry,
-};
+use forge_tts_core::{SynthesisRequest, TtsEngine, TtsEngineFactory, TtsError, TtsRegistry};
 use forge_tts_pipeline::{OutputConfig, PipelineConfig};
 
 use common::{make_deps, next_event, recording_sink, request, voice};
@@ -27,10 +25,6 @@ struct FixedLengthEngine {
 impl TtsEngine for FixedLengthEngine {
     fn engine_id(&self) -> &EngineId {
         &self.id
-    }
-
-    fn capabilities(&self) -> &EngineCapabilities {
-        &common::PLAIN_CAPABILITIES
     }
 
     async fn list_voices(&self) -> Result<Vec<TtsVoice>, TtsError> {

@@ -2,19 +2,10 @@ use std::sync::{Arc, mpsc};
 
 use async_trait::async_trait;
 use forge_speech_types::{EngineId, PcmBuffer, TtsVoice};
-use forge_tts_core::{
-    ENGINE_ID_NSSPEECH, EngineCapabilities, SynthesisRequest, TtsEngine, TtsEngineFactory, TtsError,
-};
+use forge_tts_core::{ENGINE_ID_NSSPEECH, SynthesisRequest, TtsEngine, TtsEngineFactory, TtsError};
 
 use crate::synth::{NsSpeechRequest, spawn_worker};
 use crate::voices;
-
-static CAPABILITIES: EngineCapabilities = EngineCapabilities {
-    ssml: false,
-    neural_voices: true,
-    streaming: false,
-    custom_lexicons: false,
-};
 
 pub(crate) struct NsSpeechEngine {
     id: EngineId,
@@ -26,10 +17,6 @@ pub(crate) struct NsSpeechEngine {
 impl TtsEngine for NsSpeechEngine {
     fn engine_id(&self) -> &EngineId {
         &self.id
-    }
-
-    fn capabilities(&self) -> &EngineCapabilities {
-        &CAPABILITIES
     }
 
     async fn list_voices(&self) -> Result<Vec<TtsVoice>, TtsError> {

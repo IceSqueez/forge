@@ -5,14 +5,13 @@ use std::sync::{Arc, Mutex, MutexGuard};
 use std::time::Duration;
 
 use axum::body::Bytes;
-use base64::{Engine as _, engine::general_purpose::URL_SAFE_NO_PAD};
 use forge_storage::OverlayId;
-use rand::Rng as _;
 use tokio::sync::{Notify, oneshot};
 use tokio::time::Instant;
 
 use crate::ServerError;
 use crate::clip_paths::{clip_path, report_path};
+use crate::minted_secret::mint_secret;
 
 const CAPABILITY_BYTE_LEN: usize = 32;
 const WAVE_MEDIA_TYPE: &str = "audio/wav";
@@ -436,13 +435,12 @@ fn verdict_window(duration_ms: u64) -> Duration {
 }
 
 fn mint_capability() -> String {
-    let mut bytes = [0u8; CAPABILITY_BYTE_LEN];
-    rand::rng().fill_bytes(&mut bytes);
-    URL_SAFE_NO_PAD.encode(bytes)
+    mint_secret::<CAPABILITY_BYTE_LEN>()
 }
 
 #[cfg(test)]
 mod tests {
+    use base64::{Engine as _, engine::general_purpose::URL_SAFE_NO_PAD};
     use std::collections::HashSet;
 
     use tracing::Level;

@@ -8,7 +8,7 @@ use forge_storage::{
     DATABASE_FILE_NAME, DatabaseFileSchema, LAST_PRE_BASELINE_RELEASE, StoredSchema,
 };
 
-use crate::bundle::blocking::run_blocking;
+use crate::bundle::blocking::{discard_staging, stage_into};
 use crate::bundle::category::BackupCategory;
 use crate::bundle::durable_fs::{read_record, write_record};
 use crate::bundle::encryption::{decrypt_from, decrypt_with_identity};
@@ -70,13 +70,10 @@ pub fn restore_staging_root(data_dir: &Path) -> PathBuf {
 
 pub async fn stage_full_restore(request: StageRequest) -> Result<StagedRestore, TransferError> {
     let staging_dir = restore_staging_root(&request.data_dir).join(fresh_stem());
-    let target = staging_dir.clone();
-    let staged = run_blocking(request, move |request| stage(&request, &target)).await;
-    if staged.is_err()
-        && let Err(error) = tokio::fs::remove_dir_all(&staging_dir).await
-    {
-        tracing::warn!(%error, path = %staging_dir.display(), "restore staging could not be removed");
-    }
+    let staged = stage_into(&staging_dir, request, |request, target| {
+        stage(&request, target)
+    })
+    .await;
     staged.map(|summary| StagedRestore {
         staging_dir,
         summary,
@@ -84,10 +81,7 @@ pub async fn stage_full_restore(request: StageRequest) -> Result<StagedRestore, 
 }
 
 pub async fn discard_staged_restore(staged: StagedRestore) -> Result<(), TransferError> {
-    match tokio::fs::remove_dir_all(&staged.staging_dir).await {
-        Err(e) if e.kind() != io::ErrorKind::NotFound => Err(e.into()),
-        _ => Ok(()),
-    }
+    discard_staging(staged.staging_dir).await
 }
 
 fn stage(request: &StageRequest, staging_dir: &Path) -> Result<BundleSummary, TransferError> {

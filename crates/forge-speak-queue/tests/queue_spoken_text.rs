@@ -10,9 +10,7 @@ use forge_speak_queue::{
 };
 use forge_speech_types::{AssignmentStrategy, EngineId, PcmBuffer, TtsVoice, VoiceGender, VoiceId};
 use forge_storage::{TtsPipelineSettings, UrlMode};
-use forge_tts_core::{
-    EngineCapabilities, SynthesisRequest, TtsEngine, TtsEngineFactory, TtsError, TtsRegistry,
-};
+use forge_tts_core::{SynthesisRequest, TtsEngine, TtsEngineFactory, TtsError, TtsRegistry};
 use forge_types::{MessageArg, MessageRef, VerbatimText};
 
 use common::{make_deps, recording_sink, request, request_with_overrides, wait_for};
@@ -33,9 +31,6 @@ struct ScriptedEngine {
 impl TtsEngine for ScriptedEngine {
     fn engine_id(&self) -> &EngineId {
         &self.id
-    }
-    fn capabilities(&self) -> &EngineCapabilities {
-        &common::PLAIN_CAPABILITIES
     }
     async fn list_voices(&self) -> Result<Vec<TtsVoice>, TtsError> {
         Ok(self.voices.clone())

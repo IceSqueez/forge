@@ -11,6 +11,7 @@ mod error;
 mod handle;
 mod listener;
 mod media_type;
+mod minted_secret;
 mod origin;
 mod overlay_token;
 mod overlay_url;

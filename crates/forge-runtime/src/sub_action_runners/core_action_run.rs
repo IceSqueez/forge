@@ -6,14 +6,11 @@ use forge_registry::{
     SubActionRunner, ToggleField, TypedField,
 };
 use forge_storage::ActionRepo;
-use forge_types::{
-    Action, ActionId, ArgStack, ExecutionMode, SubActionConfig, SubActionOutcome, SubActionStep,
-    SubActionTelemetry,
-};
-use rand::RngExt;
+use forge_types::{ActionId, ArgStack, SubActionConfig, SubActionOutcome, SubActionTelemetry};
 
 use super::core_action_shared::ACTION;
 use super::core_logic_shared::cancelled_child;
+use crate::chain::pick_steps;
 use crate::core_messages;
 
 const INHERIT_ARGS: ToggleField = ToggleField {
@@ -81,14 +78,6 @@ impl CoreActionRunRunner {
             },
         }
     }
-}
-
-fn pick_steps(target: &Action) -> Vec<SubActionStep> {
-    if target.execution_mode == ExecutionMode::RandomPick && !target.sub_actions.is_empty() {
-        let idx = rand::rng().random_range(0..target.sub_actions.len());
-        return vec![target.sub_actions[idx].clone()];
-    }
-    target.sub_actions.clone()
 }
 
 #[async_trait]

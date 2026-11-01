@@ -1,7 +1,6 @@
-use std::io;
 use std::path::{Path, PathBuf};
 
-use crate::bundle::blocking::run_blocking;
+use crate::bundle::blocking::{discard_staging, stage_into};
 use crate::bundle::document_layout::PACK_LAYOUT;
 use crate::bundle::layout::ArchiveScope;
 use crate::bundle::manifest::ContentEntry;
@@ -62,13 +61,10 @@ pub fn pack_staging_root(data_dir: &Path) -> PathBuf {
 
 pub async fn stage_pack(bundle: PathBuf, data_dir: PathBuf) -> Result<StagedPack, TransferError> {
     let staging_dir = pack_staging_root(&data_dir).join(fresh_stem());
-    let target = staging_dir.clone();
-    let staged = run_blocking(bundle, move |bundle| stage(&bundle, &target)).await;
-    if staged.is_err()
-        && let Err(error) = tokio::fs::remove_dir_all(&staging_dir).await
-    {
-        tracing::warn!(%error, path = %staging_dir.display(), "pack staging could not be removed");
-    }
+    let staged = stage_into(&staging_dir, bundle, |bundle, target| {
+        stage(&bundle, target)
+    })
+    .await;
     staged.map(|(manifest, documents)| StagedPack {
         staging_dir,
         manifest,
@@ -77,10 +73,7 @@ pub async fn stage_pack(bundle: PathBuf, data_dir: PathBuf) -> Result<StagedPack
 }
 
 pub async fn discard_staged_pack(staged: StagedPack) -> Result<(), TransferError> {
-    match tokio::fs::remove_dir_all(&staged.staging_dir).await {
-        Err(e) if e.kind() != io::ErrorKind::NotFound => Err(e.into()),
-        _ => Ok(()),
-    }
+    discard_staging(staged.staging_dir).await
 }
 
 fn stage(

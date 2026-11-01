@@ -9,6 +9,7 @@ use time::OffsetDateTime;
 use crate::TypedEvent;
 
 pub const DONATION_RECEIVED_KIND: &str = "donation.received";
+pub const DONATION_PROVIDER_CONFIG_KEY: &str = "provider";
 
 #[derive(Clone, PartialEq, Serialize, Deserialize)]
 pub struct DonationReceived {

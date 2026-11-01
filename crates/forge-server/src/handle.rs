@@ -171,7 +171,7 @@ impl ServerHandle {
             .overlay_root
             .filter(|root| !root.is_empty())
             .map(PathBuf::from)
-            .unwrap_or_else(forge_paths::overlays_dir);
+            .unwrap_or_else(|| state.default_overlay_root.as_ref().clone());
 
         server::validate_lan_bind(&bind_addr, settings.lan_bind_enabled)?;
 
@@ -213,6 +213,7 @@ impl ServerHandle {
             action_engine: Arc::clone(&state.action_engine),
             audio_clips: Arc::clone(&state.audio_clips),
             overlay_root: Arc::new(overlay_root),
+            default_overlay_root: Arc::clone(&state.default_overlay_root),
             overlay_cors_any_origin: settings.overlay_cors_any_origin,
             bind_addr,
             allowed_origins,

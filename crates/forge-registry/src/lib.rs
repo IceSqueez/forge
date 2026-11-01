@@ -50,7 +50,7 @@ pub use condition_messages::{
     CONDITION_MESSAGES, any_condition, chat_command_condition, joined_condition,
 };
 pub use config_choice::ConfigChoice;
-pub use config_ext::SubActionConfigExt;
+pub use config_ext::{SubActionConfigExt, interpolated_text};
 pub use config_messages::{CONFIG_MESSAGES, invalid_id};
 pub use config_problem::{ConfigProblem, ConfigReason, ValueBounds};
 pub use declared_composite_fields::UnitAmountField;

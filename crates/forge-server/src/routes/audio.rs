@@ -261,7 +261,8 @@ mod tests {
 
         let state = AppState {
             settings: settings as Arc<dyn SettingsRepo>,
-            overlay_root: Arc::new(overlay_root),
+            overlay_root: Arc::new(overlay_root.clone()),
+            default_overlay_root: Arc::new(overlay_root),
             overlay_cors_any_origin,
             bind_addr: addr,
             allowed_origins: Arc::new(build_allowed_origins(addr, &[])),

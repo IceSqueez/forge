@@ -97,6 +97,7 @@ pub(crate) async fn build_server(
             user_globals,
             backend.overlay_repo(),
             Arc::new(action_engine.clone()),
+            forge_paths::overlays_dir(),
         );
         if let Some(bind_addr) = bind_addr {
             config.bind_addr = bind_addr;

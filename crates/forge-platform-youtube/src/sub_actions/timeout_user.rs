@@ -8,11 +8,11 @@ use forge_registry::{
 };
 use forge_types::{ArgStack, SubActionTelemetry};
 
-use super::display_name;
 use super::fields::CHANNEL_ID;
 use super::step_failure;
 use crate::moderation::YoutubeModeration;
 use crate::vocabulary::{config_keys, sub_action_ids};
+use forge_registry::interpolated_text;
 
 const MIN_TIMEOUT_SECONDS: i64 = 1;
 const MAX_TIMEOUT_SECONDS: i64 = 86_400;
@@ -91,7 +91,7 @@ impl SubActionRunner for TimeoutUserRunner {
             Err(problem) => return (timer.invalid_config(&problem), None),
         };
 
-        let display_name = display_name::resolve(config, ctx);
+        let display_name = interpolated_text(config, config_keys::DISPLAY_NAME, ctx);
         let outcome = step_failure::outcome(
             &self
                 .moderation

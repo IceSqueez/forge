@@ -82,7 +82,7 @@ impl SubActionRunner for LookupStreamStatsRunner {
                         variables::stream_stats::VIEWER_COUNT.to_owned(),
                         Variant::Int(i64::try_from(snapshot.viewer_count).unwrap_or(i64::MAX)),
                     );
-                if let Some(started) = crate::timestamp::variant(snapshot.started_at) {
+                if let Some(started) = forge_platform_core::timestamp_variant(snapshot.started_at) {
                     stack = stack.set(variables::stream_stats::STARTED_AT.to_owned(), started);
                 }
                 if let Some(category_id) = snapshot.category_id {
@@ -160,7 +160,7 @@ mod tests {
         );
         assert_eq!(
             produced.get("kick.stream.started_at"),
-            Some(&Variant::Datetime(crate::timestamp::tests::instant(
+            Some(&Variant::Datetime(forge_test_support::instant(
                 "2026-07-25T09:00:00Z"
             )))
         );

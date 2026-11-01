@@ -636,6 +636,7 @@ pub(crate) fn app_state_over(
         action_engine,
         audio_clips: AudioClipStore::new(),
         overlay_root: Arc::new(PathBuf::new()),
+        default_overlay_root: Arc::new(PathBuf::new()),
         overlay_cors_any_origin: true,
         bind_addr,
         timing: ServerTiming::default(),
@@ -663,6 +664,7 @@ pub(crate) fn server_config(
         Arc::clone(&dp) as Arc<dyn UserGlobalsRepo>,
         dp.overlay_repo(),
         action_engine,
+        PathBuf::new(),
     )
 }
 

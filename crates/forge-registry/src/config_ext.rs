@@ -4,6 +4,7 @@ use forge_types::{SubActionConfig, Variant};
 
 use crate::config_problem::ConfigReason;
 use crate::error::RegistryError;
+use crate::run_context::RunContext;
 
 pub trait SubActionConfigExt {
     fn str(&self, key: &str) -> Option<&str>;
@@ -80,11 +81,23 @@ impl SubActionConfigExt for SubActionConfig {
     }
 }
 
+pub fn interpolated_text(
+    config: &SubActionConfig,
+    key: &str,
+    ctx: &RunContext<'_>,
+) -> Option<String> {
+    config
+        .str(key)
+        .map(|template| ctx.arg_stack.interpolate(template).trim().to_owned())
+        .filter(|text| !text.is_empty())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
     use crate::config_problem::ConfigProblem;
-    use forge_types::Variant;
+    use forge_events::test_support::NullPublisher;
+    use forge_types::{ArgStack, EventId, Variant};
 
     fn cfg(value: Variant) -> SubActionConfig {
         let mut c = SubActionConfig::new();
@@ -188,5 +201,35 @@ mod tests {
                 .unwrap()
                 .is_empty()
         );
+    }
+
+    #[test]
+    fn interpolated_text_interpolates_trims_and_drops_blank_or_non_string_values() {
+        let stack = ArgStack::new()
+            .set(
+                "user_name".to_owned(),
+                Variant::String("  Alice ".to_owned()),
+            )
+            .set("blank".to_owned(), Variant::String("   ".to_owned()));
+        let ctx = RunContext::leaf(&stack, 0, EventId::new(), &NullPublisher);
+
+        for (config, expected) in [
+            (
+                cfg(Variant::String("%user_name%".to_owned())),
+                Some("Alice"),
+            ),
+            (cfg(Variant::String("  Олена  ".to_owned())), Some("Олена")),
+            (cfg(Variant::String("%blank%".to_owned())), None),
+            (cfg(Variant::String("   ".to_owned())), None),
+            (cfg(Variant::String(String::new())), None),
+            (cfg(Variant::Int(7)), None),
+            (SubActionConfig::new(), None),
+        ] {
+            assert_eq!(
+                interpolated_text(&config, "k", &ctx).as_deref(),
+                expected,
+                "config {config:?}"
+            );
+        }
     }
 }

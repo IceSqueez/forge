@@ -3,7 +3,7 @@ use time::OffsetDateTime;
 use time::PrimitiveDateTime;
 use time::format_description::well_known::Iso8601;
 
-pub(crate) fn parse(text: &str) -> Option<OffsetDateTime> {
+pub fn parse_timestamp(text: &str) -> Option<OffsetDateTime> {
     datetime_from_text(text).or_else(|| {
         PrimitiveDateTime::parse(text.trim(), &Iso8601::DEFAULT)
             .ok()
@@ -11,34 +11,36 @@ pub(crate) fn parse(text: &str) -> Option<OffsetDateTime> {
     })
 }
 
-pub(crate) fn parse_logged(text: &str) -> Option<OffsetDateTime> {
-    let parsed = parse(text);
+pub fn parse_timestamp_logged(platform: &str, text: &str) -> Option<OffsetDateTime> {
+    let parsed = parse_timestamp(text);
     if parsed.is_none() {
         tracing::debug!(
             len = text.len(),
-            "kick timestamp not parseable, variable omitted"
+            platform,
+            "timestamp not parseable, variable omitted"
         );
     }
     parsed
 }
 
-pub(crate) fn variant(value: Option<OffsetDateTime>) -> Option<Variant> {
+pub fn timestamp_variant(value: Option<OffsetDateTime>) -> Option<Variant> {
     value.map(Variant::Datetime)
 }
 
 #[cfg(test)]
-pub(crate) mod tests {
-    use super::*;
+mod tests {
     use std::io::Write;
     use std::sync::{Arc, Mutex};
     use time::format_description::well_known::Rfc3339;
 
-    pub(crate) fn instant(rfc3339: &str) -> OffsetDateTime {
+    use super::*;
+
+    fn instant(rfc3339: &str) -> OffsetDateTime {
         OffsetDateTime::parse(rfc3339, &Rfc3339).unwrap()
     }
 
     #[test]
-    fn a_kick_timestamp_becomes_the_instant_it_names() {
+    fn a_timestamp_becomes_the_instant_it_names() {
         for (text, expected) in [
             ("2026-06-13T18:00:00Z", "2026-06-13T18:00:00Z"),
             ("2026-06-13T21:00:00+03:00", "2026-06-13T18:00:00Z"),
@@ -50,7 +52,7 @@ pub(crate) mod tests {
             ("2026-06-13T18:00:00.5", "2026-06-13T18:00:00.5Z"),
             (" 2026-06-13T18:00:00Z ", "2026-06-13T18:00:00Z"),
         ] {
-            assert_eq!(parse(text), Some(instant(expected)), "{text:?}");
+            assert_eq!(parse_timestamp(text), Some(instant(expected)), "{text:?}");
         }
     }
 
@@ -64,7 +66,7 @@ pub(crate) mod tests {
             ("2026-13-40T00:00:00Z", "impossible date"),
             ("1781373600", "unix seconds as text"),
         ] {
-            assert_eq!(parse(text), None, "{what}");
+            assert_eq!(parse_timestamp(text), None, "{what}");
         }
     }
 
@@ -92,8 +94,9 @@ pub(crate) mod tests {
             .with_writer(move || writer.clone())
             .finish();
 
-        let parsed =
-            tracing::subscriber::with_default(subscriber, || parse_logged("viewer-typed-payload"));
+        let parsed = tracing::subscriber::with_default(subscriber, || {
+            parse_timestamp_logged("kick", "viewer-typed-payload")
+        });
 
         let log = String::from_utf8(captured.0.lock().unwrap().clone()).unwrap();
         assert_eq!(parsed, None);

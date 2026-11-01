@@ -272,7 +272,8 @@ mod tests {
         let base = app_state(auth, creds_dyn);
         let state = AppState {
             overlays: overlay_repo.unwrap_or_else(|| Arc::clone(&base.overlays)),
-            overlay_root: Arc::new(overlay_root),
+            overlay_root: Arc::new(overlay_root.clone()),
+            default_overlay_root: Arc::new(overlay_root),
             overlay_cors_any_origin,
             ..base
         };

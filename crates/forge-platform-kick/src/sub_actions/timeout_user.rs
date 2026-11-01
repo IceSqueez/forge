@@ -11,11 +11,11 @@ use forge_types::{ArgStack, SubActionOutcome, SubActionTelemetry};
 use futures::future::BoxFuture;
 
 use super::ban_reason::REASON;
-use super::display_name;
 use super::fields::USER_ID;
 use super::step_failure;
 use crate::api::moderation::{BanNote, BanSubject, KickModeration};
 use crate::vocabulary::{config_keys, sub_action_ids};
+use forge_registry::interpolated_text;
 
 const MIN_TIMEOUT_MINUTES: i64 = 1;
 const MAX_TIMEOUT_MINUTES: i64 = 10080;
@@ -121,7 +121,7 @@ impl SubActionRunner for TimeoutUserRunner {
             Ok(request) => request,
             Err(problem) => return (timer.invalid_config(&problem), None),
         };
-        let display_name = display_name::resolve(config, ctx);
+        let display_name = interpolated_text(config, config_keys::DISPLAY_NAME, ctx);
 
         let outcome = match (self.token_source)().await {
             Err(e) => SubActionOutcome::Failed(step_failure::token_failed(&e)),

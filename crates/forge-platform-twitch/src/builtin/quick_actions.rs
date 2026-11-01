@@ -96,33 +96,6 @@ impl Group {
     }
 }
 
-#[expect(
-    clippy::too_many_arguments,
-    reason = "each argument is one field of the quick-action template"
-)]
-fn quick_action(
-    label: MessageCode,
-    icon: &str,
-    accent: QuickActionAccent,
-    enabled: bool,
-    locked_reason: Option<UserText>,
-    group: Group,
-    destructive: bool,
-    kind_id: &str,
-    config: BTreeMap<String, Variant>,
-    fields: Vec<QuickActionField>,
-) -> QuickAction {
-    QuickAction {
-        locked_reason,
-        ..QuickAction::new(label, icon, accent, kind_id)
-            .enabled_if(enabled)
-            .in_group(group.badge())
-            .destructive_if(destructive)
-            .with_config(config)
-            .with_fields(fields)
-    }
-}
-
 fn manage_collection_action(
     label: MessageCode,
     icon: &str,
@@ -133,18 +106,9 @@ fn manage_collection_action(
 ) -> QuickAction {
     QuickAction {
         collection: Some(collection),
-        ..quick_action(
-            label,
-            icon,
-            accent,
-            enabled,
-            None,
-            group,
-            false,
-            "",
-            BTreeMap::new(),
-            Vec::new(),
-        )
+        ..QuickAction::new(label, icon, accent, "")
+            .in_group(group.badge())
+            .enabled_if(enabled)
     }
 }
 
@@ -200,20 +164,527 @@ fn shield_mode_toggle(connected: bool, phase: ShieldPhase) -> QuickAction {
     };
     let unauthorized = phase == ShieldPhase::Unauthorized;
     gated_on(
-        quick_action(
-            label,
-            icon,
-            QuickActionAccent::Brand,
-            connected && !unauthorized,
-            unauthorized.then(|| labels::SHIELD_SCOPE_MISSING.into()),
-            Group::Moderation,
-            false,
-            kind_id,
-            BTreeMap::new(),
-            Vec::new(),
-        ),
+        QuickAction::new(label, icon, QuickActionAccent::Brand, kind_id)
+            .in_group(Group::Moderation.badge())
+            .enabled_if(connected && !unauthorized)
+            .locked_because(unauthorized.then(|| labels::SHIELD_SCOPE_MISSING.into())),
         liveness,
     )
+}
+
+struct Availability {
+    connected: bool,
+    tier_locked: bool,
+    locked_reason: Option<UserText>,
+    gated: bool,
+    live: LifecycleSnapshot,
+    shield_phase: ShieldPhase,
+}
+
+fn stream_info_actions(ctx: &Availability) -> Vec<QuickAction> {
+    vec![
+        QuickAction::new(
+            labels::UPDATE_TITLE,
+            "edit",
+            QuickActionAccent::Info,
+            sub_action_ids::CHANNEL_UPDATE_TITLE,
+        )
+        .in_group(Group::StreamInfo.badge())
+        .enabled_if(ctx.connected)
+        .with_fields(vec![
+            QuickActionField::text(config_keys::TITLE, labels::STREAM_TITLE)
+                .with_placeholder(labels::STREAM_TITLE)
+                .required(),
+        ]),
+        QuickAction::new(
+            labels::SET_CATEGORY_GAME,
+            "device-gamepad-2",
+            QuickActionAccent::Brand,
+            sub_action_ids::CHANNEL_UPDATE_CATEGORY,
+        )
+        .in_group(Group::StreamInfo.badge())
+        .enabled_if(ctx.connected)
+        .with_fields(vec![
+            QuickActionField::text(config_keys::CATEGORY_NAME, labels::CATEGORY)
+                .with_placeholder(labels::CATEGORY_EXAMPLE)
+                .required(),
+        ]),
+        QuickAction::new(
+            labels::UPDATE_TAGS,
+            "tags",
+            QuickActionAccent::Success,
+            sub_action_ids::CHANNEL_UPDATE_TAGS,
+        )
+        .in_group(Group::StreamInfo.badge())
+        .enabled_if(ctx.connected)
+        .with_fields(vec![
+            QuickActionField::text(config_keys::TAGS, labels::TAGS_COMMA_SEP)
+                .with_placeholder(labels::TAGS_EXAMPLE),
+        ]),
+        QuickAction::new(
+            labels::CREATE_STREAM_MARKER,
+            "bookmark",
+            QuickActionAccent::Bits,
+            sub_action_ids::CHANNEL_CREATE_MARKER,
+        )
+        .in_group(Group::StreamInfo.badge())
+        .enabled_if(ctx.connected)
+        .with_fields(vec![
+            QuickActionField::text(config_keys::DESCRIPTION, labels::MARKER_NOTE)
+                .with_placeholder(labels::OPTIONAL),
+        ]),
+    ]
+}
+
+fn poll_actions(ctx: &Availability) -> Vec<QuickAction> {
+    vec![
+        gated_on(
+            QuickAction::new(
+                labels::START_POLL,
+                "chart-bar",
+                QuickActionAccent::Brand,
+                sub_action_ids::POLL_START,
+            )
+            .in_group(Group::Polls.badge())
+            .enabled_if(ctx.gated)
+            .locked_because(ctx.locked_reason.clone())
+            .with_fields(vec![
+                QuickActionField::text(config_keys::TITLE, labels::QUESTION)
+                    .with_placeholder(labels::POLL_QUESTION)
+                    .required(),
+                QuickActionField::multiline(config_keys::CHOICES, labels::CHOICES_ONE_PER_LINE)
+                    .with_placeholder(labels::ONE_CHOICE_PER_LINE)
+                    .required(),
+                QuickActionField::toggle(
+                    config_keys::CHANNEL_POINTS_VOTING_ENABLED,
+                    labels::CHANNEL_POINTS_VOTING,
+                    false,
+                ),
+                duration_field(
+                    &POLL_DURATION,
+                    labels::DURATION_SECONDS,
+                    POLL_DURATION.default,
+                ),
+            ]),
+            ctx.live.poll_slot_free(),
+        ),
+        gated_on(
+            QuickAction::new(
+                labels::END_POLL_NOW,
+                "player-stop",
+                QuickActionAccent::Warning,
+                sub_action_ids::POLL_END,
+            )
+            .in_group(Group::Polls.badge())
+            .enabled_if(ctx.gated)
+            .locked_because(ctx.locked_reason.clone())
+            .with_fields(vec![active_poll_field()]),
+            ctx.live.poll_in_flight(),
+        ),
+        gated_on(
+            QuickAction::new(
+                labels::CANCEL_POLL,
+                "x",
+                QuickActionAccent::Danger,
+                sub_action_ids::POLL_END,
+            )
+            .in_group(Group::Polls.badge())
+            .enabled_if(ctx.gated)
+            .locked_because(ctx.locked_reason.clone())
+            .destructive()
+            .with_config(config([(
+                config_keys::STATUS,
+                choice(PollEndStatus::Archived),
+            )]))
+            .with_fields(vec![active_poll_field()]),
+            ctx.live.poll_in_flight(),
+        ),
+    ]
+}
+
+fn prediction_actions(ctx: &Availability) -> Vec<QuickAction> {
+    vec![
+        gated_on(
+            QuickAction::new(
+                labels::START_PREDICTION,
+                "crystal-ball",
+                QuickActionAccent::AccentPinkLight,
+                sub_action_ids::PREDICTION_START,
+            )
+            .in_group(Group::Predictions.badge())
+            .enabled_if(ctx.gated)
+            .locked_because(ctx.locked_reason.clone())
+            .with_fields(vec![
+                QuickActionField::text(config_keys::TITLE, labels::TITLE)
+                    .with_placeholder(labels::PREDICTION_QUESTION)
+                    .required(),
+                QuickActionField::multiline(config_keys::OUTCOMES, labels::OUTCOMES_ONE_PER_LINE)
+                    .with_placeholder(labels::ONE_OUTCOME_PER_LINE)
+                    .required(),
+                duration_field(
+                    &PREDICTION_WINDOW,
+                    labels::WINDOW_SECONDS,
+                    PREDICTION_WINDOW.default,
+                ),
+            ]),
+            ctx.live.prediction_slot_free(),
+        ),
+        gated_on(
+            QuickAction::new(
+                labels::LOCK_PREDICTION,
+                "lock",
+                QuickActionAccent::Warning,
+                sub_action_ids::PREDICTION_LOCK,
+            )
+            .in_group(Group::Predictions.badge())
+            .enabled_if(ctx.gated)
+            .locked_because(ctx.locked_reason.clone())
+            .with_fields(vec![prediction_field(LOCKABLE_PREDICTION_LIST)]),
+            ctx.live.prediction_lockable(),
+        ),
+        gated_on(
+            QuickAction::new(
+                labels::RESOLVE_PAY_OUT,
+                "trophy",
+                QuickActionAccent::Success,
+                sub_action_ids::PREDICTION_RESOLVE,
+            )
+            .in_group(Group::Predictions.badge())
+            .enabled_if(ctx.gated)
+            .locked_because(ctx.locked_reason.clone())
+            .with_fields(vec![
+                prediction_field(OPEN_PREDICTION_LIST),
+                winning_outcome_field(),
+            ]),
+            ctx.live.prediction_settleable(),
+        ),
+        gated_on(
+            QuickAction::new(
+                labels::CANCEL_REFUND,
+                "x",
+                QuickActionAccent::Danger,
+                sub_action_ids::PREDICTION_CANCEL,
+            )
+            .in_group(Group::Predictions.badge())
+            .enabled_if(ctx.gated)
+            .locked_because(ctx.locked_reason.clone())
+            .destructive()
+            .with_fields(vec![prediction_field(OPEN_PREDICTION_LIST)]),
+            ctx.live.prediction_settleable(),
+        ),
+    ]
+}
+
+fn chat_actions(ctx: &Availability) -> Vec<QuickAction> {
+    vec![
+        QuickAction::new(
+            labels::SEND_MESSAGE,
+            "send",
+            QuickActionAccent::Brand,
+            SEND_MESSAGE_KIND_ID,
+        )
+        .in_group(Group::Chat.badge())
+        .enabled_if(ctx.connected)
+        .with_config(config([
+            (config_keys::MESSAGE, blank()),
+            (
+                SEND_MESSAGE_TARGET_KEY,
+                Variant::String(vocabulary::PLATFORM_ID.to_owned()),
+            ),
+        ]))
+        .with_fields(vec![
+            QuickActionField::multiline(config_keys::MESSAGE, labels::MESSAGE)
+                .with_placeholder(labels::MESSAGE)
+                .required(),
+        ]),
+        QuickAction::new(
+            labels::ANNOUNCEMENT,
+            "speakerphone",
+            QuickActionAccent::Warning,
+            sub_action_ids::CHAT_SEND_ANNOUNCEMENT,
+        )
+        .in_group(Group::Chat.badge())
+        .enabled_if(ctx.connected)
+        .with_fields(vec![
+            QuickActionField::multiline(config_keys::MESSAGE, labels::ANNOUNCEMENT)
+                .with_placeholder(labels::ANNOUNCEMENT_TEXT)
+                .required(),
+            QuickActionField::static_choice(
+                ANNOUNCEMENT_COLOR.key,
+                labels::COLOR,
+                default_choice(&ANNOUNCEMENT_COLOR),
+                &choice_options(AnnouncementColor::label),
+            ),
+        ]),
+        QuickAction::new(
+            labels::CLEAR_CHAT,
+            "message-off",
+            QuickActionAccent::Danger,
+            sub_action_ids::CHAT_CLEAR,
+        )
+        .in_group(Group::Chat.badge())
+        .enabled_if(ctx.connected)
+        .destructive(),
+        QuickAction::new(
+            labels::SLOW_MODE,
+            "clock-hour-4",
+            QuickActionAccent::Info,
+            sub_action_ids::CHAT_SET_MODE,
+        )
+        .in_group(Group::Chat.badge())
+        .enabled_if(ctx.connected)
+        .with_config(config([(config_keys::SLOW_MODE, choice(ModeToggle::On))]))
+        .with_fields(vec![duration_field(
+            &SLOW_MODE_WAIT,
+            labels::WAIT_TIME_SECONDS,
+            QUICK_SLOW_MODE_WAIT_SECONDS,
+        )]),
+        QuickAction::new(
+            labels::FOLLOWERS_ONLY_MODE,
+            "user-check",
+            QuickActionAccent::Success,
+            sub_action_ids::CHAT_SET_MODE,
+        )
+        .in_group(Group::Chat.badge())
+        .enabled_if(ctx.connected)
+        .with_config(config([(
+            config_keys::FOLLOWER_MODE,
+            choice(ModeToggle::On),
+        )]))
+        .with_fields(vec![duration_field(
+            &FOLLOWER_MODE_MIN_AGE,
+            labels::MIN_ACCOUNT_AGE,
+            QUICK_FOLLOWER_MIN_MINUTES,
+        )]),
+        QuickAction::new(
+            labels::EMOTE_ONLY_MODE,
+            "mood-smile",
+            QuickActionAccent::Bits,
+            sub_action_ids::CHAT_SET_MODE,
+        )
+        .in_group(Group::Chat.badge())
+        .enabled_if(ctx.connected)
+        .with_fields(vec![QuickActionField::static_choice(
+            EMOTE_ONLY.key,
+            labels::EMOTE_ONLY_MODE,
+            ModeToggle::On.wire_name(),
+            &choice_options(ModeToggle::label),
+        )]),
+    ]
+}
+
+fn moderation_actions(ctx: &Availability) -> Vec<QuickAction> {
+    vec![
+        QuickAction::new(
+            labels::TIMEOUT_USER,
+            "clock-pause",
+            QuickActionAccent::Warning,
+            sub_action_ids::MODERATION_TIMEOUT_USER,
+        )
+        .in_group(Group::Moderation.badge())
+        .enabled_if(ctx.connected)
+        .with_fields(vec![
+            QuickActionField::text(config_keys::TARGET_USER_LOGIN, labels::USERNAME)
+                .with_placeholder(labels::USERNAME_PLACEHOLDER)
+                .required(),
+            duration_field(
+                &TIMEOUT_DURATION,
+                labels::DURATION_SECONDS,
+                TIMEOUT_DURATION.default,
+            ),
+            QuickActionField::text(config_keys::REASON, labels::REASON)
+                .with_placeholder(labels::OPTIONAL),
+        ]),
+        QuickAction::new(
+            labels::BAN_USER,
+            "ban",
+            QuickActionAccent::Danger,
+            sub_action_ids::MODERATION_BAN_USER,
+        )
+        .in_group(Group::Moderation.badge())
+        .enabled_if(ctx.connected)
+        .destructive()
+        .with_fields(vec![
+            QuickActionField::text(config_keys::TARGET_USER_LOGIN, labels::USERNAME)
+                .with_placeholder(labels::USERNAME_PLACEHOLDER)
+                .required(),
+            QuickActionField::text(config_keys::REASON, labels::REASON)
+                .with_placeholder(labels::OPTIONAL),
+        ]),
+        QuickAction::new(
+            labels::UNBAN_USER,
+            "lock-open",
+            QuickActionAccent::Success,
+            sub_action_ids::MODERATION_UNBAN_USER,
+        )
+        .in_group(Group::Moderation.badge())
+        .enabled_if(ctx.connected)
+        .with_fields(vec![
+            QuickActionField::text(config_keys::TARGET_USER_LOGIN, labels::USERNAME)
+                .with_placeholder(labels::USERNAME_PLACEHOLDER)
+                .required(),
+        ]),
+        shield_mode_toggle(ctx.connected, ctx.shield_phase),
+        QuickAction::new(
+            labels::ADD_VIP,
+            "star",
+            QuickActionAccent::Warning,
+            sub_action_ids::MODERATION_ADD_VIP,
+        )
+        .in_group(Group::Moderation.badge())
+        .enabled_if(ctx.connected)
+        .with_fields(vec![
+            QuickActionField::text(config_keys::TARGET_USER_LOGIN, labels::USERNAME)
+                .with_placeholder(labels::USERNAME_PLACEHOLDER)
+                .required(),
+        ]),
+        QuickAction::new(
+            labels::REMOVE_VIP,
+            "star",
+            QuickActionAccent::Danger,
+            sub_action_ids::MODERATION_REMOVE_VIP,
+        )
+        .in_group(Group::Moderation.badge())
+        .enabled_if(ctx.connected)
+        .destructive()
+        .with_fields(vec![
+            QuickActionField::text(config_keys::TARGET_USER_LOGIN, labels::USERNAME)
+                .with_placeholder(labels::USERNAME_PLACEHOLDER)
+                .required(),
+        ]),
+        QuickAction::new(
+            labels::ADD_MOD,
+            "sword",
+            QuickActionAccent::Info,
+            sub_action_ids::MODERATION_ADD_MODERATOR,
+        )
+        .in_group(Group::Moderation.badge())
+        .enabled_if(ctx.connected)
+        .with_fields(vec![
+            QuickActionField::text(config_keys::TARGET_USER_LOGIN, labels::USERNAME)
+                .with_placeholder(labels::USERNAME_PLACEHOLDER)
+                .required(),
+        ]),
+        QuickAction::new(
+            labels::REMOVE_MOD,
+            "sword",
+            QuickActionAccent::Danger,
+            sub_action_ids::MODERATION_REMOVE_MODERATOR,
+        )
+        .in_group(Group::Moderation.badge())
+        .enabled_if(ctx.connected)
+        .destructive()
+        .with_fields(vec![
+            QuickActionField::text(config_keys::TARGET_USER_LOGIN, labels::USERNAME)
+                .with_placeholder(labels::USERNAME_PLACEHOLDER)
+                .required(),
+        ]),
+    ]
+}
+
+fn raid_and_ad_actions(ctx: &Availability) -> Vec<QuickAction> {
+    vec![
+        gated_on(
+            QuickAction::new(
+                labels::START_RAID,
+                "flag",
+                QuickActionAccent::Bits,
+                sub_action_ids::CHANNEL_START_RAID,
+            )
+            .in_group(Group::RaidsAds.badge())
+            .enabled_if(ctx.connected)
+            .with_fields(vec![
+                QuickActionField::text(config_keys::TO_BROADCASTER_LOGIN, labels::RAID_TARGET)
+                    .with_placeholder(labels::CHANNEL_NAME)
+                    .required(),
+            ]),
+            ctx.live.raid_slot_free(),
+        ),
+        gated_on(
+            QuickAction::new(
+                labels::CANCEL_RAID,
+                "flag-off",
+                QuickActionAccent::Danger,
+                sub_action_ids::CHANNEL_CANCEL_RAID,
+            )
+            .in_group(Group::RaidsAds.badge())
+            .enabled_if(ctx.connected)
+            .destructive(),
+            ctx.live.raid_in_flight(),
+        ),
+        QuickAction::new(
+            labels::SEND_SHOUTOUT,
+            "speakerphone",
+            QuickActionAccent::Warning,
+            sub_action_ids::CHANNEL_SEND_SHOUTOUT,
+        )
+        .in_group(Group::RaidsAds.badge())
+        .enabled_if(ctx.connected)
+        .with_fields(vec![
+            QuickActionField::text(config_keys::TO_BROADCASTER_LOGIN, labels::CHANNEL)
+                .with_placeholder(labels::CHANNEL_NAME)
+                .required(),
+        ]),
+        QuickAction::new(
+            labels::RUN_COMMERCIAL,
+            "clock",
+            QuickActionAccent::Info,
+            sub_action_ids::CHANNEL_RUN_AD,
+        )
+        .in_group(Group::RaidsAds.badge())
+        .enabled_if(ctx.connected && !ctx.tier_locked)
+        .locked_because(ctx.locked_reason.clone())
+        .with_fields(vec![
+            QuickActionField::static_choice(
+                AD_LENGTH.key,
+                labels::DURATION,
+                QUICK_AD_LENGTH.wire_name(),
+                &choice_options(AdLength::label),
+            )
+            .with_hint(labels::AD_COOLDOWN_HINT)
+            .required(),
+        ]),
+        QuickAction::new(
+            labels::SNOOZE_NEXT_AD,
+            "player-skip-forward",
+            QuickActionAccent::Success,
+            sub_action_ids::CHANNEL_SNOOZE_AD,
+        )
+        .in_group(Group::RaidsAds.badge())
+        .enabled_if(ctx.connected),
+    ]
+}
+
+fn channel_point_actions(ctx: &Availability) -> Vec<QuickAction> {
+    vec![
+        manage_collection_action(
+            labels::MANAGE_REWARDS,
+            "adjustments",
+            QuickActionAccent::AccentPinkLight,
+            ctx.connected,
+            Group::ChannelPoints,
+            CollectionId::new(REWARDS_COLLECTION),
+        ),
+        QuickAction::new(
+            labels::FULFILL_REDEMPTION,
+            "check",
+            QuickActionAccent::Success,
+            sub_action_ids::CHANNEL_POINTS_FULFILL_REDEMPTION,
+        )
+        .in_group(Group::ChannelPoints.badge())
+        .enabled_if(ctx.connected)
+        .with_fields(redemption_fields()),
+        QuickAction::new(
+            labels::REJECT_REFUND,
+            "x",
+            QuickActionAccent::Danger,
+            sub_action_ids::CHANNEL_POINTS_CANCEL_REDEMPTION,
+        )
+        .in_group(Group::ChannelPoints.badge())
+        .enabled_if(ctx.connected)
+        .destructive()
+        .with_fields(redemption_fields()),
+    ]
 }
 
 impl QuickActions for TwitchIntegrationBundle {
@@ -222,564 +693,26 @@ impl QuickActions for TwitchIntegrationBundle {
     }
 
     fn actions(&self) -> Vec<QuickAction> {
-        let connected = self.is_chat_connected();
         let tier_locked = self.tier() == BroadcasterTier::Standard;
-        let locked_reason = tier_locked.then(|| labels::TIER_LOCKED.into());
-        let gated = connected && !tier_locked;
-        let live: LifecycleSnapshot = self.lifecycle.snapshot();
-
-        vec![
-            quick_action(
-                labels::UPDATE_TITLE,
-                "edit",
-                QuickActionAccent::Info,
-                connected,
-                None,
-                Group::StreamInfo,
-                false,
-                sub_action_ids::CHANNEL_UPDATE_TITLE,
-                BTreeMap::new(),
-                vec![
-                    QuickActionField::text(config_keys::TITLE, labels::STREAM_TITLE)
-                        .with_placeholder(labels::STREAM_TITLE)
-                        .required(),
-                ],
-            ),
-            quick_action(
-                labels::SET_CATEGORY_GAME,
-                "device-gamepad-2",
-                QuickActionAccent::Brand,
-                connected,
-                None,
-                Group::StreamInfo,
-                false,
-                sub_action_ids::CHANNEL_UPDATE_CATEGORY,
-                BTreeMap::new(),
-                vec![
-                    QuickActionField::text(config_keys::CATEGORY_NAME, labels::CATEGORY)
-                        .with_placeholder(labels::CATEGORY_EXAMPLE)
-                        .required(),
-                ],
-            ),
-            quick_action(
-                labels::UPDATE_TAGS,
-                "tags",
-                QuickActionAccent::Success,
-                connected,
-                None,
-                Group::StreamInfo,
-                false,
-                sub_action_ids::CHANNEL_UPDATE_TAGS,
-                BTreeMap::new(),
-                vec![
-                    QuickActionField::text(config_keys::TAGS, labels::TAGS_COMMA_SEP)
-                        .with_placeholder(labels::TAGS_EXAMPLE),
-                ],
-            ),
-            quick_action(
-                labels::CREATE_STREAM_MARKER,
-                "bookmark",
-                QuickActionAccent::Bits,
-                connected,
-                None,
-                Group::StreamInfo,
-                false,
-                sub_action_ids::CHANNEL_CREATE_MARKER,
-                BTreeMap::new(),
-                vec![
-                    QuickActionField::text(config_keys::DESCRIPTION, labels::MARKER_NOTE)
-                        .with_placeholder(labels::OPTIONAL),
-                ],
-            ),
-            gated_on(
-                quick_action(
-                    labels::START_POLL,
-                    "chart-bar",
-                    QuickActionAccent::Brand,
-                    gated,
-                    locked_reason.clone(),
-                    Group::Polls,
-                    false,
-                    sub_action_ids::POLL_START,
-                    BTreeMap::new(),
-                    vec![
-                        QuickActionField::text(config_keys::TITLE, labels::QUESTION)
-                            .with_placeholder(labels::POLL_QUESTION)
-                            .required(),
-                        QuickActionField::multiline(
-                            config_keys::CHOICES,
-                            labels::CHOICES_ONE_PER_LINE,
-                        )
-                        .with_placeholder(labels::ONE_CHOICE_PER_LINE)
-                        .required(),
-                        QuickActionField::toggle(
-                            config_keys::CHANNEL_POINTS_VOTING_ENABLED,
-                            labels::CHANNEL_POINTS_VOTING,
-                            false,
-                        ),
-                        duration_field(
-                            &POLL_DURATION,
-                            labels::DURATION_SECONDS,
-                            POLL_DURATION.default,
-                        ),
-                    ],
-                ),
-                live.poll_slot_free(),
-            ),
-            gated_on(
-                quick_action(
-                    labels::END_POLL_NOW,
-                    "player-stop",
-                    QuickActionAccent::Warning,
-                    gated,
-                    locked_reason.clone(),
-                    Group::Polls,
-                    false,
-                    sub_action_ids::POLL_END,
-                    BTreeMap::new(),
-                    vec![active_poll_field()],
-                ),
-                live.poll_in_flight(),
-            ),
-            gated_on(
-                quick_action(
-                    labels::CANCEL_POLL,
-                    "x",
-                    QuickActionAccent::Danger,
-                    gated,
-                    locked_reason.clone(),
-                    Group::Polls,
-                    true,
-                    sub_action_ids::POLL_END,
-                    config([(config_keys::STATUS, choice(PollEndStatus::Archived))]),
-                    vec![active_poll_field()],
-                ),
-                live.poll_in_flight(),
-            ),
-            gated_on(
-                quick_action(
-                    labels::START_PREDICTION,
-                    "crystal-ball",
-                    QuickActionAccent::AccentPinkLight,
-                    gated,
-                    locked_reason.clone(),
-                    Group::Predictions,
-                    false,
-                    sub_action_ids::PREDICTION_START,
-                    BTreeMap::new(),
-                    vec![
-                        QuickActionField::text(config_keys::TITLE, labels::TITLE)
-                            .with_placeholder(labels::PREDICTION_QUESTION)
-                            .required(),
-                        QuickActionField::multiline(
-                            config_keys::OUTCOMES,
-                            labels::OUTCOMES_ONE_PER_LINE,
-                        )
-                        .with_placeholder(labels::ONE_OUTCOME_PER_LINE)
-                        .required(),
-                        duration_field(
-                            &PREDICTION_WINDOW,
-                            labels::WINDOW_SECONDS,
-                            PREDICTION_WINDOW.default,
-                        ),
-                    ],
-                ),
-                live.prediction_slot_free(),
-            ),
-            gated_on(
-                quick_action(
-                    labels::LOCK_PREDICTION,
-                    "lock",
-                    QuickActionAccent::Warning,
-                    gated,
-                    locked_reason.clone(),
-                    Group::Predictions,
-                    false,
-                    sub_action_ids::PREDICTION_LOCK,
-                    BTreeMap::new(),
-                    vec![prediction_field(LOCKABLE_PREDICTION_LIST)],
-                ),
-                live.prediction_lockable(),
-            ),
-            gated_on(
-                quick_action(
-                    labels::RESOLVE_PAY_OUT,
-                    "trophy",
-                    QuickActionAccent::Success,
-                    gated,
-                    locked_reason.clone(),
-                    Group::Predictions,
-                    false,
-                    sub_action_ids::PREDICTION_RESOLVE,
-                    BTreeMap::new(),
-                    vec![
-                        prediction_field(OPEN_PREDICTION_LIST),
-                        winning_outcome_field(),
-                    ],
-                ),
-                live.prediction_settleable(),
-            ),
-            gated_on(
-                quick_action(
-                    labels::CANCEL_REFUND,
-                    "x",
-                    QuickActionAccent::Danger,
-                    gated,
-                    locked_reason.clone(),
-                    Group::Predictions,
-                    true,
-                    sub_action_ids::PREDICTION_CANCEL,
-                    BTreeMap::new(),
-                    vec![prediction_field(OPEN_PREDICTION_LIST)],
-                ),
-                live.prediction_settleable(),
-            ),
-            quick_action(
-                labels::SEND_MESSAGE,
-                "send",
-                QuickActionAccent::Brand,
-                connected,
-                None,
-                Group::Chat,
-                false,
-                SEND_MESSAGE_KIND_ID,
-                config([
-                    (config_keys::MESSAGE, blank()),
-                    (
-                        SEND_MESSAGE_TARGET_KEY,
-                        Variant::String(vocabulary::PLATFORM_ID.to_owned()),
-                    ),
-                ]),
-                vec![
-                    QuickActionField::multiline(config_keys::MESSAGE, labels::MESSAGE)
-                        .with_placeholder(labels::MESSAGE)
-                        .required(),
-                ],
-            ),
-            quick_action(
-                labels::ANNOUNCEMENT,
-                "speakerphone",
-                QuickActionAccent::Warning,
-                connected,
-                None,
-                Group::Chat,
-                false,
-                sub_action_ids::CHAT_SEND_ANNOUNCEMENT,
-                BTreeMap::new(),
-                vec![
-                    QuickActionField::multiline(config_keys::MESSAGE, labels::ANNOUNCEMENT)
-                        .with_placeholder(labels::ANNOUNCEMENT_TEXT)
-                        .required(),
-                    QuickActionField::static_choice(
-                        ANNOUNCEMENT_COLOR.key,
-                        labels::COLOR,
-                        default_choice(&ANNOUNCEMENT_COLOR),
-                        &choice_options(AnnouncementColor::label),
-                    ),
-                ],
-            ),
-            quick_action(
-                labels::CLEAR_CHAT,
-                "message-off",
-                QuickActionAccent::Danger,
-                connected,
-                None,
-                Group::Chat,
-                true,
-                sub_action_ids::CHAT_CLEAR,
-                BTreeMap::new(),
-                Vec::new(),
-            ),
-            quick_action(
-                labels::SLOW_MODE,
-                "clock-hour-4",
-                QuickActionAccent::Info,
-                connected,
-                None,
-                Group::Chat,
-                false,
-                sub_action_ids::CHAT_SET_MODE,
-                config([(config_keys::SLOW_MODE, choice(ModeToggle::On))]),
-                vec![duration_field(
-                    &SLOW_MODE_WAIT,
-                    labels::WAIT_TIME_SECONDS,
-                    QUICK_SLOW_MODE_WAIT_SECONDS,
-                )],
-            ),
-            quick_action(
-                labels::FOLLOWERS_ONLY_MODE,
-                "user-check",
-                QuickActionAccent::Success,
-                connected,
-                None,
-                Group::Chat,
-                false,
-                sub_action_ids::CHAT_SET_MODE,
-                config([(config_keys::FOLLOWER_MODE, choice(ModeToggle::On))]),
-                vec![duration_field(
-                    &FOLLOWER_MODE_MIN_AGE,
-                    labels::MIN_ACCOUNT_AGE,
-                    QUICK_FOLLOWER_MIN_MINUTES,
-                )],
-            ),
-            quick_action(
-                labels::EMOTE_ONLY_MODE,
-                "mood-smile",
-                QuickActionAccent::Bits,
-                connected,
-                None,
-                Group::Chat,
-                false,
-                sub_action_ids::CHAT_SET_MODE,
-                BTreeMap::new(),
-                vec![QuickActionField::static_choice(
-                    EMOTE_ONLY.key,
-                    labels::EMOTE_ONLY_MODE,
-                    ModeToggle::On.wire_name(),
-                    &choice_options(ModeToggle::label),
-                )],
-            ),
-            quick_action(
-                labels::TIMEOUT_USER,
-                "clock-pause",
-                QuickActionAccent::Warning,
-                connected,
-                None,
-                Group::Moderation,
-                false,
-                sub_action_ids::MODERATION_TIMEOUT_USER,
-                BTreeMap::new(),
-                vec![
-                    QuickActionField::text(config_keys::TARGET_USER_LOGIN, labels::USERNAME)
-                        .with_placeholder(labels::USERNAME_PLACEHOLDER)
-                        .required(),
-                    duration_field(
-                        &TIMEOUT_DURATION,
-                        labels::DURATION_SECONDS,
-                        TIMEOUT_DURATION.default,
-                    ),
-                    QuickActionField::text(config_keys::REASON, labels::REASON)
-                        .with_placeholder(labels::OPTIONAL),
-                ],
-            ),
-            quick_action(
-                labels::BAN_USER,
-                "ban",
-                QuickActionAccent::Danger,
-                connected,
-                None,
-                Group::Moderation,
-                true,
-                sub_action_ids::MODERATION_BAN_USER,
-                BTreeMap::new(),
-                vec![
-                    QuickActionField::text(config_keys::TARGET_USER_LOGIN, labels::USERNAME)
-                        .with_placeholder(labels::USERNAME_PLACEHOLDER)
-                        .required(),
-                    QuickActionField::text(config_keys::REASON, labels::REASON)
-                        .with_placeholder(labels::OPTIONAL),
-                ],
-            ),
-            quick_action(
-                labels::UNBAN_USER,
-                "lock-open",
-                QuickActionAccent::Success,
-                connected,
-                None,
-                Group::Moderation,
-                false,
-                sub_action_ids::MODERATION_UNBAN_USER,
-                BTreeMap::new(),
-                vec![
-                    QuickActionField::text(config_keys::TARGET_USER_LOGIN, labels::USERNAME)
-                        .with_placeholder(labels::USERNAME_PLACEHOLDER)
-                        .required(),
-                ],
-            ),
-            shield_mode_toggle(connected, self.lifecycle.shield_phase()),
-            quick_action(
-                labels::ADD_VIP,
-                "star",
-                QuickActionAccent::Warning,
-                connected,
-                None,
-                Group::Moderation,
-                false,
-                sub_action_ids::MODERATION_ADD_VIP,
-                BTreeMap::new(),
-                vec![
-                    QuickActionField::text(config_keys::TARGET_USER_LOGIN, labels::USERNAME)
-                        .with_placeholder(labels::USERNAME_PLACEHOLDER)
-                        .required(),
-                ],
-            ),
-            quick_action(
-                labels::REMOVE_VIP,
-                "star",
-                QuickActionAccent::Danger,
-                connected,
-                None,
-                Group::Moderation,
-                true,
-                sub_action_ids::MODERATION_REMOVE_VIP,
-                BTreeMap::new(),
-                vec![
-                    QuickActionField::text(config_keys::TARGET_USER_LOGIN, labels::USERNAME)
-                        .with_placeholder(labels::USERNAME_PLACEHOLDER)
-                        .required(),
-                ],
-            ),
-            quick_action(
-                labels::ADD_MOD,
-                "sword",
-                QuickActionAccent::Info,
-                connected,
-                None,
-                Group::Moderation,
-                false,
-                sub_action_ids::MODERATION_ADD_MODERATOR,
-                BTreeMap::new(),
-                vec![
-                    QuickActionField::text(config_keys::TARGET_USER_LOGIN, labels::USERNAME)
-                        .with_placeholder(labels::USERNAME_PLACEHOLDER)
-                        .required(),
-                ],
-            ),
-            quick_action(
-                labels::REMOVE_MOD,
-                "sword",
-                QuickActionAccent::Danger,
-                connected,
-                None,
-                Group::Moderation,
-                true,
-                sub_action_ids::MODERATION_REMOVE_MODERATOR,
-                BTreeMap::new(),
-                vec![
-                    QuickActionField::text(config_keys::TARGET_USER_LOGIN, labels::USERNAME)
-                        .with_placeholder(labels::USERNAME_PLACEHOLDER)
-                        .required(),
-                ],
-            ),
-            gated_on(
-                quick_action(
-                    labels::START_RAID,
-                    "flag",
-                    QuickActionAccent::Bits,
-                    connected,
-                    None,
-                    Group::RaidsAds,
-                    false,
-                    sub_action_ids::CHANNEL_START_RAID,
-                    BTreeMap::new(),
-                    vec![
-                        QuickActionField::text(
-                            config_keys::TO_BROADCASTER_LOGIN,
-                            labels::RAID_TARGET,
-                        )
-                        .with_placeholder(labels::CHANNEL_NAME)
-                        .required(),
-                    ],
-                ),
-                live.raid_slot_free(),
-            ),
-            gated_on(
-                quick_action(
-                    labels::CANCEL_RAID,
-                    "flag-off",
-                    QuickActionAccent::Danger,
-                    connected,
-                    None,
-                    Group::RaidsAds,
-                    true,
-                    sub_action_ids::CHANNEL_CANCEL_RAID,
-                    BTreeMap::new(),
-                    Vec::new(),
-                ),
-                live.raid_in_flight(),
-            ),
-            quick_action(
-                labels::SEND_SHOUTOUT,
-                "speakerphone",
-                QuickActionAccent::Warning,
-                connected,
-                None,
-                Group::RaidsAds,
-                false,
-                sub_action_ids::CHANNEL_SEND_SHOUTOUT,
-                BTreeMap::new(),
-                vec![
-                    QuickActionField::text(config_keys::TO_BROADCASTER_LOGIN, labels::CHANNEL)
-                        .with_placeholder(labels::CHANNEL_NAME)
-                        .required(),
-                ],
-            ),
-            quick_action(
-                labels::RUN_COMMERCIAL,
-                "clock",
-                QuickActionAccent::Info,
-                connected && !tier_locked,
-                locked_reason.clone(),
-                Group::RaidsAds,
-                false,
-                sub_action_ids::CHANNEL_RUN_AD,
-                BTreeMap::new(),
-                vec![
-                    QuickActionField::static_choice(
-                        AD_LENGTH.key,
-                        labels::DURATION,
-                        QUICK_AD_LENGTH.wire_name(),
-                        &choice_options(AdLength::label),
-                    )
-                    .with_hint(labels::AD_COOLDOWN_HINT)
-                    .required(),
-                ],
-            ),
-            quick_action(
-                labels::SNOOZE_NEXT_AD,
-                "player-skip-forward",
-                QuickActionAccent::Success,
-                connected,
-                None,
-                Group::RaidsAds,
-                false,
-                sub_action_ids::CHANNEL_SNOOZE_AD,
-                BTreeMap::new(),
-                Vec::new(),
-            ),
-            manage_collection_action(
-                labels::MANAGE_REWARDS,
-                "adjustments",
-                QuickActionAccent::AccentPinkLight,
-                connected,
-                Group::ChannelPoints,
-                CollectionId::new(REWARDS_COLLECTION),
-            ),
-            quick_action(
-                labels::FULFILL_REDEMPTION,
-                "check",
-                QuickActionAccent::Success,
-                connected,
-                None,
-                Group::ChannelPoints,
-                false,
-                sub_action_ids::CHANNEL_POINTS_FULFILL_REDEMPTION,
-                BTreeMap::new(),
-                redemption_fields(),
-            ),
-            quick_action(
-                labels::REJECT_REFUND,
-                "x",
-                QuickActionAccent::Danger,
-                connected,
-                None,
-                Group::ChannelPoints,
-                true,
-                sub_action_ids::CHANNEL_POINTS_CANCEL_REDEMPTION,
-                BTreeMap::new(),
-                redemption_fields(),
-            ),
+        let connected = self.is_chat_connected();
+        let ctx = Availability {
+            connected,
+            tier_locked,
+            locked_reason: tier_locked.then(|| labels::TIER_LOCKED.into()),
+            gated: connected && !tier_locked,
+            live: self.lifecycle.snapshot(),
+            shield_phase: self.lifecycle.shield_phase(),
+        };
+        [
+            stream_info_actions(&ctx),
+            poll_actions(&ctx),
+            prediction_actions(&ctx),
+            chat_actions(&ctx),
+            moderation_actions(&ctx),
+            raid_and_ad_actions(&ctx),
+            channel_point_actions(&ctx),
         ]
+        .concat()
     }
 }
 
@@ -788,6 +721,8 @@ mod tests {
     use forge_platform_core::{
         BuiltinOptionSource, OptionListId, QuickActionChoiceSource, QuickActionFieldKind,
     };
+
+    use forge_types::UserText;
 
     use super::*;
     use crate::builtin::tests::make_bundle_with_tier;

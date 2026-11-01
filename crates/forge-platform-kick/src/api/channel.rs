@@ -157,7 +157,7 @@ impl KickChannel {
                 .stream
                 .start_time
                 .as_deref()
-                .and_then(crate::timestamp::parse_logged),
+                .and_then(|text| forge_platform_core::parse_timestamp_logged("kick", text)),
         })
     }
 }
@@ -282,7 +282,7 @@ mod tests {
                     "viewer_count": 31,
                     "start_time": "2026-07-24T10:00:00+02:00"
                 }),
-                Some(crate::timestamp::tests::instant("2026-07-24T08:00:00Z")),
+                Some(forge_test_support::instant("2026-07-24T08:00:00Z")),
                 "rfc 3339 with offset",
             ),
         ] {

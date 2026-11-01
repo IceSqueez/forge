@@ -35,7 +35,6 @@ mod stream_metadata;
 mod stream_stats;
 mod sub_actions;
 mod thumbnail;
-mod timestamp;
 mod triggers;
 mod viewer_poll;
 pub mod vocabulary;

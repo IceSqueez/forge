@@ -1,25 +1,8 @@
-use forge_types::{ArgStack, Variant, datetime_from_text};
-use time::OffsetDateTime;
-use time::PrimitiveDateTime;
-use time::format_description::well_known::Iso8601;
-
-pub(crate) fn parse(text: &str) -> Option<OffsetDateTime> {
-    datetime_from_text(text).or_else(|| {
-        PrimitiveDateTime::parse(text.trim(), &Iso8601::DEFAULT)
-            .ok()
-            .map(PrimitiveDateTime::assume_utc)
-    })
-}
+use forge_platform_core::parse_timestamp_logged;
+use forge_types::{ArgStack, Variant};
 
 pub(crate) fn variant(text: &str) -> Option<Variant> {
-    let parsed = parse(text);
-    if parsed.is_none() {
-        tracing::debug!(
-            len = text.len(),
-            "twitch timestamp not parseable, variable omitted"
-        );
-    }
-    parsed.map(Variant::Datetime)
+    parse_timestamp_logged("twitch", text).map(Variant::Datetime)
 }
 
 pub(crate) fn variant_of(value: Option<&serde_json::Value>) -> Option<Variant> {
@@ -39,7 +22,7 @@ pub(crate) mod tests {
     use std::io::Write;
     use std::sync::{Arc, Mutex};
     use time::format_description::well_known::Rfc3339;
-    use time::{Date, Month, Time, UtcOffset};
+    use time::{Date, Month, OffsetDateTime, PrimitiveDateTime, Time, UtcOffset};
 
     pub(crate) fn instant(rfc3339: &str) -> Variant {
         Variant::Datetime(OffsetDateTime::parse(rfc3339, &Rfc3339).unwrap())

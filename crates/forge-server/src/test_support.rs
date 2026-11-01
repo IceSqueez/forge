@@ -102,9 +102,9 @@ impl ServerDeps {
             self.user_globals,
             self.overlays,
             engine,
+            self.overlay_root,
         );
         config.bind_addr = SocketAddr::new(IpAddr::V4(Ipv4Addr::LOCALHOST), EPHEMERAL_PORT);
-        config.overlay_root = self.overlay_root;
         config
     }
 }

@@ -1432,7 +1432,6 @@ dependencies = [
  "base64 0.23.1",
  "forge-events",
  "forge-overlay",
- "forge-paths",
  "forge-runtime",
  "forge-storage",
  "forge-types",

@@ -5,7 +5,7 @@ use time::OffsetDateTime;
 
 use crate::active_broadcast_id::ActiveBroadcastIdHandle;
 use crate::data_api::{YoutubeDataApi, malformed};
-use crate::timestamp;
+use forge_platform_core::parse_timestamp_logged;
 
 const FETCH_COST: u32 = 1;
 const VIDEOS_PATH: &str = "/videos";
@@ -78,11 +78,11 @@ impl YoutubeStreamStats {
         let actual_start_time = details
             .get("actualStartTime")
             .and_then(|v| v.as_str())
-            .and_then(timestamp::parse_logged);
+            .and_then(|text| parse_timestamp_logged("youtube", text));
         let scheduled_start_time = details
             .get("scheduledStartTime")
             .and_then(|v| v.as_str())
-            .and_then(timestamp::parse_logged);
+            .and_then(|text| parse_timestamp_logged("youtube", text));
         let active_live_chat_id = details
             .get("activeLiveChatId")
             .and_then(|v| v.as_str())
@@ -108,7 +108,7 @@ mod tests {
     use super::*;
     use crate::active_broadcast_id::ActiveBroadcastIdHandle;
     use crate::endpoints_test_support::data_api_at;
-    use crate::timestamp::tests::instant;
+    use forge_test_support::instant;
 
     fn token_source() -> TokenSource {
         Arc::new(|| Box::pin(async { Ok("yt-stats-token".to_owned()) }))

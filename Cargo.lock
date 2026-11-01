@@ -3037,6 +3037,7 @@ dependencies = [
  "tokio",
  "tokio-stream",
  "tracing",
+ "tracing-subscriber",
  "url",
  "wiremock",
 ]
@@ -3213,7 +3214,6 @@ dependencies = [
  "forge-events",
  "forge-net",
  "forge-overlay",
- "forge-paths",
  "forge-registry",
  "forge-runtime",
  "forge-server",
@@ -3345,6 +3345,7 @@ dependencies = [
 name = "forge-test-support"
 version = "0.6.3"
 dependencies = [
+ "time",
  "tokio",
  "tracing",
 ]

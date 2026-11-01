@@ -44,6 +44,7 @@ impl Default for ServerTiming {
 pub struct ServerConfig {
     pub bind_addr: SocketAddr,
     pub overlay_root: PathBuf,
+    pub default_overlay_root: PathBuf,
     pub auth_required_for_reads: bool,
     pub overlay_cors_any_origin: bool,
     pub lan_bind_enabled: bool,
@@ -75,10 +76,12 @@ impl ServerConfig {
         user_globals: Arc<dyn UserGlobalsRepo>,
         overlays: Arc<dyn OverlayRepo>,
         action_engine: Arc<ActionEngineHandle>,
+        default_overlay_root: PathBuf,
     ) -> Self {
         Self {
             bind_addr: SocketAddr::new(IpAddr::V4(Ipv4Addr::LOCALHOST), DEFAULT_PORT),
-            overlay_root: forge_paths::overlays_dir(),
+            overlay_root: default_overlay_root.clone(),
+            default_overlay_root,
             auth_required_for_reads: false,
             overlay_cors_any_origin: true,
             lan_bind_enabled: false,

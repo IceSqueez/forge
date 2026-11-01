@@ -7,11 +7,11 @@ use forge_registry::{
 };
 use forge_types::{ArgStack, SubActionTelemetry};
 
-use super::display_name;
 use super::fields::CHANNEL_ID;
 use super::step_failure;
 use crate::moderation::YoutubeModeration;
-use crate::vocabulary::sub_action_ids;
+use crate::vocabulary::{config_keys, sub_action_ids};
+use forge_registry::interpolated_text;
 
 const CONFIG: ConfigSpec = ConfigSpec::new(&[&CHANNEL_ID]);
 
@@ -66,7 +66,7 @@ impl SubActionRunner for BanUserRunner {
             Err(problem) => return (timer.invalid_config(&problem), None),
         };
 
-        let display_name = display_name::resolve(config, ctx);
+        let display_name = interpolated_text(config, config_keys::DISPLAY_NAME, ctx);
         let outcome = step_failure::outcome(
             &self
                 .moderation

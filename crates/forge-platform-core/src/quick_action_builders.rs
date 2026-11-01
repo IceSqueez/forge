@@ -156,6 +156,13 @@ impl QuickAction {
         }
     }
 
+    pub fn locked_because(self, reason: Option<UserText>) -> Self {
+        Self {
+            locked_reason: reason,
+            ..self
+        }
+    }
+
     pub fn destructive(self) -> Self {
         self.destructive_if(true)
     }

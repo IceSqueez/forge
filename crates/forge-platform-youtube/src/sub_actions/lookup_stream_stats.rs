@@ -7,9 +7,9 @@ use forge_types::{ArgStack, SubActionTelemetry, Variant};
 
 use super::step_failure;
 use crate::stream_stats::YoutubeStreamStats;
-use crate::timestamp;
 use crate::vocabulary::sub_action_ids;
 use crate::vocabulary::variables::stream_stats as variables;
+use forge_platform_core::timestamp_variant;
 
 pub(crate) struct LookupStreamStatsRunner {
     stats: Arc<YoutubeStreamStats>,
@@ -59,10 +59,10 @@ impl SubActionRunner for LookupStreamStatsRunner {
                     variables::CONCURRENT_VIEWERS.to_owned(),
                     Variant::Int(details.concurrent_viewers),
                 );
-                if let Some(started) = timestamp::variant(details.actual_start) {
+                if let Some(started) = timestamp_variant(details.actual_start) {
                     stack = stack.set(variables::ACTUAL_START_TIME.to_owned(), started);
                 }
-                if let Some(scheduled) = timestamp::variant(details.scheduled_start) {
+                if let Some(scheduled) = timestamp_variant(details.scheduled_start) {
                     stack = stack.set(variables::SCHEDULED_START_TIME.to_owned(), scheduled);
                 }
                 let stack = stack.set(
@@ -89,7 +89,7 @@ mod tests {
 
     use super::*;
     use crate::active_broadcast_id::ActiveBroadcastIdHandle;
-    use crate::timestamp::tests::instant;
+    use forge_test_support::instant;
     use forge_types::SubActionOutcome;
     use std::collections::BTreeMap;
 

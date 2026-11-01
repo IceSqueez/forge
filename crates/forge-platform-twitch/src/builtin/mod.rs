@@ -821,7 +821,7 @@ impl BuiltinContent for TwitchIntegrationBundle {
             title: labels::EVENTSUB_SUBSCRIPTIONS.into(),
             icon: SectionIcon::new("rss"),
             icon_tint: Some(TokenColor::ThemeBrand),
-            items: sub_items,
+            items: sub_items.into(),
             footer: None,
             banner: dropped_kind.map(|kind| {
                 MessageRef::new(labels::SUBSCRIPTION_DROPPED)
@@ -1439,7 +1439,7 @@ mod tests {
         let DetailSection::SubscriptionList { items, banner, .. } = *right else {
             panic!("expected SubscriptionList on the right");
         };
-        (items, banner)
+        (items.to_vec(), banner)
     }
 
     #[test]

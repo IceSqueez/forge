@@ -1,7 +1,7 @@
 use std::time::Duration;
 
 use forge_components::{
-    ActivePresentation, FONT_XXS, ForgePalette, Icon, KeyActivated, icon, mono_family, scaled, tr,
+    ActivePresentation, FONT_XXS, ForgePalette, Icon, KeyActivated, icon, scaled, tr,
 };
 use forge_overlay::motion::{
     DEFAULT_ENTRANCE_MS, ENTRANCE, ENTRANCE_MS, EXIT, EXIT_MS, INTENSITY, MOTION_MS_MAX,
@@ -276,7 +276,7 @@ impl OverlaysView {
             .items_center()
             .gap(scaled(LINE_GAP, density))
             .pt(LINE_TOP)
-            .font_family(mono_family())
+            .font_family(cx.mono_family())
             .text_size(FONT_XXS)
             .child(icon(Icon::Clock, HINT_GLYPH, palette.text_faint));
         for (label, value) in timeline.parts() {

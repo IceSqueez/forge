@@ -7,7 +7,7 @@ use gpui::{
 
 use crate::palette::ForgePalette;
 use crate::presentation::ActivePresentation;
-use crate::tokens::{BORDER_THIN, Density, FONT_XXS, Spacing, mono_family, spacing};
+use crate::tokens::{BORDER_THIN, Density, FONT_XXS, Spacing, spacing};
 
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub enum ColumnWidth {
@@ -211,10 +211,11 @@ fn table_header(
     gap: Pixels,
     h_py: Pixels,
     h_px: Pixels,
+    cx: &App,
 ) -> Div {
     let header_cells = columns.into_iter().map(move |c| {
         let label_el = div()
-            .font_family(mono_family())
+            .font_family(cx.mono_family())
             .text_size(FONT_XXS)
             .truncate()
             .text_color(header_ink)
@@ -282,6 +283,7 @@ impl RenderOnce for DataTable {
             gap,
             h_py,
             h_px,
+            cx,
         );
 
         let hover = colors.hover;
@@ -457,6 +459,7 @@ impl<'a> VirtualTable<'a> {
             gap,
             h_py,
             h_px,
+            cx,
         );
 
         let list = uniform_list(

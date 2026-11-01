@@ -1,4 +1,3 @@
-use forge_components::ActivePresentation;
 use forge_components::Density;
 use forge_components::FONT_FIELD;
 use forge_components::FONT_META;
@@ -6,13 +5,14 @@ use forge_components::OverflowRevealingFocus;
 use forge_components::Spacing;
 use forge_components::spacing;
 use forge_components::{
-    BORDER_THIN, FONT_XS, FONT_XXS, ForgePalette, Icon, KeyActivated, body_family, empty_state,
-    icon, mono_family, scaled, segment, segmented, tr,
+    ActivePresentation, BORDER_THIN, FONT_XS, FONT_XXS, ForgePalette, Icon, KeyActivated,
+    empty_state, icon, scaled, segment, segmented, tr,
 };
 use forge_overlay::look_contract;
 use forge_storage::OverlayDefinition;
 use gpui::{
-    AnyElement, ClickEvent, Context, Div, FontWeight, Pixels, SharedString, div, prelude::*, px,
+    AnyElement, App, ClickEvent, Context, Div, FontWeight, Pixels, SharedString, div, prelude::*,
+    px,
 };
 
 use super::OverlaysView;
@@ -75,11 +75,11 @@ impl OverlaysView {
         };
 
         let unavailable_notice = (!self.visuals(definition, palette).is_available())
-            .then(|| self.render_unavailable_notice(definition, palette, density));
+            .then(|| self.render_unavailable_notice(definition, palette, density, cx));
 
         pane.child(self.render_selection_header(definition, palette, cx))
             .children(unavailable_notice)
-            .children(self.render_schema_notice(definition, palette, density))
+            .children(self.render_schema_notice(definition, palette, density, cx))
             .child(self.render_stage(Some(definition), palette, cx))
             .into_any_element()
     }
@@ -108,7 +108,7 @@ impl OverlaysView {
             .child(
                 div()
                     .flex_none()
-                    .font_family(body_family())
+                    .font_family(cx.body_family())
                     .font_weight(FontWeight::SEMIBOLD)
                     .text_size(HEAD_TITLE_FS)
                     .text_color(palette.text_primary)
@@ -117,7 +117,7 @@ impl OverlaysView {
             .child(
                 div()
                     .flex_none()
-                    .font_family(mono_family())
+                    .font_family(cx.mono_family())
                     .text_size(FONT_XXS)
                     .text_color(palette.text_faint)
                     .child(definition.id.as_str().to_owned()),
@@ -173,6 +173,7 @@ impl OverlaysView {
         &self,
         palette: &ForgePalette,
         density: Density,
+        cx: &App,
     ) -> Option<AnyElement> {
         let definition = self.selected_definition()?;
 
@@ -208,8 +209,9 @@ impl OverlaysView {
                             &definition.source_overrides,
                             palette,
                             density,
+                            cx,
                         ))
-                        .children(bindings_reference(look.as_ref(), palette, density)),
+                        .children(bindings_reference(look.as_ref(), palette, density, cx)),
                 )
             }
         };
@@ -235,7 +237,7 @@ impl OverlaysView {
             .border(BORDER_THIN)
             .border_color(palette.border_regular)
             .bg(palette.shell)
-            .font_family(mono_family())
+            .font_family(cx.mono_family())
             .text_size(URL_FS);
 
         let Some(url) = self.displayed_overlay_url(&definition.id) else {
@@ -243,7 +245,7 @@ impl OverlaysView {
                 .child(icon(Icon::Link, URL_GLYPH, palette.text_faint))
                 .child(
                     div()
-                        .font_family(body_family())
+                        .font_family(cx.body_family())
                         .text_color(palette.text_faint)
                         .child(tr!("overlays_url_not_served")),
                 )
@@ -277,6 +279,7 @@ impl OverlaysView {
         definition: &OverlayDefinition,
         palette: &ForgePalette,
         density: Density,
+        cx: &App,
     ) -> AnyElement {
         div()
             .flex_none()
@@ -292,7 +295,7 @@ impl OverlaysView {
             .child(icon(Icon::AlertTriangle, NOTICE_GLYPH, palette.warning))
             .child(
                 div()
-                    .font_family(body_family())
+                    .font_family(cx.body_family())
                     .text_size(FONT_XS)
                     .text_color(palette.text_muted)
                     .child(tr!(

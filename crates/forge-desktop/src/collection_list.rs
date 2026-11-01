@@ -1,18 +1,17 @@
 use std::collections::HashSet;
 
 use forge_components::{
-    FONT_XS, FONT_XXS, ForgePalette, Icon, KeyActivated, badge, body_family, icon, icon_button,
-    mono_family, spinner, toggle, tooltip_builder, tr,
+    ActivePresentation, FONT_XS, FONT_XXS, ForgePalette, Icon, KeyActivated, badge, icon,
+    icon_button, spinner, toggle, tooltip_builder, tr,
 };
 use forge_platform_core::{CollectionItem, CollectionItemAccess, CollectionItemId};
 use gpui::{
-    AnyElement, ClickEvent, Context, EventEmitter, SharedString, Window, div, prelude::*, px,
+    AnyElement, App, ClickEvent, Context, EventEmitter, SharedString, Window, div, prelude::*, px,
 };
 
 use crate::clipboard::copy_to_clipboard;
 use crate::repo_failure::RepoFailure;
 use crate::user_text::user_text_string;
-use forge_components::ActivePresentation;
 use forge_components::{FONT_FIELD, failure_note, failure_with_retry, field_frame};
 
 const LIST_GAP: gpui::Pixels = px(6.0);
@@ -188,12 +187,12 @@ impl CollectionList {
             .child(
                 div()
                     .truncate()
-                    .font_family(body_family())
+                    .font_family(cx.body_family())
                     .text_size(FONT_FIELD)
                     .text_color(palette.text_primary)
                     .child(item.title.clone()),
             )
-            .child(id_line(index, item, palette));
+            .child(id_line(index, item, palette, cx));
         let controls = match &item.access {
             CollectionItemAccess::ReadOnly { reason } => {
                 titles = titles.child(
@@ -206,7 +205,7 @@ impl CollectionList {
                             div()
                                 .flex_1()
                                 .min_w(px(0.0))
-                                .font_family(body_family())
+                                .font_family(cx.body_family())
                                 .text_size(REASON_FONT)
                                 .text_color(palette.text_faint)
                                 .child(user_text_string(reason)),
@@ -256,7 +255,7 @@ impl CollectionList {
                     .gap(TOGGLE_LABEL_GAP)
                     .child(
                         div()
-                            .font_family(mono_family())
+                            .font_family(cx.mono_family())
                             .text_size(FONT_XXS)
                             .text_color(palette.text_faint)
                             .child(column.label.to_uppercase()),
@@ -290,7 +289,7 @@ impl CollectionList {
     }
 }
 
-fn id_line(index: usize, item: &CollectionItem, palette: &ForgePalette) -> AnyElement {
+fn id_line(index: usize, item: &CollectionItem, palette: &ForgePalette, cx: &App) -> AnyElement {
     let id = item.id.as_str().to_owned();
     let hover = palette.text_secondary;
     div()
@@ -308,7 +307,7 @@ fn id_line(index: usize, item: &CollectionItem, palette: &ForgePalette) -> AnyEl
         .child(
             div()
                 .truncate()
-                .font_family(mono_family())
+                .font_family(cx.mono_family())
                 .text_size(FONT_XXS)
                 .child(item.id.as_str().to_owned()),
         )
@@ -334,7 +333,7 @@ impl Render for CollectionList {
                         ))
                         .child(
                             div()
-                                .font_family(body_family())
+                                .font_family(cx.body_family())
                                 .text_size(FONT_FIELD)
                                 .text_color(palette.text_muted)
                                 .child(tr!("collection_loading")),
@@ -348,15 +347,16 @@ impl Render for CollectionList {
                     &palette,
                     cx.listener(|_, _: &ClickEvent, _, cx| cx.emit(CollectionListEvent::Retry)),
                     density,
+                    cx,
                 ));
             }
             ListLoad::Unavailable(reason) => {
-                column = column.child(failure_note(reason, &palette, density));
+                column = column.child(failure_note(reason, &palette, density, cx));
             }
             ListLoad::Ready if self.items.is_empty() => {
                 column = column.child(
                     div()
-                        .font_family(body_family())
+                        .font_family(cx.body_family())
                         .text_size(EMPTY_FONT)
                         .text_color(palette.text_muted)
                         .child(tr!("collection_empty")),

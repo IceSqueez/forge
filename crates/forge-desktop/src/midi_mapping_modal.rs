@@ -10,15 +10,15 @@ use std::sync::Arc;
 
 use forge_components::OverflowRevealingFocus;
 use forge_components::{
-    BORDER_THIN, Density, FONT_SECTION_LABEL, ForgePalette, Icon, InputEvent, KeyActivated,
-    OverlayPosition, Radius, SearchState, TextInput, body_family, dropdown, dropdown_list,
-    dropdown_row, field_label, ghost_button_with_icon, grow_cell, icon, modal, mono_family,
-    overlay, primary_button, scaled, secondary_button, tr, with_alpha,
+    ActivePresentation, BORDER_THIN, Density, FONT_SECTION_LABEL, ForgePalette, Icon, InputEvent,
+    KeyActivated, OverlayPosition, Radius, SearchState, TextInput, dropdown, dropdown_list,
+    dropdown_row, field_label, ghost_button_with_icon, grow_cell, icon, modal, overlay,
+    primary_button, scaled, secondary_button, tr, with_alpha,
 };
 use forge_storage::ActionRepo;
 use forge_types::{ActionId, TriggerInstanceId};
 use gpui::{
-    AnyElement, ClickEvent, Context, Entity, EventEmitter, Pixels, SharedString, Subscription,
+    AnyElement, App, ClickEvent, Context, Entity, EventEmitter, Pixels, SharedString, Subscription,
     Window, div, prelude::*, px,
 };
 
@@ -27,7 +27,6 @@ use crate::midi_signal::{
     MIDI_CHANNELS, MidiSignal, kind_label, selector_key, shown_channel, stored_channel,
 };
 use crate::repo_failure::RepoFailure;
-use forge_components::ActivePresentation;
 use forge_midi::vocabulary::event_kinds::SIGNAL_KINDS;
 
 const MODAL_W: Pixels = px(520.0);
@@ -396,7 +395,7 @@ impl MidiMappingModal {
             .border(BORDER_THIN)
             .border_color(border)
             .bg(palette.shell)
-            .font_family(mono_family())
+            .font_family(cx.mono_family())
             .text_size(CONTROL_FS);
         if self.listening {
             display = display
@@ -422,9 +421,9 @@ impl MidiMappingModal {
             "midi-modal-type",
             kind_label(&self.kind_id),
             open,
-            palette,
             cx.listener(|this, _: &ClickEvent, _, cx| this.toggle_panel(OpenPanel::Type, cx)),
             density,
+            cx,
         );
 
         let panel = open.then(|| {
@@ -468,9 +467,9 @@ impl MidiMappingModal {
             "midi-modal-device",
             label,
             open,
-            palette,
             cx.listener(|this, _: &ClickEvent, _, cx| this.toggle_panel(OpenPanel::Device, cx)),
             density,
+            cx,
         );
 
         let panel = open.then(|| {
@@ -511,10 +510,11 @@ impl MidiMappingModal {
         id: &'static str,
         label: String,
         open: bool,
-        palette: &ForgePalette,
         on_click: impl Fn(&ClickEvent, &mut Window, &mut gpui::App) + 'static,
         density: Density,
+        cx: &App,
     ) -> AnyElement {
+        let palette = &cx.palette();
         let border = if open {
             palette.border_active
         } else {
@@ -543,7 +543,7 @@ impl MidiMappingModal {
                     .flex_1()
                     .min_w_0()
                     .truncate()
-                    .font_family(body_family())
+                    .font_family(cx.body_family())
                     .text_size(CONTROL_FS)
                     .text_color(palette.text_primary)
                     .child(label),
@@ -615,7 +615,11 @@ impl MidiMappingModal {
             .w_full()
             .flex()
             .flex_col()
-            .child(section_caption(&tr!("midi_modal_section_signal"), palette))
+            .child(section_caption(
+                &tr!("midi_modal_section_signal"),
+                palette,
+                cx,
+            ))
             .child(grid)
             .child(
                 div()
@@ -628,7 +632,7 @@ impl MidiMappingModal {
                 div()
                     .w_full()
                     .mt(spacing(Spacing::Sm, density))
-                    .font_family(body_family())
+                    .font_family(cx.body_family())
                     .text_size(FOOTER_HINT_FS)
                     .text_color(palette.warning)
                     .child(tr!("midi_modal_input_disabled")),
@@ -648,7 +652,7 @@ impl MidiMappingModal {
             .mb(SECTION_LABEL_MB)
             .child(
                 div()
-                    .font_family(mono_family())
+                    .font_family(cx.mono_family())
                     .text_size(FONT_SECTION_LABEL)
                     .text_color(palette.text_muted)
                     .child(SharedString::from(
@@ -664,7 +668,7 @@ impl MidiMappingModal {
 
         let list = match &self.actions {
             Loadable::Loading => {
-                self.list_message(tr!("midi_modal_actions_loading"), palette, density)
+                self.list_message(tr!("midi_modal_actions_loading"), palette, density, cx)
             }
             Loadable::Failed(failure) => {
                 let reason = failure.text();
@@ -672,10 +676,11 @@ impl MidiMappingModal {
                     tr!("midi_toast_error", message = reason.as_str()),
                     palette,
                     density,
+                    cx,
                 )
             }
             Loadable::Loaded(actions) if actions.is_empty() => {
-                self.list_message(tr!("midi_modal_actions_none"), palette, density)
+                self.list_message(tr!("midi_modal_actions_none"), palette, density, cx)
             }
             Loadable::Loaded(actions) => {
                 let matched: Vec<&ActionChoice> = actions
@@ -683,7 +688,7 @@ impl MidiMappingModal {
                     .filter(|choice| self.filter.matches(&choice.name))
                     .collect();
                 if matched.is_empty() {
-                    self.list_message(tr!("midi_modal_actions_empty"), palette, density)
+                    self.list_message(tr!("midi_modal_actions_empty"), palette, density, cx)
                 } else {
                     let rows: Vec<AnyElement> = matched
                         .into_iter()
@@ -716,13 +721,19 @@ impl MidiMappingModal {
             .into_any_element()
     }
 
-    fn list_message(&self, message: String, palette: &ForgePalette, density: Density) -> gpui::Div {
+    fn list_message(
+        &self,
+        message: String,
+        palette: &ForgePalette,
+        density: Density,
+        cx: &App,
+    ) -> gpui::Div {
         div().w_full().flex().flex_col().child(
             div()
                 .w_full()
                 .py(scaled(EMPTY_PAD_V, density))
                 .text_align(gpui::TextAlign::Center)
-                .font_family(body_family())
+                .font_family(cx.body_family())
                 .text_size(ROW_FS)
                 .text_color(palette.text_muted)
                 .child(message),
@@ -777,7 +788,7 @@ impl MidiMappingModal {
                     .flex_1()
                     .min_w_0()
                     .truncate()
-                    .font_family(body_family())
+                    .font_family(cx.body_family())
                     .text_size(ROW_FS)
                     .text_color(ink)
                     .child(choice.name.clone()),
@@ -807,7 +818,7 @@ impl MidiMappingModal {
                 tr!("midi_modal_hint_pick_action")
             };
             div()
-                .font_family(body_family())
+                .font_family(cx.body_family())
                 .text_size(FOOTER_HINT_FS)
                 .text_color(palette.text_faint)
                 .child(hint)
@@ -849,11 +860,11 @@ impl MidiMappingModal {
     }
 }
 
-fn section_caption(label: &str, palette: &ForgePalette) -> impl IntoElement {
+fn section_caption(label: &str, palette: &ForgePalette, cx: &App) -> impl IntoElement {
     div()
         .w_full()
         .mb(SECTION_LABEL_MB)
-        .font_family(mono_family())
+        .font_family(cx.mono_family())
         .text_size(FONT_SECTION_LABEL)
         .text_color(palette.text_muted)
         .child(SharedString::from(label.to_uppercase()))

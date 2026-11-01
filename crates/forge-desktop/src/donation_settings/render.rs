@@ -1,10 +1,10 @@
 use std::time::Duration;
 
 use forge_components::{
-    BORDER_THIN, ConfirmTone, Density, FONT_SM, FONT_XS, FONT_XXS, ForgePalette, Icon,
-    KeyActivated, OverlayPosition, Radius, Spacing, body_family, confirm_modal,
-    ghost_button_with_icon, icon, mono_family, overlay, primary_button, radio_row, radius,
-    secondary_button, segment, segmented, spacing, status_dot, tr,
+    ActivePresentation, BORDER_THIN, ConfirmTone, Density, FONT_SM, FONT_XS, FONT_XXS,
+    ForgePalette, Icon, KeyActivated, OverlayPosition, Radius, Spacing, confirm_modal,
+    ghost_button_with_icon, icon, overlay, primary_button, radio_row, radius, secondary_button,
+    segment, segmented, spacing, status_dot, tr,
 };
 use forge_monobank::MonobankJar;
 use gpui::{
@@ -13,7 +13,6 @@ use gpui::{
 };
 
 use super::{Busy, DonationSettingsView, JarSource, Outcome, jar_title};
-use forge_components::ActivePresentation;
 use forge_components::{card_shell, divider};
 
 const STATUS_DOT: Pixels = px(6.0);
@@ -23,7 +22,7 @@ const POLL_PRESETS_SECS: [u64; 6] = [10, 15, 30, 60, 120, 300];
 const SECONDS_PER_MINUTE: u64 = 60;
 
 impl DonationSettingsView {
-    fn header(&self, palette: &ForgePalette, density: Density) -> AnyElement {
+    fn header(&self, palette: &ForgePalette, density: Density, cx: &App) -> AnyElement {
         let (dot, label) = match self.has_token {
             Some(true) => (palette.success, tr!("donation_token_status_saved")),
             Some(false) => (palette.warning, tr!("donation_token_status_missing")),
@@ -41,6 +40,7 @@ impl DonationSettingsView {
                     tr!("donation_settings_title", service = self.service_name()),
                     FONT_SM,
                     palette.text_primary,
+                    cx,
                 )
                 .flex_1()
                 .min_w(px(0.0)),
@@ -52,7 +52,7 @@ impl DonationSettingsView {
                     .items_center()
                     .gap(spacing(Spacing::Xs, density))
                     .child(status_dot(dot, STATUS_DOT))
-                    .child(text(label, FONT_XS, palette.text_muted)),
+                    .child(text(label, FONT_XS, palette.text_muted, cx)),
             )
             .into_any_element()
     }
@@ -108,6 +108,7 @@ impl DonationSettingsView {
                 tr!("donation_token_page_link"),
                 FONT_XS,
                 palette.brand,
+                cx,
             ))
             .child(icon(Icon::ExternalLink, LINK_GLYPH, palette.brand));
         div()
@@ -115,7 +116,7 @@ impl DonationSettingsView {
             .flex()
             .flex_col()
             .gap(spacing(Spacing::Xs, density))
-            .child(mono_label(tr!("donation_token_label"), palette))
+            .child(mono_label(tr!("donation_token_label"), palette, cx))
             .child(value_box)
             .child(
                 div()
@@ -129,6 +130,7 @@ impl DonationSettingsView {
                             tr!(hint_key, service = self.service_name()),
                             FONT_XS,
                             palette.text_muted,
+                            cx,
                         )
                         .flex_1()
                         .min_w(px(0.0)),
@@ -149,7 +151,7 @@ impl DonationSettingsView {
             .flex()
             .flex_col()
             .gap(spacing(Spacing::Xs, density))
-            .child(mono_label(tr!("donation_jar_label"), palette));
+            .child(mono_label(tr!("donation_jar_label"), palette, cx));
         if self.jars.is_empty() {
             let hint = if self.busy == Some(Busy::LoadingJars) {
                 tr!("donation_jar_loading")
@@ -157,7 +159,7 @@ impl DonationSettingsView {
                 tr!("donation_jar_hint")
             };
             return list
-                .child(text(hint, FONT_XS, palette.text_muted))
+                .child(text(hint, FONT_XS, palette.text_muted, cx))
                 .into_any_element();
         }
         let shown = self.shown_jar().cloned();
@@ -168,7 +170,7 @@ impl DonationSettingsView {
                 ElementId::Name(format!("donation-jar-{}", jar.id).into()),
                 selected,
                 palette.brand,
-                jar_content(jar, density, palette),
+                jar_content(jar, density, palette, cx),
                 palette,
             )
             .disabled(self.busy.is_some())
@@ -180,7 +182,12 @@ impl DonationSettingsView {
         list.into_any_element()
     }
 
-    fn outcome_row(&self, palette: &ForgePalette, density: Density) -> Option<AnyElement> {
+    fn outcome_row(
+        &self,
+        palette: &ForgePalette,
+        density: Density,
+        cx: &App,
+    ) -> Option<AnyElement> {
         let (color, message): (Rgba, String) = match self.outcome.as_ref()? {
             Outcome::Success(message) => (palette.success, message.clone()),
             Outcome::Problem(message) => (palette.danger, message.clone()),
@@ -192,7 +199,7 @@ impl DonationSettingsView {
                 .items_center()
                 .gap(spacing(Spacing::Xs, density))
                 .child(status_dot(color, STATUS_DOT))
-                .child(text(message, FONT_XS, color).flex_1().min_w(px(0.0)))
+                .child(text(message, FONT_XS, color, cx).flex_1().min_w(px(0.0)))
                 .into_any_element(),
         )
     }
@@ -293,7 +300,7 @@ impl DonationSettingsView {
                 .flex()
                 .flex_col()
                 .gap(spacing(Spacing::Xs, density))
-                .child(mono_label(tr!("donation_poll_label"), palette))
+                .child(mono_label(tr!("donation_poll_label"), palette, cx))
                 .child(div().flex().child(segmented(segments, palette)))
                 .child(text(
                     tr!(
@@ -302,6 +309,7 @@ impl DonationSettingsView {
                     ),
                     FONT_XS,
                     palette.text_muted,
+                    cx,
                 ))
                 .into_any_element(),
         )
@@ -324,11 +332,11 @@ impl Render for DonationSettingsView {
             body = body.child(self.jar_picker(&palette, density, cx));
         }
         body = body
-            .children(self.outcome_row(&palette, density))
+            .children(self.outcome_row(&palette, density, cx))
             .child(self.action_row(&palette, density, cx))
-            .child(encryption_note(&palette, density));
+            .child(encryption_note(&palette, density, cx));
         let mut shell = card_shell(&palette)
-            .child(self.header(&palette, density))
+            .child(self.header(&palette, density, cx))
             .child(divider(&palette))
             .child(body);
         if let Some(polling) = self.polling_section(&palette, density, cx) {
@@ -394,20 +402,20 @@ pub(crate) fn remove_confirm(
     )
 }
 
-fn jar_content(jar: &MonobankJar, density: Density, palette: &ForgePalette) -> Div {
+fn jar_content(jar: &MonobankJar, density: Density, palette: &ForgePalette, cx: &App) -> Div {
     div()
         .flex_1()
         .min_w(px(0.0))
         .flex()
         .flex_col()
         .gap(spacing(Spacing::Xxs, density))
-        .child(text(jar_title(jar), FONT_SM, palette.text_primary))
-        .children(jar_meta(jar).map(|meta| mono_text(meta, palette.text_muted)))
+        .child(text(jar_title(jar), FONT_SM, palette.text_primary, cx))
+        .children(jar_meta(jar).map(|meta| mono_text(meta, palette.text_muted, cx)))
 }
 
-fn mono_text(content: SharedString, color: Rgba) -> Div {
+fn mono_text(content: SharedString, color: Rgba, cx: &App) -> Div {
     div()
-        .font_family(mono_family())
+        .font_family(cx.mono_family())
         .text_size(FONT_XXS)
         .text_color(color)
         .child(content)
@@ -437,7 +445,7 @@ fn interval_label(secs: u64) -> String {
     }
 }
 
-fn encryption_note(palette: &ForgePalette, density: Density) -> impl IntoElement {
+fn encryption_note(palette: &ForgePalette, density: Density, cx: &App) -> impl IntoElement {
     div()
         .flex()
         .items_center()
@@ -447,20 +455,21 @@ fn encryption_note(palette: &ForgePalette, density: Density) -> impl IntoElement
             tr!("donation_token_encrypted_note"),
             FONT_XS,
             palette.text_muted,
+            cx,
         ))
 }
 
-fn mono_label(label: String, palette: &ForgePalette) -> Div {
+fn mono_label(label: String, palette: &ForgePalette, cx: &App) -> Div {
     div()
-        .font_family(mono_family())
+        .font_family(cx.mono_family())
         .text_size(FONT_XXS)
         .text_color(palette.text_muted)
         .child(label.to_uppercase())
 }
 
-fn text(content: impl Into<SharedString>, size: Pixels, color: Rgba) -> Div {
+fn text(content: impl Into<SharedString>, size: Pixels, color: Rgba, cx: &App) -> Div {
     div()
-        .font_family(body_family())
+        .font_family(cx.body_family())
         .text_size(size)
         .text_color(color)
         .child(content.into())

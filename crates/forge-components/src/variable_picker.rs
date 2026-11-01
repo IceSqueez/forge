@@ -15,7 +15,7 @@ use crate::picker::{
 };
 use crate::search_state::SearchState;
 use crate::text_input::{InputEvent, TextInput};
-use crate::tokens::{ENTER_KEY, ESCAPE_KEY, body_family, mono_family};
+use crate::tokens::{ENTER_KEY, ESCAPE_KEY};
 
 const LEFT_KEY: &str = "left";
 
@@ -299,6 +299,7 @@ impl VariablePicker {
                     .unwrap_or_default(),
                 &self.palette,
                 density,
+                cx,
             )
             .into_any_element(),
             PickerRow::Entry(group, entry) => {
@@ -311,7 +312,7 @@ impl VariablePicker {
                     variable.token.clone(),
                     &self.palette,
                 )
-                .label_family(mono_family())
+                .label_family(cx.mono_family())
                 .tag(variable.tag.clone())
                 .trailing_icon(trailing)
                 .highlighted(self.selected == Some(pos))
@@ -325,7 +326,7 @@ impl VariablePicker {
 
     fn render_main(&self, cx: &mut Context<Self>) -> AnyElement {
         if self.rows.is_empty() {
-            return message_row(self.labels.empty.clone(), self.palette);
+            return message_row(self.labels.empty.clone(), self.palette, cx);
         }
         let count = self.rows.len();
         uniform_list(
@@ -353,7 +354,7 @@ impl VariablePicker {
         };
         let back = dropdown_row("forge-variable-back", variable.token.clone(), &self.palette)
             .icon(Some(Icon::ChevronLeft))
-            .label_family(mono_family())
+            .label_family(cx.mono_family())
             .tag(variable.tag.clone())
             .on_click(cx.listener(|this, _event, window, cx| this.back(window, cx)));
         let rows = variable.formats.iter().enumerate().map(|(index, format)| {
@@ -362,9 +363,9 @@ impl VariablePicker {
                 .clone()
                 .unwrap_or_else(|| self.labels.no_format.clone());
             let family = if format.pattern.is_some() {
-                mono_family()
+                cx.mono_family()
             } else {
-                body_family()
+                cx.body_family()
             };
             let token = format.token.clone();
             dropdown_row(("forge-variable-format", index), label, &self.palette)

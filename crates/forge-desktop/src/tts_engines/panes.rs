@@ -1,4 +1,6 @@
 use super::*;
+use forge_components::ActivePresentation;
+use gpui::App;
 
 impl TtsEnginesView {
     pub(super) fn engine_list(
@@ -17,7 +19,7 @@ impl TtsEnginesView {
             .pb(spacing(Spacing::Sm, density))
             .child(
                 div()
-                    .font_family(mono_family())
+                    .font_family(cx.mono_family())
                     .text_size(FONT_XXS)
                     .text_color(palette.text_muted)
                     .child(tr!("tts_engines_header_prefix")),
@@ -54,6 +56,7 @@ impl TtsEnginesView {
                     palette,
                     cx.listener(|this, _: &ClickEvent, _, cx| this.load_disabled(cx)),
                     density,
+                    cx,
                 ))
         });
         let column = div()
@@ -116,7 +119,7 @@ impl TtsEnginesView {
             .flex_col()
             .child(
                 div()
-                    .font_family(body_family())
+                    .font_family(cx.body_family())
                     .font_weight(FontWeight::MEDIUM)
                     .text_size(FONT_XS)
                     .text_color(name_color)
@@ -124,7 +127,7 @@ impl TtsEnginesView {
             )
             .child(
                 div()
-                    .font_family(mono_family())
+                    .font_family(cx.mono_family())
                     .text_size(FONT_MICRO)
                     .text_color(palette.text_faint)
                     .child(tr!(
@@ -178,7 +181,7 @@ impl TtsEnginesView {
             .child(icon(Icon::Plus, PLUS_GLYPH, palette.brand))
             .child(
                 div()
-                    .font_family(body_family())
+                    .font_family(cx.body_family())
                     .text_size(FONT_LABEL)
                     .text_color(palette.brand)
                     .child(tr!("tts_engines_add_engine")),
@@ -227,7 +230,7 @@ impl TtsEnginesView {
                     .child(icon(Icon::Cloud, PLUS_GLYPH, palette.brand))
                     .child(
                         div()
-                            .font_family(body_family())
+                            .font_family(cx.body_family())
                             .text_size(FONT_XS)
                             .text_color(palette.text_secondary)
                             .child(kind.display_name()),
@@ -239,7 +242,7 @@ impl TtsEnginesView {
                 div()
                     .px(spacing(Spacing::Sm, density))
                     .py(spacing(Spacing::Xs, density))
-                    .font_family(body_family())
+                    .font_family(cx.body_family())
                     .text_size(FONT_META)
                     .text_color(palette.text_faint)
                     .child(tr!("tts_engines_add_none_left")),
@@ -258,10 +261,10 @@ impl TtsEnginesView {
         let inner: AnyElement = match self.selected {
             Selection::Engine(index) => match self.engines.get(index) {
                 Some(engine) => self.engine_detail(engine, catalog, palette, density, cx),
-                None => self.detail_hint(palette),
+                None => self.detail_hint(palette, cx),
             },
             Selection::Adding(kind) => self.adding_detail(kind, palette, density, cx),
-            Selection::None => self.detail_hint(palette),
+            Selection::None => self.detail_hint(palette, cx),
         };
 
         div()
@@ -277,7 +280,7 @@ impl TtsEnginesView {
             .into_any_element()
     }
 
-    pub(super) fn detail_hint(&self, palette: &ForgePalette) -> AnyElement {
+    pub(super) fn detail_hint(&self, palette: &ForgePalette, cx: &App) -> AnyElement {
         div()
             .size_full()
             .flex()
@@ -285,7 +288,7 @@ impl TtsEnginesView {
             .justify_center()
             .child(
                 div()
-                    .font_family(body_family())
+                    .font_family(cx.body_family())
                     .text_size(FONT_XS)
                     .text_color(palette.text_muted)
                     .child(tr!("tts_engines_select_hint")),
@@ -400,7 +403,7 @@ impl TtsEnginesView {
             .gap(spacing(Spacing::Xxs, density))
             .child(
                 div()
-                    .font_family(body_family())
+                    .font_family(cx.body_family())
                     .font_weight(FontWeight::MEDIUM)
                     .text_size(FONT_MD)
                     .text_color(palette.text_primary)
@@ -408,7 +411,7 @@ impl TtsEnginesView {
             )
             .child(
                 div()
-                    .font_family(body_family())
+                    .font_family(cx.body_family())
                     .text_size(FONT_LABEL)
                     .text_color(palette.text_muted)
                     .child(subtitle),
@@ -463,6 +466,7 @@ impl TtsEnginesView {
             .child(section_label(
                 tr!("tts_engines_voices_header_prefix"),
                 palette,
+                cx,
             ))
             .child(
                 div()
@@ -536,7 +540,7 @@ impl TtsEnginesView {
             .gap(spacing(Spacing::Xxs, density))
             .child(
                 div()
-                    .font_family(body_family())
+                    .font_family(cx.body_family())
                     .font_weight(FontWeight::MEDIUM)
                     .text_size(FONT_XS)
                     .text_color(palette.text_primary)
@@ -544,7 +548,7 @@ impl TtsEnginesView {
             )
             .child(
                 div()
-                    .font_family(mono_family())
+                    .font_family(cx.mono_family())
                     .text_size(FONT_MICRO)
                     .text_color(palette.text_faint)
                     .child(format!(
@@ -601,6 +605,7 @@ impl TtsEnginesView {
                     palette,
                     cx.listener(|this, _: &ClickEvent, _, cx| this.retry_params(cx)),
                     density,
+                    cx,
                 ))
         });
         let rows = div()
@@ -618,6 +623,7 @@ impl TtsEnginesView {
                 cx.listener(|this, v: &f32, _, cx| this.set_pitch(*v, cx)),
                 palette,
                 density,
+                cx,
             ))
             .child(param_row(
                 tr!("tts_engines_param_speed"),
@@ -629,6 +635,7 @@ impl TtsEnginesView {
                 cx.listener(|this, v: &f32, _, cx| this.set_speed(*v, cx)),
                 palette,
                 density,
+                cx,
             ))
             .child(param_row(
                 tr!("tts_engines_param_volume"),
@@ -640,6 +647,7 @@ impl TtsEnginesView {
                 cx.listener(|this, v: &f32, _, cx| this.set_engine_volume(*v, cx)),
                 palette,
                 density,
+                cx,
             ));
 
         div()
@@ -648,7 +656,11 @@ impl TtsEnginesView {
             .flex_col()
             .gap(spacing(Spacing::Xs, density))
             .mb(spacing(Spacing::Md, density))
-            .child(section_label(tr!("tts_engines_section_params"), palette))
+            .child(section_label(
+                tr!("tts_engines_section_params"),
+                palette,
+                cx,
+            ))
             .children(failure)
             .child(
                 card(rows, palette)

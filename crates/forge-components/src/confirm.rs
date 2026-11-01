@@ -17,7 +17,7 @@ use crate::overlay::{ModalFocusClaim, confine_tab, modal_focus};
 use crate::palette::{ForgePalette, with_alpha};
 use crate::tokens::{
     BORDER_THIN, Density, ENTER_KEY, FONT_MD, FONT_META, FONT_SM, FONT_XS, ModalSize, Radius,
-    Spacing, body_family, modal_width, mono_family, radius, scaled, spacing,
+    Spacing, modal_width, radius, scaled, spacing,
 };
 
 const HEADER_GAP: Pixels = px(12.0);
@@ -38,16 +38,20 @@ pub fn bind_confirm_keys(cx: &mut App) {
     cx.bind_keys([KeyBinding::new(ENTER_KEY, NoAction, Some(KEY_CONTEXT))]);
 }
 
-pub(crate) fn esc_hint_label(phrase: SharedString, palette: &ForgePalette) -> impl IntoElement {
+pub(crate) fn esc_hint_label(
+    phrase: SharedString,
+    palette: &ForgePalette,
+    cx: &App,
+) -> impl IntoElement {
     div()
         .flex()
         .items_center()
         .gap(ESC_HINT_GAP)
-        .font_family(body_family())
+        .font_family(cx.body_family())
         .text_size(FONT_META)
         .text_color(palette.text_faint)
         .child(icon(Icon::Keyboard, ESC_HINT_GLYPH, palette.text_faint))
-        .child(div().font_family(mono_family()).child(ESC_KEY_LABEL))
+        .child(div().font_family(cx.mono_family()).child(ESC_KEY_LABEL))
         .child(phrase)
 }
 
@@ -162,6 +166,7 @@ fn accent_confirm_button(
     ink: Rgba,
     handler: SharedActionHandler,
     density: Density,
+    cx: &App,
 ) -> impl IntoElement {
     div()
         .id(id)
@@ -172,7 +177,7 @@ fn accent_confirm_button(
         .px(spacing(Spacing::Sm, density))
         .rounded(radius(Radius::Sm))
         .bg(accent)
-        .font_family(body_family())
+        .font_family(cx.body_family())
         .text_size(FONT_SM)
         .text_color(ink)
         .cursor_pointer()
@@ -211,6 +216,7 @@ pub(crate) fn confirm_footer(
     actions: Div,
     palette: &ForgePalette,
     density: Density,
+    cx: &App,
 ) -> Div {
     div()
         .w_full()
@@ -220,7 +226,7 @@ pub(crate) fn confirm_footer(
         .gap_x(spacing(Spacing::Xxs, density))
         .gap_y(scaled(ACTIONS_GAP, density))
         .when_some(esc_hint, |footer, phrase| {
-            footer.child(esc_hint_label(phrase, palette))
+            footer.child(esc_hint_label(phrase, palette, cx))
         })
         .py(spacing(Spacing::Sm, density))
         .px(spacing(Spacing::Lg, density))
@@ -262,7 +268,7 @@ impl RenderOnce for ConfirmModal {
             .gap(spacing(Spacing::Xxs, density))
             .child(
                 div()
-                    .font_family(body_family())
+                    .font_family(cx.body_family())
                     .font_weight(FontWeight::MEDIUM)
                     .text_size(FONT_MD)
                     .text_color(palette.text_primary)
@@ -271,7 +277,7 @@ impl RenderOnce for ConfirmModal {
         if let Some(name) = item_name {
             titles = titles.child(
                 div()
-                    .font_family(mono_family())
+                    .font_family(cx.mono_family())
                     .text_size(FONT_XS)
                     .text_color(palette.text_muted)
                     .child(name),
@@ -286,7 +292,7 @@ impl RenderOnce for ConfirmModal {
             .child(titles);
 
         let hint = div()
-            .font_family(body_family())
+            .font_family(cx.body_family())
             .text_size(FONT_SM)
             .text_color(palette.text_muted)
             .child(message);
@@ -320,6 +326,7 @@ impl RenderOnce for ConfirmModal {
                 palette.shell,
                 handler,
                 density,
+                cx,
             ));
         }
 
@@ -335,7 +342,7 @@ impl RenderOnce for ConfirmModal {
             .child(body);
 
         if has_actions {
-            card = card.child(confirm_footer(esc_hint, actions, &palette, density));
+            card = card.child(confirm_footer(esc_hint, actions, &palette, density, cx));
         }
 
         card.when_some(enter_binding, |card, (focus, confirm)| {
@@ -708,7 +715,7 @@ mod tests {
                     .w(FOOTER_CARD_WIDTH)
                     .flex()
                     .flex_col()
-                    .child(confirm_footer(hint, actions, &FORGE_DEFAULT, density)),
+                    .child(confirm_footer(hint, actions, &FORGE_DEFAULT, density, cx)),
             )
         }
     }

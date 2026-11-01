@@ -9,10 +9,10 @@ use forge_components::SEARCH_FIELD_WIDTH;
 use std::collections::{HashSet, VecDeque};
 
 use forge_components::{
-    BORDER_THIN, BreadcrumbCrumb, Density, FONT_XS, FONT_XXS, ForgePalette, Icon, InputEvent,
-    KeyActivated, Radius, SearchState, SheetWidth, Spacing, TextInput, ToastKind, badge,
-    body_family, chip, empty_state, header_status, icon, mono_family, page_frame, radius, scaled,
-    spacing, status_dot, tr, with_alpha,
+    ActivePresentation, BORDER_THIN, BreadcrumbCrumb, Density, FONT_XS, FONT_XXS, ForgePalette,
+    Icon, InputEvent, KeyActivated, Radius, SearchState, SheetWidth, Spacing, TextInput, ToastKind,
+    badge, chip, empty_state, header_status, icon, page_frame, radius, scaled, spacing, status_dot,
+    tr, with_alpha,
 };
 use std::sync::Arc;
 
@@ -21,7 +21,7 @@ use forge_registry::TriggerCategory;
 use forge_runtime::{EventBus, RuntimeError};
 use forge_types::{EventId, PlatformId};
 use gpui::{
-    AnyElement, ClickEvent, Context, Div, Entity, FocusHandle, Pixels, Rgba, ScrollEvent,
+    AnyElement, App, ClickEvent, Context, Div, Entity, FocusHandle, Pixels, Rgba, ScrollEvent,
     ScrollStrategy, Stateful, Subscription, UniformListScrollHandle, Window, div, prelude::*, px,
     uniform_list,
 };
@@ -30,7 +30,6 @@ use crate::async_bridge;
 use crate::event_log::{EventCausation, EventFilter, EventItem, EventLog};
 use crate::navigable_list::{ListStep, NavigableList, navigable_list, stepped_index};
 use crate::runtime_event::RuntimeEvent;
-use forge_components::ActivePresentation;
 use forge_components::PushToast;
 use forge_components::{ClockStyle, DateShape, active_display_formats, fmt_display};
 
@@ -217,7 +216,7 @@ impl EventFeedView {
 
     fn widen_kind_column(&mut self, cx: &mut Context<Self>) {
         let text_system = cx.text_system().clone();
-        let font_id = text_system.resolve_font(&gpui::font(mono_family()));
+        let font_id = text_system.resolve_font(&gpui::font(cx.mono_family()));
         let mut widest = self.kind_col_w;
         let log = self.log.read(cx);
         let unsynced =
@@ -426,14 +425,14 @@ impl EventFeedView {
             .gap(spacing(Spacing::Xxs, density))
             .child(
                 div()
-                    .font_family(mono_family())
+                    .font_family(cx.mono_family())
                     .text_size(FONT_XS)
                     .text_color(palette.text_primary)
                     .child(format!("{count}")),
             )
             .child(
                 div()
-                    .font_family(mono_family())
+                    .font_family(cx.mono_family())
                     .text_size(FONT_XS)
                     .text_color(palette.text_muted)
                     .child(tr!("event_feed_events_live_stream")),
@@ -518,7 +517,7 @@ impl EventFeedView {
         };
         let auto_scroll = Self::action_shell("event-action-autoscroll", palette)
             .child(status_dot(scroll_ink, STATUS_DOT))
-            .child(Self::action_label(scroll_label, palette))
+            .child(Self::action_label(scroll_label, palette, cx))
             .key_activated(palette.text_primary)
             .on_click(cx.listener(|this, _: &ClickEvent, _, cx| this.toggle_auto_scroll(cx)));
 
@@ -607,7 +606,7 @@ impl EventFeedView {
             .flex_none()
             .w(self.kind_col_w)
             .truncate()
-            .font_family(mono_family())
+            .font_family(cx.mono_family())
             .text_size(ROW_FS)
             .text_color(kind_color)
             .child(item.kind.clone());
@@ -615,7 +614,7 @@ impl EventFeedView {
         let summary = div().flex_1().overflow_hidden().child(
             div()
                 .truncate()
-                .font_family(mono_family())
+                .font_family(cx.mono_family())
                 .text_size(ROW_FS)
                 .text_color(palette.text_primary)
                 .child(item.summary.clone()),
@@ -636,7 +635,7 @@ impl EventFeedView {
                     .flex_none()
                     .w(timestamp_column_width())
                     .whitespace_nowrap()
-                    .font_family(mono_family())
+                    .font_family(cx.mono_family())
                     .text_size(ROW_FS)
                     .text_color(palette.text_faint)
                     .child(fmt_display(DateShape::TimeWithMillis, item.timestamp)),
@@ -649,7 +648,7 @@ impl EventFeedView {
                 div()
                     .flex_none()
                     .whitespace_nowrap()
-                    .font_family(mono_family())
+                    .font_family(cx.mono_family())
                     .text_size(SUFFIX_FS)
                     .text_color(tag_color)
                     .child(tag)
@@ -802,7 +801,7 @@ impl EventFeedView {
                             .flex_1()
                             .min_w_0()
                             .truncate()
-                            .font_family(mono_family())
+                            .font_family(cx.mono_family())
                             .text_size(FONT_XS)
                             .text_color(palette.text_primary)
                             .child(item.kind.clone()),
@@ -810,7 +809,7 @@ impl EventFeedView {
             )
             .child(
                 div()
-                    .font_family(mono_family())
+                    .font_family(cx.mono_family())
                     .text_size(FONT_XXS)
                     .text_color(palette.text_muted)
                     .child(format!(
@@ -819,7 +818,7 @@ impl EventFeedView {
                     )),
             );
 
-        let payload = self.payload_block(item, palette, density);
+        let payload = self.payload_block(item, palette, density, cx);
 
         let caused_text: gpui::SharedString = item
             .caused_by
@@ -853,7 +852,7 @@ impl EventFeedView {
                     .flex_1()
                     .min_w_0()
                     .truncate()
-                    .font_family(mono_family())
+                    .font_family(cx.mono_family())
                     .text_size(FONT_XS)
                     .text_color(palette.text_primary)
                     .child(caused_text),
@@ -892,7 +891,7 @@ impl EventFeedView {
             .child(icon(Icon::Repeat, FONT_XS, replay_color))
             .child(
                 div()
-                    .font_family(body_family())
+                    .font_family(cx.body_family())
                     .text_size(FONT_XS)
                     .text_color(replay_color)
                     .child(tr!("widget_event_replay")),
@@ -908,19 +907,21 @@ impl EventFeedView {
             .child(Self::section_label(
                 tr!("widget_event_payload_header"),
                 palette,
+                cx,
             ))
             .child(payload)
             .child(Self::section_label(
                 tr!("widget_event_caused_header"),
                 palette,
+                cx,
             ))
             .child(caused)
             .child(replay)
     }
 
-    fn section_label(text: String, palette: &ForgePalette) -> impl IntoElement + use<> {
+    fn section_label(text: String, palette: &ForgePalette, cx: &App) -> impl IntoElement + use<> {
         div()
-            .font_family(mono_family())
+            .font_family(cx.mono_family())
             .text_size(FONT_XXS)
             .text_color(palette.text_faint)
             .child(text)
@@ -931,6 +932,7 @@ impl EventFeedView {
         item: &EventItem,
         palette: &ForgePalette,
         density: Density,
+        cx: &App,
     ) -> impl IntoElement + use<> {
         let brace = palette.text_muted;
         let mut lines: Vec<gpui::AnyElement> = Vec::new();
@@ -984,7 +986,7 @@ impl EventFeedView {
             .flex()
             .flex_col()
             .overflow_hidden()
-            .font_family(mono_family())
+            .font_family(cx.mono_family())
             .text_size(FONT_XXS)
             .p(spacing(Spacing::Sm, density))
             .rounded(radius(Radius::Md))
@@ -1057,9 +1059,9 @@ impl EventFeedView {
             .hover(move |s| s.bg(hover))
     }
 
-    fn action_label(text: String, palette: &ForgePalette) -> impl IntoElement + use<> {
+    fn action_label(text: String, palette: &ForgePalette, cx: &App) -> impl IntoElement + use<> {
         div()
-            .font_family(body_family())
+            .font_family(cx.body_family())
             .text_size(FONT_XS)
             .text_color(palette.text_secondary)
             .child(text)

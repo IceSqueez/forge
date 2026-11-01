@@ -2,7 +2,7 @@ use forge_components::Density;
 use forge_components::{
     ForgePalette, OverlayPosition, PushToast, ToastKind, busy_modal, overlay, tr,
 };
-use gpui::{AnyElement, Context, div, prelude::*};
+use gpui::{AnyElement, App, Context, div, prelude::*};
 
 pub(crate) fn busy_overlay(
     id: &'static str,
@@ -10,6 +10,7 @@ pub(crate) fn busy_overlay(
     detail: String,
     palette: &ForgePalette,
     density: Density,
+    cx: &App,
 ) -> AnyElement {
     div()
         .absolute()
@@ -17,7 +18,7 @@ pub(crate) fn busy_overlay(
         .left_0()
         .size_full()
         .child(
-            overlay(busy_modal(id, title, detail, palette, density), palette)
+            overlay(busy_modal(id, title, detail, palette, density, cx), palette)
                 .position(OverlayPosition::Center),
         )
         .into_any_element()

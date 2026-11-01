@@ -5,9 +5,8 @@ use super::{
 };
 use crate::async_bridge::{self, ErrorSink};
 use forge_components::{
-    BORDER_THIN, Density, FONT_SM, FONT_XXS, ForgePalette, Icon, KeyActivated, Radius, Spacing,
-    body_family, card, empty_state, fmt_bytes, icon, mono_family, radius, spacing, tooltip_builder,
-    tr,
+    ActivePresentation, BORDER_THIN, Density, FONT_SM, FONT_XXS, ForgePalette, Icon, KeyActivated,
+    Radius, Spacing, card, empty_state, fmt_bytes, icon, radius, spacing, tooltip_builder, tr,
 };
 use forge_overlay::MARKUP_FILE;
 use forge_server::{overlay_file_url, overlay_origin, overlay_page_url};
@@ -201,7 +200,7 @@ impl ServerConsoleView {
             .child(icon(Icon::Folder, HEADER_GLYPH, palette.warning))
             .child(
                 div()
-                    .font_family(body_family())
+                    .font_family(cx.body_family())
                     .font_weight(FontWeight::MEDIUM)
                     .text_size(FONT_SM)
                     .text_color(palette.text_primary)
@@ -219,7 +218,7 @@ impl ServerConsoleView {
             .items_center()
             .gap(spacing(Spacing::Xs, density))
             .child(
-                mono_field(palette, density).flex_1().child(
+                mono_field(palette, density, cx).flex_1().child(
                     div()
                         .flex_1()
                         .min_w(px(0.0))
@@ -350,7 +349,7 @@ impl ServerConsoleView {
                     .flex_1()
                     .min_w(px(0.0))
                     .truncate()
-                    .font_family(mono_family())
+                    .font_family(cx.mono_family())
                     .text_size(FONT_XXS)
                     .text_color(name_color)
                     .child(entry.name.clone()),
@@ -358,7 +357,7 @@ impl ServerConsoleView {
             .child(
                 div()
                     .flex_none()
-                    .font_family(mono_family())
+                    .font_family(cx.mono_family())
                     .text_size(FONT_XXS)
                     .text_color(palette.text_faint)
                     .child(size_label),
@@ -399,7 +398,7 @@ impl ServerConsoleView {
                 .child("-"),
         };
 
-        let mut field = mono_field(palette, density)
+        let mut field = mono_field(palette, density, cx)
             .text_size(FONT_XXS)
             .child(value);
         if url.is_some() {
@@ -427,7 +426,11 @@ impl ServerConsoleView {
             .pt(spacing(Spacing::Sm, density))
             .border_t(BORDER_THIN)
             .border_color(palette.border_regular)
-            .child(caption(tr!("server_overlay_browser_source_url"), palette))
+            .child(caption(
+                tr!("server_overlay_browser_source_url"),
+                palette,
+                cx,
+            ))
             .child(field)
             .into_any_element()
     }

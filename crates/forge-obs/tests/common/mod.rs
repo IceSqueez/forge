@@ -496,7 +496,9 @@ fn page_rows(client: &ObsClient) -> (Vec<ContentListItem>, Vec<ContentListItem>)
         .sections()
         .into_iter()
         .find_map(|section| match section {
-            DetailSection::TwoColumnLists { left, right } => Some((left.items, right.items)),
+            DetailSection::TwoColumnLists { left, right } => {
+                Some((left.items.to_vec(), right.items.to_vec()))
+            }
             _ => None,
         })
         .unwrap_or_default()

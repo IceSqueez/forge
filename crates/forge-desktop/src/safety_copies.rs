@@ -4,9 +4,9 @@ use std::sync::Arc;
 
 use forge_components::{
     ActivePresentation, ConfirmTone, Density, FONT_SM, FONT_XS, ForgePalette, InputEvent,
-    OverlayPosition, PushToast, SettingRow, Spacing, TextInput, ToastKind, body_family,
-    choice_trigger, confirm_modal, drive_overlay_focus, dropdown, dropdown_list, dropdown_row,
-    fmt_bytes, overlay, secondary_button, setting_row, setting_rows, spacing, tr,
+    OverlayPosition, PushToast, SettingRow, Spacing, TextInput, ToastKind, choice_trigger,
+    confirm_modal, drive_overlay_focus, dropdown, dropdown_list, dropdown_row, fmt_bytes, overlay,
+    secondary_button, setting_row, setting_rows, spacing, tr,
 };
 use forge_storage::settings::{
     MAX_SAFETY_COPIES_DELETE_AFTER_DAYS, MAX_SAFETY_COPIES_KEEP_NEWEST,
@@ -526,7 +526,7 @@ impl SafetyCopiesView {
                 )
                 .child(
                     div()
-                        .font_family(body_family())
+                        .font_family(cx.body_family())
                         .text_size(FONT_XS)
                         .text_color(palette.text_muted)
                         .child(field.number.unit(field.number.value_in(&self.settings))),
@@ -560,6 +560,7 @@ impl SafetyCopiesView {
             palette,
             cx.listener(|this, _: &ClickEvent, _, cx| this.toggle_menu(cx)),
             density,
+            cx,
         );
         let mut field = div()
             .relative()

@@ -5,15 +5,14 @@ use crate::navigable_list::{ListStep, NavigableList, navigable_list};
 use forge_components::RevealsFocusIn;
 use forge_components::{
     ActivePresentation, BORDER_THIN, Density, FONT_FIELD, FONT_XS, FONT_XXS, ForgePalette, Icon,
-    KeyActivated, Radius, ResizeEdge, ResizeRange, Spacing, body_family, context_menu, icon,
-    install_resize, menu_divider, menu_item, mono_family, radius, scaled, spacing, status_dot, tr,
-    with_alpha,
+    KeyActivated, Radius, ResizeEdge, ResizeRange, Spacing, context_menu, icon, install_resize,
+    menu_divider, menu_item, radius, scaled, spacing, status_dot, tr, with_alpha,
 };
 use forge_types::ScriptId;
 use gpui::prelude::*;
 use gpui::{
-    AnyElement, ClickEvent, Context, FocusHandle, FontWeight, MouseButton, MouseDownEvent, Pixels,
-    Point, Rgba, SharedString, Window, div, px,
+    AnyElement, App, ClickEvent, Context, FocusHandle, FontWeight, MouseButton, MouseDownEvent,
+    Pixels, Point, Rgba, SharedString, Window, div, px,
 };
 
 const STRIPE_W: Pixels = px(2.0);
@@ -139,7 +138,7 @@ impl ScriptList {
             .justify_between()
             .child(
                 div()
-                    .font_family(body_family())
+                    .font_family(cx.body_family())
                     .font_weight(FontWeight::SEMIBOLD)
                     .text_size(FONT_FIELD)
                     .text_color(palette.text_primary)
@@ -147,7 +146,7 @@ impl ScriptList {
             )
             .child(
                 div()
-                    .font_family(mono_family())
+                    .font_family(cx.mono_family())
                     .text_size(FONT_XXS)
                     .text_color(palette.text_faint)
                     .child(self.scripts.len().to_string()),
@@ -178,12 +177,13 @@ impl ScriptList {
                 cx.listener(|this, _: &ClickEvent, _, cx| this.load_scripts(cx)),
                 palette,
                 density,
+                cx,
             );
             rows.push(notice.unwrap_or_else(|| {
                 div()
                     .py(spacing(Spacing::Xxs, density))
                     .px(spacing(Spacing::Xs, density))
-                    .font_family(mono_family())
+                    .font_family(cx.mono_family())
                     .text_size(FONT_XS)
                     .text_color(palette.text_faint)
                     .child(tr!("script_editor_no_scripts"))
@@ -198,8 +198,8 @@ impl ScriptList {
                     palette.brand,
                     tr!("script_editor_group_action"),
                     action.len(),
-                    palette,
                     density,
+                    cx,
                 ));
                 for entry in &action {
                     rows.push(self.file_row(entry, palette.brand, palette, cx));
@@ -213,8 +213,8 @@ impl ScriptList {
                     palette.accent_peach,
                     tr!("script_editor_group_standalone"),
                     standalone.len(),
-                    palette,
                     density,
+                    cx,
                 ));
                 for entry in &standalone {
                     rows.push(self.file_row(entry, palette.accent_peach, palette, cx));
@@ -300,7 +300,7 @@ impl ScriptList {
                     .child(icon(Icon::Plus, GLYPH_ACTION, palette.brand))
                     .child(
                         div()
-                            .font_family(body_family())
+                            .font_family(cx.body_family())
                             .font_weight(FontWeight::MEDIUM)
                             .text_size(FONT_XS)
                             .text_color(palette.brand)
@@ -316,9 +316,10 @@ impl ScriptList {
         color: Rgba,
         label: impl Into<SharedString>,
         count: usize,
-        palette: &ForgePalette,
         density: Density,
+        cx: &App,
     ) -> AnyElement {
+        let palette = &cx.palette();
         div()
             .flex()
             .items_center()
@@ -326,7 +327,7 @@ impl ScriptList {
             .pt(scaled(GROUP_HEADER_PAD_TOP, density))
             .px(spacing(Spacing::Xs, density))
             .pb(spacing(Spacing::Xs, density))
-            .font_family(mono_family())
+            .font_family(cx.mono_family())
             .text_size(FONT_XXS)
             .text_color(palette.text_muted)
             .child(icon(group_icon, GLYPH_GROUP, color))
@@ -385,7 +386,7 @@ impl ScriptList {
                 .unwrap_or_else(|| div().into_any_element())
         } else {
             div()
-                .font_family(mono_family())
+                .font_family(cx.mono_family())
                 .text_size(FONT_XS)
                 .text_color(text_color)
                 .truncate()
@@ -410,7 +411,7 @@ impl ScriptList {
             .child(name_line)
             .child(
                 div()
-                    .font_family(body_family())
+                    .font_family(cx.body_family())
                     .text_size(FONT_XXS)
                     .text_color(subtitle_color)
                     .truncate()

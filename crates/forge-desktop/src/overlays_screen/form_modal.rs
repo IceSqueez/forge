@@ -3,16 +3,15 @@ use forge_components::Spacing;
 use forge_components::focus_inside_modal;
 use forge_components::spacing;
 use forge_components::{
-    FONT_XS, FONT_XXS, ForgePalette, Icon, InputEvent, OverlayPosition, TextInput, body_family,
-    icon, modal, mono_family, overlay, pad_tile, primary_button, scaled, secondary_button, tr,
+    ActivePresentation, FONT_XS, FONT_XXS, ForgePalette, Icon, InputEvent, OverlayPosition,
+    TextInput, icon, modal, overlay, pad_tile, primary_button, scaled, secondary_button, tr,
 };
 use forge_storage::OverlayId;
 use gpui::{
-    AnyElement, ClickEvent, Context, Entity, EventEmitter, Pixels, SharedString, Subscription,
+    AnyElement, App, ClickEvent, Context, Entity, EventEmitter, Pixels, SharedString, Subscription,
     Window, div, prelude::*, px,
 };
 
-use forge_components::ActivePresentation;
 use forge_components::grow_cell;
 
 const MODAL_W: Pixels = px(520.0);
@@ -133,14 +132,14 @@ impl OverlayFormModal {
         cx.emit(OverlayFormEvent::Cancel);
     }
 
-    fn render_name(&self, palette: &ForgePalette, density: Density) -> AnyElement {
+    fn render_name(&self, palette: &ForgePalette, density: Density, cx: &App) -> AnyElement {
         div()
             .w_full()
             .flex()
             .flex_col()
             .gap(spacing(Spacing::Xs, density))
             .mb(spacing(Spacing::Md, density))
-            .child(caption(tr!("overlays_form_name_label"), palette))
+            .child(caption(tr!("overlays_form_name_label"), palette, cx))
             .child(div().w_full().child(self.name.clone()))
             .into_any_element()
     }
@@ -170,7 +169,7 @@ impl OverlayFormModal {
                     )
                     .sublabel(
                         div()
-                            .font_family(body_family())
+                            .font_family(cx.body_family())
                             .text_size(FONT_XXS)
                             .text_color(palette.text_faint)
                             .child(choice.summary.clone()),
@@ -194,12 +193,12 @@ impl OverlayFormModal {
             .flex()
             .flex_col()
             .gap(spacing(Spacing::Xs, density))
-            .child(caption(tr!("overlays_form_type_label"), palette))
+            .child(caption(tr!("overlays_form_type_label"), palette, cx))
             .child(grid)
             .into_any_element()
     }
 
-    fn render_locked_type(&self, palette: &ForgePalette, density: Density) -> AnyElement {
+    fn render_locked_type(&self, palette: &ForgePalette, density: Density, cx: &App) -> AnyElement {
         let chosen = self
             .types
             .iter()
@@ -214,7 +213,7 @@ impl OverlayFormModal {
             .flex()
             .flex_col()
             .gap(spacing(Spacing::Xs, density))
-            .child(caption(tr!("overlays_form_type_label"), palette))
+            .child(caption(tr!("overlays_form_type_label"), palette, cx))
             .child(
                 div()
                     .flex()
@@ -223,7 +222,7 @@ impl OverlayFormModal {
                     .child(icon(glyph, LOCKED_GLYPH, palette.text_muted))
                     .child(
                         div()
-                            .font_family(body_family())
+                            .font_family(cx.body_family())
                             .text_size(FONT_XS)
                             .text_color(palette.text_muted)
                             .child(label),
@@ -231,7 +230,7 @@ impl OverlayFormModal {
             )
             .child(
                 div()
-                    .font_family(body_family())
+                    .font_family(cx.body_family())
                     .text_size(FONT_XXS)
                     .text_color(palette.text_faint)
                     .child(tr!("overlays_form_type_locked")),
@@ -269,9 +268,9 @@ impl OverlayFormModal {
     }
 }
 
-fn caption(label: String, palette: &ForgePalette) -> impl IntoElement {
+fn caption(label: String, palette: &ForgePalette, cx: &App) -> impl IntoElement {
     div()
-        .font_family(mono_family())
+        .font_family(cx.mono_family())
         .text_size(FONT_XXS)
         .text_color(palette.text_muted)
         .child(SharedString::from(label.to_uppercase()))
@@ -289,7 +288,7 @@ impl Render for OverlayFormModal {
         }
 
         let type_section = if self.is_rename() {
-            self.render_locked_type(&palette, density)
+            self.render_locked_type(&palette, density, cx)
         } else {
             self.render_type_picker(&palette, cx)
         };
@@ -300,7 +299,7 @@ impl Render for OverlayFormModal {
             .px(scaled(BODY_PAD_H, density))
             .flex()
             .flex_col()
-            .child(self.render_name(&palette, density))
+            .child(self.render_name(&palette, density, cx))
             .child(type_section);
 
         let (title, subtitle) = if self.is_rename() {

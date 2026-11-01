@@ -1,9 +1,9 @@
-use gpui::{AnyElement, IntoElement, Pixels, SharedString, div, prelude::*, px};
+use gpui::{AnyElement, App, IntoElement, Pixels, SharedString, div, prelude::*, px};
 
 use crate::icons::{Icon, icon};
 use crate::palette::ForgePalette;
-use crate::tokens::{Density, FONT_SM, Spacing, body_family, spacing};
-use crate::tr;
+use crate::tokens::{Density, FONT_SM, Spacing, spacing};
+use crate::{ActivePresentation, tr};
 
 const SAVED_ICON: Pixels = px(13.0);
 
@@ -24,16 +24,21 @@ impl SaveState {
     }
 }
 
-pub fn save_indicator(state: &SaveState, palette: &ForgePalette, density: Density) -> AnyElement {
+pub fn save_indicator(
+    state: &SaveState,
+    palette: &ForgePalette,
+    density: Density,
+    cx: &App,
+) -> AnyElement {
     match state {
         SaveState::Error(message) => div()
-            .font_family(body_family())
+            .font_family(cx.body_family())
             .text_size(FONT_SM)
             .text_color(palette.danger)
             .child(tr!("widget_save_failed", error = message.as_ref()))
             .into_any_element(),
         SaveState::Saving => div()
-            .font_family(body_family())
+            .font_family(cx.body_family())
             .text_size(FONT_SM)
             .text_color(palette.text_faint)
             .child(tr!("widget_save_saving"))
@@ -45,14 +50,14 @@ pub fn save_indicator(state: &SaveState, palette: &ForgePalette, density: Densit
             .child(icon(Icon::CircleCheck, SAVED_ICON, palette.success))
             .child(
                 div()
-                    .font_family(body_family())
+                    .font_family(cx.body_family())
                     .text_size(FONT_SM)
                     .text_color(palette.success)
                     .child(tr!("widget_save_all_saved")),
             )
             .into_any_element(),
         SaveState::Unsaved => div()
-            .font_family(body_family())
+            .font_family(cx.body_family())
             .text_size(FONT_SM)
             .text_color(palette.warning)
             .child(tr!("widget_save_unsaved"))

@@ -1,4 +1,6 @@
 use super::*;
+use forge_components::ActivePresentation;
+use gpui::App;
 
 impl BackupScheduleView {
     pub(super) fn schedule_row(
@@ -50,6 +52,7 @@ impl BackupScheduleView {
         number: ScheduleNumber,
         palette: &ForgePalette,
         density: Density,
+        cx: &App,
     ) -> Option<SettingRow> {
         let field = self.numbers.iter().find(|f| f.number == number)?;
         let hint = if field.invalid {
@@ -70,7 +73,7 @@ impl BackupScheduleView {
             )
             .child(
                 div()
-                    .font_family(body_family())
+                    .font_family(cx.body_family())
                     .text_size(FONT_XS)
                     .text_color(palette.text_muted)
                     .child(number.unit(field.value)),
@@ -120,7 +123,7 @@ impl BackupScheduleView {
             .child(checkbox(checked, palette).disabled(fixed))
             .child(
                 div()
-                    .font_family(body_family())
+                    .font_family(cx.body_family())
                     .text_size(FONT_XS)
                     .text_color(label_color)
                     .child(category_label(category)),
@@ -128,7 +131,7 @@ impl BackupScheduleView {
         if fixed {
             item = item.child(
                 div()
-                    .font_family(body_family())
+                    .font_family(cx.body_family())
                     .text_size(FONT_XS)
                     .text_color(palette.text_faint)
                     .child(tr!("backup_schedule_category_database_reason")),
@@ -198,7 +201,7 @@ impl BackupScheduleView {
             .border(BORDER_THIN)
             .border_color(palette.border_regular)
             .bg(palette.shell)
-            .font_family(mono_family())
+            .font_family(cx.mono_family())
             .text_size(FONT_XS)
             .text_color(palette.text_primary)
             .child(shown);
@@ -236,7 +239,12 @@ impl BackupScheduleView {
         .stacked()
     }
 
-    pub(super) fn storage_used_row(&self, palette: &ForgePalette, density: Density) -> SettingRow {
+    pub(super) fn storage_used_row(
+        &self,
+        palette: &ForgePalette,
+        density: Density,
+        cx: &App,
+    ) -> SettingRow {
         let mut items = div()
             .w_full()
             .flex()
@@ -253,14 +261,14 @@ impl BackupScheduleView {
                             .gap(spacing(Spacing::Xs, density))
                             .child(
                                 div()
-                                    .font_family(body_family())
+                                    .font_family(cx.body_family())
                                     .text_size(FONT_XS)
                                     .text_color(palette.text_muted)
                                     .child(part.label()),
                             )
                             .child(
                                 div()
-                                    .font_family(mono_family())
+                                    .font_family(cx.mono_family())
                                     .text_size(FONT_XS)
                                     .text_color(palette.text_primary)
                                     .child(fmt_bytes(bytes)),
@@ -271,7 +279,7 @@ impl BackupScheduleView {
             None => {
                 items = items.child(
                     div()
-                        .font_family(mono_family())
+                        .font_family(cx.mono_family())
                         .text_size(FONT_XS)
                         .text_color(palette.text_muted)
                         .child(tr!("backup_schedule_storage_used_unknown")),

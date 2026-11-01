@@ -159,7 +159,7 @@ impl BuiltinContent for DiscordClient {
                 visible_rows: None,
                 row_padding_y_px: DEFAULT_ROW_PADDING_Y_PX,
                 refreshable: false,
-                items: webhook_items,
+                items: webhook_items.into(),
                 footer: None,
             }),
             right: Box::new(ContentList {
@@ -171,7 +171,7 @@ impl BuiltinContent for DiscordClient {
                 visible_rows: None,
                 row_padding_y_px: DEFAULT_ROW_PADDING_Y_PX,
                 refreshable: false,
-                items: post_items,
+                items: post_items.into(),
                 footer: None,
             }),
         }]

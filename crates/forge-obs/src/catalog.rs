@@ -291,7 +291,7 @@ pub(crate) fn catalog_sections(catalog: &ObsCatalog, actionable: bool) -> Vec<De
         visible_rows: Some(PANEL_VISIBLE_ROWS),
         row_padding_y_px: SCENE_ROW_PADDING_Y_PX,
         refreshable: true,
-        items: scene_items,
+        items: scene_items.into(),
         footer: None,
     };
 
@@ -304,7 +304,7 @@ pub(crate) fn catalog_sections(catalog: &ObsCatalog, actionable: bool) -> Vec<De
         visible_rows: Some(PANEL_VISIBLE_ROWS),
         row_padding_y_px: SOURCE_ROW_PADDING_Y_PX,
         refreshable: false,
-        items: source_items,
+        items: source_items.into(),
         footer: None,
     };
 

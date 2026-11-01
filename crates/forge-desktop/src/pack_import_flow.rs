@@ -442,6 +442,7 @@ impl Render for PackImportFlow {
                 tr!("import_busy_pack_detail"),
                 &cx.palette(),
                 density,
+                cx,
             ),
             PackImportStep::Idle => div().into_any_element(),
         }

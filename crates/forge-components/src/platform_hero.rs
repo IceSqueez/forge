@@ -8,7 +8,7 @@ use crate::avatar::{AvatarTile, avatar_tile};
 use crate::palette::ForgePalette;
 use crate::presentation::ActivePresentation;
 use crate::tokens::{
-    BORDER_THIN, Density, FONT_MD, FONT_XS, Radius, Spacing, body_family, radius, scaled, spacing,
+    BORDER_THIN, Density, FONT_MD, FONT_XS, Radius, Spacing, radius, scaled, spacing,
 };
 
 const HERO_TILE_SIZE: Pixels = px(48.0);
@@ -81,7 +81,7 @@ impl RenderOnce for PlatformHero {
         let d = self.density.unwrap_or_else(|| cx.density());
 
         let name_el = div()
-            .font_family(body_family())
+            .font_family(cx.body_family())
             .text_size(FONT_MD)
             .text_color(self.name_color)
             .child(self.name);
@@ -106,7 +106,7 @@ impl RenderOnce for PlatformHero {
             .child(name_row)
             .child(
                 div()
-                    .font_family(body_family())
+                    .font_family(cx.body_family())
                     .text_size(FONT_XS)
                     .text_color(self.description_color)
                     .child(self.description),

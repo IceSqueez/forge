@@ -2,16 +2,16 @@ use forge_components::TINT_STRONG_FILL_ALPHA;
 use std::sync::Arc;
 
 use forge_components::{
-    BORDER_THIN, ConfirmTone, Density, FONT_SM, FONT_XS, FONT_XXS, ForgePalette, InputEvent,
-    OverlayPosition, Radius, SettingRow, Spacing, TextInput, body_family, confirm_modal, error_row,
-    error_row_with_retry, ghost_button, mono_family, overlay, radius, scaled, setting_block,
-    setting_groups, setting_row, setting_rows, spacing, toggle, tr, with_alpha,
+    ActivePresentation, BORDER_THIN, ConfirmTone, Density, FONT_SM, FONT_XS, FONT_XXS,
+    ForgePalette, InputEvent, OverlayPosition, Radius, SettingRow, Spacing, TextInput,
+    confirm_modal, error_row, error_row_with_retry, ghost_button, overlay, radius, scaled,
+    setting_block, setting_groups, setting_row, setting_rows, spacing, toggle, tr, with_alpha,
 };
 use forge_hotkey::{DEFAULT_HOLD_CEILING_SECS, HotkeyClient};
 use forge_storage::{DataProvider, SettingsRepo, StorageError};
 use gpui::{
-    AnyElement, ClickEvent, Context, Entity, Keystroke, Pixels, SharedString, Subscription, Window,
-    div, prelude::*, px,
+    AnyElement, App, ClickEvent, Context, Entity, Keystroke, Pixels, SharedString, Subscription,
+    Window, div, prelude::*, px,
 };
 
 use crate::actions::{SHORTCUTS, ShortcutEntry, shortcut_entry};
@@ -20,7 +20,6 @@ use crate::navigation::SettingsSection;
 use crate::repo_failure::RepoFailure;
 use crate::settings_pane_header::SettingsPaneHeader;
 use crate::shortcut_overrides::{ChordVerdict, ShortcutOverrides, load_overrides, save_overrides};
-use forge_components::ActivePresentation;
 use forge_hotkey::{load_hold_ceiling, save_hold_ceiling};
 
 const CEILING_MIN_SECS: u64 = 1;
@@ -365,12 +364,13 @@ impl SettingsShortcutsView {
                     palette,
                     cx.listener(|this, _: &ClickEvent, _, cx| this.retry_load(cx)),
                     density,
+                    cx,
                 )
                 .into_any_element(),
             );
         }
         let message = self.rebind_error.as_ref().or(self.save_error.as_ref())?;
-        Some(error_row(message.clone(), palette, density).into_any_element())
+        Some(error_row(message.clone(), palette, density, cx).into_any_element())
     }
 
     fn chord_chip(
@@ -378,13 +378,14 @@ impl SettingsShortcutsView {
         label: impl Into<SharedString>,
         palette: &ForgePalette,
         density: Density,
+        cx: &App,
     ) -> AnyElement {
         div()
             .px(scaled(CHIP_PAD_H, density))
             .py(scaled(CHIP_PAD_V, density))
             .rounded(radius(Radius::Sm))
             .bg(palette.surface_overlay)
-            .font_family(mono_family())
+            .font_family(cx.mono_family())
             .text_size(FONT_XXS)
             .text_color(palette.text_primary)
             .child(label.into())
@@ -413,7 +414,7 @@ impl SettingsShortcutsView {
                         .bg(with_alpha(palette.brand, TINT_STRONG_FILL_ALPHA))
                         .border(BORDER_THIN)
                         .border_color(with_alpha(palette.brand, CAPTURE_BORDER_ALPHA))
-                        .font_family(body_family())
+                        .font_family(cx.body_family())
                         .text_size(FONT_XS)
                         .text_color(palette.brand)
                         .child(tr!("settings_shortcuts_capture_prompt")),
@@ -424,11 +425,13 @@ impl SettingsShortcutsView {
                 ));
         } else if let Some(overrides) = self.overrides.loaded() {
             match overrides.resolved_chord_of(entry) {
-                Some(chord) => controls = controls.child(self.chord_chip(chord, palette, density)),
+                Some(chord) => {
+                    controls = controls.child(self.chord_chip(chord, palette, density, cx))
+                }
                 None => {
                     controls = controls.child(
                         div()
-                            .font_family(body_family())
+                            .font_family(cx.body_family())
                             .text_size(FONT_XS)
                             .text_color(palette.text_faint)
                             .child(tr!("settings_shortcuts_unbound")),
@@ -452,26 +455,31 @@ impl SettingsShortcutsView {
             }
         } else {
             controls = controls
-                .child(self.chord_chip(UNKNOWN_CHORD, palette, density))
+                .child(self.chord_chip(UNKNOWN_CHORD, palette, density, cx))
                 .child(ghost_button(tr!("settings_shortcuts_rebind"), palette).disabled(true));
         }
 
         setting_row(tr!(entry.label_key), None, controls, palette, density)
     }
 
-    fn fixed_section(&self, palette: &ForgePalette, density: Density) -> impl IntoElement {
+    fn fixed_section(
+        &self,
+        palette: &ForgePalette,
+        density: Density,
+        cx: &App,
+    ) -> impl IntoElement {
         let rows = setting_rows(palette)
             .row(setting_row(
                 tr!("settings_shortcuts_fixed_enter"),
                 None,
-                self.chord_chip("Enter", palette, density),
+                self.chord_chip("Enter", palette, density, cx),
                 palette,
                 density,
             ))
             .row(setting_row(
                 tr!("settings_shortcuts_fixed_escape"),
                 None,
-                self.chord_chip("Esc", palette, density),
+                self.chord_chip("Esc", palette, density, cx),
                 palette,
                 density,
             ));
@@ -482,6 +490,7 @@ impl SettingsShortcutsView {
             rows,
             palette,
             density,
+            cx,
         )
     }
 
@@ -508,7 +517,7 @@ impl SettingsShortcutsView {
                 )
                 .child(
                     div()
-                        .font_family(body_family())
+                        .font_family(cx.body_family())
                         .text_size(FONT_XS)
                         .text_color(palette.text_muted)
                         .child(tr!("settings_hold_ceiling_unit")),
@@ -516,7 +525,7 @@ impl SettingsShortcutsView {
         } else {
             controls = controls.child(
                 div()
-                    .font_family(body_family())
+                    .font_family(cx.body_family())
                     .text_size(FONT_XS)
                     .text_color(palette.text_faint)
                     .child(tr!("settings_hold_ceiling_off")),
@@ -540,6 +549,7 @@ impl SettingsShortcutsView {
             setting_rows(palette).row(row),
             palette,
             density,
+            cx,
         )
     }
 
@@ -623,7 +633,7 @@ impl Render for SettingsShortcutsView {
             groups.push(banner);
         }
         groups.push(list.into_any_element());
-        groups.push(self.fixed_section(&palette, density).into_any_element());
+        groups.push(self.fixed_section(&palette, density, cx).into_any_element());
         groups.push(
             self.hold_ceiling_section(&palette, density, cx)
                 .into_any_element(),

@@ -2,8 +2,8 @@ use forge_components::FONT_META;
 use std::sync::Arc;
 
 use forge_components::{
-    ForgePalette, Icon, OverlayPosition, body_family, destructive_button_with_icon, modal, overlay,
-    scaled, tr,
+    ActivePresentation, ForgePalette, Icon, OverlayPosition, destructive_button_with_icon, modal,
+    overlay, scaled, tr,
 };
 use forge_events::EventPublisher;
 use forge_storage::{CredentialsRepo, SettingsRepo};
@@ -12,7 +12,6 @@ use gpui::{
 };
 
 use crate::obs_credentials_form::{ObsConnected, ObsCredentialsForm, ObsSubmit};
-use forge_components::ActivePresentation;
 use forge_host::integrations::ObsInstallSeed;
 
 const MODAL_WIDTH: Pixels = px(460.0);
@@ -96,7 +95,7 @@ impl ObsSettingsModal {
                 div()
                     .flex_1()
                     .min_w(px(0.0))
-                    .font_family(body_family())
+                    .font_family(cx.body_family())
                     .text_size(HINT_SIZE)
                     .text_color(palette.text_faint)
                     .child(tr!("obs_settings_disconnect_hint")),

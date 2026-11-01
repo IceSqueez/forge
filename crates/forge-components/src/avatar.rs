@@ -1,10 +1,11 @@
+use crate::ActivePresentation;
 use gpui::{
     App, FontWeight, IntoElement, ParentElement, Pixels, RenderOnce, Rgba, SharedString, Styled,
     Window, div, px,
 };
 
 use crate::palette::ForgePalette;
-use crate::tokens::{FONT_XXS, Radius, body_family, mono_family, radius};
+use crate::tokens::{FONT_XXS, Radius, radius};
 
 pub fn hash_accent(name: &str, palette: &ForgePalette) -> Rgba {
     let accents = [
@@ -85,11 +86,11 @@ impl AvatarTile {
 }
 
 impl RenderOnce for AvatarTile {
-    fn render(self, _window: &mut Window, _cx: &mut App) -> impl IntoElement {
+    fn render(self, _window: &mut Window, cx: &mut App) -> impl IntoElement {
         let family = if self.mono {
-            mono_family()
+            cx.mono_family()
         } else {
-            body_family()
+            cx.body_family()
         };
         div()
             .flex_none()

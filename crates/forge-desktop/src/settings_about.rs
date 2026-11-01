@@ -2,8 +2,8 @@ use std::sync::Arc;
 
 use forge_audio::{OutputDevice, stored_output_device};
 use forge_components::{
-    ActivePresentation, FONT_XS, ForgePalette, Icon, SectionLabel, Spacing, body_family, card,
-    field_hint, ghost_button_with_icon, setting_rows, setting_value_row, spacing, spinner, tr,
+    ActivePresentation, FONT_XS, ForgePalette, Icon, SectionLabel, Spacing, card, field_hint,
+    ghost_button_with_icon, setting_rows, setting_value_row, spacing, spinner, tr,
 };
 use forge_storage::settings::core_settings;
 use forge_storage::{DataProvider, SettingsRepo, read_setting};
@@ -134,7 +134,7 @@ impl SettingsAboutView {
                 ))
                 .child(
                     div()
-                        .font_family(body_family())
+                        .font_family(cx.body_family())
                         .text_size(FONT_XS)
                         .text_color(palette.text_muted)
                         .child(tr!("settings_about_collecting")),
@@ -152,6 +152,7 @@ impl SettingsAboutView {
                     value,
                     palette,
                     density,
+                    cx,
                 ))
             })
             .into_any_element()
@@ -209,7 +210,7 @@ impl Render for SettingsAboutView {
             .flex_col()
             .gap(spacing(Spacing::Xxs, density))
             .child(header)
-            .child(field_hint(tr!("settings_about_system_hint"), &palette))
+            .child(field_hint(tr!("settings_about_system_hint"), &palette, cx))
             .child(self.render_rows(&palette, cx));
 
         card(body, &palette).full_width()

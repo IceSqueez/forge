@@ -1,7 +1,7 @@
 use super::*;
 use forge_components::{
-    DateTimePicker, DateTimePickerEvent, DateTimePickerLabels, active_display_formats,
-    anchored_popover, display_zone,
+    DateTimePicker, DateTimePickerEvent, DateTimePickerLabels, DisplayZone, active_display_formats,
+    anchored_popover,
 };
 
 pub(super) struct DateTimePickerForm {
@@ -28,9 +28,15 @@ impl EditSubActionForm {
         };
         let formats = active_display_formats();
         let picker = cx.new(|cx| {
-            DateTimePicker::new(Some(initial.as_str()), display_zone(), labels, palette, cx)
-                .first_day(formats.first_day)
-                .clock(formats.clock)
+            DateTimePicker::new(
+                Some(initial.as_str()),
+                DisplayZone::system(),
+                labels,
+                palette,
+                cx,
+            )
+            .first_day(formats.first_day)
+            .clock(formats.clock)
         });
         let sub = cx.subscribe(&picker, Self::on_datetime_event);
         self.datetime_picker = Some(DateTimePickerForm {

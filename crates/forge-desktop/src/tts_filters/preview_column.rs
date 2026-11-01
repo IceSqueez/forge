@@ -3,14 +3,14 @@ use super::preview::{MarkTint, PreviewMark};
 use super::{TtsFiltersView, mono_caption};
 use forge_components::OverflowRevealingFocus;
 use forge_components::{
-    BORDER_THIN, Density, FONT_SM, FONT_XS, FONT_XXS, ForgePalette, Icon, KeyActivated, Radius,
-    Spacing, body_family, card, icon, mono_family, radius, spacing, tr,
+    ActivePresentation, BORDER_THIN, Density, FONT_SM, FONT_XS, FONT_XXS, ForgePalette, Icon,
+    KeyActivated, Radius, Spacing, card, icon, radius, spacing, tr,
 };
 use forge_tts_pipeline::{PipelineResult, SkipReason, StageAction, StageName, StageOutcome};
 use gpui::prelude::*;
 use gpui::{
-    AnyElement, ClickEvent, Context, HighlightStyle, Hsla, Pixels, Rgba, SharedString, StyledText,
-    div, px,
+    AnyElement, App, ClickEvent, Context, HighlightStyle, Hsla, Pixels, Rgba, SharedString,
+    StyledText, div, px,
 };
 
 const PREVIEW_W: Pixels = px(320.0);
@@ -31,7 +31,7 @@ impl TtsFiltersView {
             .child(icon(Icon::Eye, FONT_SM, palette.brand))
             .child(
                 div()
-                    .font_family(body_family())
+                    .font_family(cx.body_family())
                     .text_size(FONT_SM)
                     .text_color(palette.text_primary)
                     .child(tr!("tts_filters_preview_header")),
@@ -44,6 +44,7 @@ impl TtsFiltersView {
             .child(mono_caption(
                 tr!("tts_filters_preview_input_label"),
                 palette,
+                cx,
             ))
             .child(self.preview_input.clone());
 
@@ -54,6 +55,7 @@ impl TtsFiltersView {
             .child(mono_caption(
                 tr!("tts_filters_preview_output_label"),
                 palette,
+                cx,
             ));
 
         if let Some(preview) = &self.cached_preview {
@@ -70,6 +72,7 @@ impl TtsFiltersView {
                     &marks,
                     palette,
                     density,
+                    cx,
                 ));
             }
             let spoken_marks = match &preview.result {
@@ -82,11 +85,12 @@ impl TtsFiltersView {
                 &spoken_marks,
                 palette,
                 density,
+                cx,
             ));
         } else {
             stages_section = stages_section.child(
                 div()
-                    .font_family(body_family())
+                    .font_family(cx.body_family())
                     .text_size(FONT_XS)
                     .text_color(palette.text_muted)
                     .child(tr!("tts_filters_preview_empty")),
@@ -109,7 +113,7 @@ impl TtsFiltersView {
             .child(icon(Icon::PlayerPlayFilled, FONT_XS, palette.shell))
             .child(
                 div()
-                    .font_family(body_family())
+                    .font_family(cx.body_family())
                     .text_size(FONT_XS)
                     .text_color(palette.shell)
                     .child(tr!("tts_filters_speak_preview_btn")),
@@ -153,6 +157,7 @@ fn preview_stage_card(
     marks: &[PreviewMark],
     palette: &ForgePalette,
     density: Density,
+    cx: &App,
 ) -> AnyElement {
     let body: AnyElement = match &outcome.action {
         StageAction::PassedThrough => div()
@@ -161,21 +166,21 @@ fn preview_stage_card(
             .gap(spacing(Spacing::Xxs, density))
             .child(
                 div()
-                    .font_family(body_family())
+                    .font_family(cx.body_family())
                     .text_size(FONT_XS)
                     .text_color(palette.success)
                     .child("\u{2713}"),
             )
             .child(
                 div()
-                    .font_family(body_family())
+                    .font_family(cx.body_family())
                     .text_size(FONT_XS)
                     .text_color(palette.text_primary)
                     .child(tr!("tts_filters_stage_pass")),
             )
             .into_any_element(),
         StageAction::Transformed => div()
-            .font_family(body_family())
+            .font_family(cx.body_family())
             .text_size(FONT_XS)
             .text_color(palette.text_primary)
             .child(marked_text(
@@ -191,14 +196,14 @@ fn preview_stage_card(
             .gap(spacing(Spacing::Xxs, density))
             .child(
                 div()
-                    .font_family(body_family())
+                    .font_family(cx.body_family())
                     .text_size(FONT_XS)
                     .text_color(palette.danger)
                     .child("\u{d7}"),
             )
             .child(
                 div()
-                    .font_family(body_family())
+                    .font_family(cx.body_family())
                     .text_size(FONT_XS)
                     .text_color(palette.danger)
                     .child(format!(
@@ -210,7 +215,7 @@ fn preview_stage_card(
             .into_any_element(),
     };
 
-    stage_card_frame(format!("{n} \u{b7} {name}"), body, palette, density)
+    stage_card_frame(format!("{n} \u{b7} {name}"), body, palette, density, cx)
 }
 
 fn final_output_card(
@@ -219,6 +224,7 @@ fn final_output_card(
     marks: &[PreviewMark],
     palette: &ForgePalette,
     density: Density,
+    cx: &App,
 ) -> AnyElement {
     let (text, color) = match result {
         PipelineResult::Speak(spoken) => (
@@ -238,13 +244,14 @@ fn final_output_card(
     stage_card_frame(
         format!("{} \u{b7} {}", n, tr!("tts_filters_preview_final_label")),
         div()
-            .font_family(body_family())
+            .font_family(cx.body_family())
             .text_size(FONT_XS)
             .text_color(color)
             .child(marked_text(text, marks, None, palette))
             .into_any_element(),
         palette,
         density,
+        cx,
     )
 }
 
@@ -253,6 +260,7 @@ fn stage_card_frame(
     body: AnyElement,
     palette: &ForgePalette,
     density: Density,
+    cx: &App,
 ) -> AnyElement {
     card(
         div()
@@ -261,7 +269,7 @@ fn stage_card_frame(
             .gap(spacing(Spacing::Xxs, density))
             .child(
                 div()
-                    .font_family(mono_family())
+                    .font_family(cx.mono_family())
                     .text_size(FONT_XXS)
                     .text_color(palette.text_faint)
                     .child(label),

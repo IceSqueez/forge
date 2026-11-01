@@ -1,6 +1,7 @@
 use std::collections::BTreeMap;
 use std::fmt;
 use std::pin::Pin;
+use std::sync::Arc;
 use std::time::{Duration, SystemTime};
 
 use async_trait::async_trait;
@@ -192,7 +193,7 @@ pub struct ContentList {
     pub row_padding_y_px: u8,
     #[serde(default)]
     pub refreshable: bool,
-    pub items: Vec<ContentListItem>,
+    pub items: Arc<[ContentListItem]>,
     pub footer: Option<ListFooter>,
 }
 
@@ -319,7 +320,7 @@ pub enum DetailSection {
         icon: SectionIcon,
         #[serde(default, skip_serializing_if = "Option::is_none")]
         icon_tint: Option<TokenColor>,
-        items: Vec<SubscriptionRow>,
+        items: Arc<[SubscriptionRow]>,
         footer: Option<ListFooter>,
         #[serde(default, skip_serializing_if = "Option::is_none")]
         banner: Option<UserText>,
@@ -329,7 +330,7 @@ pub enum DetailSection {
         icon: SectionIcon,
         #[serde(default, skip_serializing_if = "Option::is_none")]
         icon_tint: Option<TokenColor>,
-        scopes: Vec<String>,
+        scopes: Arc<[String]>,
         footer: Option<ListFooter>,
     },
     InfoCard {
@@ -833,7 +834,8 @@ mod tests {
                 ],
                 enabled: true,
                 on_click: None,
-            }],
+            }]
+            .into(),
             footer: None,
         }
     }

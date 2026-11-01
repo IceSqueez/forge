@@ -1,3 +1,4 @@
+use crate::option_choices::ChoiceOption;
 use std::sync::Arc;
 
 use forge_soundboard::SoundboardError;
@@ -12,7 +13,7 @@ use crate::async_bridge;
 
 #[derive(Default)]
 pub(super) struct MediaCatalog {
-    pub(super) clip_choices: Vec<(String, String)>,
+    pub(super) clip_choices: Vec<ChoiceOption>,
     clips_gen: async_bridge::Generation,
     pub(super) icon_images: Vec<IconImage>,
     pub(super) icon_picker: Option<OpenIconPicker>,

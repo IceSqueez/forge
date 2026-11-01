@@ -15,10 +15,7 @@ use gpui::{
 use crate::icons::{Icon, icon};
 use crate::overlay::{drive_overlay_focus, enter_animation};
 use crate::palette::ForgePalette;
-use crate::tokens::{
-    BORDER_THIN, DISABLED_OPACITY, Density, FONT_XS, Spacing, body_family, mono_family, scaled,
-    spacing,
-};
+use crate::tokens::{BORDER_THIN, DISABLED_OPACITY, Density, FONT_XS, Spacing, scaled, spacing};
 
 const PANEL_MIN_WIDTH: Pixels = px(180.0);
 const PANEL_RADIUS: Pixels = px(8.0);
@@ -173,6 +170,7 @@ impl MenuInk {
         at_key_cursor: bool,
         dismiss: &Option<DismissHandler>,
         density: Density,
+        cx: &App,
     ) -> AnyElement {
         let text_ink = if entry.disabled {
             self.faint_ink
@@ -192,7 +190,7 @@ impl MenuInk {
             .py(spacing(Spacing::Xs, density))
             .px(spacing(Spacing::Sm, density))
             .rounded(ITEM_RADIUS)
-            .font_family(body_family());
+            .font_family(cx.body_family());
 
         if let Some(glyph) = entry.icon {
             row = row.child(icon(glyph, ITEM_ICON_SIZE, glyph_ink));
@@ -236,12 +234,12 @@ impl MenuInk {
             .into_any_element()
     }
 
-    fn render_header(&self, label: SharedString, density: Density) -> AnyElement {
+    fn render_header(&self, label: SharedString, density: Density, cx: &App) -> AnyElement {
         div()
             .pt(spacing(Spacing::Xs, density))
             .pb(spacing(Spacing::Xs, density) * HEADER_BOTTOM_PAD_RATIO)
             .px(spacing(Spacing::Sm, density))
-            .font_family(mono_family())
+            .font_family(cx.mono_family())
             .whitespace_nowrap()
             .text_size(HEADER_FONT_SIZE)
             .text_color(self.header_ink)
@@ -277,10 +275,10 @@ impl MenuInk {
                 MenuItem::Item(entry) => {
                     let at_key_cursor = key_cursor == Some(pickable.len());
                     pickable.push((!entry.disabled).then(|| Rc::clone(&entry.on_click)));
-                    panel.child(self.render_item(entry, at_key_cursor, &dismiss, density))
+                    panel.child(self.render_item(entry, at_key_cursor, &dismiss, density, cx))
                 }
                 MenuItem::Divider => panel.child(self.render_divider(density)),
-                MenuItem::Header(label) => panel.child(self.render_header(label, density)),
+                MenuItem::Header(label) => panel.child(self.render_header(label, density, cx)),
             };
         }
 

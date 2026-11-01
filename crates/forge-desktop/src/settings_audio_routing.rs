@@ -2,22 +2,21 @@ use std::sync::Arc;
 
 use forge_audio::{AudioRoute, AudioSink};
 use forge_components::{
-    BORDER_THIN, Density, FONT_SM, FONT_XS, ForgePalette, Icon, KeyActivated, Radius, SettingRow,
-    Spacing, body_family, drive_overlay_focus, dropdown, dropdown_list, dropdown_row,
+    ActivePresentation, BORDER_THIN, Density, FONT_SM, FONT_XS, ForgePalette, Icon, KeyActivated,
+    Radius, SettingRow, Spacing, drive_overlay_focus, dropdown, dropdown_list, dropdown_row,
     ghost_button_with_icon, icon, radius, scaled, segment, segmented, setting_block, setting_row,
     setting_rows, spacing, tr,
 };
 use forge_runtime::OverlayServiceHandle;
 use forge_storage::{OverlayId, OverlayRepo, SettingsRepo};
 use gpui::{
-    AnyElement, ClickEvent, Context, FocusHandle, SharedString, Window, div, prelude::*, px,
+    AnyElement, App, ClickEvent, Context, FocusHandle, SharedString, Window, div, prelude::*, px,
 };
 
 use crate::async_bridge::{self, Loadable};
 use crate::load_notice::{LoadNotice, NoticeWidth, load_notice};
 use crate::repo_failure::RepoFailure;
 use crate::settings_audio::test_tone;
-use forge_components::ActivePresentation;
 use forge_host::audio_router::{AppliedRoutes, AudioRouter};
 use forge_host::audio_routes::{
     AudioDomain, RouteFallback, RoutePlan, load_audio_routes, plan_route, resolve_destination,
@@ -341,7 +340,7 @@ impl SettingsAudioRoutingView {
     ) -> AnyElement {
         if let Some(text) = no_overlays_text(&self.choices) {
             return div()
-                .font_family(body_family())
+                .font_family(cx.body_family())
                 .text_size(FONT_XS)
                 .text_color(palette.text_muted)
                 .child(text)
@@ -365,7 +364,7 @@ impl SettingsAudioRoutingView {
             .on_click(cx.listener(|this, _: &ClickEvent, _, cx| this.toggle_picker(cx)))
             .child(
                 div()
-                    .font_family(body_family())
+                    .font_family(cx.body_family())
                     .text_size(FONT_SM)
                     .text_color(palette.text_primary)
                     .child(self.destination_label()),
@@ -392,11 +391,16 @@ impl SettingsAudioRoutingView {
                     .child(field)
                     .child(self.test_button(palette, cx)),
             )
-            .children(self.pages_section(palette, density))
+            .children(self.pages_section(palette, density, cx))
             .into_any_element()
     }
 
-    fn pages_section(&self, palette: &ForgePalette, density: Density) -> Option<impl IntoElement> {
+    fn pages_section(
+        &self,
+        palette: &ForgePalette,
+        density: Density,
+        cx: &App,
+    ) -> Option<impl IntoElement> {
         let connected = self.connected_pages?;
         let mut column = div()
             .flex()
@@ -404,7 +408,7 @@ impl SettingsAudioRoutingView {
             .gap(spacing(Spacing::Xxs, density))
             .child(
                 div()
-                    .font_family(body_family())
+                    .font_family(cx.body_family())
                     .text_size(FONT_XS)
                     .text_color(palette.text_muted)
                     .child(connected_pages_text(connected)),
@@ -421,7 +425,7 @@ impl SettingsAudioRoutingView {
                         div()
                             .flex_1()
                             .min_w(px(0.0))
-                            .font_family(body_family())
+                            .font_family(cx.body_family())
                             .text_size(FONT_XS)
                             .text_color(palette.warning)
                             .child(warning),
@@ -492,7 +496,12 @@ impl SettingsAudioRoutingView {
             }))
     }
 
-    fn in_effect_row(&self, palette: &ForgePalette, density: Density) -> Option<SettingRow> {
+    fn in_effect_row(
+        &self,
+        palette: &ForgePalette,
+        density: Density,
+        cx: &App,
+    ) -> Option<SettingRow> {
         let in_effect = self.in_effect.as_ref()?;
         let lines = div()
             .flex()
@@ -503,12 +512,14 @@ impl SettingsAudioRoutingView {
                 &in_effect.speech,
                 palette,
                 density,
+                cx,
             ))
             .child(self.in_effect_line(
                 tr!("settings_audio_routing_clips_label"),
                 &in_effect.clips,
                 palette,
                 density,
+                cx,
             ));
         Some(
             setting_row(
@@ -528,6 +539,7 @@ impl SettingsAudioRoutingView {
         plan: &RoutePlan,
         palette: &ForgePalette,
         density: Density,
+        cx: &App,
     ) -> impl IntoElement {
         let value = in_effect_text(plan);
         let tone = match plan.fallback {
@@ -541,7 +553,7 @@ impl SettingsAudioRoutingView {
             .gap(spacing(Spacing::Sm, density))
             .child(
                 div()
-                    .font_family(body_family())
+                    .font_family(cx.body_family())
                     .text_size(FONT_XS)
                     .text_color(palette.text_muted)
                     .child(label),
@@ -550,7 +562,7 @@ impl SettingsAudioRoutingView {
                 div()
                     .flex_1()
                     .min_w(px(0.0))
-                    .font_family(body_family())
+                    .font_family(cx.body_family())
                     .text_size(FONT_XS)
                     .text_color(tone)
                     .child(value),
@@ -562,9 +574,10 @@ impl SettingsAudioRoutingView {
         key: &'static str,
         message: &str,
         palette: &ForgePalette,
+        cx: &App,
     ) -> impl IntoElement {
         div()
-            .font_family(body_family())
+            .font_family(cx.body_family())
             .text_size(FONT_SM)
             .text_color(palette.danger)
             .child(tr!(key, error = message))
@@ -600,6 +613,7 @@ impl Render for SettingsAudioRoutingView {
             }),
             &palette,
             density,
+            cx,
         );
         if let Some(notice) = notice {
             content = content.child(notice);
@@ -630,7 +644,7 @@ impl Render for SettingsAudioRoutingView {
                     .stacked(),
                 )
                 .rows(
-                    self.in_effect_row(&palette, density)
+                    self.in_effect_row(&palette, density, cx)
                         .map(IntoElement::into_any_element),
                 )
                 .in_card(&palette);
@@ -641,6 +655,7 @@ impl Render for SettingsAudioRoutingView {
                     "settings_audio_routing_test_error",
                     message,
                     &palette,
+                    cx,
                 ));
             }
             if let Some(message) = &self.persist_error {
@@ -648,6 +663,7 @@ impl Render for SettingsAudioRoutingView {
                     "settings_audio_routing_persist_error",
                     message,
                     &palette,
+                    cx,
                 ));
             }
         }
@@ -658,6 +674,7 @@ impl Render for SettingsAudioRoutingView {
             content,
             &palette,
             density,
+            cx,
         )
     }
 }

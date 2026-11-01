@@ -12,8 +12,8 @@ use crate::script_lifecycle::ScriptLifecycle;
 use crate::unsaved_work::UnsavedWork;
 use forge_components::{
     ActivePresentation, BreadcrumbCrumb, ConfirmTone, Density, FONT_XXS, ForgePalette, Icon,
-    OverlayPosition, Spacing, body_family, confirm_modal, drive_overlay_focus, icon, mono_family,
-    overlay, page_frame, spacing, tr,
+    OverlayPosition, Spacing, confirm_modal, drive_overlay_focus, icon, overlay, page_frame,
+    spacing, tr,
 };
 use forge_runtime::{EventBus, ScriptRegistry};
 use forge_storage::{DataProvider, ScriptRepo};
@@ -317,7 +317,7 @@ impl ScriptEditorView {
                 .child(icon(Icon::CircleCheck, GLYPH_STATUS, palette.success))
                 .child(
                     div()
-                        .font_family(body_family())
+                        .font_family(cx.body_family())
                         .text_size(FONT_XXS)
                         .text_color(palette.text_muted)
                         .child(tr!(
@@ -328,7 +328,7 @@ impl ScriptEditorView {
                 );
             right = right.child(health).child(
                 div()
-                    .font_family(body_family())
+                    .font_family(cx.body_family())
                     .text_size(FONT_XXS)
                     .text_color(palette.text_faint)
                     .child("·"),
@@ -338,7 +338,7 @@ impl ScriptEditorView {
         right
             .child(
                 div()
-                    .font_family(mono_family())
+                    .font_family(cx.mono_family())
                     .text_size(FONT_XXS)
                     .text_color(palette.text_muted)
                     .child(SCRIPT_LANGUAGE_LABEL),

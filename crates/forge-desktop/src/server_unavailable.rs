@@ -16,6 +16,7 @@ pub(crate) fn unavailable_banner(cx: &App, palette: &ForgePalette) -> Option<Any
             tr!("server_unavailable_banner", reason = reason.0.text()),
             palette,
             density,
+            cx,
         )
         .into_any_element(),
     )

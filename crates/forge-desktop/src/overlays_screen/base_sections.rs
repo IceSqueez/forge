@@ -1,9 +1,10 @@
+use crate::option_choices::ChoiceOption;
 use forge_components::Density;
 use forge_components::Spacing;
 use forge_components::spacing;
 use forge_components::{
-    BORDER_THIN, FONT_XS, FONT_XXS, ForgePalette, Icon, Picker, PickerEvent, PickerItem,
-    PickerLabels, body_family, field_label, ghost_button_with_icon, icon, scaled, section_label,
+    ActivePresentation, BORDER_THIN, FONT_XS, FONT_XXS, ForgePalette, Icon, Picker, PickerEvent,
+    PickerItem, PickerLabels, field_label, ghost_button_with_icon, icon, scaled, section_label,
     toggle, tr,
 };
 use forge_overlay::config::{
@@ -25,7 +26,6 @@ use super::sizing_section::{is_source_box_key, with_source_box};
 use crate::async_bridge;
 use crate::config_form::{ChoiceDropdown, ConfigField, ConfigFieldHandlers, render_config_control};
 use crate::repo_failure::RepoFailure;
-use forge_components::ActivePresentation;
 
 const LOOK_FIELD_KEY: &str = "look";
 const ROW_GAP: Pixels = px(8.0);
@@ -424,7 +424,7 @@ impl OverlayPropertyPanel {
                 .base
                 .looks
                 .iter()
-                .map(|look| (look.kind_id.clone(), look.label.clone()))
+                .map(|look| ChoiceOption::new(look.kind_id.clone(), look.label.clone()))
                 .collect(),
             selected: self.base.look.kind_id.clone(),
             dependency: None,
@@ -444,8 +444,15 @@ impl OverlayPropertyPanel {
             }),
         };
         let view = cx.entity();
-        let control =
-            render_config_control(&field, palette, "overlays-panel", &view, &handlers, density);
+        let control = render_config_control(
+            &field,
+            palette,
+            "overlays-panel",
+            &view,
+            &handlers,
+            density,
+            cx,
+        );
 
         div()
             .flex()
@@ -453,12 +460,14 @@ impl OverlayPropertyPanel {
             .child(div().pb(SECTION_GAP).child(section_label(
                 tr!("overlays_panel_section_look").to_uppercase(),
                 palette,
+                cx,
             )))
             .child(div().pb(scaled(FIELD_GAP, density)).child(hinted(
                 control,
                 tr!("overlays_look_hint"),
                 palette,
                 density,
+                cx,
             )))
             .into_any_element()
     }
@@ -477,10 +486,10 @@ impl OverlayPropertyPanel {
         let density = cx.density();
         let mut rows = Vec::new();
         if let Some(note) = display_note(&self.base.look) {
-            rows.push(note_line(note, palette));
+            rows.push(note_line(note, palette, cx));
         }
         if self.base.hides_itself && self.base.queues_shows() {
-            rows.push(own_hide_flag(palette, density));
+            rows.push(own_hide_flag(palette, density, cx));
         }
         if self.base.queues_shows() {
             rows.push(self.render_queue_row(palette, cx));
@@ -508,7 +517,7 @@ impl OverlayPropertyPanel {
                 div()
                     .flex_1()
                     .min_w(px(0.0))
-                    .font_family(body_family())
+                    .font_family(cx.body_family())
                     .text_size(FONT_XS)
                     .text_color(if waiting > 0 {
                         palette.text_primary
@@ -548,7 +557,7 @@ impl OverlayPropertyPanel {
             self.base.queues_shows(),
             self.base.slot_bound(),
         );
-        let status = status_line(text, warn, palette, density);
+        let status = status_line(text, warn, palette, density, cx);
         div()
             .flex()
             .flex_col()
@@ -573,7 +582,7 @@ impl OverlayPropertyPanel {
                 div()
                     .flex_1()
                     .min_w(px(0.0))
-                    .font_family(body_family())
+                    .font_family(cx.body_family())
                     .text_size(FONT_XS)
                     .text_color(palette.text_primary)
                     .child(tr!("overlays_receiver_toggle")),
@@ -597,11 +606,12 @@ impl OverlayPropertyPanel {
             .child(div().pb(SECTION_GAP).child(section_label(
                 tr!("overlays_panel_section_receiver").to_uppercase(),
                 palette,
+                cx,
             )))
             .child(
                 div()
                     .pb(scaled(FIELD_GAP, density))
-                    .child(hinted(row, hint, palette, density)),
+                    .child(hinted(row, hint, palette, density, cx)),
             )
             .into_any_element()
     }
@@ -659,10 +669,10 @@ fn fire_status(fire: &ShowFire, queues: bool, slot_bound: bool) -> (String, bool
     }
 }
 
-fn hint_text(text: String, palette: &ForgePalette, density: Density) -> gpui::Div {
+fn hint_text(text: String, palette: &ForgePalette, density: Density, cx: &App) -> gpui::Div {
     div()
         .pt(spacing(Spacing::Xxs, density))
-        .font_family(body_family())
+        .font_family(cx.body_family())
         .text_size(FONT_XXS)
         .line_height(NOTICE_LINE_H)
         .text_color(palette.text_faint)
@@ -674,29 +684,36 @@ pub(super) fn hinted(
     hint: String,
     palette: &ForgePalette,
     density: Density,
+    cx: &App,
 ) -> AnyElement {
     div()
         .flex()
         .flex_col()
         .child(control)
-        .child(hint_text(hint, palette, density))
+        .child(hint_text(hint, palette, density, cx))
         .into_any_element()
 }
 
-fn status_line(text: String, warn: bool, palette: &ForgePalette, density: Density) -> AnyElement {
+fn status_line(
+    text: String,
+    warn: bool,
+    palette: &ForgePalette,
+    density: Density,
+    cx: &App,
+) -> AnyElement {
     let tone = if warn {
         palette.warning
     } else {
         palette.text_faint
     };
-    hint_text(text, palette, density)
+    hint_text(text, palette, density, cx)
         .text_color(tone)
         .into_any_element()
 }
 
-fn note_line(text: String, palette: &ForgePalette) -> AnyElement {
+fn note_line(text: String, palette: &ForgePalette, cx: &App) -> AnyElement {
     div()
-        .font_family(body_family())
+        .font_family(cx.body_family())
         .text_size(FONT_XXS)
         .line_height(NOTICE_LINE_H)
         .text_color(palette.text_muted)
@@ -704,7 +721,7 @@ fn note_line(text: String, palette: &ForgePalette) -> AnyElement {
         .into_any_element()
 }
 
-fn own_hide_flag(palette: &ForgePalette, density: Density) -> AnyElement {
+fn own_hide_flag(palette: &ForgePalette, density: Density, cx: &App) -> AnyElement {
     div()
         .flex()
         .items_start()
@@ -719,7 +736,7 @@ fn own_hide_flag(palette: &ForgePalette, density: Density) -> AnyElement {
             div()
                 .flex_1()
                 .min_w(px(0.0))
-                .font_family(body_family())
+                .font_family(cx.body_family())
                 .text_size(FONT_XXS)
                 .line_height(NOTICE_LINE_H)
                 .text_color(palette.text_muted)

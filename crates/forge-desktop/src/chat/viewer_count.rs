@@ -4,9 +4,7 @@ use crate::chat_author::AuthorKey;
 use crate::chat_viewer_messages::stored_author;
 use crate::home_stats::HomeStats;
 use crate::window_presence::PresenceGate;
-use forge_components::{
-    ActivePresentation, FONT_XS, Spacing, body_family, spacing, status_dot, tr,
-};
+use forge_components::{ActivePresentation, FONT_XS, Spacing, spacing, status_dot, tr};
 use forge_storage::{
     ChatAuthorKey, ChatAuthorTally, ChatHistoryRepo, StorageError, Viewer, ViewerRepo,
 };
@@ -44,7 +42,7 @@ impl Render for ChatViewerCount {
             .child(status_dot(palette.success, VIEWER_DOT))
             .child(
                 div()
-                    .font_family(body_family())
+                    .font_family(cx.body_family())
                     .text_size(FONT_XS)
                     .text_color(palette.text_secondary)
                     .child(format!("{} {}", viewer_count, tr!("chat_viewers_unit"))),

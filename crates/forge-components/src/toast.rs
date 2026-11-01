@@ -12,7 +12,7 @@ use crate::icons::{Icon, icon};
 use crate::overlay::enter_animation;
 use crate::palette::ForgePalette;
 use crate::progress_bar::progress_bar;
-use crate::tokens::{BORDER_THIN, Density, FONT_SM, Radius, Spacing, body_family, radius, spacing};
+use crate::tokens::{BORDER_THIN, Density, FONT_SM, Radius, Spacing, radius, spacing};
 
 pub(crate) const UNDO_TOAST_DURATION: Duration = Duration::from_millis(6000);
 pub const STICKY_TOAST: Duration = Duration::ZERO;
@@ -205,18 +205,18 @@ impl ToastCard {
 }
 
 impl ToastCard {
-    fn message_text(&self) -> impl IntoElement {
+    fn message_text(&self, cx: &App) -> impl IntoElement {
         div()
             .flex_1()
             .w_full()
             .min_w(px(0.0))
-            .font_family(body_family())
+            .font_family(cx.body_family())
             .text_size(FONT_SM)
             .text_color(self.message_color)
             .child(self.message.clone())
     }
 
-    fn take_secondary(&mut self, density: Density) -> Option<impl IntoElement + use<>> {
+    fn take_secondary(&mut self, density: Density, cx: &App) -> Option<impl IntoElement + use<>> {
         let (Some(id), Some(label), Some(handler)) = (
             self.secondary_id.take(),
             self.secondary_label.take(),
@@ -230,10 +230,11 @@ impl ToastCard {
             self.secondary_color,
             handler,
             density,
+            cx,
         ))
     }
 
-    fn take_primary(&mut self, density: Density) -> Option<impl IntoElement + use<>> {
+    fn take_primary(&mut self, density: Density, cx: &App) -> Option<impl IntoElement + use<>> {
         let (Some(id), Some(label), Some(handler)) = (
             self.action_id.take(),
             self.action_label.take(),
@@ -247,6 +248,7 @@ impl ToastCard {
             self.action_color,
             handler,
             density,
+            cx,
         ))
     }
 
@@ -271,9 +273,9 @@ impl ToastCard {
         self.progress.is_some() || self.on_action.is_some() || self.on_secondary.is_some()
     }
 
-    fn inline_content(mut self, glyph: Icon, density: Density) -> gpui::Div {
-        let secondary = self.take_secondary(density);
-        let primary = self.take_primary(density);
+    fn inline_content(mut self, glyph: Icon, density: Density, cx: &App) -> gpui::Div {
+        let secondary = self.take_secondary(density, cx);
+        let primary = self.take_primary(density, cx);
         let dismiss = self.take_dismiss(density);
         div()
             .flex_1()
@@ -284,15 +286,15 @@ impl ToastCard {
             .py(spacing(Spacing::Sm, density))
             .px(spacing(Spacing::Sm, density))
             .child(icon(glyph, KIND_ICON, self.accent))
-            .child(self.message_text())
+            .child(self.message_text(cx))
             .children(secondary)
             .children(primary)
             .children(dismiss)
     }
 
-    fn stacked_content(mut self, glyph: Icon, density: Density) -> gpui::Div {
-        let secondary = self.take_secondary(density);
-        let primary = self.take_primary(density);
+    fn stacked_content(mut self, glyph: Icon, density: Density, cx: &App) -> gpui::Div {
+        let secondary = self.take_secondary(density, cx);
+        let primary = self.take_primary(density, cx);
         let dismiss = self.take_dismiss(density);
         let has_actions = secondary.is_some() || primary.is_some();
         let progress = self
@@ -305,7 +307,7 @@ impl ToastCard {
             .items_center()
             .gap(spacing(Spacing::Sm, density))
             .child(icon(glyph, KIND_ICON, self.accent))
-            .child(self.message_text())
+            .child(self.message_text(cx))
             .children(dismiss);
 
         let actions = has_actions.then(|| {
@@ -339,7 +341,8 @@ fn action_button(
     color: Rgba,
     handler: ToastHandler,
     density: Density,
-) -> impl IntoElement {
+    cx: &App,
+) -> impl IntoElement + use<> {
     div()
         .id(id)
         .flex_none()
@@ -347,7 +350,7 @@ fn action_button(
         .px(spacing(Spacing::Xs, density))
         .rounded(radius(Radius::Sm))
         .cursor_pointer()
-        .font_family(body_family())
+        .font_family(cx.body_family())
         .text_size(FONT_SM)
         .text_color(color)
         .key_activated(color)
@@ -365,9 +368,9 @@ impl RenderOnce for ToastCard {
         let card_bg = self.card_bg;
 
         let content = if self.has_footer() {
-            self.stacked_content(glyph, density)
+            self.stacked_content(glyph, density, cx)
         } else {
-            self.inline_content(glyph, density)
+            self.inline_content(glyph, density, cx)
         };
 
         div()

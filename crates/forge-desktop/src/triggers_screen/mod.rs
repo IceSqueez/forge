@@ -7,7 +7,6 @@ use crate::navigation::NavRequested;
 use crate::navigation::Screen;
 use crate::picker_favorites::{StoredFavorites, TRIGGER_FAVORITES};
 use crate::repo_failure::RepoFailure;
-use forge_components::ActivePresentation;
 use forge_components::FONT_BADGE;
 use forge_components::FONT_META;
 use forge_components::FONT_SM;
@@ -15,8 +14,8 @@ use forge_components::FONT_XS;
 use forge_components::PushToast;
 use forge_components::drive_overlay_focus;
 use forge_components::{
-    BORDER_THIN, BreadcrumbCrumb, Confirm, ForgePalette, Icon, InlineEdit, SearchState, TextInput,
-    ToastKind, page_frame, primary_button_with_icon, tr,
+    ActivePresentation, BORDER_THIN, BreadcrumbCrumb, Confirm, ForgePalette, Icon, InlineEdit,
+    SearchState, TextInput, ToastKind, page_frame, primary_button_with_icon, tr,
 };
 use forge_host::integration_catalog::{declaration_of, declarations};
 use forge_host::integrations::BuiltinRegistry;
@@ -452,7 +451,7 @@ impl Render for TriggersRegistryView {
         let density = cx.density();
         let palette = cx.palette();
 
-        let stats = self.list.read(cx).render_stats(&palette, density);
+        let stats = self.list.read(cx).render_stats(&palette, density, cx);
         let filter_left = self
             .list
             .update(cx, |list, cx| list.render_filter_left(&palette, cx));

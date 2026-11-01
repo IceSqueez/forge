@@ -2,8 +2,8 @@ use std::collections::HashSet;
 use std::sync::Arc;
 
 use forge_components::{
-    ActivePresentation, Density, FONT_XXS, ForgePalette, Icon, Spacing, icon, mono_family,
-    pad_tile, scaled, spacing, tr,
+    ActivePresentation, Density, FONT_XXS, ForgePalette, Icon, Spacing, icon, pad_tile, scaled,
+    spacing, tr,
 };
 use forge_soundboard::SoundboardError;
 use forge_soundboard::{BuiltinSoundEntry, builtin_availability, resolve_builtin_path};
@@ -111,7 +111,11 @@ impl SoundboardView {
                 .flex()
                 .flex_col()
                 .gap(spacing(Spacing::Xs, density))
-                .child(section_label(tr!("soundboard_library_section"), palette))
+                .child(section_label(
+                    tr!("soundboard_library_section"),
+                    palette,
+                    cx,
+                ))
                 .child(self.render_grid(cards))
                 .into_any_element(),
         )
@@ -139,7 +143,7 @@ impl SoundboardView {
         .sublabel(
             div()
                 .mt(scaled(SUBLABEL_MT, density))
-                .font_family(mono_family())
+                .font_family(cx.mono_family())
                 .text_size(FONT_XXS)
                 .text_color(palette.text_faint)
                 .child(tr!("soundboard_library_import")),

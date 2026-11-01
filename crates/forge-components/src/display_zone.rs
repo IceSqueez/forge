@@ -1,5 +1,3 @@
-use std::cell::RefCell;
-
 use jiff::tz::{AmbiguousOffset, Offset, TimeZone};
 use jiff::{Timestamp, civil};
 use time::{Duration, OffsetDateTime, PrimitiveDateTime, UtcOffset};
@@ -87,19 +85,6 @@ impl DisplayZone {
 
 fn utc_offset(offset: Offset) -> Option<UtcOffset> {
     UtcOffset::from_whole_seconds(offset.seconds()).ok()
-}
-
-thread_local! {
-    static ACTIVE_ZONE: RefCell<DisplayZone> = RefCell::new(DisplayZone::system());
-}
-
-#[cfg(test)]
-pub(crate) fn install_display_zone(zone: DisplayZone) {
-    ACTIVE_ZONE.with(|cell| *cell.borrow_mut() = zone);
-}
-
-pub fn display_zone() -> DisplayZone {
-    ACTIVE_ZONE.with(|cell| cell.borrow().clone())
 }
 
 #[cfg(test)]
@@ -313,14 +298,5 @@ mod tests {
         for name in ["", "Mars/Olympus_Mons", "europe/kyiv "] {
             assert!(DisplayZone::named(name).is_none(), "{name:?}");
         }
-    }
-
-    #[test]
-    fn installed_display_zone_replaces_the_system_zone_for_this_thread() {
-        install_display_zone(new_york());
-        assert_eq!(
-            display_zone().offset_at(at("2026-12-01T12:00:00Z")),
-            UtcOffset::from_hms(-5, 0, 0).unwrap()
-        );
     }
 }

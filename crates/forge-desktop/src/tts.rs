@@ -2,7 +2,7 @@ use gpui::Rgba;
 use std::sync::Arc;
 
 use forge_components::{
-    BORDER_THIN, BreadcrumbCrumb, Density, FONT_XS, ForgePalette, KeyActivated, body_family,
+    ActivePresentation, BORDER_THIN, BreadcrumbCrumb, Density, FONT_XS, ForgePalette, KeyActivated,
     header_status, page_frame, scaled, tr, with_alpha,
 };
 use forge_speak_queue::{PipelineConfigHandle, SpeakQueueHandle};
@@ -21,7 +21,6 @@ use crate::tts_dashboard::TtsDashboardView;
 use crate::tts_engines::TtsEnginesView;
 use crate::tts_filters::TtsFiltersView;
 use crate::voice_aliases::VoiceAliasesView;
-use forge_components::ActivePresentation;
 
 const TAB_PAD_V: Pixels = px(7.0);
 const TAB_PAD_H: Pixels = px(14.0);
@@ -226,7 +225,7 @@ impl TtsView {
             )
             .child(
                 div()
-                    .font_family(body_family())
+                    .font_family(cx.body_family())
                     .font_weight(weight)
                     .text_size(FONT_XS)
                     .text_color(fg)

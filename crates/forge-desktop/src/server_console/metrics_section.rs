@@ -1,10 +1,10 @@
 use super::{HEADER_GLYPH, RECENT_CLIENT_WINDOW_SECONDS, ServerConsoleView};
 use forge_components::{
-    BORDER_THIN, Density, FONT_SM, FONT_XXS, ForgePalette, Icon, Radius, Spacing, body_family,
-    card, fmt_bytes, fmt_number, header_status, icon, metric_card, mono_family, scaled, spacing,
+    ActivePresentation, BORDER_THIN, Density, FONT_SM, FONT_XXS, ForgePalette, Icon, Radius,
+    Spacing, card, fmt_bytes, fmt_number, header_status, icon, metric_card, scaled, spacing,
     sparkline, status_dot, tr,
 };
-use gpui::{AnyElement, FontWeight, Pixels, Rgba, SharedString, div, prelude::*, px};
+use gpui::{AnyElement, App, FontWeight, Pixels, Rgba, SharedString, div, prelude::*, px};
 
 const EVENT_RATE_WINDOW_SECONDS: i64 = 10;
 const RECENT_CLIENT_WINDOW_MINUTES: i64 = RECENT_CLIENT_WINDOW_SECONDS / 60;
@@ -15,16 +15,21 @@ const SPARK_HEIGHT: Pixels = px(60.0);
 const SPARK_FILL_TOP_ALPHA: f32 = 0.4;
 const SPARK_STROKE_WIDTH: f32 = 1.0;
 
-fn footer_cell(text: impl Into<SharedString>, color: Rgba) -> impl IntoElement {
+fn footer_cell(text: impl Into<SharedString>, color: Rgba, cx: &App) -> impl IntoElement {
     div()
-        .font_family(mono_family())
+        .font_family(cx.mono_family())
         .text_size(FONT_XXS)
         .text_color(color)
         .child(text.into())
 }
 
 impl ServerConsoleView {
-    pub(super) fn stats_grid(&self, palette: &ForgePalette, density: Density) -> AnyElement {
+    pub(super) fn stats_grid(
+        &self,
+        palette: &ForgePalette,
+        density: Density,
+        cx: &App,
+    ) -> AnyElement {
         let cell = |el: AnyElement| div().flex_1().min_w(px(0.0)).child(el);
         let recent_color = (self.clients.recent > 0).then_some(palette.success);
 
@@ -45,6 +50,7 @@ impl ServerConsoleView {
                     recent_color,
                     palette,
                     density,
+                    cx,
                 )
                 .into_any_element(),
             ))
@@ -59,6 +65,7 @@ impl ServerConsoleView {
                     None,
                     palette,
                     density,
+                    cx,
                 )
                 .into_any_element(),
             ))
@@ -70,6 +77,7 @@ impl ServerConsoleView {
                     None,
                     palette,
                     density,
+                    cx,
                 )
                 .into_any_element(),
             ))
@@ -85,13 +93,19 @@ impl ServerConsoleView {
                     None,
                     palette,
                     density,
+                    cx,
                 )
                 .into_any_element(),
             ))
             .into_any_element()
     }
 
-    pub(super) fn throughput_card(&self, palette: &ForgePalette, density: Density) -> AnyElement {
+    pub(super) fn throughput_card(
+        &self,
+        palette: &ForgePalette,
+        density: Density,
+        cx: &App,
+    ) -> AnyElement {
         let sample_count = self.traffic.throughput_samples.len();
         let max = self
             .traffic
@@ -114,7 +128,7 @@ impl ServerConsoleView {
                     .child(icon(Icon::ChartLine, HEADER_GLYPH, palette.brand))
                     .child(
                         div()
-                            .font_family(body_family())
+                            .font_family(cx.body_family())
                             .font_weight(FontWeight::MEDIUM)
                             .text_size(FONT_SM)
                             .text_color(palette.text_primary)
@@ -123,7 +137,7 @@ impl ServerConsoleView {
             )
             .child(
                 div()
-                    .font_family(mono_family())
+                    .font_family(cx.mono_family())
                     .text_size(FONT_XXS)
                     .text_color(palette.text_faint)
                     .child(tr!(
@@ -155,7 +169,12 @@ impl ServerConsoleView {
         .into_any_element()
     }
 
-    pub(super) fn footer_bar(&self, palette: &ForgePalette, density: Density) -> AnyElement {
+    pub(super) fn footer_bar(
+        &self,
+        palette: &ForgePalette,
+        density: Density,
+        cx: &App,
+    ) -> AnyElement {
         let (health_label, health_color) = if self.traffic.stats.dropped_events == 0 {
             (tr!("server_footer_health_ok"), palette.text_faint)
         } else {
@@ -179,9 +198,10 @@ impl ServerConsoleView {
                     events = i64::try_from(self.traffic.stats.total_events_out).unwrap_or(i64::MAX)
                 ),
                 palette.text_faint,
+                cx,
             ))
-            .child(footer_cell("·", palette.text_faint))
-            .child(footer_cell(health_label, health_color));
+            .child(footer_cell("·", palette.text_faint, cx))
+            .child(footer_cell(health_label, health_color, cx));
 
         let (endpoint_label, dot_color) = match self.lifecycle.bind_address {
             Some(address) if self.is_running() => (
@@ -196,7 +216,7 @@ impl ServerConsoleView {
             .items_center()
             .gap(spacing(Spacing::Xs, density))
             .child(status_dot(dot_color, FOOTER_DOT))
-            .child(footer_cell(endpoint_label, palette.text_faint));
+            .child(footer_cell(endpoint_label, palette.text_faint, cx));
 
         div()
             .w_full()

@@ -1,13 +1,13 @@
 use super::IntegrationDetail;
 use crate::user_text::resolve_message;
 use forge_components::{
-    BORDER_THIN, CTA_HOVER_ALPHA, ConfirmTone, Density, FONT_SM, FONT_XS, ForgePalette, Icon,
-    KeyActivated, OverlayPosition, Radius, Spacing, body_family, confirm_modal, icon, overlay,
-    radius, spacing, tr, with_alpha,
+    ActivePresentation, BORDER_THIN, CTA_HOVER_ALPHA, ConfirmTone, Density, FONT_SM, FONT_XS,
+    ForgePalette, Icon, KeyActivated, OverlayPosition, Radius, Spacing, confirm_modal, icon,
+    overlay, radius, spacing, tr, with_alpha,
 };
 use forge_host::integration_catalog::declaration_of;
 use forge_platform_core::{ConnectionState, CredentialState, HeaderAction, SignInRoute};
-use gpui::{AnyElement, ClickEvent, Context, Rgba, Window, div, prelude::*, px};
+use gpui::{AnyElement, App, ClickEvent, Context, Rgba, Window, div, prelude::*, px};
 
 pub(super) const CREDENTIAL_RECOVERY_SELECTOR: &str = "credential-recovery";
 
@@ -125,7 +125,7 @@ impl IntegrationDetail {
             }))
             .child(
                 div()
-                    .font_family(body_family())
+                    .font_family(cx.body_family())
                     .text_size(FONT_XS)
                     .text_color(palette.shell)
                     .child(cta_label),
@@ -151,14 +151,14 @@ impl IntegrationDetail {
                     .gap(spacing(Spacing::Xxs, density))
                     .child(
                         div()
-                            .font_family(body_family())
+                            .font_family(cx.body_family())
                             .text_size(FONT_SM)
                             .text_color(palette.text_primary)
                             .child(title),
                     )
                     .child(
                         div()
-                            .font_family(body_family())
+                            .font_family(cx.body_family())
                             .text_size(FONT_XS)
                             .text_color(palette.text_muted)
                             .child(detail),
@@ -172,6 +172,7 @@ impl IntegrationDetail {
         &self,
         palette: &ForgePalette,
         density: Density,
+        cx: &App,
     ) -> Option<AnyElement> {
         let recovery_pending = self.needed_credential_recovery().is_some();
         let (accent, glyph, title, detail): (Rgba, Icon, String, String) =
@@ -219,21 +220,21 @@ impl IntegrationDetail {
             .gap(spacing(Spacing::Xxs, density))
             .child(
                 div()
-                    .font_family(body_family())
+                    .font_family(cx.body_family())
                     .text_size(FONT_SM)
                     .text_color(palette.text_primary)
                     .child(title),
             )
             .child(
                 div()
-                    .font_family(body_family())
+                    .font_family(cx.body_family())
                     .text_size(FONT_XS)
                     .text_color(palette.text_muted)
                     .child(detail),
             )
             .children(failure_reason.map(|reason| {
                 div()
-                    .font_family(body_family())
+                    .font_family(cx.body_family())
                     .text_size(FONT_XS)
                     .text_color(palette.text_secondary)
                     .child(reason)

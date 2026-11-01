@@ -2,9 +2,8 @@ use forge_components::FONT_XS;
 use forge_components::Spacing;
 use forge_components::spacing;
 use forge_components::{
-    BORDER_THIN, FONT_SECTION_LABEL, ForgePalette, Icon, OverlayPosition, body_family,
-    ghost_button_with_icon, icon, modal, mono_family, overlay, primary_button, scaled,
-    secondary_button, tr,
+    ActivePresentation, BORDER_THIN, FONT_SECTION_LABEL, ForgePalette, Icon, OverlayPosition,
+    ghost_button_with_icon, icon, modal, overlay, primary_button, scaled, secondary_button, tr,
 };
 use gpui::{
     AnyElement, ClickEvent, Context, EventEmitter, Pixels, SharedString, Window, div, prelude::*,
@@ -13,7 +12,6 @@ use gpui::{
 
 use crate::actions::{ShortcutEntry, chord_caps};
 use crate::hotkey_action_modal::keycaps;
-use forge_components::ActivePresentation;
 
 const MODAL_W: Pixels = px(440.0);
 const BODY_PAD_H: Pixels = px(18.0);
@@ -108,15 +106,17 @@ impl AppShortcutModal {
                 .child(icon(Icon::Keyboard, LISTEN_GLYPH, palette.success))
                 .child(
                     div()
-                        .font_family(body_family())
+                        .font_family(cx.body_family())
                         .text_size(DISPLAY_FS)
                         .text_color(palette.success)
                         .child(tr!("hotkeys_capture_prompt")),
                 ),
-            (false, Some(chord)) => display.child(keycaps(&chord_caps(chord), palette, density)),
+            (false, Some(chord)) => {
+                display.child(keycaps(&chord_caps(chord), palette, density, cx))
+            }
             (false, None) => display.child(
                 div()
-                    .font_family(mono_family())
+                    .font_family(cx.mono_family())
                     .text_size(DISPLAY_FS)
                     .text_color(palette.text_faint)
                     .child(tr!("settings_shortcuts_unbound")),
@@ -139,7 +139,7 @@ impl AppShortcutModal {
                 div()
                     .w_full()
                     .mb(SECTION_LABEL_MB)
-                    .font_family(mono_family())
+                    .font_family(cx.mono_family())
                     .text_size(FONT_SECTION_LABEL)
                     .text_color(palette.text_muted)
                     .child(SharedString::from(

@@ -24,7 +24,22 @@ const APP_FILLED_OPTION_KEYS: [&str; 4] = [
     DONATION_PROVIDER_OPTIONS_KEY,
 ];
 
-pub(crate) type ChoiceOptions = HashMap<String, Vec<(String, String)>>;
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct ChoiceOption {
+    pub(crate) value: String,
+    pub(crate) label: String,
+}
+
+impl ChoiceOption {
+    pub(crate) fn new(value: impl Into<String>, label: impl Into<String>) -> Self {
+        Self {
+            value: value.into(),
+            label: label.into(),
+        }
+    }
+}
+
+pub(crate) type ChoiceOptions = HashMap<String, Vec<ChoiceOption>>;
 
 pub(crate) fn names_integration_data(options_key: &str) -> bool {
     ReferenceNamespace::for_options_key(options_key).scope() == ReferenceScope::External
@@ -90,7 +105,7 @@ struct OptionListRead {
 }
 
 impl OptionListRead {
-    async fn choices(&self) -> (String, Vec<(String, String)>) {
+    async fn choices(&self) -> (String, Vec<ChoiceOption>) {
         let entries = self
             .source
             .resolve(&OptionListId::new(&*self.options_key), &BTreeMap::new())
@@ -101,7 +116,7 @@ impl OptionListRead {
             });
         let choices = entries
             .into_iter()
-            .map(|entry| (entry.value, entry.label))
+            .map(|entry| ChoiceOption::new(entry.value, entry.label))
             .collect();
         (self.options_key.clone(), choices)
     }
@@ -204,11 +219,11 @@ impl ResolvePlan {
 pub(crate) fn collection_choices(
     items: &[CollectionItem],
     manageable_only: bool,
-) -> Vec<(String, String)> {
+) -> Vec<ChoiceOption> {
     items
         .iter()
         .filter(|item| !manageable_only || item.access == CollectionItemAccess::Manageable)
-        .map(|item| (item.id.as_str().to_owned(), item.title.clone()))
+        .map(|item| ChoiceOption::new(item.id.as_str(), item.title.clone()))
         .collect()
 }
 
@@ -390,8 +405,8 @@ mod tests {
         }
     }
 
-    fn titles(choices: &[(String, String)]) -> Vec<&str> {
-        choices.iter().map(|(_, title)| title.as_str()).collect()
+    fn titles(choices: &[ChoiceOption]) -> Vec<&str> {
+        choices.iter().map(|option| option.label.as_str()).collect()
     }
 
     fn mixed_rewards() -> Vec<CollectionItem> {
@@ -453,8 +468,8 @@ mod tests {
         assert_eq!(
             options[SCENES_KEY],
             [
-                ("Main".to_owned(), "Main label".to_owned()),
-                ("Intro".to_owned(), "Intro label".to_owned()),
+                ChoiceOption::new("Main", "Main label"),
+                ChoiceOption::new("Intro", "Intro label"),
             ]
         );
     }
@@ -548,7 +563,7 @@ mod tests {
     fn a_choice_stores_the_reward_id_and_shows_its_title() {
         assert_eq!(
             collection_choices(&[owned_reward("r-owned", "Hydrate")], false),
-            vec![("r-owned".to_owned(), "Hydrate".to_owned())]
+            vec![ChoiceOption::new("r-owned", "Hydrate")]
         );
     }
 

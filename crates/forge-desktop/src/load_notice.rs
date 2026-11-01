@@ -29,6 +29,7 @@ pub(crate) fn load_notice<T>(
     on_retry: impl Fn(&ClickEvent, &mut Window, &mut App) + 'static,
     palette: &ForgePalette,
     density: Density,
+    cx: &App,
 ) -> Option<AnyElement> {
     let LoadNotice { id, loading, width } = notice;
     match load {
@@ -47,13 +48,15 @@ pub(crate) fn load_notice<T>(
                     .w_full()
                     .p(spacing(Spacing::Md, density))
                     .child(error_row_with_retry(
-                        id, message, palette, on_retry, density,
+                        id, message, palette, on_retry, density, cx,
                     ))
                     .into_any_element(),
                 NoticeWidth::NarrowColumn => div()
                     .w_full()
                     .p(spacing(Spacing::Xs, density))
-                    .child(failure_with_retry(id, &message, palette, on_retry, density))
+                    .child(failure_with_retry(
+                        id, &message, palette, on_retry, density, cx,
+                    ))
                     .into_any_element(),
             })
         }
@@ -88,6 +91,7 @@ mod tests {
                 }),
                 &FORGE_DEFAULT,
                 Density::Cozy,
+                cx,
             );
             div().size_full().children(notice)
         }

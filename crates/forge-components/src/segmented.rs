@@ -1,5 +1,4 @@
-use crate::ActivePresentation;
-use crate::FONT_META;
+use crate::{ActivePresentation, FONT_META};
 use gpui::{
     App, ClickEvent, ElementId, FontWeight, InteractiveElement, IntoElement, ParentElement, Pixels,
     RenderOnce, Rgba, SharedString, StatefulInteractiveElement, Styled, Window, div, px,
@@ -8,7 +7,7 @@ use gpui::{
 use crate::icons::{Icon, icon};
 use crate::key_activation::KeyActivated;
 use crate::palette::{ForgePalette, with_alpha};
-use crate::tokens::{BORDER_THIN, DISABLED_OPACITY, body_family, scaled};
+use crate::tokens::{BORDER_THIN, DISABLED_OPACITY, scaled};
 
 type SegClick = Box<dyn Fn(&ClickEvent, &mut Window, &mut App) + 'static>;
 
@@ -166,7 +165,7 @@ impl RenderOnce for SegmentedControl {
                 .py(scaled(SEG_PAD_V, density))
                 .px(scaled(SEG_PAD_H, density))
                 .rounded(self.seg_radius)
-                .font_family(body_family())
+                .font_family(cx.body_family())
                 .font_weight(weight)
                 .text_size(self.seg_fs)
                 .text_color(fg)

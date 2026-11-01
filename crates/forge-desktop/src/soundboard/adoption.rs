@@ -2,7 +2,8 @@ use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
 
 use forge_components::{
-    Density, ForgePalette, Icon, Spacing, icon, mono_family, scaled, secondary_button, spacing, tr,
+    ActivePresentation, Density, ForgePalette, Icon, Spacing, icon, scaled, secondary_button,
+    spacing, tr,
 };
 use forge_soundboard::vocabulary::SettledVerdict;
 use forge_soundboard::{AdoptionVerdict, ClipAvailability, SoundboardError};
@@ -199,7 +200,7 @@ impl SoundboardView {
                 .child(icon(Icon::Copy, LOOP_ICON, palette.text_muted))
                 .child(
                     div()
-                        .font_family(mono_family())
+                        .font_family(cx.mono_family())
                         .text_size(FOOTER_FS)
                         .text_color(palette.text_muted)
                         .child(tr!(
@@ -215,7 +216,7 @@ impl SoundboardView {
                     .min_w_0()
                     .overflow_hidden()
                     .text_ellipsis()
-                    .font_family(mono_family())
+                    .font_family(cx.mono_family())
                     .text_size(FOOTER_FS)
                     .text_color(palette.text_faint)
                     .child(summary),

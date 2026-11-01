@@ -13,10 +13,9 @@ use forge_components::OverflowRevealingFocus;
 use forge_components::{
     AccentColor, BORDER_THIN, BreadcrumbCrumb, Density, FONT_MD, FONT_SM, FONT_XS, FONT_XXS,
     ForgePalette, Icon, KeyActivated, Picker, PickerEvent, PickerItem, PickerLabels, Radius,
-    Spacing, ThemeId, badge, body_family, card, dropdown, field_hint, field_label,
-    ghost_button_with_icon, icon, mono_family, page_frame, radius, scaled, set_body_family,
-    set_mono_family, setting_block, setting_groups, setting_row, setting_rows, setting_sections,
-    spacing, toggle, tr, with_alpha,
+    Spacing, ThemeId, badge, card, dropdown, field_hint, field_label, ghost_button_with_icon, icon,
+    page_frame, radius, scaled, setting_block, setting_groups, setting_row, setting_rows,
+    setting_sections, spacing, toggle, tr, with_alpha,
 };
 use forge_storage::settings::core_settings;
 use forge_storage::{Language, SettingsRepo, write_setting};
@@ -427,8 +426,8 @@ impl SettingsView {
             loading: tr!("widget_picker_loading").into(),
         };
         let current = match target {
-            FontTarget::Body => body_family(),
-            FontTarget::Mono => mono_family(),
+            FontTarget::Body => cx.body_family(),
+            FontTarget::Mono => cx.mono_family(),
         };
 
         let picker =
@@ -464,10 +463,10 @@ impl SettingsView {
         } else {
             Some(id)
         };
-        match pending.target {
-            FontTarget::Body => set_body_family(family.clone()),
-            FontTarget::Mono => set_mono_family(family.clone()),
-        }
+        cx.update_global::<Presentation, _>(|presentation, _| match pending.target {
+            FontTarget::Body => presentation.fonts.set_body_override(family.clone()),
+            FontTarget::Mono => presentation.fonts.set_mono_override(family.clone()),
+        });
 
         let backend = Arc::clone(&self.services.backend) as Arc<dyn SettingsRepo>;
         let persisted = family.map(|f| f.to_string());
@@ -557,7 +556,8 @@ impl SettingsView {
     fn select_theme(&mut self, theme: ThemeId, cx: &mut Context<Self>) {
         let density = cx.density();
         let accent = cx.accent();
-        cx.set_global(Presentation::accented(theme, accent, density));
+        let restyled = cx.global::<Presentation>().restyled(theme, accent, density);
+        cx.set_global(restyled);
 
         let backend = Arc::clone(&self.services.backend) as Arc<dyn SettingsRepo>;
         let key = theme.storage_key().to_owned();
@@ -577,7 +577,8 @@ impl SettingsView {
         }
         let theme = cx.theme();
         let density = cx.density();
-        cx.set_global(Presentation::accented(theme, accent, density));
+        let restyled = cx.global::<Presentation>().restyled(theme, accent, density);
+        cx.set_global(restyled);
 
         let backend = Arc::clone(&self.services.backend) as Arc<dyn SettingsRepo>;
         let key = accent.storage_key().to_owned();
@@ -627,7 +628,8 @@ impl SettingsView {
     fn select_density(&mut self, density: Density, cx: &mut Context<Self>) {
         let theme = cx.theme();
         let accent = cx.accent();
-        cx.set_global(Presentation::accented(theme, accent, density));
+        let restyled = cx.global::<Presentation>().restyled(theme, accent, density);
+        cx.set_global(restyled);
 
         let backend = Arc::clone(&self.services.backend) as Arc<dyn SettingsRepo>;
         let key = density.storage_key().to_owned();
@@ -714,6 +716,7 @@ fn choice_row(
     active: bool,
     palette: &ForgePalette,
     density: Density,
+    cx: &App,
 ) -> gpui::Stateful<gpui::Div> {
     let labels = div()
         .flex()
@@ -721,7 +724,7 @@ fn choice_row(
         .gap(scaled(CHOICE_LABEL_GAP, density))
         .child(
             div()
-                .font_family(body_family())
+                .font_family(cx.body_family())
                 .text_size(FONT_XS)
                 .text_color(palette.text_primary)
                 .child(label),

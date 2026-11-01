@@ -2,8 +2,8 @@ use std::future::Future;
 use std::sync::Arc;
 
 use forge_components::{
-    DISABLED_OPACITY, Density, FONT_SM, FONT_XS, ForgePalette, Icon, InputEvent, SaveState,
-    Spacing, TextArea, TextInput, TypeToConfirm, body_family, error_row_with_retry,
+    ActivePresentation, DISABLED_OPACITY, Density, FONT_SM, FONT_XS, ForgePalette, Icon,
+    InputEvent, SaveState, Spacing, TextArea, TextInput, TypeToConfirm, error_row_with_retry,
     ghost_button_with_icon, grow_cell, save_indicator, setting_row, setting_rows, setting_sections,
     spacing, toggle, tr,
 };
@@ -23,7 +23,6 @@ use crate::repo_failure::RepoFailure;
 use crate::server_bearer;
 use crate::server_restart::restart_ignoring_disabled;
 use crate::settings_pane_header::SettingsPaneHeader;
-use forge_components::ActivePresentation;
 
 mod bind;
 mod origins;
@@ -469,7 +468,7 @@ impl SettingsWebSocketView {
             row = row.child(
                 div()
                     .flex_none()
-                    .font_family(body_family())
+                    .font_family(cx.body_family())
                     .text_size(FONT_XS)
                     .text_color(palette.warning)
                     .child(tr!("server_btn_restarting")),
@@ -478,7 +477,7 @@ impl SettingsWebSocketView {
             row = row.child(
                 div()
                     .flex_none()
-                    .font_family(body_family())
+                    .font_family(cx.body_family())
                     .text_size(FONT_XS)
                     .text_color(palette.text_faint)
                     .child(tr!("server_not_running")),
@@ -505,7 +504,7 @@ impl SettingsWebSocketView {
                     .flex()
                     .min_w(px(0.0))
                     .overflow_hidden()
-                    .child(save_indicator(&self.save_state, palette, density)),
+                    .child(save_indicator(&self.save_state, palette, density, cx)),
             )
     }
 }
@@ -522,7 +521,7 @@ impl Render for SettingsWebSocketView {
             .flex_wrap()
             .items_start()
             .gap(spacing(Spacing::Md, density))
-            .child(grow_cell(self.port_column(&palette, density), 1.0).min_w(PORT_COLUMN_MIN_W))
+            .child(grow_cell(self.port_column(&palette, density, cx), 1.0).min_w(PORT_COLUMN_MIN_W))
             .child(
                 grow_cell(self.token_column(&palette, density, cx), 1.6).min_w(TOKEN_COLUMN_MIN_W),
             );
@@ -550,6 +549,7 @@ impl Render for SettingsWebSocketView {
                     &palette,
                     cx.listener(|this, _: &ClickEvent, _, cx| this.load(cx)),
                     density,
+                    cx,
                 )
             }))
             .child(

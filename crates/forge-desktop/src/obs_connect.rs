@@ -3,7 +3,7 @@ use std::sync::Arc;
 use forge_components::{ActivePresentation, ForgePalette, Icon, tr};
 use forge_events::EventPublisher;
 use forge_storage::{CredentialsRepo, SettingsRepo};
-use gpui::{Context, Entity, EventEmitter, Subscription, Window, prelude::*};
+use gpui::{App, Context, Entity, EventEmitter, Subscription, Window, prelude::*};
 
 use crate::connect_scaffold::{ConnectPage, GuideStep, fragment, mono_fragment};
 use crate::navigation::NavRequested;
@@ -47,22 +47,35 @@ impl ObsConnectView {
     }
 }
 
-fn guide_steps(palette: &ForgePalette) -> Vec<GuideStep> {
+fn guide_steps(palette: &ForgePalette, cx: &App) -> Vec<GuideStep> {
     vec![
         vec![
-            fragment(tr!("obs_connect_step_menu_prefix"), palette.text_primary),
-            fragment(tr!("obs_connect_step_menu_path"), palette.text_muted),
+            fragment(
+                tr!("obs_connect_step_menu_prefix"),
+                palette.text_primary,
+                cx,
+            ),
+            fragment(tr!("obs_connect_step_menu_path"), palette.text_muted, cx),
         ],
         vec![
-            fragment(tr!("obs_connect_step_enable_prefix"), palette.text_primary),
-            fragment(tr!("obs_connect_step_enable_option"), palette.success),
+            fragment(
+                tr!("obs_connect_step_enable_prefix"),
+                palette.text_primary,
+                cx,
+            ),
+            fragment(tr!("obs_connect_step_enable_option"), palette.success, cx),
         ],
         vec![
-            fragment(tr!("obs_connect_step_port_prefix"), palette.text_primary),
-            mono_fragment(tr!("obs_connect_step_port_field"), palette.text_primary),
+            fragment(
+                tr!("obs_connect_step_port_prefix"),
+                palette.text_primary,
+                cx,
+            ),
+            mono_fragment(tr!("obs_connect_step_port_field"), palette.text_primary, cx),
             fragment(
                 tr!("obs_connect_step_port_default_prefix"),
                 palette.text_primary,
+                cx,
             ),
             mono_fragment(
                 tr!(
@@ -70,12 +83,21 @@ fn guide_steps(palette: &ForgePalette) -> Vec<GuideStep> {
                     port = DEFAULT_PORT.to_string()
                 ),
                 palette.text_primary,
+                cx,
             ),
         ],
         vec![
-            fragment(tr!("obs_connect_step_reveal_prefix"), palette.text_primary),
-            fragment(tr!("obs_connect_step_reveal_button"), palette.success),
-            fragment(tr!("obs_connect_step_reveal_suffix"), palette.text_primary),
+            fragment(
+                tr!("obs_connect_step_reveal_prefix"),
+                palette.text_primary,
+                cx,
+            ),
+            fragment(tr!("obs_connect_step_reveal_button"), palette.success, cx),
+            fragment(
+                tr!("obs_connect_step_reveal_suffix"),
+                palette.text_primary,
+                cx,
+            ),
         ],
     ]
 }
@@ -96,7 +118,7 @@ impl Render for ObsConnectView {
             guide_title_key: "obs_connect_guide_title",
             guide_intro_key: "obs_connect_guide_intro",
             settings_title_key: "obs_connect_settings_title",
-            steps: guide_steps(&palette),
+            steps: guide_steps(&palette, cx),
             form: self.form.clone().into(),
         }
         .render(&palette, density, cx)

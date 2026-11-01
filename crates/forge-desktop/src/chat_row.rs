@@ -1,4 +1,3 @@
-use forge_components::ActivePresentation;
 use forge_components::Density;
 use forge_components::FONT_LABEL;
 use forge_components::FONT_MICRO;
@@ -13,7 +12,7 @@ use gpui::{
     Window, div, px,
 };
 
-use forge_components::{BORDER_THIN, FONT_XS, FONT_XXS, body_family, mono_family, scaled};
+use forge_components::{ActivePresentation, BORDER_THIN, FONT_XS, FONT_XXS, scaled};
 use forge_components::{ForgePalette, tr, with_alpha};
 use forge_components::{Icon, icon};
 
@@ -141,18 +140,18 @@ impl ChatRowView {
     }
 }
 
-fn time_el(ts: SharedString, palette: &ForgePalette) -> impl IntoElement {
+fn time_el(ts: SharedString, palette: &ForgePalette, cx: &App) -> impl IntoElement {
     div()
         .flex_none()
         .whitespace_nowrap()
-        .font_family(mono_family())
+        .font_family(cx.mono_family())
         .text_size(FONT_XXS)
         .line_height(LINE_TIME)
         .text_color(palette.text_faint)
         .child(ts)
 }
 
-fn platform_tile(platform: &PlatformMark, palette: &ForgePalette) -> impl IntoElement {
+fn platform_tile(platform: &PlatformMark, palette: &ForgePalette, cx: &App) -> impl IntoElement {
     div()
         .flex_none()
         .size(PLATFORM_TILE)
@@ -163,7 +162,7 @@ fn platform_tile(platform: &PlatformMark, palette: &ForgePalette) -> impl IntoEl
         .justify_center()
         .child(
             div()
-                .font_family(body_family())
+                .font_family(cx.body_family())
                 .font_weight(FontWeight::SEMIBOLD)
                 .text_size(PLATFORM_GLYPH)
                 .text_color(palette.shell)
@@ -175,11 +174,12 @@ fn username_el(
     name: SharedString,
     color: Rgba,
     click: Option<(ElementId, UsernameClick)>,
+    cx: &App,
 ) -> AnyElement {
     let base = div()
         .flex_none()
         .whitespace_nowrap()
-        .font_family(body_family())
+        .font_family(cx.body_family())
         .font_weight(FontWeight::MEDIUM)
         .text_size(FONT_XS)
         .line_height(LINE_BODY)
@@ -199,11 +199,11 @@ fn username_el(
     }
 }
 
-fn message_el(text: SharedString, color: Rgba, struck: bool) -> impl IntoElement {
+fn message_el(text: SharedString, color: Rgba, struck: bool, cx: &App) -> impl IntoElement {
     let el = div()
         .flex_1()
         .min_w(px(0.0))
-        .font_family(body_family())
+        .font_family(cx.body_family())
         .text_size(FONT_XS)
         .line_height(LINE_BODY)
         .text_color(color);
@@ -214,11 +214,11 @@ fn message_el(text: SharedString, color: Rgba, struck: bool) -> impl IntoElement
     }
 }
 
-fn descriptor_el(text: SharedString, palette: &ForgePalette) -> impl IntoElement {
+fn descriptor_el(text: SharedString, palette: &ForgePalette, cx: &App) -> impl IntoElement {
     div()
         .flex_none()
         .whitespace_nowrap()
-        .font_family(body_family())
+        .font_family(cx.body_family())
         .text_size(FONT_XS)
         .line_height(LINE_BODY)
         .text_color(palette.text_secondary)
@@ -229,6 +229,7 @@ fn command_pill(
     command: SharedString,
     palette: &ForgePalette,
     density: Density,
+    cx: &App,
 ) -> impl IntoElement {
     div()
         .flex_1()
@@ -237,13 +238,13 @@ fn command_pill(
         .px(scaled(CMD_PILL_PAD_H, density))
         .rounded(CMD_PILL_RADIUS)
         .bg(palette.surface_overlay)
-        .font_family(mono_family())
+        .font_family(cx.mono_family())
         .text_size(CMD_PILL_FONT)
         .text_color(palette.brand)
         .child(command)
 }
 
-fn role_badge(badge: &RoleBadge, density: Density) -> impl IntoElement {
+fn role_badge(badge: &RoleBadge, density: Density, cx: &App) -> impl IntoElement {
     let c = badge.color;
     div()
         .flex_none()
@@ -253,14 +254,14 @@ fn role_badge(badge: &RoleBadge, density: Density) -> impl IntoElement {
         .border(BORDER_THIN)
         .border_color(with_alpha(c, ROLE_BORDER_ALPHA))
         .bg(with_alpha(c, ROLE_TINT_ALPHA))
-        .font_family(mono_family())
+        .font_family(cx.mono_family())
         .font_weight(FontWeight::SEMIBOLD)
         .text_size(ROLE_BADGE_FONT)
         .text_color(c)
         .child(badge.label.clone())
 }
 
-fn role_badges(badges: &[RoleBadge], density: Density) -> Option<impl IntoElement> {
+fn role_badges(badges: &[RoleBadge], density: Density, cx: &App) -> Option<impl IntoElement> {
     if badges.is_empty() {
         return None;
     }
@@ -271,7 +272,7 @@ fn role_badges(badges: &[RoleBadge], density: Density) -> Option<impl IntoElemen
             .flex()
             .items_center()
             .gap(spacing(Spacing::Xxs, density))
-            .children(badges.iter().map(|badge| role_badge(badge, density))),
+            .children(badges.iter().map(|badge| role_badge(badge, density, cx))),
     )
 }
 
@@ -282,8 +283,13 @@ fn pill_badge(
     leading: Option<(Icon, Rgba)>,
     label: SharedString,
     density: Density,
+    cx: &App,
 ) -> impl IntoElement {
-    let family = if mono { mono_family() } else { body_family() };
+    let family = if mono {
+        cx.mono_family()
+    } else {
+        cx.body_family()
+    };
     div()
         .flex_none()
         .flex()
@@ -311,10 +317,10 @@ fn event_glyph(glyph: Icon, color: Rgba) -> impl IntoElement {
         .child(icon(glyph, EVENT_ICON, color))
 }
 
-fn event_message_el(text: SharedString, color: Rgba, struck: bool) -> impl IntoElement {
+fn event_message_el(text: SharedString, color: Rgba, struck: bool, cx: &App) -> impl IntoElement {
     let el = div()
         .mt(EVENT_MSG_TOP)
-        .font_family(body_family())
+        .font_family(cx.body_family())
         .text_size(EVENT_MSG_FONT)
         .line_height(LINE_BODY)
         .text_color(color);
@@ -325,7 +331,12 @@ fn event_message_el(text: SharedString, color: Rgba, struck: bool) -> impl IntoE
     }
 }
 
-fn triggered_row(text: SharedString, palette: &ForgePalette, density: Density) -> impl IntoElement {
+fn triggered_row(
+    text: SharedString,
+    palette: &ForgePalette,
+    density: Density,
+    cx: &App,
+) -> impl IntoElement {
     div().mt(TRIGGERED_TOP).flex().child(pill_badge(
         palette.surface_overlay,
         palette.success,
@@ -333,6 +344,7 @@ fn triggered_row(text: SharedString, palette: &ForgePalette, density: Density) -
         Some((Icon::Bolt, palette.success)),
         text,
         density,
+        cx,
     ))
 }
 
@@ -350,6 +362,7 @@ fn reply_line(
     text: SharedString,
     palette: &ForgePalette,
     density: Density,
+    cx: &App,
 ) -> impl IntoElement {
     div()
         .flex()
@@ -359,7 +372,7 @@ fn reply_line(
         .child(
             div()
                 .flex_none()
-                .font_family(body_family())
+                .font_family(cx.body_family())
                 .text_size(FONT_XXS)
                 .line_height(LINE_TIME)
                 .text_color(palette.text_muted)
@@ -371,7 +384,7 @@ fn reply_line(
                 .min_w(px(0.0))
                 .whitespace_nowrap()
                 .overflow_hidden()
-                .font_family(body_family())
+                .font_family(cx.body_family())
                 .text_size(FONT_XXS)
                 .line_height(LINE_TIME)
                 .text_color(palette.text_faint)
@@ -384,6 +397,7 @@ fn standard_row(
     click: Option<(ElementId, UsernameClick)>,
     palette: &ForgePalette,
     density: Density,
+    cx: &App,
 ) -> impl IntoElement {
     let text = match &data.body {
         ChatBody::Message(t) => t.clone(),
@@ -397,20 +411,21 @@ fn standard_row(
     let reply = data
         .reply
         .clone()
-        .map(|(author, parent)| reply_line(author, parent, palette, density));
+        .map(|(author, parent)| reply_line(author, parent, palette, density, cx));
     let main = div()
         .flex()
         .items_center()
         .gap(scaled(ROW_GAP, density))
-        .child(time_el(data.timestamp.clone(), palette))
-        .child(platform_tile(&data.platform, palette))
+        .child(time_el(data.timestamp.clone(), palette, cx))
+        .child(platform_tile(&data.platform, palette, cx))
         .child(username_el(
             data.username.clone(),
             data.username_color,
             click,
+            cx,
         ))
-        .child(message_el(text, color, data.moderated))
-        .children(role_badges(&data.badges, density));
+        .child(message_el(text, color, data.moderated, cx))
+        .children(role_badges(&data.badges, density, cx));
     div()
         .id(data.id.clone())
         .flex()
@@ -431,6 +446,7 @@ fn command_row(
     click: Option<(ElementId, UsernameClick)>,
     palette: &ForgePalette,
     density: Density,
+    cx: &App,
 ) -> impl IntoElement {
     let (command, triggered) = match &data.body {
         ChatBody::Command { command, triggered } => (command.clone(), triggered.clone()),
@@ -440,15 +456,16 @@ fn command_row(
         .flex()
         .items_center()
         .gap(scaled(ROW_GAP, density))
-        .child(time_el(data.timestamp.clone(), palette))
-        .child(platform_tile(&data.platform, palette))
+        .child(time_el(data.timestamp.clone(), palette, cx))
+        .child(platform_tile(&data.platform, palette, cx))
         .child(username_el(
             data.username.clone(),
             data.username_color,
             click,
+            cx,
         ))
-        .child(command_pill(command, palette, density))
-        .children(role_badges(&data.badges, density));
+        .child(command_pill(command, palette, density, cx))
+        .children(role_badges(&data.badges, density, cx));
     let second = triggered.map(|t| {
         div().pl(CMD_SECOND_INSET).flex().child(pill_badge(
             palette.elevated,
@@ -457,6 +474,7 @@ fn command_row(
             Some((Icon::ArrowRight, palette.success)),
             t,
             density,
+            cx,
         ))
     });
     div()
@@ -489,21 +507,22 @@ fn event_row(
     triggered: Option<SharedString>,
     palette: &ForgePalette,
     density: Density,
+    cx: &App,
 ) -> impl IntoElement {
     let line1 = div()
         .flex()
         .items_center()
         .gap(spacing(Spacing::Xs, density))
         .child(username)
-        .child(descriptor_el(descriptor, palette))
+        .child(descriptor_el(descriptor, palette, cx))
         .children(count);
     let column = div()
         .flex_1()
         .flex()
         .flex_col()
         .child(line1)
-        .children(message.map(|(text, color, struck)| event_message_el(text, color, struck)))
-        .children(triggered.map(|t| triggered_row(t, palette, density)));
+        .children(message.map(|(text, color, struck)| event_message_el(text, color, struck, cx)))
+        .children(triggered.map(|t| triggered_row(t, palette, density, cx)));
     div()
         .flex()
         .items_start()
@@ -519,7 +538,7 @@ fn event_row(
             div()
                 .flex_none()
                 .mt(ICON_TOP)
-                .child(time_el(timestamp, palette)),
+                .child(time_el(timestamp, palette, cx)),
         )
         .child(event_glyph(glyph, stripe))
         .child(column)
@@ -535,15 +554,17 @@ impl RenderOnce for ChatRowView {
         } = self;
 
         match &data.body {
-            ChatBody::Message(_) => standard_row(&data, click, &p, density).into_any_element(),
-            ChatBody::Command { .. } => command_row(&data, click, &p, density).into_any_element(),
+            ChatBody::Message(_) => standard_row(&data, click, &p, density, cx).into_any_element(),
+            ChatBody::Command { .. } => {
+                command_row(&data, click, &p, density, cx).into_any_element()
+            }
             ChatBody::Subscription {
                 descriptor,
                 months,
                 message,
                 triggered,
             } => {
-                let username = username_el(data.username.clone(), data.username_color, click);
+                let username = username_el(data.username.clone(), data.username_color, click, cx);
                 let count = months.as_ref().map(|m| {
                     pill_badge(
                         p.surface_overlay,
@@ -552,6 +573,7 @@ impl RenderOnce for ChatRowView {
                         None,
                         SharedString::from(tr!("chat_row_sub_months", months = *m)),
                         density,
+                        cx,
                     )
                     .into_any_element()
                 });
@@ -569,6 +591,7 @@ impl RenderOnce for ChatRowView {
                     triggered.clone(),
                     &p,
                     density,
+                    cx,
                 )
                 .into_any_element()
             }
@@ -577,7 +600,7 @@ impl RenderOnce for ChatRowView {
                 bits,
                 text,
             } => {
-                let username = username_el(data.username.clone(), data.username_color, click);
+                let username = username_el(data.username.clone(), data.username_color, click, cx);
                 let count = pill_badge(
                     p.warning,
                     p.shell,
@@ -585,6 +608,7 @@ impl RenderOnce for ChatRowView {
                     None,
                     SharedString::from(tr!("chat_row_cheer_bits", bits = *bits)),
                     density,
+                    cx,
                 )
                 .into_any_element();
                 let color = if data.moderated {
@@ -603,6 +627,7 @@ impl RenderOnce for ChatRowView {
                     None,
                     &p,
                     density,
+                    cx,
                 )
                 .into_any_element()
             }
@@ -611,9 +636,10 @@ impl RenderOnce for ChatRowView {
                 viewers,
                 triggered,
             } => {
-                let username = username_el(data.username.clone(), p.danger, click);
-                let count = pill_badge(p.danger, p.shell, false, None, viewers.clone(), density)
-                    .into_any_element();
+                let username = username_el(data.username.clone(), p.danger, click, cx);
+                let count =
+                    pill_badge(p.danger, p.shell, false, None, viewers.clone(), density, cx)
+                        .into_any_element();
                 event_row(
                     data.timestamp.clone(),
                     p.danger,
@@ -625,6 +651,7 @@ impl RenderOnce for ChatRowView {
                     triggered.clone(),
                     &p,
                     density,
+                    cx,
                 )
                 .into_any_element()
             }

@@ -5,8 +5,8 @@ use crate::runtime_event;
 use crate::runtime_event::RuntimeEvent;
 use forge_components::{
     ActivePresentation, BORDER_THIN, DateShape, Density, FONT_XS, FONT_XXS, ForgePalette, Icon,
-    KeyActivated, ResizeEdge, ResizeRange, Spacing, badge, body_family, fmt_display, icon,
-    install_resize, mono_family, scaled, spacing, tr,
+    KeyActivated, ResizeEdge, ResizeRange, Spacing, badge, fmt_display, icon, install_resize,
+    scaled, spacing, tr,
 };
 use forge_events::{ScriptLogLevel, ScriptLogged};
 use forge_runtime::EventBus;
@@ -262,7 +262,7 @@ impl ScriptConsole {
             ))
             .child(
                 div()
-                    .font_family(body_family())
+                    .font_family(cx.body_family())
                     .font_weight(if output_active {
                         FontWeight::MEDIUM
                     } else {
@@ -291,7 +291,7 @@ impl ScriptConsole {
                 }))
                 .child(
                     div()
-                        .font_family(body_family())
+                        .font_family(cx.body_family())
                         .text_size(FONT_XS)
                         .text_color(if problems_active {
                             palette.text_primary
@@ -370,7 +370,7 @@ impl ScriptConsole {
             .h(self.height)
             .py(spacing(Spacing::Xs, density))
             .px(spacing(Spacing::Md, density))
-            .font_family(mono_family())
+            .font_family(cx.mono_family())
             .text_size(FONT_XXS);
 
         match self.tab {

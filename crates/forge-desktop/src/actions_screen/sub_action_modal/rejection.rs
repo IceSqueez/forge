@@ -1,7 +1,8 @@
 use super::field::SubFormField;
 use super::*;
 use crate::actions_screen::step_validation::StepRejection;
-use forge_components::{FONT_XXS, Spacing, body_family, spacing};
+use forge_components::{ActivePresentation, FONT_XXS, Spacing, spacing};
+use gpui::App;
 
 impl EditSubActionForm {
     pub(in crate::actions_screen) fn show_rejection(
@@ -36,9 +37,9 @@ impl EditSubActionForm {
     }
 }
 
-pub(super) fn rejection_note(message: String, palette: &ForgePalette) -> AnyElement {
+pub(super) fn rejection_note(message: String, palette: &ForgePalette, cx: &App) -> AnyElement {
     div()
-        .font_family(body_family())
+        .font_family(cx.body_family())
         .text_size(FONT_XXS)
         .text_color(palette.danger)
         .child(message)
@@ -50,12 +51,13 @@ pub(super) fn with_rejection_note(
     message: String,
     palette: &ForgePalette,
     density: Density,
+    cx: &App,
 ) -> AnyElement {
     div()
         .flex()
         .flex_col()
         .gap(spacing(Spacing::Xxs, density))
         .child(element)
-        .child(rejection_note(message, palette))
+        .child(rejection_note(message, palette, cx))
         .into_any_element()
 }

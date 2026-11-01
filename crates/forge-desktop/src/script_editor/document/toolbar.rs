@@ -1,8 +1,8 @@
 use super::{ScriptDocument, ScriptDocumentEvent};
 use forge_components::{
-    BORDER_THIN, Density, FONT_SECTION_LABEL, FONT_XS, FONT_XXS, ForgePalette, HOVER_FILL_ALPHA,
-    Icon, KeyActivated, Radius, Spacing, body_family, fmt_display_relative, icon, mono_family,
-    radius, scaled, spacing, status_dot, tr, with_alpha,
+    ActivePresentation, BORDER_THIN, Density, FONT_SECTION_LABEL, FONT_XS, FONT_XXS, ForgePalette,
+    HOVER_FILL_ALPHA, Icon, KeyActivated, Radius, Spacing, fmt_display_relative, icon, radius,
+    scaled, spacing, status_dot, tr, with_alpha,
 };
 use gpui::prelude::*;
 use gpui::{
@@ -47,7 +47,7 @@ impl ScriptDocument {
             .gap(spacing(Spacing::Xs, density))
             .child(
                 div()
-                    .font_family(mono_family())
+                    .font_family(cx.mono_family())
                     .font_weight(FontWeight::MEDIUM)
                     .text_size(FONT_XS)
                     .text_color(palette.text_primary)
@@ -66,7 +66,7 @@ impl ScriptDocument {
                     .child(icon(Icon::ExternalLink, GLYPH_LINK_CHIP, palette.brand))
                     .child(
                         div()
-                            .font_family(mono_family())
+                            .font_family(cx.mono_family())
                             .text_size(FONT_SECTION_LABEL)
                             .text_color(palette.brand)
                             .child(linked.name.clone()),
@@ -84,7 +84,7 @@ impl ScriptDocument {
             .child(status_dot(status_color, FILE_BAR_STATUS_DOT))
             .child(
                 div()
-                    .font_family(body_family())
+                    .font_family(cx.body_family())
                     .text_size(FONT_XXS)
                     .text_color(status_color)
                     .child(status_text),
@@ -107,7 +107,7 @@ impl ScriptDocument {
                 .child(div().flex_1())
                 .child(
                     div()
-                        .font_family(mono_family())
+                        .font_family(cx.mono_family())
                         .text_size(FONT_XXS)
                         .text_color(palette.text_faint)
                         .child(edited),
@@ -144,7 +144,7 @@ impl ScriptDocument {
             .child(icon(Icon::PlayerPlay, GLYPH_RUN, palette.shell))
             .child(
                 div()
-                    .font_family(body_family())
+                    .font_family(cx.body_family())
                     .font_weight(FontWeight::MEDIUM)
                     .text_size(FONT_XS)
                     .text_color(palette.shell)
@@ -155,27 +155,32 @@ impl ScriptDocument {
             "script-save",
             Icon::Download,
             tr!("script_editor_save"),
-            palette,
             density,
             cx.listener(|this, _: &ClickEvent, _, cx| this.save(cx)),
+            cx,
         );
         let format = self.toolbar_button(
             "script-format",
             Icon::Refresh,
             tr!("script_editor_format"),
-            palette,
             density,
             cx.listener(|this, _: &ClickEvent, _, cx| this.format(cx)),
+            cx,
         );
-        let debug =
-            self.disabled_toolbar_button(Icon::Bolt, tr!("script_editor_debug"), palette, density);
+        let debug = self.disabled_toolbar_button(
+            Icon::Bolt,
+            tr!("script_editor_debug"),
+            palette,
+            density,
+            cx,
+        );
         let api = self.toolbar_button(
             "script-api-docs",
             Icon::Notebook,
             tr!("script_editor_api_docs"),
-            palette,
             density,
             cx.listener(|this, _: &ClickEvent, _, cx| this.toggle_api_docs(cx)),
+            cx,
         );
 
         let open_action = self.open.as_ref().and(self.linked.as_ref()).map(|linked| {
@@ -198,7 +203,7 @@ impl ScriptDocument {
                 .child(icon(Icon::ExternalLink, GLYPH_TOOLBAR, palette.brand))
                 .child(
                     div()
-                        .font_family(body_family())
+                        .font_family(cx.body_family())
                         .text_size(FONT_XS)
                         .text_color(palette.brand)
                         .child(tr!("script_editor_open_action")),
@@ -228,14 +233,14 @@ impl ScriptDocument {
             .gap(spacing(Spacing::Xxs, density))
             .child(
                 div()
-                    .font_family(mono_family())
+                    .font_family(cx.mono_family())
                     .text_size(FONT_XXS)
                     .text_color(palette.text_faint)
                     .child(tr!("script_editor_sandbox_label")),
             )
             .child(
                 div()
-                    .font_family(mono_family())
+                    .font_family(cx.mono_family())
                     .text_size(FONT_XXS)
                     .text_color(palette.success)
                     .child(tr!("script_editor_sandbox_enabled")),
@@ -247,7 +252,7 @@ impl ScriptDocument {
             .child(sandbox)
             .children(self.engine_timeout_ms.map(|ms| {
                 div()
-                    .font_family(mono_family())
+                    .font_family(cx.mono_family())
                     .text_size(FONT_XXS)
                     .text_color(palette.text_faint)
                     .child(tr!(
@@ -276,10 +281,11 @@ impl ScriptDocument {
         id: &'static str,
         glyph: Icon,
         label: impl Into<SharedString>,
-        palette: &ForgePalette,
         density: Density,
         handler: impl Fn(&ClickEvent, &mut Window, &mut App) + 'static,
+        cx: &App,
     ) -> AnyElement {
+        let palette = &cx.palette();
         let hover = palette.elevated;
         div()
             .id(id)
@@ -296,7 +302,7 @@ impl ScriptDocument {
             .child(icon(glyph, GLYPH_TOOLBAR, palette.text_secondary))
             .child(
                 div()
-                    .font_family(body_family())
+                    .font_family(cx.body_family())
                     .text_size(FONT_XS)
                     .text_color(palette.text_secondary)
                     .child(label.into()),
@@ -310,6 +316,7 @@ impl ScriptDocument {
         label: impl Into<SharedString>,
         palette: &ForgePalette,
         density: Density,
+        cx: &App,
     ) -> AnyElement {
         div()
             .flex()
@@ -321,7 +328,7 @@ impl ScriptDocument {
             .child(icon(glyph, GLYPH_TOOLBAR, palette.text_faint))
             .child(
                 div()
-                    .font_family(body_family())
+                    .font_family(cx.body_family())
                     .text_size(FONT_XS)
                     .text_color(palette.text_faint)
                     .child(label.into()),

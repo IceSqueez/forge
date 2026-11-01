@@ -12,7 +12,7 @@ use gpui::{
 
 use crate::icons::{Icon, icon};
 use crate::palette::ForgePalette;
-use crate::tokens::{BORDER_THIN, FONT_MD, FONT_SM, Radius, body_family, radius, scaled};
+use crate::tokens::{BORDER_THIN, FONT_MD, FONT_SM, Radius, radius, scaled};
 
 const HEADER_H: Pixels = px(56.0);
 const PAD_V: Pixels = px(12.0);
@@ -162,7 +162,7 @@ impl SideSheet {
         self
     }
 
-    fn render_header(&mut self, density: Density) -> AnyElement {
+    fn render_header(&mut self, density: Density, cx: &App) -> AnyElement {
         let mut row = div()
             .flex()
             .items_center()
@@ -188,7 +188,7 @@ impl SideSheet {
 
         let mut titles = div().flex().flex_col().flex_1().overflow_hidden().child(
             div()
-                .font_family(body_family())
+                .font_family(cx.body_family())
                 .text_size(FONT_MD)
                 .text_color(self.title_color)
                 .child(self.title.clone().unwrap_or_default()),
@@ -196,7 +196,7 @@ impl SideSheet {
         if let Some(subtitle) = self.subtitle.clone() {
             titles = titles.child(
                 div()
-                    .font_family(body_family())
+                    .font_family(cx.body_family())
                     .text_size(FONT_SM)
                     .text_color(self.subtitle_color)
                     .child(subtitle),
@@ -256,7 +256,10 @@ impl SideSheet {
 impl RenderOnce for SideSheet {
     fn render(mut self, _window: &mut Window, cx: &mut App) -> impl IntoElement {
         let density = cx.density();
-        let header = self.title.is_some().then(|| self.render_header(density));
+        let header = self
+            .title
+            .is_some()
+            .then(|| self.render_header(density, cx));
 
         let content = div()
             .flex_1()

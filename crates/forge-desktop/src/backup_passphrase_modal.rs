@@ -1,16 +1,14 @@
 use forge_components::focus_inside_modal;
 use forge_components::{
-    Density, FONT_XS, ForgePalette, Icon, InputEvent, ModalSize, OverlayPosition, Spacing,
-    TextInput, body_family, field_column, field_frame, ghost_button, icon, modal, modal_width,
-    overlay, primary_button, spacing, tr,
+    ActivePresentation, Density, FONT_XS, ForgePalette, Icon, InputEvent, ModalSize,
+    OverlayPosition, Spacing, TextInput, field_column, field_frame, ghost_button, icon, modal,
+    modal_width, overlay, primary_button, spacing, tr,
 };
 use forge_transfer::{MIN_PASSPHRASE_CHARS, Passphrase};
 use gpui::{
-    AnyElement, ClickEvent, Context, Entity, EventEmitter, Subscription, Window, div, prelude::*,
-    px,
+    AnyElement, App, ClickEvent, Context, Entity, EventEmitter, Subscription, Window, div,
+    prelude::*, px,
 };
-
-use forge_components::ActivePresentation;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(crate) struct PassphraseCheck {
@@ -255,7 +253,7 @@ impl BackupPassphraseModal {
         cx.emit(BackupPassphraseEvent::Cancelled);
     }
 
-    fn warning(&self, palette: &ForgePalette, density: Density) -> AnyElement {
+    fn warning(&self, palette: &ForgePalette, density: Density, cx: &App) -> AnyElement {
         div()
             .w_full()
             .flex()
@@ -266,7 +264,7 @@ impl BackupPassphraseModal {
                 div()
                     .flex_1()
                     .min_w(px(0.0))
-                    .font_family(body_family())
+                    .font_family(cx.body_family())
                     .text_size(FONT_XS)
                     .text_color(palette.warning)
                     .child(self.purpose.warning()),
@@ -337,6 +335,7 @@ impl Render for BackupPassphraseModal {
                     .child(current.clone())
                     .into_any_element(),
                 density,
+                cx,
             )
         });
         let body = div()
@@ -344,7 +343,7 @@ impl Render for BackupPassphraseModal {
             .flex()
             .flex_col()
             .gap(spacing(Spacing::Md, density))
-            .child(self.warning(&palette, density))
+            .child(self.warning(&palette, density, cx))
             .children(current_field)
             .child(field_column(
                 &palette,
@@ -355,6 +354,7 @@ impl Render for BackupPassphraseModal {
                     .child(self.passphrase.clone())
                     .into_any_element(),
                 density,
+                cx,
             ))
             .child(field_column(
                 &palette,
@@ -365,6 +365,7 @@ impl Render for BackupPassphraseModal {
                     .child(self.confirmation.clone())
                     .into_any_element(),
                 density,
+                cx,
             ));
 
         let card = modal(self.purpose.title(), body, &palette)

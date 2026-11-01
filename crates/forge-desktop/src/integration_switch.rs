@@ -143,6 +143,7 @@ pub(crate) fn inactive_badge(
     owner: &IntegrationId,
     palette: &ForgePalette,
     density: Density,
+    cx: &App,
 ) -> impl IntoElement {
     integration_inactive_badge(
         tr!(
@@ -151,6 +152,7 @@ pub(crate) fn inactive_badge(
         ),
         palette,
         density,
+        cx,
     )
 }
 
@@ -173,6 +175,7 @@ pub(crate) fn category_inactive_badge(
     category: IntegrationCategory,
     palette: &ForgePalette,
     density: Density,
+    cx: &App,
 ) -> impl IntoElement {
     integration_inactive_badge(
         tr!(
@@ -181,6 +184,7 @@ pub(crate) fn category_inactive_badge(
         ),
         palette,
         density,
+        cx,
     )
 }
 

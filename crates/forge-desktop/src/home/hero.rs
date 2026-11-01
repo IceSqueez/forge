@@ -1,4 +1,5 @@
 use super::*;
+use forge_components::ActivePresentation;
 
 impl HomeView {
     pub(super) fn render_export_menu(
@@ -49,7 +50,7 @@ impl HomeView {
             .bg(palette.brand)
             .child(
                 div()
-                    .font_family(body_family())
+                    .font_family(cx.body_family())
                     .font_weight(FontWeight::SEMIBOLD)
                     .text_size(HERO_BRAND_FONT)
                     .text_color(palette.shell)
@@ -63,14 +64,14 @@ impl HomeView {
             .gap(spacing(Spacing::Xxs, density))
             .child(
                 div()
-                    .font_family(body_family())
+                    .font_family(cx.body_family())
                     .text_size(HERO_TITLE_FONT)
                     .text_color(palette.text_primary)
                     .child("Forge"),
             )
             .child(
                 div()
-                    .font_family(body_family())
+                    .font_family(cx.body_family())
                     .text_size(FONT_SM)
                     .text_color(palette.text_muted)
                     .child(tr!("home_hero_tagline")),
@@ -149,14 +150,14 @@ impl HomeView {
             .flex_col()
             .child(
                 div()
-                    .font_family(mono_family())
+                    .font_family(cx.mono_family())
                     .text_size(FONT_XXS)
                     .text_color(palette.text_faint)
                     .child(spec.section),
             )
             .child(
                 div()
-                    .font_family(body_family())
+                    .font_family(cx.body_family())
                     .text_size(FONT_SM)
                     .text_color(palette.text_primary)
                     .child(spec.title),
@@ -178,7 +179,7 @@ impl HomeView {
             .gap(spacing(Spacing::Xs, density))
             .child(
                 div()
-                    .font_family(mono_family())
+                    .font_family(cx.mono_family())
                     .font_weight(FontWeight::SEMIBOLD)
                     .text_size(JUMP_STAT_FONT)
                     .text_color(spec.glyph_color)
@@ -186,7 +187,7 @@ impl HomeView {
             )
             .child(
                 div()
-                    .font_family(body_family())
+                    .font_family(cx.body_family())
                     .text_size(FONT_XS)
                     .text_color(palette.text_muted)
                     .child(spec.stat_label),
@@ -199,7 +200,7 @@ impl HomeView {
             .justify_between()
             .child(
                 div()
-                    .font_family(body_family())
+                    .font_family(cx.body_family())
                     .text_size(FONT_XS)
                     .text_color(palette.text_faint)
                     .child(spec.hint),

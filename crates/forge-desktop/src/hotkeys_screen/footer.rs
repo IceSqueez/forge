@@ -3,9 +3,9 @@ use forge_components::FONT_XXS;
 use forge_components::Spacing;
 use forge_components::spacing;
 use forge_components::{
-    BORDER_THIN, ForgePalette, fmt_display_relative, mono_family, scaled, status_dot, tr,
+    ActivePresentation, BORDER_THIN, ForgePalette, fmt_display_relative, scaled, status_dot, tr,
 };
-use gpui::{AnyElement, Pixels, div, prelude::*, px};
+use gpui::{AnyElement, App, Pixels, div, prelude::*, px};
 
 use super::HotkeysScreenView;
 
@@ -17,7 +17,12 @@ const FOOTER_MT: Pixels = px(14.0);
 const FOOTER_SEPARATOR: &str = "·";
 
 impl HotkeysScreenView {
-    pub(super) fn render_footer(&self, palette: &ForgePalette, density: Density) -> AnyElement {
+    pub(super) fn render_footer(
+        &self,
+        palette: &ForgePalette,
+        density: Density,
+        cx: &App,
+    ) -> AnyElement {
         let listener = if self.enabled {
             tr!("hotkeys_footer_listening")
         } else {
@@ -39,11 +44,11 @@ impl HotkeysScreenView {
                 .flex()
                 .items_center()
                 .gap(spacing(Spacing::Xs, density))
-                .child(footer_text(FOOTER_SEPARATOR.to_owned(), palette))
+                .child(footer_text(FOOTER_SEPARATOR.to_owned(), palette, cx))
                 .child(status_dot(palette.warning, FOOTER_DOT))
                 .child(
                     div()
-                        .font_family(mono_family())
+                        .font_family(cx.mono_family())
                         .text_size(FOOTER_FS)
                         .text_color(palette.warning)
                         .child(tr!(
@@ -75,9 +80,10 @@ impl HotkeysScreenView {
                             count = i64::try_from(self.total_count()).unwrap_or(i64::MAX)
                         ),
                         palette,
+                        cx,
                     ))
-                    .child(footer_text(FOOTER_SEPARATOR.to_owned(), palette))
-                    .child(footer_text(listener, palette))
+                    .child(footer_text(FOOTER_SEPARATOR.to_owned(), palette, cx))
+                    .child(footer_text(listener, palette, cx))
                     .children(synthesized),
             )
             .child(
@@ -86,15 +92,15 @@ impl HotkeysScreenView {
                     .items_center()
                     .gap(spacing(Spacing::Xs, density))
                     .child(status_dot(dot, FOOTER_DOT))
-                    .child(footer_text(right, palette)),
+                    .child(footer_text(right, palette, cx)),
             )
             .into_any_element()
     }
 }
 
-fn footer_text(text: String, palette: &ForgePalette) -> impl IntoElement {
+fn footer_text(text: String, palette: &ForgePalette, cx: &App) -> impl IntoElement {
     div()
-        .font_family(mono_family())
+        .font_family(cx.mono_family())
         .text_size(FOOTER_FS)
         .text_color(palette.text_faint)
         .child(text)

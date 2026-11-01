@@ -4,7 +4,7 @@ use std::time::Duration;
 
 use forge_components::RevealsFocusIn;
 use forge_components::{
-    BreadcrumbCrumb, Icon, ToastKind, body_family, icon, page_frame, scaled, tr,
+    ActivePresentation, BreadcrumbCrumb, Icon, ToastKind, icon, page_frame, scaled, tr,
 };
 use forge_events::Event;
 use forge_hotkey::HotkeyClient;
@@ -24,7 +24,6 @@ use crate::navigation::NavRequested;
 use crate::repo_failure::RepoFailure;
 use crate::runtime_event::{self, RuntimeEvent};
 use crate::shortcut_overrides::{ShortcutOverrides, load_overrides, save_overrides};
-use forge_components::ActivePresentation;
 use forge_components::PushToast;
 use forge_host::integrations::BuiltinObject;
 use forge_hotkey::HotkeyReconciler;
@@ -365,7 +364,7 @@ impl Render for HotkeysScreenView {
             .child(icon(Icon::Keyboard, HEADER_GLYPH, palette.success))
             .child(
                 div()
-                    .font_family(body_family())
+                    .font_family(cx.body_family())
                     .text_size(LABEL_FS)
                     .text_color(palette.text_muted)
                     .child(tr!(
@@ -390,9 +389,9 @@ impl Render for HotkeysScreenView {
                     .flex()
                     .flex_col()
                     .child(self.render_hero(&palette, cx))
-                    .child(self.render_stats(&palette, density))
+                    .child(self.render_stats(&palette, density, cx))
                     .child(self.render_bindings(&palette, cx))
-                    .child(self.render_footer(&palette, density)),
+                    .child(self.render_footer(&palette, density, cx)),
             );
 
         let frame = page_frame(

@@ -1,11 +1,10 @@
-use forge_components::ActivePresentation;
 use forge_components::FONT_XS;
 use forge_components::Radius;
 use forge_components::Spacing;
 use forge_components::radius;
 use forge_components::spacing;
 use forge_components::{
-    BORDER_THIN, ForgePalette, Icon, KeyActivated, ToastKind, body_family, icon, scaled, tr,
+    ActivePresentation, BORDER_THIN, ForgePalette, Icon, KeyActivated, ToastKind, icon, scaled, tr,
 };
 use forge_types::TriggerInstanceId;
 use gpui::{AnyElement, ClickEvent, Context, Keystroke, Pixels, div, prelude::*, px};
@@ -226,7 +225,7 @@ impl HotkeysScreenView {
             .child(icon(Icon::Keyboard, CAPTURE_GLYPH, palette.success))
             .child(
                 div()
-                    .font_family(body_family())
+                    .font_family(cx.body_family())
                     .text_size(ADD_BAR_FS)
                     .text_color(palette.success)
                     .child(tr!("hotkeys_capture_prompt")),
@@ -237,7 +236,7 @@ impl HotkeysScreenView {
                     .ml(spacing(Spacing::Xs, density))
                     .flex()
                     .items_center()
-                    .font_family(body_family())
+                    .font_family(cx.body_family())
                     .text_size(ADD_BAR_FS)
                     .text_color(palette.text_faint)
                     .cursor_pointer()

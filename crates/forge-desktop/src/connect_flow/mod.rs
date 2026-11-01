@@ -4,14 +4,15 @@ mod local_callback;
 
 use std::sync::Arc;
 
-use forge_components::{Density, ForgePalette, Spacing, platform_hero, spacing, tr};
+use forge_components::{
+    ActivePresentation, Density, ForgePalette, Spacing, platform_hero, spacing, tr,
+};
 use forge_storage::CredentialsRepo;
 use forge_types::PlatformId;
-use gpui::{AnyElement, Context, EventEmitter, Rgba, Window, div, prelude::*, px};
+use gpui::{AnyElement, App, Context, EventEmitter, Rgba, Window, div, prelude::*, px};
 use tokio_util::sync::CancellationToken;
 
 use crate::async_bridge::{self, ErrorSink};
-use forge_components::ActivePresentation;
 use forge_host::integrations::BuiltinObject;
 use forge_runtime::IntegrationSlot;
 
@@ -119,10 +120,15 @@ impl ConnectFlow {
         }
     }
 
-    pub(crate) fn status_indicator(&self, palette: &ForgePalette, density: Density) -> AnyElement {
+    pub(crate) fn status_indicator(
+        &self,
+        palette: &ForgePalette,
+        density: Density,
+        cx: &App,
+    ) -> AnyElement {
         match self.platform {
-            PlatformId::Twitch => self.twitch_device_status(palette, density),
-            PlatformId::YouTube | PlatformId::Kick => self.connect_status(palette, density),
+            PlatformId::Twitch => self.twitch_device_status(palette, density, cx),
+            PlatformId::YouTube | PlatformId::Kick => self.connect_status(palette, density, cx),
         }
     }
 

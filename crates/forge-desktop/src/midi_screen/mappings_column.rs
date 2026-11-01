@@ -3,11 +3,11 @@ use crate::midi_signal::kind_color;
 use forge_components::{
     ActivePresentation, BORDER_THIN, Density, FONT_BADGE, FONT_LABEL, FONT_MICRO, FONT_XS,
     FONT_XXS, ForgePalette, Icon, KeyActivated, MenuPlacement, Radius, SectionLabel, Spacing,
-    badge, body_family, card, icon, menu_button, menu_divider, menu_item, mono_family, pad_tile,
-    radius, scaled, spacing, status_dot, tr,
+    badge, card, icon, menu_button, menu_divider, menu_item, pad_tile, radius, scaled, spacing,
+    status_dot, tr,
 };
 use forge_types::TriggerInstanceId;
-use gpui::{AnyElement, ClickEvent, Context, Pixels, div, prelude::*, px};
+use gpui::{AnyElement, App, ClickEvent, Context, Pixels, div, prelude::*, px};
 
 const BINDINGS_FS: Pixels = FONT_MICRO;
 const MAP_PAD_V: Pixels = px(9.0);
@@ -47,7 +47,7 @@ impl MidiScreenView {
         let density = cx.density();
         let visible = self.visible_mappings();
         let count = div()
-            .font_family(mono_family())
+            .font_family(cx.mono_family())
             .text_size(BINDINGS_FS)
             .text_color(palette.text_faint)
             .child(tr!(
@@ -69,7 +69,7 @@ impl MidiScreenView {
             };
             list = list.child(
                 div()
-                    .font_family(body_family())
+                    .font_family(cx.body_family())
                     .text_size(FONT_XS)
                     .text_color(palette.text_faint)
                     .child(empty),
@@ -127,7 +127,7 @@ impl MidiScreenView {
                     .border_color(palette.border_regular)
                     .bg(palette.shell)
                     .text_align(gpui::TextAlign::Center)
-                    .font_family(mono_family())
+                    .font_family(cx.mono_family())
                     .text_size(SIG_FS)
                     .line_height(SIG_LINE_H)
                     .text_color(palette.text_primary)
@@ -171,7 +171,7 @@ impl MidiScreenView {
                     .flex_1()
                     .min_w_0()
                     .truncate()
-                    .font_family(body_family())
+                    .font_family(cx.body_family())
                     .text_size(TARGET_FS)
                     .text_color(target_ink)
                     .child(target_text),
@@ -260,7 +260,7 @@ impl MidiScreenView {
                     .px(spacing(Spacing::Xs, density))
                     .rounded(KBD_RADIUS)
                     .bg(palette.surface_overlay)
-                    .font_family(mono_family())
+                    .font_family(cx.mono_family())
                     .text_size(KBD_FS)
                     .font_weight(gpui::FontWeight::NORMAL)
                     .text_color(palette.text_faint)
@@ -307,7 +307,7 @@ impl MidiScreenView {
             .child(icon(Icon::Antenna, LEARN_GLYPH, accent))
             .child(
                 div()
-                    .font_family(body_family())
+                    .font_family(cx.body_family())
                     .text_size(ADD_BAR_FS)
                     .text_color(accent)
                     .child(prompt),
@@ -318,7 +318,7 @@ impl MidiScreenView {
                     .ml(spacing(Spacing::Xs, density))
                     .flex()
                     .items_center()
-                    .font_family(body_family())
+                    .font_family(cx.body_family())
                     .text_size(ADD_BAR_FS)
                     .text_color(palette.text_faint)
                     .cursor_pointer()
@@ -333,7 +333,12 @@ impl MidiScreenView {
             .into_any_element()
     }
 
-    pub(super) fn render_footer(&self, palette: &ForgePalette, density: Density) -> AnyElement {
+    pub(super) fn render_footer(
+        &self,
+        palette: &ForgePalette,
+        density: Density,
+        cx: &App,
+    ) -> AnyElement {
         let (dot, status_text) = if self.enabled {
             (palette.success, tr!("midi_engine_running"))
         } else {
@@ -352,7 +357,7 @@ impl MidiScreenView {
             .bg(palette.shell)
             .child(
                 div()
-                    .font_family(mono_family())
+                    .font_family(cx.mono_family())
                     .text_size(FOOTER_FS)
                     .text_color(palette.text_faint)
                     .child(tr!(
@@ -369,7 +374,7 @@ impl MidiScreenView {
                     .child(status_dot(dot, FOOTER_DOT))
                     .child(
                         div()
-                            .font_family(mono_family())
+                            .font_family(cx.mono_family())
                             .text_size(FOOTER_FS)
                             .text_color(palette.text_faint)
                             .child(status_text),

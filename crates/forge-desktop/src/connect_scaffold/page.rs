@@ -5,12 +5,12 @@ use forge_components::OverflowRevealingFocus;
 use forge_components::Spacing;
 use forge_components::spacing;
 use forge_components::{
-    BORDER_THIN, BreadcrumbCrumb, Density, FONT_MD, FONT_XS, ForgePalette, Icon, Radius,
-    body_family, grow_cell, icon, mono_family, page_frame, radius, scaled, status_dot, tr,
+    ActivePresentation, BORDER_THIN, BreadcrumbCrumb, Density, FONT_MD, FONT_XS, ForgePalette,
+    Icon, Radius, grow_cell, icon, page_frame, radius, scaled, status_dot, tr,
 };
 use gpui::{
-    AnyElement, AnyView, ClickEvent, Context, EventEmitter, FontWeight, Pixels, Rgba, SharedString,
-    div, prelude::*, px,
+    AnyElement, AnyView, App, ClickEvent, Context, EventEmitter, FontWeight, Pixels, Rgba,
+    SharedString, div, prelude::*, px,
 };
 
 use crate::navigation::NavRequested;
@@ -86,11 +86,18 @@ impl ConnectPage {
                     self.step_number_tint,
                     palette,
                     density,
+                    cx,
                 ),
                 LEFT_COLUMN_GROW,
             ))
             .child(grow_cell(
-                settings_card(tr!(self.settings_title_key), self.form, palette, density),
+                settings_card(
+                    tr!(self.settings_title_key),
+                    self.form,
+                    palette,
+                    density,
+                    cx,
+                ),
                 RIGHT_COLUMN_GROW,
             ));
 
@@ -105,6 +112,7 @@ impl ConnectPage {
                 tr!(self.subtitle_key),
                 palette,
                 density,
+                cx,
             )))
             .child(columns);
 
@@ -135,17 +143,21 @@ impl ConnectPage {
             palette,
         )
         .density(density)
-        .header_right(header_status(palette, density))
+        .header_right(header_status(palette, density, cx))
         .body(scroll)
     }
 }
 
-pub(crate) fn fragment(text: impl Into<SharedString>, tint: Rgba) -> Vec<AnyElement> {
-    words(text, tint, body_family())
+pub(crate) fn fragment(text: impl Into<SharedString>, tint: Rgba, cx: &App) -> Vec<AnyElement> {
+    words(text, tint, cx.body_family())
 }
 
-pub(crate) fn mono_fragment(text: impl Into<SharedString>, tint: Rgba) -> Vec<AnyElement> {
-    words(text, tint, mono_family())
+pub(crate) fn mono_fragment(
+    text: impl Into<SharedString>,
+    tint: Rgba,
+    cx: &App,
+) -> Vec<AnyElement> {
+    words(text, tint, cx.mono_family())
 }
 
 fn hero(
@@ -155,6 +167,7 @@ fn hero(
     subtitle: String,
     palette: &ForgePalette,
     density: Density,
+    cx: &App,
 ) -> AnyElement {
     let tile = div()
         .flex_none()
@@ -174,7 +187,7 @@ fn hero(
         .gap(scaled(HERO_TEXT_GAP, density))
         .child(
             div()
-                .font_family(body_family())
+                .font_family(cx.body_family())
                 .font_weight(FontWeight::MEDIUM)
                 .text_size(FONT_MD)
                 .text_color(palette.text_primary)
@@ -182,7 +195,7 @@ fn hero(
         )
         .child(
             div()
-                .font_family(body_family())
+                .font_family(cx.body_family())
                 .text_size(FONT_XS)
                 .text_color(palette.text_muted)
                 .child(subtitle),
@@ -206,6 +219,7 @@ fn guide_card(
     number_tint: Rgba,
     palette: &ForgePalette,
     density: Density,
+    cx: &App,
 ) -> AnyElement {
     let count = steps.len();
     let rows = steps.into_iter().enumerate().map(|(index, parts)| {
@@ -217,11 +231,12 @@ fn guide_card(
             number_tint,
             palette,
             density,
+            cx,
         )
     });
 
     let intro = div()
-        .font_family(body_family())
+        .font_family(cx.body_family())
         .text_size(STEP_TEXT_SIZE)
         .text_color(palette.text_muted)
         .line_height(INTRO_LINE_HEIGHT)
@@ -245,6 +260,7 @@ fn guide_card(
             title,
             palette,
             density,
+            cx,
         ))
         .child(body)
         .into_any_element()
@@ -255,6 +271,7 @@ fn settings_card(
     form: AnyView,
     palette: &ForgePalette,
     density: Density,
+    cx: &App,
 ) -> AnyElement {
     let body = div()
         .w_full()
@@ -272,12 +289,13 @@ fn settings_card(
             title,
             palette,
             density,
+            cx,
         ))
         .child(body)
         .into_any_element()
 }
 
-fn header_status(palette: &ForgePalette, density: Density) -> AnyElement {
+fn header_status(palette: &ForgePalette, density: Density, cx: &App) -> AnyElement {
     div()
         .flex()
         .items_center()
@@ -285,7 +303,7 @@ fn header_status(palette: &ForgePalette, density: Density) -> AnyElement {
         .child(status_dot(palette.text_faint, HEADER_DOT_SIZE))
         .child(
             div()
-                .font_family(body_family())
+                .font_family(cx.body_family())
                 .text_size(HEADER_STATUS_SIZE)
                 .text_color(palette.text_muted)
                 .child(tr!("common_status_not_connected")),
@@ -308,6 +326,7 @@ fn card_header(
     title: String,
     palette: &ForgePalette,
     density: Density,
+    cx: &App,
 ) -> impl IntoElement {
     div()
         .w_full()
@@ -321,7 +340,7 @@ fn card_header(
         .child(icon(glyph, CARD_GLYPH, tint))
         .child(
             div()
-                .font_family(body_family())
+                .font_family(cx.body_family())
                 .font_weight(FontWeight::MEDIUM)
                 .text_size(CARD_TITLE_SIZE)
                 .text_color(palette.text_primary)
@@ -351,6 +370,7 @@ fn step_row(
     number_tint: Rgba,
     palette: &ForgePalette,
     density: Density,
+    cx: &App,
 ) -> AnyElement {
     let text = div()
         .flex_1()
@@ -370,7 +390,7 @@ fn step_row(
         .child(
             div()
                 .flex_none()
-                .font_family(mono_family())
+                .font_family(cx.mono_family())
                 .font_weight(FontWeight::MEDIUM)
                 .text_size(STEP_NUMBER_SIZE)
                 .text_color(number_tint)

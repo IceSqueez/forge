@@ -2,10 +2,10 @@ use forge_components::Density;
 use forge_components::Spacing;
 use forge_components::spacing;
 use forge_components::{
-    BORDER_THIN, ForgePalette, Icon, icon, mono_family, scaled, tooltip_builder, tr,
+    ActivePresentation, BORDER_THIN, ForgePalette, Icon, icon, scaled, tooltip_builder, tr,
 };
 use forge_types::ClipId;
-use gpui::{AnyElement, Context, Pixels, div, prelude::*, px};
+use gpui::{AnyElement, App, Context, Pixels, div, prelude::*, px};
 
 use super::{HOTKEY_FS, SoundboardView};
 use crate::async_bridge;
@@ -49,6 +49,7 @@ impl SoundboardView {
         hotkey: &str,
         palette: &ForgePalette,
         density: Density,
+        cx: &App,
     ) -> AnyElement {
         let combo = canonical_combo(hotkey);
         let state = self.keys.pad_key(id, &combo);
@@ -62,7 +63,7 @@ impl SoundboardView {
             .flex()
             .items_center()
             .gap(scaled(HOTKEY_WARN_GAP, density))
-            .font_family(mono_family())
+            .font_family(cx.mono_family())
             .text_size(HOTKEY_FS)
             .text_color(text)
             .bg(palette.shell)

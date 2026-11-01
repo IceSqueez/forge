@@ -2,14 +2,14 @@ use std::collections::HashSet;
 use std::sync::Arc;
 
 use forge_components::{
-    Density, FONT_XS, FONT_XXS, ForgePalette, Icon, ModalSize, OverlayPosition, Spacing,
-    body_family, fmt_display_relative, ghost_button, modal, mono_family, overlay, spacing, tr,
+    ActivePresentation, Density, FONT_XS, FONT_XXS, ForgePalette, Icon, ModalSize, OverlayPosition,
+    Spacing, fmt_display_relative, ghost_button, modal, overlay, spacing, tr,
 };
 use forge_storage::{
     ChatAuthorKey, ChatAuthorPage, ChatAuthorTally, ChatHistoryCursor, ChatHistoryRepo,
 };
 use gpui::{
-    AnyElement, ClickEvent, Context, Entity, EventEmitter, IntoElement, ListAlignment,
+    AnyElement, App, ClickEvent, Context, Entity, EventEmitter, IntoElement, ListAlignment,
     ListScrollEvent, ListSizingBehavior, ListState, Pixels, Render, Rgba, SharedString,
     Subscription, Task, Window, div, list, prelude::*, px,
 };
@@ -19,7 +19,6 @@ use super::platform_display_name;
 use crate::chat_author::AuthorKey;
 use crate::chat_feed::{ChatFeed, ChatMessage};
 use crate::chat_viewer_messages::{ViewerMessages, stored_author};
-use forge_components::ActivePresentation;
 
 const HISTORY_PAGE_SIZE: usize = 100;
 const HISTORY_PREFETCH_ROWS: usize = 25;
@@ -320,9 +319,9 @@ impl ViewerHistory {
         cx.emit(ViewerHistoryDismissed);
     }
 
-    fn render_note(text: impl Into<SharedString>, color: Rgba) -> AnyElement {
+    fn render_note(text: impl Into<SharedString>, color: Rgba, cx: &App) -> AnyElement {
         div()
-            .font_family(body_family())
+            .font_family(cx.body_family())
             .text_size(FONT_XS)
             .text_color(color)
             .child(text.into())
@@ -335,6 +334,7 @@ impl ViewerHistory {
         text_color: Rgba,
         palette: &ForgePalette,
         density: Density,
+        cx: &App,
     ) -> AnyElement {
         div()
             .w_full()
@@ -345,7 +345,7 @@ impl ViewerHistory {
             .child(
                 div()
                     .flex_none()
-                    .font_family(mono_family())
+                    .font_family(cx.mono_family())
                     .text_size(FONT_XXS)
                     .text_color(palette.text_faint)
                     .child(stamp.into()),
@@ -354,7 +354,7 @@ impl ViewerHistory {
                 div()
                     .flex_1()
                     .min_w(px(0.0))
-                    .font_family(body_family())
+                    .font_family(cx.body_family())
                     .text_size(FONT_XS)
                     .text_color(text_color)
                     .child(body.into()),
@@ -380,6 +380,7 @@ impl ViewerHistory {
                     text_color,
                     &palette,
                     density,
+                    cx,
                 )
             }
             None => Self::render_row(
@@ -388,6 +389,7 @@ impl ViewerHistory {
                 palette.text_faint,
                 &palette,
                 density,
+                cx,
             ),
         }
     }
@@ -404,6 +406,7 @@ impl ViewerHistory {
             .child(Self::render_note(
                 tr!("chat_drawer_history_older_failed"),
                 palette.danger,
+                cx,
             ))
             .child(
                 ghost_button(tr!("chat_drawer_history_retry"), palette).on_click(
@@ -417,7 +420,7 @@ impl ViewerHistory {
     fn render_body(&self, palette: &ForgePalette, cx: &mut Context<Self>) -> AnyElement {
         match self.state {
             HistoryState::Loading => {
-                Self::render_note(tr!("chat_drawer_history_loading"), palette.text_faint)
+                Self::render_note(tr!("chat_drawer_history_loading"), palette.text_faint, cx)
             }
             HistoryState::Failed => div()
                 .w_full()
@@ -427,6 +430,7 @@ impl ViewerHistory {
                 .child(Self::render_note(
                     tr!("chat_drawer_history_failed"),
                     palette.danger,
+                    cx,
                 ))
                 .child(
                     ghost_button(tr!("chat_drawer_history_retry"), palette).on_click(
@@ -436,7 +440,7 @@ impl ViewerHistory {
                 )
                 .into_any_element(),
             HistoryState::Loaded if self.listed.total == 0 => {
-                Self::render_note(tr!("chat_drawer_history_empty"), palette.text_faint)
+                Self::render_note(tr!("chat_drawer_history_empty"), palette.text_faint, cx)
             }
             HistoryState::Loaded => div()
                 .w_full()

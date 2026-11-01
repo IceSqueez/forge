@@ -1,9 +1,8 @@
-use forge_components::ActivePresentation;
 use forge_components::Spacing;
 use forge_components::spacing;
 use forge_components::{
-    BORDER_THIN, Button, Density, FONT_XS, FONT_XXS, ForgePalette, Icon, KeyActivated, Radius,
-    body_family, empty_state, ghost_button_with_icon, icon, mono_family, radius, scaled, tr,
+    ActivePresentation, BORDER_THIN, Button, Density, FONT_XS, FONT_XXS, ForgePalette, Icon,
+    KeyActivated, Radius, empty_state, ghost_button_with_icon, icon, radius, scaled, tr,
 };
 use gpui::{AnyElement, App, ClickEvent, Entity, Pixels, SharedString, div, prelude::*, px};
 
@@ -68,10 +67,11 @@ pub(crate) fn render_readout(
             feed_summary(&wiring.feeds),
             palette.text_secondary,
             density,
+            cx,
         ));
 
     for row in &wiring.feeds {
-        rows = rows.child(feed_chip(view, row, palette, density));
+        rows = rows.child(feed_chip(view, row, palette, density, cx));
     }
 
     let overlay_off = wiring
@@ -85,6 +85,7 @@ pub(crate) fn render_readout(
             tr!("overlays_wire_overlay_off"),
             palette.warning,
             density,
+            cx,
         ));
     }
 
@@ -97,6 +98,7 @@ fn note_row(
     message: String,
     text_color: gpui::Rgba,
     density: Density,
+    cx: &App,
 ) -> impl IntoElement {
     div()
         .w_full()
@@ -108,7 +110,7 @@ fn note_row(
             div()
                 .flex_1()
                 .min_w(px(0.0))
-                .font_family(body_family())
+                .font_family(cx.body_family())
                 .text_size(FONT_XS)
                 .text_color(text_color)
                 .child(message),
@@ -120,13 +122,14 @@ fn feed_chip(
     row: &FeedRow,
     palette: &ForgePalette,
     density: Density,
+    cx: &App,
 ) -> impl IntoElement {
     let target = view.clone();
     let action_id = row.action_id;
     let disabled_note = (!row.action_enabled).then(|| {
         div()
             .flex_none()
-            .font_family(mono_family())
+            .font_family(cx.mono_family())
             .text_size(FONT_XXS)
             .text_color(palette.warning)
             .child(tr!("overlays_wire_action_disabled").to_uppercase())
@@ -156,7 +159,7 @@ fn feed_chip(
             div()
                 .flex_1()
                 .min_w(px(0.0))
-                .font_family(body_family())
+                .font_family(cx.body_family())
                 .text_size(FONT_XS)
                 .text_color(palette.text_secondary)
                 .child(row.action_name.clone()),

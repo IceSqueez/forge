@@ -1,8 +1,8 @@
 use super::*;
 use forge_components::{
-    FONT_LG, FONT_XS, FONT_XXS, ForgePalette, Icon, KeyActivated, MenuPlacement, Spacing,
-    body_family, ghost_button_with_icon, menu_button, menu_divider, menu_item, scaled, spacing,
-    status_dot, tr,
+    ActivePresentation, FONT_LG, FONT_XS, FONT_XXS, ForgePalette, Icon, KeyActivated,
+    MenuPlacement, Spacing, ghost_button_with_icon, menu_button, menu_divider, menu_item, scaled,
+    spacing, status_dot, tr,
 };
 use gpui::{AnyElement, ClickEvent, Context, FontWeight, SharedString, div, px};
 
@@ -23,7 +23,7 @@ impl ActionEditor {
             .gap(spacing(Spacing::Xs, density))
             .child(
                 div()
-                    .font_family(body_family())
+                    .font_family(cx.body_family())
                     .font_weight(FontWeight::SEMIBOLD)
                     .text_size(FONT_LG)
                     .text_color(palette.text_primary)
@@ -36,7 +36,7 @@ impl ActionEditor {
             .clone()
             .unwrap_or_else(|| tr!("action_editor_no_description"));
         let desc_line = div()
-            .font_family(body_family())
+            .font_family(cx.body_family())
             .text_size(FONT_XS)
             .text_color(palette.text_muted)
             .child(desc);
@@ -121,7 +121,7 @@ impl ActionEditor {
             .child(status_dot(pill_color, PILL_DOT))
             .child(
                 div()
-                    .font_family(body_family())
+                    .font_family(cx.body_family())
                     .text_size(FONT_XXS)
                     .text_color(pill_color)
                     .child(pill_label),

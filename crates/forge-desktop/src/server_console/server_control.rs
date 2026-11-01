@@ -4,7 +4,7 @@ use crate::navigation::{NavRequested, Screen, SettingsSection};
 use crate::repo_failure::RepoFailure;
 use crate::server_restart::restart_ignoring_disabled;
 use forge_components::{
-    Density, FONT_XXS, ForgePalette, Icon, KeyActivated, Spacing, body_family,
+    ActivePresentation, Density, FONT_XXS, ForgePalette, Icon, KeyActivated, Spacing,
     ghost_button_with_icon, spacing, tr,
 };
 use gpui::{AnyElement, ClickEvent, Context, div, prelude::*};
@@ -84,7 +84,7 @@ impl ServerConsoleView {
                 .gap(spacing(Spacing::Xxs, density))
                 .child(
                     div()
-                        .font_family(body_family())
+                        .font_family(cx.body_family())
                         .text_size(FONT_XXS)
                         .text_color(palette.text_faint)
                         .child(tr!("server_console_disabled_hint")),
@@ -93,7 +93,7 @@ impl ServerConsoleView {
                     div()
                         .id("srv-open-ws-settings")
                         .cursor_pointer()
-                        .font_family(body_family())
+                        .font_family(cx.body_family())
                         .text_size(FONT_XXS)
                         .text_color(palette.info)
                         .child(tr!("server_console_disabled_hint_link"))

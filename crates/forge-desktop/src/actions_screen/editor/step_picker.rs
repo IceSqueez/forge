@@ -2,11 +2,11 @@ use super::step_presentation::StepGroup;
 use super::*;
 use crate::actions_screen::sub_action_modal::{SubFormLaunch, SubFormTarget};
 use crate::picker_favorites::{bind_picker, follow_picker_event};
-use forge_components::ActivePresentation;
 use forge_components::focus_inside_modal;
 use forge_components::{
-    ForgePalette, GlyphArt, GridPicker, GridPickerArt, GridPickerConfig, GridPickerEvent,
-    GridPickerGroup, GridPickerItem, GridPickerItemState, GridPickerSubtitle, GridScope, Icon, tr,
+    ActivePresentation, ForgePalette, GlyphArt, GridPicker, GridPickerArt, GridPickerConfig,
+    GridPickerEvent, GridPickerGroup, GridPickerItem, GridPickerItemState, GridPickerSubtitle,
+    GridScope, Icon, tr,
 };
 use forge_registry::{FormSchemaSource, SubActionRegistry, SubActionRunner};
 use gpui::{Context, Entity, SharedString, Window};

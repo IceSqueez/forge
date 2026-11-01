@@ -1,4 +1,4 @@
-use crate::FONT_ROW;
+use crate::{ActivePresentation, FONT_ROW};
 use gpui::{
     AnyElement, App, Context, Entity, EventEmitter, FocusHandle, Focusable, InteractiveElement,
     IntoElement, KeyBinding, KeyDownEvent, ParentElement, Pixels, Render, ScrollStrategy,
@@ -13,7 +13,7 @@ use crate::icons::Icon;
 use crate::palette::ForgePalette;
 use crate::search_state::SearchState;
 use crate::text_input::{InputEvent, TextInput};
-use crate::tokens::{ENTER_KEY, ESCAPE_KEY, Radius, body_family};
+use crate::tokens::{ENTER_KEY, ESCAPE_KEY, Radius};
 
 const SEARCH_THRESHOLD: usize = 10;
 const MESSAGE_FONT: Pixels = FONT_ROW;
@@ -300,14 +300,14 @@ pub(crate) fn item_matches(label: &str, sublabel: Option<&str>, query: &str) -> 
         || sublabel.is_some_and(|s| s.to_lowercase().contains(&needle))
 }
 
-pub(crate) fn message_row(text: SharedString, palette: ForgePalette) -> AnyElement {
+pub(crate) fn message_row(text: SharedString, palette: ForgePalette, cx: &App) -> AnyElement {
     div()
         .w_full()
         .h(DROPDOWN_ROW_HEIGHT)
         .flex()
         .items_center()
         .justify_center()
-        .font_family(body_family())
+        .font_family(cx.body_family())
         .text_size(MESSAGE_FONT)
         .text_color(palette.text_faint)
         .child(text)
@@ -336,11 +336,11 @@ impl Render for Picker {
             .map(|typed| self.render_custom_row(typed, self.custom_entry.clone(), cx));
 
         let list_area = if self.loading {
-            message_row(self.labels.loading.clone(), p)
+            message_row(self.labels.loading.clone(), p, cx)
         } else if self.filtered.is_empty() && custom_row.is_some() {
             div().into_any_element()
         } else if self.filtered.is_empty() {
-            message_row(self.labels.empty.clone(), p)
+            message_row(self.labels.empty.clone(), p, cx)
         } else {
             let count = self.filtered.len();
             uniform_list(

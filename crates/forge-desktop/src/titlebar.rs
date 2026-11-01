@@ -1,9 +1,7 @@
-use forge_components::{
-    BORDER_THIN, FONT_SM, FONT_XS, ForgePalette, Radius, body_family, radius, scaled,
-};
+use forge_components::{BORDER_THIN, FONT_SM, FONT_XS, ForgePalette, Radius, radius, scaled};
 use gpui::{
-    ClickEvent, Context, FontWeight, MouseButton, MouseDownEvent, MouseMoveEvent, MouseUpEvent,
-    Pixels, Window, WindowControlArea, div, prelude::*, px,
+    App, ClickEvent, Context, FontWeight, MouseButton, MouseDownEvent, MouseMoveEvent,
+    MouseUpEvent, Pixels, Window, WindowControlArea, div, prelude::*, px,
 };
 
 use forge_components::{ActivePresentation, Presentation};
@@ -32,6 +30,7 @@ pub(crate) fn brand_mark(
     corner: Pixels,
     glyph: Pixels,
     palette: &ForgePalette,
+    cx: &App,
 ) -> impl IntoElement {
     div()
         .flex_none()
@@ -43,7 +42,7 @@ pub(crate) fn brand_mark(
         .bg(palette.brand)
         .child(
             div()
-                .font_family(body_family())
+                .font_family(cx.body_family())
                 .font_weight(FontWeight::BOLD)
                 .text_size(glyph)
                 .text_color(palette.shell)
@@ -60,10 +59,16 @@ impl Render for TitleBar {
             .flex()
             .items_center()
             .gap(scaled(CLUSTER_GAP, density))
-            .child(brand_mark(LOGO_SIZE, radius(Radius::Sm), FONT_XS, &palette))
+            .child(brand_mark(
+                LOGO_SIZE,
+                radius(Radius::Sm),
+                FONT_XS,
+                &palette,
+                cx,
+            ))
             .child(
                 div()
-                    .font_family(body_family())
+                    .font_family(cx.body_family())
                     .font_weight(FontWeight::MEDIUM)
                     .text_size(FONT_SM)
                     .text_color(palette.text_primary)

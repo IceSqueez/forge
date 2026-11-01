@@ -1,7 +1,8 @@
 use std::collections::BTreeMap;
 
 use forge_components::{
-    InputEvent, Picker, PickerEvent, PickerItem, PickerLabels, TextArea, TextInput, dropdown, tr,
+    ActivePresentation, InputEvent, Picker, PickerEvent, PickerItem, PickerLabels, TextArea,
+    TextInput, dropdown, tr,
 };
 use forge_platform_core::{
     CollectionField, CollectionItem, CollectionItemId, QuickActionChoiceSource, QuickActionField,
@@ -13,7 +14,6 @@ use gpui::{
 };
 
 use crate::user_text::user_text_string;
-use forge_components::ActivePresentation;
 use forge_components::{
     choice_trigger, failure_note, field_column, int_entry_invalid, int_range_hint,
     parse_int_in_range, toggle_row,
@@ -384,6 +384,7 @@ impl CollectionForm {
                 &palette,
                 cx.listener(move |this, _: &ClickEvent, _, cx| this.toggle_field(index, cx)),
                 density,
+                cx,
             ),
             FormControl::Choice { items, selected } => {
                 let label = selected
@@ -415,6 +416,7 @@ impl CollectionForm {
                         this.open_choice(index, window, cx)
                     }),
                     density,
+                    cx,
                 );
                 div()
                     .relative()
@@ -424,7 +426,7 @@ impl CollectionForm {
                     .into_any_element()
             }
             FormControl::Unsupported => {
-                failure_note(&tr!("collection_field_unsupported"), &palette, density)
+                failure_note(&tr!("collection_field_unsupported"), &palette, density, cx)
             }
         };
         field_column(
@@ -434,6 +436,7 @@ impl CollectionForm {
             field.error.as_deref(),
             control,
             density,
+            cx,
         )
     }
 }

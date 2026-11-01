@@ -1079,45 +1079,54 @@ fn a_recent_unban_hides_the_viewer_until_its_suppression_window_ends() {
     }
 }
 
-#[test]
-fn each_ban_group_notes_what_its_platform_list_can_and_cannot_show() {
+#[gpui::test]
+fn each_ban_group_notes_what_its_platform_list_can_and_cannot_show(cx: &mut TestAppContext) {
     let palette = ThemeId::ForgeDefault.palette();
-    for (platform, seen_by_forge, disclaimer) in [
-        (PlatformId::Twitch, false, false),
-        (PlatformId::YouTube, true, false),
-        (PlatformId::Kick, true, true),
-    ] {
-        let notes = BannedPanel::render_group_notes(platform, 0, &palette, Density::Cozy);
-        let kick_disclaimer = disclaimer_line(
-            &platform_integration(platform).builtin_id(),
-            &palette,
-            Density::Cozy,
-        );
+    crate::test_support::install_presentation(cx);
+    cx.update(|cx| {
+        for (platform, seen_by_forge, disclaimer) in [
+            (PlatformId::Twitch, false, false),
+            (PlatformId::YouTube, true, false),
+            (PlatformId::Kick, true, true),
+        ] {
+            let notes = BannedPanel::render_group_notes(platform, 0, &palette, Density::Cozy, cx);
+            let kick_disclaimer = disclaimer_line(
+                &platform_integration(platform).builtin_id(),
+                &palette,
+                Density::Cozy,
+                cx,
+            );
 
-        assert_eq!(
-            (
-                lists_only_what_forge_saw(platform),
-                kick_disclaimer.is_some(),
-                notes.is_some()
-            ),
-            (seen_by_forge, disclaimer, seen_by_forge || disclaimer),
-            "{platform:?}"
-        );
-    }
+            assert_eq!(
+                (
+                    lists_only_what_forge_saw(platform),
+                    kick_disclaimer.is_some(),
+                    notes.is_some()
+                ),
+                (seen_by_forge, disclaimer, seen_by_forge || disclaimer),
+                "{platform:?}"
+            );
+        }
+    });
 }
 
-#[test]
-fn a_full_page_from_a_complete_ban_list_adds_no_cap_note() {
+#[gpui::test]
+fn a_full_page_from_a_complete_ban_list_adds_no_cap_note(cx: &mut TestAppContext) {
     let palette = ThemeId::ForgeDefault.palette();
+    crate::test_support::install_presentation(cx);
 
-    let notes = BannedPanel::render_group_notes(
-        PlatformId::Twitch,
-        forge_storage::BAN_LEDGER_LIST_CAP,
-        &palette,
-        Density::Cozy,
-    );
+    let notes_absent = cx.update(|cx| {
+        BannedPanel::render_group_notes(
+            PlatformId::Twitch,
+            forge_storage::BAN_LEDGER_LIST_CAP,
+            &palette,
+            Density::Cozy,
+            cx,
+        )
+        .is_none()
+    });
 
-    assert!(notes.is_none());
+    assert!(notes_absent);
 }
 
 #[gpui::test]

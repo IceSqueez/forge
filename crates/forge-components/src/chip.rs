@@ -1,5 +1,4 @@
-use crate::ActivePresentation;
-use crate::FONT_META;
+use crate::{ActivePresentation, FONT_META};
 use gpui::{
     App, ClickEvent, ElementId, InteractiveElement, IntoElement, ParentElement, Pixels, RenderOnce,
     Rgba, SharedString, StatefulInteractiveElement, Styled, Window, div, px,
@@ -9,7 +8,7 @@ use crate::icons::{Icon, icon};
 use crate::key_activation::KeyActivated;
 use crate::palette::ForgePalette;
 use crate::status::status_dot;
-use crate::tokens::{body_family, scaled};
+use crate::tokens::scaled;
 
 type ChipClick = Box<dyn Fn(&ClickEvent, &mut Window, &mut App) + 'static>;
 
@@ -106,7 +105,7 @@ impl RenderOnce for Chip {
 
         root = root.child(
             div()
-                .font_family(body_family())
+                .font_family(cx.body_family())
                 .text_size(CHIP_FS)
                 .text_color(text_color)
                 .child(self.label),

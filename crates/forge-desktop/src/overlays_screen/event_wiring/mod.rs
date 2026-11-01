@@ -8,8 +8,8 @@ use std::time::Duration;
 
 use forge_components::focus_inside_modal;
 use forge_components::{
-    GridPicker, GridPickerArt, GridPickerConfig, GridPickerEvent, GridPickerSubtitle, Icon,
-    OverlayPosition, ToastAction, ToastKind, overlay, tr,
+    ActivePresentation, GridPicker, GridPickerArt, GridPickerConfig, GridPickerEvent,
+    GridPickerSubtitle, Icon, OverlayPosition, ToastAction, ToastKind, overlay, tr,
 };
 use forge_overlay::{OverlayKindRegistry, accepts_event_wiring};
 use forge_registry::{SubActionRegistry, TriggerRegistry};
@@ -31,7 +31,6 @@ use crate::picker_favorites::{
     StoredFavorites, TRIGGER_FAVORITES, bind_picker, follow_picker_event,
 };
 use crate::repo_failure::RepoFailure;
-use forge_components::ActivePresentation;
 use forge_components::PushToast;
 
 use plan::{FeedRow, WiringDraft};

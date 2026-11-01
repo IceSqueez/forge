@@ -22,8 +22,8 @@ use crate::picker::{PICKER_CONTEXT, SelectNext, SelectPrev};
 use crate::status::badge;
 use crate::text_input::{InputEvent, TextInput};
 use crate::tokens::{
-    BORDER_THIN, DISABLED_OPACITY, Density, FONT_SM, FONT_XS, FONT_XXS, Radius, Spacing,
-    body_family, mono_family, radius, scaled, spacing,
+    BORDER_THIN, DISABLED_OPACITY, Density, FONT_SM, FONT_XS, FONT_XXS, Radius, Spacing, radius,
+    scaled, spacing,
 };
 use crate::tr;
 
@@ -512,7 +512,7 @@ impl GridPicker {
         let subtitle: AnyElement = match &self.config.subtitle {
             GridPickerSubtitle::Plain(text) => div()
                 .overflow_hidden()
-                .font_family(body_family())
+                .font_family(cx.body_family())
                 .text_size(GRID_META_FS)
                 .text_color(p.text_faint)
                 .child(text.clone())
@@ -522,7 +522,7 @@ impl GridPicker {
                 .items_center()
                 .gap(spacing(Spacing::Xxs, density))
                 .overflow_hidden()
-                .font_family(body_family())
+                .font_family(cx.body_family())
                 .text_size(GRID_META_FS)
                 .child(div().text_color(p.text_faint).child(lead.clone()))
                 .child(div().text_color(accent).child(name.clone()))
@@ -537,7 +537,7 @@ impl GridPicker {
             .flex_col()
             .child(
                 div()
-                    .font_family(body_family())
+                    .font_family(cx.body_family())
                     .font_weight(FontWeight::SEMIBOLD)
                     .text_size(FONT_SM)
                     .text_color(p.text_primary)
@@ -623,18 +623,18 @@ impl GridPicker {
                 tr!("widget_grid_picker_all"),
                 Some(rail_dot(p.text_muted)),
                 matches!(self.rail, RailSel::All),
-                &p,
                 cx.listener(|this, _: &ClickEvent, _, cx| this.set_rail(RailSel::All, cx)),
                 density,
+                cx,
             ))
             .child(grid_rail_entry(
                 "forge-grid-rail-fav",
                 self.config.favorites_label.clone(),
                 Some(star),
                 matches!(self.rail, RailSel::Favorites),
-                &p,
                 cx.listener(|this, _: &ClickEvent, _, cx| this.set_rail(RailSel::Favorites, cx)),
                 density,
+                cx,
             ));
         if let FavoritesStatus::Failed(message) = &self.favorites_status {
             col = col.child(compact_error_with_retry(
@@ -643,6 +643,7 @@ impl GridPicker {
                 &p,
                 cx.listener(|_, _: &ClickEvent, _, cx| cx.emit(GridPickerEvent::FavoritesRetry)),
                 density,
+                cx,
             ));
         }
 
@@ -654,11 +655,11 @@ impl GridPicker {
                 entry.label,
                 Some(rail_dot(entry.dot)),
                 active,
-                &p,
                 cx.listener(move |this, _: &ClickEvent, _, cx| {
                     this.set_rail(RailSel::Group(selection.clone()), cx)
                 }),
                 density,
+                cx,
             ));
         }
 
@@ -687,7 +688,7 @@ impl GridPicker {
                 div()
                     .flex_none()
                     .pb(spacing(Spacing::Sm, density))
-                    .font_family(body_family())
+                    .font_family(cx.body_family())
                     .text_size(GRID_META_FS)
                     .text_color(p.text_faint)
                     .child(if total == 1 {
@@ -724,7 +725,7 @@ impl GridPicker {
                         .child(icon(glyph, GRID_EMPTY_GLYPH, p.text_faint))
                         .child(
                             div()
-                                .font_family(body_family())
+                                .font_family(cx.body_family())
                                 .text_size(FONT_XS)
                                 .text_color(p.text_muted)
                                 .child(message),
@@ -750,7 +751,7 @@ impl GridPicker {
         let art = self.config.art;
         match &self.rows[ix] {
             PickerRow::Header { label, dot, count } => {
-                render_header_row(label, *dot, *count, &p, density)
+                render_header_row(label, *dot, *count, &p, density, cx)
             }
             PickerRow::Cards(cards) => render_card_row(cards, accent, art, &p, cx),
         }
@@ -770,7 +771,7 @@ impl GridPicker {
         }
     }
 
-    fn render_footer(&self, density: Density) -> AnyElement {
+    fn render_footer(&self, density: Density, cx: &App) -> AnyElement {
         let p = self.palette;
         div()
             .flex_none()
@@ -784,7 +785,7 @@ impl GridPicker {
             .border_color(p.surface_overlay)
             .child(
                 div()
-                    .font_family(body_family())
+                    .font_family(cx.body_family())
                     .text_size(FONT_XXS)
                     .text_color(p.text_faint)
                     .child(self.config.footer_hint.clone()),
@@ -823,7 +824,7 @@ impl Render for GridPicker {
             .child(self.render_header(accent, cx))
             .child(self.render_search(cx))
             .child(body)
-            .child(self.render_footer(density))
+            .child(self.render_footer(density, cx))
     }
 }
 
@@ -833,6 +834,7 @@ fn render_header_row(
     count: usize,
     p: &ForgePalette,
     density: Density,
+    cx: &App,
 ) -> AnyElement {
     let inner = div()
         .flex()
@@ -849,14 +851,14 @@ fn render_header_row(
             div()
                 .flex_1()
                 .min_w(px(0.0))
-                .font_family(mono_family())
+                .font_family(cx.mono_family())
                 .text_size(GRID_GROUP_FS)
                 .text_color(p.text_muted)
                 .child(label.to_uppercase()),
         )
         .child(
             div()
-                .font_family(mono_family())
+                .font_family(cx.mono_family())
                 .text_size(GRID_GROUP_FS)
                 .text_color(p.text_faint)
                 .child(count.to_string()),
@@ -929,7 +931,7 @@ fn render_card_el(
         .flex_1()
         .min_w(px(0.0))
         .truncate()
-        .font_family(body_family())
+        .font_family(cx.body_family())
         .font_weight(FontWeight::MEDIUM)
         .text_size(GRID_CARD_NAME_FS)
         .text_color(p.text_primary)
@@ -989,7 +991,7 @@ fn render_card_el(
         .truncate()
         .w_full()
         .min_w(px(0.0))
-        .font_family(body_family())
+        .font_family(cx.body_family())
         .text_size(GRID_META_FS)
         .text_color(p.text_muted)
         .child(card.desc.clone());
@@ -1052,10 +1054,11 @@ fn grid_rail_entry(
     label: impl Into<SharedString>,
     lead: Option<AnyElement>,
     active: bool,
-    palette: &ForgePalette,
     handler: impl Fn(&ClickEvent, &mut Window, &mut App) + 'static,
     density: Density,
+    cx: &App,
 ) -> AnyElement {
+    let palette = &cx.palette();
     let (bg, text_color): (Rgba, Rgba) = if active {
         (palette.surface_overlay, palette.text_primary)
     } else {
@@ -1090,7 +1093,7 @@ fn grid_rail_entry(
                 .flex_1()
                 .min_w(px(0.0))
                 .truncate()
-                .font_family(body_family())
+                .font_family(cx.body_family())
                 .text_size(GRID_META_FS)
                 .text_color(text_color)
                 .child(label.into()),

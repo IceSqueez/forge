@@ -1,4 +1,3 @@
-use forge_components::ActivePresentation;
 use forge_components::Density;
 use forge_components::FONT_FIELD;
 use forge_components::FONT_LABEL;
@@ -9,12 +8,12 @@ use forge_components::OverflowRevealingFocus;
 use forge_components::Spacing;
 use forge_components::spacing;
 use forge_components::{
-    BORDER_THIN, FONT_XS, ForgePalette, Icon, KeyActivated, Radius, body_family, icon, mono_family,
+    ActivePresentation, BORDER_THIN, FONT_XS, ForgePalette, Icon, KeyActivated, Radius, icon,
     radius, scaled, tr,
 };
 use forge_platform_core::IntegrationDeclaration;
 use gpui::{
-    AnyElement, ClickEvent, Context, FontWeight, Pixels, SharedString, div, prelude::*, px,
+    AnyElement, App, ClickEvent, Context, FontWeight, Pixels, SharedString, div, prelude::*, px,
     relative,
 };
 
@@ -83,10 +82,10 @@ impl IntegrationsHubView {
             .max_w(relative(COLUMN_MAX_FRACTION))
             .pt(scaled(COLUMN_PAD_TOP, density))
             .pb(scaled(COLUMN_PAD_BOTTOM, density))
-            .child(hero(palette, density))
-            .child(progress(&enabled, hub.len(), palette, density))
+            .child(hero(palette, density, cx))
+            .child(progress(&enabled, hub.len(), palette, density, cx))
             .children(sections)
-            .child(built_in_note(palette, density));
+            .child(built_in_note(palette, density, cx));
 
         let scroll = div()
             .id("integrations-welcome-scroll")
@@ -118,7 +117,7 @@ impl IntegrationsHubView {
         let skip = div()
             .id("integrations-welcome-skip")
             .cursor_pointer()
-            .font_family(body_family())
+            .font_family(cx.body_family())
             .text_size(FONT_XS)
             .text_color(palette.text_faint)
             .hover(|style| style.text_color(palette.text_secondary))
@@ -140,7 +139,7 @@ impl IntegrationsHubView {
             .px(scaled(CTA_PAD_H, density))
             .rounded(radius(Radius::Sm))
             .bg(palette.brand)
-            .font_family(body_family())
+            .font_family(cx.body_family())
             .font_weight(FontWeight::MEDIUM)
             .text_size(FONT_XS)
             .text_color(palette.shell)
@@ -175,7 +174,7 @@ impl IntegrationsHubView {
     }
 }
 
-fn hero(palette: &ForgePalette, density: Density) -> impl IntoElement {
+fn hero(palette: &ForgePalette, density: Density, cx: &App) -> impl IntoElement {
     div()
         .mb(HERO_MB)
         .flex()
@@ -184,11 +183,11 @@ fn hero(palette: &ForgePalette, density: Density) -> impl IntoElement {
         .child(
             div()
                 .mb(MARK_MB)
-                .child(brand_mark(MARK_SIZE, MARK_CORNER, MARK_GLYPH, palette)),
+                .child(brand_mark(MARK_SIZE, MARK_CORNER, MARK_GLYPH, palette, cx)),
         )
         .child(
             div()
-                .font_family(body_family())
+                .font_family(cx.body_family())
                 .font_weight(FontWeight::BOLD)
                 .text_size(TITLE_SIZE)
                 .text_color(palette.text_primary)
@@ -200,7 +199,7 @@ fn hero(palette: &ForgePalette, density: Density) -> impl IntoElement {
                 .flex()
                 .flex_col()
                 .items_center()
-                .font_family(body_family())
+                .font_family(cx.body_family())
                 .text_size(LEAD_SIZE)
                 .line_height(relative(LEAD_LINE_HEIGHT))
                 .text_color(palette.text_muted)
@@ -214,6 +213,7 @@ fn progress(
     total: usize,
     palette: &ForgePalette,
     density: Density,
+    cx: &App,
 ) -> impl IntoElement {
     let (glyph, tint, summary) = if enabled.is_empty() {
         (
@@ -261,7 +261,7 @@ fn progress(
                         .flex_1()
                         .min_w_0()
                         .truncate()
-                        .font_family(body_family())
+                        .font_family(cx.body_family())
                         .text_size(PROGRESS_TEXT)
                         .text_color(palette.text_primary)
                         .child(summary),
@@ -269,7 +269,7 @@ fn progress(
                 .child(
                     div()
                         .flex_none()
-                        .font_family(mono_family())
+                        .font_family(cx.mono_family())
                         .text_size(PROGRESS_COUNT)
                         .text_color(palette.text_faint)
                         .child(SharedString::from(count)),
@@ -277,13 +277,13 @@ fn progress(
         )
 }
 
-fn built_in_note(palette: &ForgePalette, density: Density) -> impl IntoElement {
+fn built_in_note(palette: &ForgePalette, density: Density, cx: &App) -> impl IntoElement {
     div()
         .mt(spacing(Spacing::Xxs, density))
         .flex()
         .items_center()
         .gap(scaled(BUILT_IN_GAP, density))
-        .font_family(body_family())
+        .font_family(cx.body_family())
         .text_size(BUILT_IN_TEXT)
         .text_color(palette.text_faint)
         .child(icon(Icon::Sparkles, BUILT_IN_ICON, palette.text_muted))

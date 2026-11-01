@@ -1,3 +1,4 @@
+use crate::option_choices::ChoiceOption;
 use std::collections::HashMap;
 use std::sync::Arc;
 
@@ -49,7 +50,7 @@ impl EditorState {
 }
 
 impl OverlaysView {
-    fn panel_choices(&self) -> HashMap<String, Vec<(String, String)>> {
+    fn panel_choices(&self) -> HashMap<String, Vec<ChoiceOption>> {
         let voices = self
             .handles
             .speak

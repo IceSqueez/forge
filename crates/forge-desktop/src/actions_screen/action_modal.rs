@@ -1,18 +1,17 @@
 use super::*;
 use crate::async_bridge;
 use crate::repo_failure::RepoFailure;
-use forge_components::ActivePresentation;
 use forge_components::NAME_FIELD_LIMIT;
 use forge_components::PushToast;
 use forge_components::focus_inside_modal;
 use forge_components::{
-    ChipGlyph, Density, FONT_XS, FONT_XXS, ForgePalette, InputEvent, ModalSize, OverlayPosition,
-    Spacing, TextArea, TextInput, ToastKind, body_family, chip, modal, mono_family, overlay,
-    primary_button, secondary_button, spacing, status_dot, toggle, tr,
+    ActivePresentation, ChipGlyph, Density, FONT_XS, FONT_XXS, ForgePalette, InputEvent, ModalSize,
+    OverlayPosition, Spacing, TextArea, TextInput, ToastKind, chip, modal, overlay, primary_button,
+    secondary_button, spacing, status_dot, toggle, tr,
 };
 use forge_storage::QueueRepo;
 use forge_types::{DEFAULT_QUEUE_ID, ExecutionMode, Queue};
-use gpui::{AnyElement, ClickEvent, Context, Pixels, Rgba, SharedString, Window, div, px};
+use gpui::{AnyElement, App, ClickEvent, Context, Pixels, Rgba, SharedString, Window, div, px};
 use std::sync::Arc;
 
 const DESCRIPTION_HEIGHT: Pixels = px(72.0);
@@ -23,6 +22,7 @@ fn modal_section(
     label: impl Into<SharedString>,
     control: impl IntoElement,
     density: Density,
+    cx: &App,
 ) -> impl IntoElement {
     div()
         .flex()
@@ -30,7 +30,7 @@ fn modal_section(
         .gap(spacing(Spacing::Xxs, density))
         .child(
             div()
-                .font_family(mono_family())
+                .font_family(cx.mono_family())
                 .text_size(FONT_XXS)
                 .text_color(palette.text_faint)
                 .child(label.into()),
@@ -238,7 +238,11 @@ impl ActionFormModal {
         let two_col = div()
             .flex()
             .gap(spacing(Spacing::Sm, density))
-            .child(div().flex_1().child(self.group_section(palette, density)))
+            .child(
+                div()
+                    .flex_1()
+                    .child(self.group_section(palette, density, cx)),
+            )
             .child(
                 div()
                     .flex_1()
@@ -250,10 +254,12 @@ impl ActionFormModal {
             tr!("actions_modal_section_description"),
             div().child(self.description.clone()),
             density,
-        );
+            cx,
+        )
+        .into_any_element();
 
         let behavior_header = div()
-            .font_family(mono_family())
+            .font_family(cx.mono_family())
             .text_size(FONT_XXS)
             .text_color(palette.text_faint)
             .child(SharedString::from(tr!("actions_modal_section_behavior")));
@@ -317,7 +323,7 @@ impl ActionFormModal {
             .child(div().flex_1().child(self.name.clone()))
             .child(
                 div()
-                    .font_family(mono_family())
+                    .font_family(cx.mono_family())
                     .text_size(FONT_XS)
                     .text_color(palette.text_faint)
                     .child(format!("{name_len}/{NAME_FIELD_LIMIT}")),
@@ -327,11 +333,12 @@ impl ActionFormModal {
             tr!("actions_modal_section_name"),
             name_row,
             density,
+            cx,
         )
         .into_any_element()
     }
 
-    fn group_section(&self, palette: &ForgePalette, density: Density) -> AnyElement {
+    fn group_section(&self, palette: &ForgePalette, density: Density, cx: &App) -> AnyElement {
         let group_field = div()
             .flex()
             .items_center()
@@ -343,6 +350,7 @@ impl ActionFormModal {
             tr!("actions_modal_section_group"),
             group_field,
             density,
+            cx,
         )
         .into_any_element()
     }
@@ -355,7 +363,7 @@ impl ActionFormModal {
     ) -> AnyElement {
         let queue_control: AnyElement = if self.queues.is_empty() {
             div()
-                .font_family(body_family())
+                .font_family(cx.body_family())
                 .text_size(FONT_XS)
                 .text_color(palette.text_faint)
                 .child(SharedString::from(tr!("actions_loading_queues")))
@@ -383,6 +391,7 @@ impl ActionFormModal {
             tr!("actions_modal_section_queue"),
             queue_control,
             density,
+            cx,
         )
         .into_any_element()
     }
@@ -405,6 +414,7 @@ impl ActionFormModal {
                 }),
                 palette,
                 density,
+                cx,
             ),
             Self::modal_toggle_row(
                 tr!("actions_modal_concurrent_label"),
@@ -417,6 +427,7 @@ impl ActionFormModal {
                 }),
                 palette,
                 density,
+                cx,
             ),
             Self::modal_toggle_row(
                 tr!("actions_modal_bypass_label"),
@@ -429,6 +440,7 @@ impl ActionFormModal {
                 }),
                 palette,
                 density,
+                cx,
             ),
             Self::modal_toggle_row(
                 tr!("actions_modal_random_pick_label"),
@@ -441,6 +453,7 @@ impl ActionFormModal {
                 }),
                 palette,
                 density,
+                cx,
             ),
         ]
     }
@@ -491,6 +504,7 @@ impl ActionFormModal {
         handler: impl Fn(&ClickEvent, &mut Window, &mut gpui::App) + 'static,
         palette: &ForgePalette,
         density: Density,
+        cx: &App,
     ) -> AnyElement {
         div()
             .w_full()
@@ -504,14 +518,14 @@ impl ActionFormModal {
                     .flex_col()
                     .child(
                         div()
-                            .font_family(body_family())
+                            .font_family(cx.body_family())
                             .text_size(FONT_XS)
                             .text_color(palette.text_primary)
                             .child(label.into()),
                     )
                     .child(
                         div()
-                            .font_family(body_family())
+                            .font_family(cx.body_family())
                             .text_size(FONT_XXS)
                             .text_color(palette.text_muted)
                             .child(description.into()),

@@ -1,4 +1,3 @@
-use forge_components::ActivePresentation;
 use forge_components::CTA_HOVER_ALPHA;
 use forge_components::FONT_FIELD;
 use forge_components::FONT_LABEL;
@@ -38,12 +37,12 @@ const AUTHORIZATION_TIMEOUT: Duration = Duration::from_secs(300);
 use crate::async_bridge;
 use crate::error::DesktopError;
 use forge_components::{
-    BORDER_THIN, Density, FONT_XS, FONT_XXS, ForgePalette, Icon, KeyActivated, Radius, Spacing,
-    body_family, icon, mono_family, pulse_dot, radius, scaled, spacing, spinner, tr, with_alpha,
+    ActivePresentation, BORDER_THIN, Density, FONT_XS, FONT_XXS, ForgePalette, Icon, KeyActivated,
+    Radius, Spacing, icon, pulse_dot, radius, scaled, spacing, spinner, tr, with_alpha,
 };
 use forge_types::PlatformId;
 use gpui::{
-    AnyElement, ClickEvent, Context, FontWeight, HighlightStyle, Hsla, Rgba, SharedString,
+    AnyElement, App, ClickEvent, Context, FontWeight, HighlightStyle, Hsla, Rgba, SharedString,
     StyledText, div, prelude::*, px,
 };
 use tokio_util::sync::CancellationToken;
@@ -298,7 +297,12 @@ impl ConnectFlow {
         cx.notify();
     }
 
-    pub(super) fn connect_status(&self, palette: &ForgePalette, density: Density) -> AnyElement {
+    pub(super) fn connect_status(
+        &self,
+        palette: &ForgePalette,
+        density: Density,
+        cx: &App,
+    ) -> AnyElement {
         let accent = crate::platform_visuals::platform_color(self.platform, palette);
         let (indicator, label, color): (AnyElement, String, Rgba) = match self.phase {
             LocalCallbackFlowPhase::Starting | LocalCallbackFlowPhase::Waiting => (
@@ -325,7 +329,7 @@ impl ConnectFlow {
             .child(indicator)
             .child(
                 div()
-                    .font_family(body_family())
+                    .font_family(cx.body_family())
                     .text_size(FONT_XS)
                     .text_color(color)
                     .child(label),
@@ -340,15 +344,17 @@ impl ConnectFlow {
         density: Density,
         cx: &mut Context<Self>,
     ) -> AnyElement {
-        let disclaimer = matches!(self.platform, PlatformId::Kick)
-            .then(|| self.connect_disclaimer(palette, density).into_any_element());
+        let disclaimer = matches!(self.platform, PlatformId::Kick).then(|| {
+            self.connect_disclaimer(palette, density, cx)
+                .into_any_element()
+        });
         let progress = matches!(
             self.phase,
             LocalCallbackFlowPhase::Starting | LocalCallbackFlowPhase::Waiting
         )
-        .then(|| self.oauth_progress_card(accent, palette, density));
+        .then(|| self.oauth_progress_card(accent, palette, density, cx));
         let done = matches!(self.phase, LocalCallbackFlowPhase::Authorized)
-            .then(|| self.oauth_done_card(palette, density));
+            .then(|| self.oauth_done_card(palette, density, cx));
         let error = matches!(self.phase, LocalCallbackFlowPhase::Failed)
             .then(|| self.oauth_error_card(palette, density, cx));
 
@@ -357,9 +363,9 @@ impl ConnectFlow {
             .max_w(PAGE_MAX_W)
             .flex()
             .flex_col()
-            .child(self.oauth_explainer(palette, density))
+            .child(self.oauth_explainer(palette, density, cx))
             .children(disclaimer)
-            .child(self.oauth_steps_card(accent, palette, density))
+            .child(self.oauth_steps_card(accent, palette, density, cx))
             .children(progress)
             .children(done)
             .children(error)
@@ -367,7 +373,7 @@ impl ConnectFlow {
             .into_any_element()
     }
 
-    fn oauth_explainer(&self, palette: &ForgePalette, density: Density) -> AnyElement {
+    fn oauth_explainer(&self, palette: &ForgePalette, density: Density, cx: &App) -> AnyElement {
         let prefix = tr!("oauth_connect_explainer_prefix");
         let emphasis = tr!("oauth_connect_explainer_emphasis");
         let suffix = tr!(
@@ -383,7 +389,7 @@ impl ConnectFlow {
         )]);
         div()
             .w_full()
-            .font_family(body_family())
+            .font_family(cx.body_family())
             .text_size(FONT_FIELD)
             .text_color(palette.text_muted)
             .line_height(BODY_LINE_H)
@@ -397,6 +403,7 @@ impl ConnectFlow {
         accent: Rgba,
         palette: &ForgePalette,
         density: Density,
+        cx: &App,
     ) -> AnyElement {
         let phase = self.phase;
         let platform_name = self.display_name.clone();
@@ -415,7 +422,7 @@ impl ConnectFlow {
             .border(BORDER_THIN)
             .border_color(palette.border_regular)
             .bg(palette.shell)
-            .font_family(mono_family())
+            .font_family(cx.mono_family())
             .text_size(FONT_META)
             .text_color(palette.info)
             .child(url_text);
@@ -428,6 +435,7 @@ impl ConnectFlow {
             accent,
             palette,
             density,
+            cx,
         );
 
         let s2_active = matches!(step_state(phase, 1), StepState::Active);
@@ -444,7 +452,7 @@ impl ConnectFlow {
             .flex_col()
             .child(
                 div()
-                    .font_family(body_family())
+                    .font_family(cx.body_family())
                     .text_size(FONT_LABEL)
                     .text_color(palette.text_muted)
                     .child(tr!("oauth_step_approve_caption")),
@@ -466,7 +474,7 @@ impl ConnectFlow {
                     ))
                     .child(
                         div()
-                            .font_family(mono_family())
+                            .font_family(cx.mono_family())
                             .text_size(FONT_XXS)
                             .text_color(palette.text_faint)
                             .child(loopback),
@@ -481,6 +489,7 @@ impl ConnectFlow {
             accent,
             palette,
             density,
+            cx,
         );
 
         let s3 = self.oauth_step_row(
@@ -489,7 +498,7 @@ impl ConnectFlow {
             tr!("oauth_step_exchange_title"),
             Some(
                 div()
-                    .font_family(body_family())
+                    .font_family(cx.body_family())
                     .text_size(FONT_LABEL)
                     .text_color(palette.text_muted)
                     .child(tr!("oauth_step_exchange_caption"))
@@ -499,6 +508,7 @@ impl ConnectFlow {
             accent,
             palette,
             density,
+            cx,
         );
 
         let s4 = self.oauth_step_row(
@@ -510,6 +520,7 @@ impl ConnectFlow {
             accent,
             palette,
             density,
+            cx,
         );
 
         div()
@@ -544,6 +555,7 @@ impl ConnectFlow {
         accent: Rgba,
         palette: &ForgePalette,
         density: Density,
+        cx: &App,
     ) -> AnyElement {
         let circle_bg = match state {
             StepState::Active => accent,
@@ -559,7 +571,7 @@ impl ConnectFlow {
             )
             .into_any_element(),
             StepState::Pending => div()
-                .font_family(body_family())
+                .font_family(cx.body_family())
                 .font_weight(FontWeight::SEMIBOLD)
                 .text_size(FONT_META)
                 .text_color(palette.text_faint)
@@ -586,7 +598,7 @@ impl ConnectFlow {
         };
         let mut content = div().flex_1().min_w(px(0.0)).flex().flex_col().child(
             div()
-                .font_family(body_family())
+                .font_family(cx.body_family())
                 .font_weight(FontWeight::MEDIUM)
                 .text_size(FONT_FIELD)
                 .text_color(title_color)
@@ -620,6 +632,7 @@ impl ConnectFlow {
         accent: Rgba,
         palette: &ForgePalette,
         density: Density,
+        cx: &App,
     ) -> AnyElement {
         let name = self.display_name.clone();
         let line: String = match self.phase {
@@ -666,7 +679,7 @@ impl ConnectFlow {
                     .gap(scaled(NOTICE_TEXT_GAP, density))
                     .child(
                         div()
-                            .font_family(body_family())
+                            .font_family(cx.body_family())
                             .font_weight(FontWeight::MEDIUM)
                             .text_size(FONT_XS)
                             .text_color(palette.text_primary)
@@ -674,7 +687,7 @@ impl ConnectFlow {
                     )
                     .child(
                         div()
-                            .font_family(mono_family())
+                            .font_family(cx.mono_family())
                             .text_size(FONT_XXS)
                             .text_color(palette.text_faint)
                             .child(subline),
@@ -683,7 +696,7 @@ impl ConnectFlow {
             .into_any_element()
     }
 
-    fn oauth_done_card(&self, palette: &ForgePalette, density: Density) -> AnyElement {
+    fn oauth_done_card(&self, palette: &ForgePalette, density: Density, cx: &App) -> AnyElement {
         div()
             .w_full()
             .flex()
@@ -699,7 +712,7 @@ impl ConnectFlow {
             .child(icon(Icon::CircleCheckFilled, ICON_NOTICE, palette.success))
             .child(
                 div()
-                    .font_family(body_family())
+                    .font_family(cx.body_family())
                     .font_weight(FontWeight::MEDIUM)
                     .text_size(FONT_ROW)
                     .text_color(palette.text_primary)
@@ -731,7 +744,7 @@ impl ConnectFlow {
             .on_click(cx.listener(|this, _: &ClickEvent, _, cx| this.start_connect(cx)))
             .child(
                 div()
-                    .font_family(body_family())
+                    .font_family(cx.body_family())
                     .text_size(FONT_XS)
                     .text_color(palette.shell)
                     .child(tr!("oauth_btn_retry")),
@@ -750,7 +763,7 @@ impl ConnectFlow {
             .on_click(cx.listener(|this, _: &ClickEvent, _, cx| this.reset_flow(cx)))
             .child(
                 div()
-                    .font_family(body_family())
+                    .font_family(cx.body_family())
                     .text_size(FONT_XS)
                     .text_color(palette.text_secondary)
                     .child(tr!("oauth_btn_cancel")),
@@ -775,7 +788,7 @@ impl ConnectFlow {
                     .child(icon(Icon::AlertTriangle, ICON_NOTICE, palette.danger))
                     .child(
                         div()
-                            .font_family(body_family())
+                            .font_family(cx.body_family())
                             .font_weight(FontWeight::MEDIUM)
                             .text_size(FONT_XS)
                             .text_color(palette.text_primary)
@@ -784,7 +797,7 @@ impl ConnectFlow {
             )
             .child(
                 div()
-                    .font_family(body_family())
+                    .font_family(cx.body_family())
                     .text_size(FONT_XS)
                     .text_color(palette.danger)
                     .child(error),
@@ -813,7 +826,7 @@ impl ConnectFlow {
             .child(icon(Icon::ArrowLeft, ICON_INLINE, palette.text_muted))
             .child(
                 div()
-                    .font_family(body_family())
+                    .font_family(cx.body_family())
                     .text_size(FONT_ROW)
                     .text_color(palette.text_muted)
                     .child(tr!("oauth_footer_choose_different")),
@@ -839,7 +852,7 @@ impl ConnectFlow {
                         .child(icon(Icon::ExternalLink, ICON_INLINE, palette.shell))
                         .child(
                             div()
-                                .font_family(body_family())
+                                .font_family(cx.body_family())
                                 .font_weight(FontWeight::MEDIUM)
                                 .text_size(FONT_XS)
                                 .text_color(palette.shell)
@@ -863,7 +876,7 @@ impl ConnectFlow {
                     .on_click(cx.listener(|this, _: &ClickEvent, _, cx| this.reset_flow(cx)))
                     .child(
                         div()
-                            .font_family(body_family())
+                            .font_family(cx.body_family())
                             .text_size(FONT_XS)
                             .text_color(palette.text_secondary)
                             .child(tr!("oauth_btn_cancel")),
@@ -884,7 +897,12 @@ impl ConnectFlow {
             .into_any_element()
     }
 
-    fn connect_disclaimer(&self, palette: &ForgePalette, density: Density) -> impl IntoElement {
+    fn connect_disclaimer(
+        &self,
+        palette: &ForgePalette,
+        density: Density,
+        cx: &App,
+    ) -> impl IntoElement {
         let text_col = div()
             .flex_1()
             .min_w(px(0.0))
@@ -893,14 +911,14 @@ impl ConnectFlow {
             .gap(spacing(Spacing::Xxs, density))
             .child(
                 div()
-                    .font_family(body_family())
+                    .font_family(cx.body_family())
                     .text_size(FONT_XS)
                     .text_color(palette.text_primary)
                     .child(tr!("oauth_kick_hybrid_title")),
             )
             .child(
                 div()
-                    .font_family(body_family())
+                    .font_family(cx.body_family())
                     .text_size(FONT_XXS)
                     .text_color(palette.text_muted)
                     .child(

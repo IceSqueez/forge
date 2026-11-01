@@ -8,9 +8,9 @@ use std::rc::Rc;
 
 use forge_components::Language;
 use forge_components::{
-    BORDER_THIN, CodeEditor, Density, ForgePalette, Icon, InputEvent, KeyActivated, Picker,
-    PickerEvent, PickerItem, PickerLabels, Radius, Spacing, TextInput, accent_swatch, body_family,
-    dropdown, icon, mono_family, radius, scaled, slider, spacing, toggle, tr,
+    ActivePresentation, BORDER_THIN, CodeEditor, Density, ForgePalette, Icon, InputEvent,
+    KeyActivated, Picker, PickerEvent, PickerItem, PickerLabels, Radius, Spacing, TextInput,
+    accent_swatch, dropdown, icon, radius, scaled, slider, spacing, toggle, tr,
 };
 use forge_registry::{CodeKind, CodeLanguage, FormField};
 
@@ -18,8 +18,7 @@ use crate::amount_scale::{AmountScale, AmountSeed};
 
 use crate::config_field_label::field_placeholder;
 use crate::donation_services::donation_provider_options;
-use crate::option_choices::{ChoiceOptions, names_integration_data};
-use forge_components::ActivePresentation;
+use crate::option_choices::{ChoiceOption, ChoiceOptions, names_integration_data};
 use forge_components::int_entry_invalid;
 use forge_runtime::DONATION_PROVIDER_OPTIONS_KEY;
 use forge_types::Variant;
@@ -89,7 +88,7 @@ pub(crate) enum ConfigField {
     Choice {
         key: String,
         gate: Option<String>,
-        options: Vec<(String, String)>,
+        options: Vec<ChoiceOption>,
         selected: String,
         dependency: Option<ChoiceDependency>,
     },
@@ -98,7 +97,7 @@ pub(crate) enum ConfigField {
         unit_picker_key: String,
         gate: Option<String>,
         scale: AmountScale,
-        units: Vec<(String, String)>,
+        units: Vec<ChoiceOption>,
         unit: String,
         live_range: Rc<Cell<(i64, i64)>>,
         input: Entity<TextInput>,
@@ -144,7 +143,7 @@ pub(crate) struct ChoiceDropdown<V: 'static> {
 #[derive(Clone, Copy)]
 pub(crate) enum ChoiceSupport<'a> {
     Text,
-    Picker(&'a HashMap<String, Vec<(String, String)>>),
+    Picker(&'a HashMap<String, Vec<ChoiceOption>>),
 }
 
 pub(crate) struct ConfigFieldHandlers<V: 'static> {
@@ -219,7 +218,7 @@ fn build_integer_input<V: 'static>(
 
 fn build_choice<V: 'static>(
     key: &str,
-    options: Option<Vec<(String, String)>>,
+    options: Option<Vec<ChoiceOption>>,
     dependency: Option<ChoiceDependency>,
     gate: Option<String>,
     ctx: &FoldContext<'_, V>,
@@ -309,7 +308,7 @@ pub(crate) fn fold_config_field<V: 'static>(
                     .iter()
                     .map(|opt| {
                         let label = crate::option_labels::option_label(ctx.kind_id, key, opt);
-                        ((*opt).to_owned(), label)
+                        ChoiceOption::new(*opt, label)
                     })
                     .collect()
             });
@@ -465,7 +464,7 @@ pub(crate) fn set_picked_value(fields: &mut [ConfigField], key: &str, value: &st
 pub(crate) fn choice_entries<'a>(
     fields: &'a [ConfigField],
     key: &str,
-) -> Option<(&'a [(String, String)], &'a str)> {
+) -> Option<(&'a [ChoiceOption], &'a str)> {
     fields.iter().find_map(|field| match field {
         ConfigField::Choice {
             key: k,
@@ -489,7 +488,7 @@ struct ChoicePopover {
     _sub: Subscription,
 }
 
-fn static_choice_options(options_key: &str) -> Option<Vec<(String, String)>> {
+fn static_choice_options(options_key: &str) -> Option<Vec<ChoiceOption>> {
     (options_key == DONATION_PROVIDER_OPTIONS_KEY).then(donation_provider_options)
 }
 
@@ -563,8 +562,8 @@ impl CollectionChoices {
             let Some(choice_field) = self.options_keys.iter().find(|f| f.field_key == *key) else {
                 continue;
             };
-            let mut next: Vec<(String, String)> = blank
-                .map(|label| (String::new(), label.to_owned()))
+            let mut next: Vec<ChoiceOption> = blank
+                .map(|label| ChoiceOption::new(String::new(), label))
                 .into_iter()
                 .collect();
             next.extend(
@@ -618,7 +617,7 @@ fn open_choice_popover<V: 'static>(
     let (options, selected) = choice_entries(fields, &key)?;
     let items: Vec<PickerItem> = options
         .iter()
-        .map(|(value, label)| PickerItem {
+        .map(|ChoiceOption { value, label }| PickerItem {
             id: SharedString::from(value.clone()),
             label: SharedString::from(label.clone()),
             sublabel: None,
@@ -647,10 +646,10 @@ fn open_choice_popover<V: 'static>(
 }
 
 pub(crate) fn dependent_options(
-    map: &HashMap<String, Vec<(String, String)>>,
+    map: &HashMap<String, Vec<ChoiceOption>>,
     options_prefix: &str,
     sibling_value: &str,
-) -> Vec<(String, String)> {
+) -> Vec<ChoiceOption> {
     if sibling_value.is_empty() {
         return Vec::new();
     }
@@ -665,7 +664,7 @@ pub(crate) fn dependent_options_key(options_prefix: &str, sibling_value: &str) -
 
 pub(crate) fn resolve_dependent_choices(
     fields: &mut [ConfigField],
-    map: &HashMap<String, Vec<(String, String)>>,
+    map: &HashMap<String, Vec<ChoiceOption>>,
     cx: &App,
 ) {
     let mut values = FieldConfig::new();
@@ -1079,6 +1078,7 @@ pub(crate) fn render_config_control<V: 'static>(
     view: &Entity<V>,
     handlers: &ConfigFieldHandlers<V>,
     density: Density,
+    cx: &App,
 ) -> AnyElement {
     match field {
         ConfigField::Input { input, .. } => div().child(input.clone()).into_any_element(),
@@ -1104,7 +1104,7 @@ pub(crate) fn render_config_control<V: 'static>(
             value,
             ..
         } => render_slide(
-            key, *min, *max, unit, *value, palette, id_prefix, view, handlers, density,
+            key, *min, *max, unit, *value, palette, id_prefix, view, handlers, density, cx,
         ),
         ConfigField::Swatch {
             key,
@@ -1120,7 +1120,7 @@ pub(crate) fn render_config_control<V: 'static>(
             selected,
             ..
         } => render_choice(
-            key, options, selected, palette, id_prefix, view, handlers, density,
+            key, options, selected, palette, id_prefix, view, handlers, density, cx,
         ),
         ConfigField::UnitAmount {
             unit_picker_key,
@@ -1143,11 +1143,12 @@ pub(crate) fn render_config_control<V: 'static>(
                 view,
                 handlers,
                 density,
+                cx,
             )))
             .into_any_element(),
         ConfigField::Hint { .. } => div()
             .italic()
-            .font_family(body_family())
+            .font_family(cx.body_family())
             .text_size(FILL_VAL_FS)
             .text_color(palette.text_faint)
             .child(tr!("triggers_sheet_config_authored"))
@@ -1170,6 +1171,7 @@ fn render_slide<V: 'static>(
     view: &Entity<V>,
     handlers: &ConfigFieldHandlers<V>,
     density: Density,
+    cx: &App,
 ) -> AnyElement {
     let slide_key = key.to_owned();
     let view = view.clone();
@@ -1201,7 +1203,7 @@ fn render_slide<V: 'static>(
                 .flex_none()
                 .min_w(SLIDER_READOUT_W)
                 .whitespace_nowrap()
-                .font_family(mono_family())
+                .font_family(cx.mono_family())
                 .text_size(FILL_VAL_FS)
                 .text_color(palette.text_secondary)
                 .child(format!("{value}{unit}")),
@@ -1267,16 +1269,17 @@ fn render_swatch<V: 'static>(
 )]
 fn render_choice<V: 'static>(
     key: &str,
-    options: &[(String, String)],
+    options: &[ChoiceOption],
     selected: &str,
     palette: &ForgePalette,
     id_prefix: &str,
     view: &Entity<V>,
     handlers: &ConfigFieldHandlers<V>,
     density: Density,
+    cx: &App,
 ) -> AnyElement {
-    let (display, tone) = match options.iter().find(|(value, _)| value == selected) {
-        Some((_, label)) => (label.clone(), palette.text_primary),
+    let (display, tone) = match options.iter().find(|option| option.value == selected) {
+        Some(option) => (option.label.clone(), palette.text_primary),
         None if !selected.is_empty() => (selected.to_owned(), palette.text_primary),
         None => (tr!("config_form_choice_placeholder"), palette.text_faint),
     };
@@ -1300,7 +1303,7 @@ fn render_choice<V: 'static>(
                 .flex_1()
                 .min_w(px(0.0))
                 .overflow_hidden()
-                .font_family(body_family())
+                .font_family(cx.body_family())
                 .text_size(FILL_VAL_FS)
                 .text_color(tone)
                 .child(display),
@@ -1357,8 +1360,9 @@ pub(crate) fn render_config_row<V: 'static>(
     view: &Entity<V>,
     handlers: &ConfigFieldHandlers<V>,
     density: Density,
+    cx: &App,
 ) -> AnyElement {
-    let label = config_label_cell(label, FILL_KEY_W, FILL_KEY_FS, palette.text_muted);
+    let label = config_label_cell(label, FILL_KEY_W, FILL_KEY_FS, palette.text_muted, cx);
 
     div()
         .w_full()
@@ -1373,7 +1377,7 @@ pub(crate) fn render_config_row<V: 'static>(
         })
         .child(label)
         .child(div().flex_1().min_w(px(0.0)).child(render_config_control(
-            field, palette, id_prefix, view, handlers, density,
+            field, palette, id_prefix, view, handlers, density, cx,
         )))
         .into_any_element()
 }
@@ -1383,6 +1387,7 @@ pub(crate) fn config_label_cell(
     width: Pixels,
     size: Pixels,
     color: gpui::Rgba,
+    cx: &App,
 ) -> gpui::Div {
     div()
         .w(width)
@@ -1390,7 +1395,7 @@ pub(crate) fn config_label_cell(
         .max_w(width)
         .flex_none()
         .whitespace_normal()
-        .font_family(mono_family())
+        .font_family(cx.mono_family())
         .text_size(size)
         .text_color(color)
         .child(label)
@@ -1459,7 +1464,7 @@ mod tests {
         );
     }
 
-    fn options_map(entries: &[(&str, &[(&str, &str)])]) -> HashMap<String, Vec<(String, String)>> {
+    fn options_map(entries: &[(&str, &[(&str, &str)])]) -> HashMap<String, Vec<ChoiceOption>> {
         entries
             .iter()
             .map(|(key, options)| {
@@ -1467,14 +1472,14 @@ mod tests {
                     (*key).to_owned(),
                     options
                         .iter()
-                        .map(|(value, label)| ((*value).to_owned(), (*label).to_owned()))
+                        .map(|(value, label)| ChoiceOption::new(*value, *label))
                         .collect(),
                 )
             })
             .collect()
     }
 
-    fn voice_options() -> HashMap<String, Vec<(String, String)>> {
+    fn voice_options() -> HashMap<String, Vec<ChoiceOption>> {
         options_map(&[
             ("tts.voices", &[("bare", "Bare prefix")]),
             ("tts.voices.", &[("empty-engine", "Empty engine")]),
@@ -1489,8 +1494,8 @@ mod tests {
         assert_eq!(
             dependent_options(&voice_options(), "tts.voices", "piper"),
             vec![
-                ("amy".to_owned(), "Amy".to_owned()),
-                ("alan".to_owned(), "Alan".to_owned()),
+                ChoiceOption::new("amy", "Amy"),
+                ChoiceOption::new("alan", "Alan"),
             ],
             "the chosen engine selects its own voices, not the bare prefix and not a glued key"
         );
@@ -1550,7 +1555,7 @@ mod tests {
     fn offered_values(field: &ConfigField) -> Vec<String> {
         match field {
             ConfigField::Choice { options, .. } => {
-                options.iter().map(|(value, _)| value.clone()).collect()
+                options.iter().map(|option| option.value.clone()).collect()
             }
             _ => panic!("expected a choice field"),
         }
@@ -2099,9 +2104,9 @@ mod tests {
         assert_eq!(
             offered,
             [
-                (String::new(), "Any".to_owned()),
-                ("donatello".to_owned(), "Donatello".to_owned()),
-                ("monobank".to_owned(), "monobank".to_owned()),
+                ChoiceOption::new("", "Any"),
+                ChoiceOption::new("donatello", "Donatello"),
+                ChoiceOption::new("monobank", "monobank"),
             ]
         );
     }

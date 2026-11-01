@@ -2,11 +2,11 @@ use super::*;
 use forge_components::RevealsFocusIn;
 use forge_components::SEARCH_FIELD_WIDTH;
 use forge_components::{
-    BORDER_THIN, ChipGlyph, ConfirmTone, FONT_XS, FONT_XXS, Icon, ResizeEdge, ResizeRange, chip,
-    confirm_modal, context_menu, header_stat, header_stats, icon, install_resize, menu_divider,
-    menu_item, mono_family, scaled,
+    ActivePresentation, BORDER_THIN, ChipGlyph, ConfirmTone, FONT_XS, FONT_XXS, Icon, ResizeEdge,
+    ResizeRange, chip, confirm_modal, context_menu, header_stat, header_stats, icon,
+    install_resize, menu_divider, menu_item, scaled,
 };
-use gpui::{MouseButton, MouseDownEvent, Rgba};
+use gpui::{App, MouseButton, MouseDownEvent, Rgba};
 
 pub(super) struct TreeActionRow {
     pub(super) id: ActionId,
@@ -15,12 +15,12 @@ pub(super) struct TreeActionRow {
 
 const ROW_PAD_R: Pixels = px(8.0);
 
-fn tree_notice(label: SharedString, color: Rgba, density: Density) -> impl IntoElement {
+fn tree_notice(label: SharedString, color: Rgba, density: Density, cx: &App) -> impl IntoElement {
     div()
         .w_full()
         .px(TREE_GUTTER)
         .py(spacing(Spacing::Sm, density))
-        .font_family(body_family())
+        .font_family(cx.body_family())
         .text_size(FONT_XS)
         .text_color(color)
         .child(label)
@@ -46,6 +46,7 @@ impl ActionTree {
         &self,
         palette: &ForgePalette,
         density: Density,
+        cx: &App,
     ) -> AnyElement {
         let total = self.total_actions();
         let enabled = self.enabled_count();
@@ -69,6 +70,7 @@ impl ActionTree {
             ],
             palette,
             density,
+            cx,
         )
         .into_any_element()
     }
@@ -193,12 +195,14 @@ impl ActionTree {
                 cx.listener(|this, _: &ClickEvent, _, cx| this.retry_list_load(cx)),
                 palette,
                 density,
+                cx,
             );
             rows.push(notice.unwrap_or_else(|| {
                 tree_notice(
                     SharedString::from(tr!("actions_empty")),
                     palette.text_faint,
                     density,
+                    cx,
                 )
                 .into_any_element()
             }));
@@ -287,7 +291,7 @@ impl ActionTree {
             .child(icon(chevron, TREE_GLYPH, palette.text_muted))
             .child(
                 div()
-                    .font_family(mono_family())
+                    .font_family(cx.mono_family())
                     .text_size(FONT_XXS)
                     .text_color(palette.text_muted)
                     .child(group.name.clone()),
@@ -295,7 +299,7 @@ impl ActionTree {
             .child(div().flex_1())
             .child(
                 div()
-                    .font_family(mono_family())
+                    .font_family(cx.mono_family())
                     .text_size(FONT_XXS)
                     .text_color(palette.text_faint)
                     .child(shown_count.to_string()),
@@ -348,7 +352,7 @@ impl ActionTree {
                 .flex_1()
                 .min_w(px(0.0))
                 .overflow_hidden()
-                .font_family(mono_family())
+                .font_family(cx.mono_family())
                 .text_size(FONT_XS)
                 .text_color(name_color)
                 .cursor_pointer()
@@ -376,7 +380,7 @@ impl ActionTree {
             .child(name_el);
 
         let slot_inner: AnyElement = div()
-            .font_family(mono_family())
+            .font_family(cx.mono_family())
             .text_size(FONT_XXS)
             .text_color(palette.text_faint)
             .child(tr!(

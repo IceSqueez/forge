@@ -14,13 +14,12 @@ use self::preview::{CachedPreview, PreviewConfig};
 use crate::async_bridge;
 use crate::async_bridge::{Loadable, SnapshotWriter};
 use crate::repo_failure::RepoFailure;
-use forge_components::ActivePresentation;
-use forge_components::{FONT_XXS, ForgePalette, InputEvent, TextArea, mono_family, tr};
+use forge_components::{ActivePresentation, FONT_XXS, ForgePalette, InputEvent, TextArea, tr};
 use forge_speak_queue::{PipelineConfigHandle, SpeakQueueHandle};
 use forge_storage::{FilterRule, TtsFiltersRepo, TtsPipelineSettings};
 use forge_types::Shared;
 use gpui::prelude::*;
-use gpui::{Context, Entity, SharedString, Subscription, Window, div, px};
+use gpui::{App, Context, Entity, SharedString, Subscription, Window, div, px};
 use std::sync::{Arc, LazyLock};
 
 const PREVIEW_INPUT_H: gpui::Pixels = px(56.0);
@@ -165,9 +164,13 @@ impl Render for TtsFiltersView {
     }
 }
 
-fn mono_caption(label: impl Into<SharedString>, palette: &ForgePalette) -> impl IntoElement {
+fn mono_caption(
+    label: impl Into<SharedString>,
+    palette: &ForgePalette,
+    cx: &App,
+) -> impl IntoElement {
     div()
-        .font_family(mono_family())
+        .font_family(cx.mono_family())
         .text_size(FONT_XXS)
         .text_color(palette.text_muted)
         .child(label.into())

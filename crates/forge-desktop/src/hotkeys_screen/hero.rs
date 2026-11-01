@@ -1,6 +1,6 @@
 use forge_components::FONT_HERO;
 use forge_components::{
-    ActivePresentation, FONT_XS, ForgePalette, Icon, body_family, card, icon, scaled, toggle, tr,
+    ActivePresentation, FONT_XS, ForgePalette, Icon, card, icon, scaled, toggle, tr,
 };
 use gpui::{AnyElement, ClickEvent, Context, Pixels, div, prelude::*, px};
 
@@ -82,7 +82,7 @@ impl HotkeysScreenView {
                     .flex_col()
                     .child(
                         div()
-                            .font_family(body_family())
+                            .font_family(cx.body_family())
                             .text_size(HERO_TITLE_FS)
                             .font_weight(gpui::FontWeight::SEMIBOLD)
                             .text_color(palette.text_primary)
@@ -91,7 +91,7 @@ impl HotkeysScreenView {
                     .child(
                         div()
                             .mt(HERO_BLURB_MT)
-                            .font_family(body_family())
+                            .font_family(cx.body_family())
                             .text_size(FONT_XS)
                             .text_color(palette.text_muted)
                             .child(tr!("hotkeys_hero_blurb")),
@@ -104,7 +104,7 @@ impl HotkeysScreenView {
                     .gap(scaled(HERO_TOGGLE_GAP, density))
                     .child(
                         div()
-                            .font_family(body_family())
+                            .font_family(cx.body_family())
                             .text_size(LABEL_FS)
                             .text_color(label_color)
                             .child(if self.enabled {

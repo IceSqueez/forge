@@ -2,8 +2,8 @@ use std::sync::Arc;
 use std::time::{Duration, Instant};
 
 use forge_components::{
-    Density, FONT_XS, ForgePalette, Icon, KeyActivated, Radius, Spacing, body_family, fmt_clock,
-    icon, radius, scaled, spacing, tr,
+    ActivePresentation, Density, FONT_XS, ForgePalette, Icon, KeyActivated, Radius, Spacing,
+    fmt_clock, icon, radius, scaled, spacing, tr,
 };
 use forge_soundboard::{ClipAvailability, PlayOutcome, SoundboardError};
 use forge_types::ClipId;
@@ -167,7 +167,7 @@ impl SoundboardView {
             .child(icon(Icon::PlayerStop, STOP_ICON, palette.danger))
             .child(
                 div()
-                    .font_family(body_family())
+                    .font_family(cx.body_family())
                     .text_size(FONT_XS)
                     .text_color(palette.danger)
                     .child(tr!("soundboard_stop_all")),

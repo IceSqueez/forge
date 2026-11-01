@@ -3,13 +3,13 @@ use crate::async_bridge;
 use crate::repo_failure::RepoFailure;
 use crate::server_bearer;
 use forge_components::{
-    BORDER_THIN, Density, FONT_SM, FONT_XS, FONT_XXS, ForgePalette, Icon, KeyActivated, Radius,
-    Spacing, body_family, card, icon, mono_family, radius, spacing, tooltip_builder, tr,
+    ActivePresentation, BORDER_THIN, Density, FONT_SM, FONT_XS, FONT_XXS, ForgePalette, Icon,
+    KeyActivated, Radius, Spacing, card, icon, radius, spacing, tooltip_builder, tr,
 };
 use forge_types::Secret;
-use gpui::{AnyElement, ClickEvent, Context, Div, div, prelude::*, px};
+use gpui::{AnyElement, App, ClickEvent, Context, Div, div, prelude::*, px};
 
-pub(super) fn mono_field(palette: &ForgePalette, density: Density) -> Div {
+pub(super) fn mono_field(palette: &ForgePalette, density: Density, cx: &App) -> Div {
     div()
         .w_full()
         .min_w(px(0.0))
@@ -24,7 +24,7 @@ pub(super) fn mono_field(palette: &ForgePalette, density: Density) -> Div {
         .border(BORDER_THIN)
         .border_color(palette.border_input)
         .bg(palette.shell)
-        .font_family(mono_family())
+        .font_family(cx.mono_family())
         .text_size(FONT_SM)
 }
 
@@ -129,7 +129,7 @@ impl ServerConsoleView {
         cx: &mut Context<Self>,
     ) -> AnyElement {
         let field = match self.bind_state() {
-            BindState::Bound(address) => mono_field(palette, density)
+            BindState::Bound(address) => mono_field(palette, density, cx)
                 .child(
                     div()
                         .flex_1()
@@ -151,14 +151,14 @@ impl ServerConsoleView {
                         )
                         .child(icon(Icon::Copy, CONTROL_GLYPH, palette.text_faint)),
                 ),
-            BindState::AwaitingAddress => mono_field(palette, density).child(
+            BindState::AwaitingAddress => mono_field(palette, density, cx).child(
                 div()
                     .flex_1()
                     .min_w(px(0.0))
                     .text_color(palette.text_faint)
                     .child(tr!("server_bind_address_loading")),
             ),
-            BindState::Stopped => mono_field(palette, density).child(
+            BindState::Stopped => mono_field(palette, density, cx).child(
                 div()
                     .flex_1()
                     .min_w(px(0.0))
@@ -171,7 +171,7 @@ impl ServerConsoleView {
             .flex()
             .flex_col()
             .gap(spacing(Spacing::Xs, density))
-            .child(caption(tr!("server_bind_address"), palette))
+            .child(caption(tr!("server_bind_address"), palette, cx))
             .child(field)
             .into_any_element()
     }
@@ -188,9 +188,9 @@ impl ServerConsoleView {
             .flex()
             .flex_col()
             .gap(spacing(Spacing::Xs, density))
-            .child(caption(tr!("server_bearer_token"), palette))
+            .child(caption(tr!("server_bearer_token"), palette, cx))
             .child(self.bearer_token_row(palette, density, cx))
-            .child(self.regen_warning(palette, density))
+            .child(self.regen_warning(palette, density, cx))
             .into_any_element()
     }
 
@@ -211,7 +211,7 @@ impl ServerConsoleView {
             Icon::Eye
         };
 
-        let field = mono_field(palette, density)
+        let field = mono_field(palette, density, cx)
             .flex_1()
             .child(
                 div()
@@ -268,7 +268,7 @@ impl ServerConsoleView {
             .child(icon(Icon::Refresh, CONTROL_GLYPH, palette.warning))
             .child(
                 div()
-                    .font_family(body_family())
+                    .font_family(cx.body_family())
                     .text_size(FONT_XS)
                     .text_color(palette.warning)
                     .child(tr!("server_btn_regenerate")),
@@ -286,7 +286,7 @@ impl ServerConsoleView {
             .into_any_element()
     }
 
-    fn regen_warning(&self, palette: &ForgePalette, density: Density) -> AnyElement {
+    fn regen_warning(&self, palette: &ForgePalette, density: Density, cx: &App) -> AnyElement {
         div()
             .flex()
             .items_center()
@@ -294,7 +294,7 @@ impl ServerConsoleView {
             .child(icon(Icon::AlertTriangle, LINK_GLYPH, palette.warning))
             .child(
                 div()
-                    .font_family(body_family())
+                    .font_family(cx.body_family())
                     .text_size(FONT_XXS)
                     .text_color(palette.warning)
                     .child(tr!("server_regen_warning_title")),

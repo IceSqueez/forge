@@ -1,12 +1,13 @@
 use super::*;
-use crate::option_choices::ChoiceOptions;
+use crate::option_choices::{ChoiceOption, ChoiceOptions};
 use forge_components::OverflowRevealingFocus;
 use forge_components::{
-    Density, FONT_SM, FONT_XS, ForgePalette, Icon, Spacing, body_family, icon, scaled, spacing, tr,
+    ActivePresentation, Density, FONT_SM, FONT_XS, ForgePalette, Icon, Spacing, icon, scaled,
+    spacing, tr,
 };
 use forge_host::integrations::BuiltinRegistry;
 use forge_types::SubActionStep;
-use gpui::{AnyElement, Context, Task, div};
+use gpui::{AnyElement, App, Context, Task, div};
 
 pub(in crate::actions_screen) mod action_writes;
 mod branch;
@@ -54,7 +55,7 @@ pub(in crate::actions_screen) enum ActionEditorEvent {
 }
 
 struct StepChoices {
-    select_options: HashMap<String, Vec<(String, String)>>,
+    select_options: HashMap<String, Vec<ChoiceOption>>,
     select_options_failed: bool,
     builtins: BuiltinRegistry,
     integration_options: ChoiceOptions,
@@ -264,12 +265,12 @@ impl ActionEditor {
             (Some(sel), Some(detail)) if detail.action.id == sel => {
                 self.render_editor(detail, palette, cx)
             }
-            (Some(_), _) => self.render_loading(palette, density),
-            (None, _) => self.render_empty(palette, density),
+            (Some(_), _) => self.render_loading(palette, density, cx),
+            (None, _) => self.render_empty(palette, density, cx),
         }
     }
 
-    fn render_empty(&self, palette: &ForgePalette, density: Density) -> AnyElement {
+    fn render_empty(&self, palette: &ForgePalette, density: Density, cx: &App) -> AnyElement {
         let placeholder = div()
             .flex()
             .flex_col()
@@ -278,14 +279,14 @@ impl ActionEditor {
             .child(icon(Icon::Bolt, EMPTY_GLYPH, palette.text_faint))
             .child(
                 div()
-                    .font_family(body_family())
+                    .font_family(cx.body_family())
                     .text_size(FONT_SM)
                     .text_color(palette.text_secondary)
                     .child(tr!("actions_detail_empty_title")),
             )
             .child(
                 div()
-                    .font_family(body_family())
+                    .font_family(cx.body_family())
                     .text_size(FONT_XS)
                     .text_color(palette.text_muted)
                     .child(tr!("actions_detail_empty_hint")),
@@ -303,14 +304,14 @@ impl ActionEditor {
             .into_any_element()
     }
 
-    fn render_loading(&self, palette: &ForgePalette, density: Density) -> AnyElement {
+    fn render_loading(&self, palette: &ForgePalette, density: Density, cx: &App) -> AnyElement {
         div()
             .flex_1()
             .min_w_0()
             .h_full()
             .py(spacing(Spacing::Md, density))
             .px(spacing(Spacing::Lg, density))
-            .font_family(body_family())
+            .font_family(cx.body_family())
             .text_size(FONT_SM)
             .text_color(palette.text_muted)
             .child(tr!("action_editor_loading"))
@@ -334,6 +335,7 @@ impl ActionEditor {
         action: &Action,
         palette: &ForgePalette,
         density: Density,
+        cx: &App,
     ) -> Option<AnyElement> {
         self.overlay_order_at_risk(action).then(|| {
             inline_warning_card(
@@ -341,6 +343,7 @@ impl ActionEditor {
                 tr!("action_editor_overlay_order_warning_hint"),
                 palette,
                 density,
+                cx,
             )
         })
     }
@@ -357,7 +360,7 @@ impl ActionEditor {
             .flex_col()
             .gap(spacing(Spacing::Md, density))
             .child(self.render_editor_header(detail, palette, cx))
-            .children(self.render_order_warning(&detail.action, palette, density))
+            .children(self.render_order_warning(&detail.action, palette, density, cx))
             .child(self.render_triggers_section(detail, palette, cx))
             .child(self.render_sub_actions_section(detail, palette, cx));
 

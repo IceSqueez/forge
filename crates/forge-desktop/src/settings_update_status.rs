@@ -1,6 +1,6 @@
-use forge_components::{DateShape, fmt_display};
-use forge_components::{FONT_XS, ForgePalette, body_family, tr};
-use gpui::{IntoElement, Rgba, div, prelude::*};
+use forge_components::{ActivePresentation, DateShape, fmt_display};
+use forge_components::{FONT_XS, ForgePalette, tr};
+use gpui::{App, IntoElement, Rgba, div, prelude::*};
 use time::OffsetDateTime;
 
 use crate::update_check::{CheckResult, UpdatePlan};
@@ -90,11 +90,12 @@ fn tone_color(tone: StatusTone, palette: &ForgePalette) -> Rgba {
 pub(crate) fn status_line(
     status: &UpdateCheckStatus,
     palette: &ForgePalette,
+    cx: &App,
 ) -> Option<impl IntoElement> {
     let label = status.label()?;
     Some(
         div()
-            .font_family(body_family())
+            .font_family(cx.body_family())
             .text_size(FONT_XS)
             .text_color(tone_color(status.tone(), palette))
             .child(label),

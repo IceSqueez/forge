@@ -17,7 +17,7 @@ use edit_modal::{EditQueueEvent, EditQueueModal, QueueDraft};
 use forge_components::{
     ActivePresentation, BreadcrumbCrumb, Confirm, FONT_FIELD, FONT_LABEL, FONT_META, ForgePalette,
     Icon, InputEvent, OverflowRevealingFocus, PushToast, SearchState, Spacing, TextInput,
-    ToastKind, body_family, empty_state, fmt_uptime, focus_inside_modal, page_frame, spacing, tr,
+    ToastKind, empty_state, fmt_uptime, focus_inside_modal, page_frame, spacing, tr,
 };
 use forge_runtime::{
     MembershipOutcome, QueueIntake, QueueMode, QueueProcessing, QueueSchedulerHandle, RunningAction,
@@ -817,12 +817,12 @@ impl Render for QueuesView {
         let palette = cx.palette();
         let density = cx.density();
 
-        let stats = self.render_stats(&palette, density);
+        let stats = self.render_stats(&palette, density, cx);
         let subheader_left = self.render_subheader_left(&palette, density, cx);
         let subheader_right = self.render_subheader_right(&palette, density, cx);
 
         let subtitle = div()
-            .font_family(body_family())
+            .font_family(cx.body_family())
             .text_size(STATS_FS)
             .text_color(palette.text_muted)
             .child(tr!("queues_subtitle"));
@@ -839,6 +839,7 @@ impl Render for QueuesView {
                 cx.listener(|this, _: &ClickEvent, _, cx| this.retry_list_load(cx)),
                 &palette,
                 density,
+                cx,
             )
             .unwrap_or_else(|| {
                 empty_state(tr!("queues_empty"), &palette)

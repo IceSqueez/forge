@@ -8,16 +8,16 @@ use std::sync::Arc;
 
 use forge_components::OverflowRevealingFocus;
 use forge_components::{
-    BORDER_THIN, BreadcrumbCrumb, FONT_XS, FONT_XXS, ForgePalette, Icon, KeyActivated, Radius,
-    body_family, ghost_button_with_icon, health_tile, icon, integration_inactive_badge,
-    mono_family, page_frame, primary_button_with_icon, radius, scaled, tr,
+    ActivePresentation, BORDER_THIN, BreadcrumbCrumb, FONT_XS, FONT_XXS, ForgePalette, Icon,
+    KeyActivated, Radius, ghost_button_with_icon, health_tile, icon, integration_inactive_badge,
+    page_frame, primary_button_with_icon, radius, scaled, tr,
 };
 use forge_platform_core::{ConnectionAffordance, IntegrationDeclaration};
 use forge_registry::{IntegrationReferences, SubActionRegistry, TriggerRegistry};
 use forge_storage::{CredentialsRepo, DataProvider, has_credentials_for};
 use forge_types::IntegrationId;
 use gpui::{
-    AnyElement, ClickEvent, Context, ElementId, Entity, EventEmitter, FontWeight, Pixels,
+    AnyElement, App, ClickEvent, Context, ElementId, Entity, EventEmitter, FontWeight, Pixels,
     SharedString, Subscription, Window, div, prelude::*, px, relative,
 };
 
@@ -27,7 +27,6 @@ use crate::integration_lifecycle::{CardStatus, IntegrationLifecycle};
 use crate::integrations_hub::{card_status_badge, load_references};
 use crate::navigation::NavRequested;
 use crate::navigation::Screen;
-use forge_components::ActivePresentation;
 use forge_components::grow_cell;
 use forge_host::integration_catalog::declaration_of;
 
@@ -224,11 +223,12 @@ impl IntegrationDisabledView {
             vec![all.into_any_element(), enable.into_any_element()],
             palette,
             density,
+            cx,
         )
     }
 
-    fn disclaimer(&self, palette: &ForgePalette, density: Density) -> Option<AnyElement> {
-        disclaimer_block(&self.id, palette, density)
+    fn disclaimer(&self, palette: &ForgePalette, density: Density, cx: &App) -> Option<AnyElement> {
+        disclaimer_block(&self.id, palette, density, cx)
     }
 }
 
@@ -239,6 +239,7 @@ pub(crate) fn hero_card(
     actions: Vec<AnyElement>,
     palette: &ForgePalette,
     density: Density,
+    cx: &App,
 ) -> AnyElement {
     let look = look_of(id, palette);
     div()
@@ -258,12 +259,13 @@ pub(crate) fn hero_card(
             true,
             HERO_TILE,
             palette,
+            cx,
         ))
         .child(
             div()
                 .flex_1()
                 .min_w_0()
-                .font_family(body_family())
+                .font_family(cx.body_family())
                 .child(
                     div()
                         .mb(HERO_TITLE_MB)
@@ -282,8 +284,9 @@ pub(crate) fn disclaimer_block(
     id: &IntegrationId,
     palette: &ForgePalette,
     density: Density,
+    cx: &App,
 ) -> Option<AnyElement> {
-    disclaimer_line(id, palette, density)
+    disclaimer_line(id, palette, density, cx)
         .map(|line| div().mb(DISCLAIMER_MB).child(line).into_any_element())
 }
 
@@ -291,6 +294,7 @@ pub(crate) fn disclaimer_line(
     id: &IntegrationId,
     palette: &ForgePalette,
     density: Density,
+    cx: &App,
 ) -> Option<AnyElement> {
     let disclaimer = disclaimer_of(id)?;
     Some(
@@ -298,7 +302,7 @@ pub(crate) fn disclaimer_line(
             .flex()
             .items_start()
             .gap(spacing(Spacing::Xs, density))
-            .font_family(body_family())
+            .font_family(cx.body_family())
             .text_size(FONT_XXS)
             .line_height(relative(DISCLAIMER_LINE_HEIGHT))
             .text_color(palette.text_muted)
@@ -325,10 +329,11 @@ impl IntegrationDisabledView {
                 tr!("integration_disabled_affected"),
                 palette,
                 density,
+                cx,
             ))
             .child(
                 div()
-                    .font_family(mono_family())
+                    .font_family(cx.mono_family())
                     .text_size(FONT_XXS)
                     .text_color(palette.text_faint)
                     .child(SharedString::from(total.to_string())),
@@ -338,6 +343,7 @@ impl IntegrationDisabledView {
                 tr!("integration_disabled_unused", name = name.to_string()),
                 palette,
                 density,
+                cx,
             )
             .py(scaled(EMPTY_PAD_V, density))
             .into_any_element()
@@ -354,7 +360,7 @@ impl IntegrationDisabledView {
                     .child(
                         div()
                             .flex_none()
-                            .font_family(mono_family())
+                            .font_family(cx.mono_family())
                             .text_size(FONT_XS)
                             .text_color(palette.text_primary)
                             .child(SharedString::from(action.name.clone())),
@@ -364,7 +370,7 @@ impl IntegrationDisabledView {
                             .flex_1()
                             .min_w_0()
                             .truncate()
-                            .font_family(body_family())
+                            .font_family(cx.body_family())
                             .text_size(ROW_HINT)
                             .text_color(palette.text_faint)
                             .child(tr!(
@@ -389,13 +395,14 @@ impl IntegrationDisabledView {
                             tr!("integration_inactive_short"),
                             palette,
                             density,
+                            cx,
                         ))
                         .child(
                             div()
                                 .flex_1()
                                 .min_w_0()
                                 .truncate()
-                                .font_family(body_family())
+                                .font_family(cx.body_family())
                                 .text_size(FONT_XS)
                                 .text_color(palette.text_secondary)
                                 .child(tr!(
@@ -416,13 +423,14 @@ impl IntegrationDisabledView {
         panel(palette).child(head).child(body).into_any_element()
     }
 
-    fn kept_panel(&self, palette: &ForgePalette, density: Density) -> AnyElement {
+    fn kept_panel(&self, palette: &ForgePalette, density: Density, cx: &App) -> AnyElement {
         let head = panel_head(palette, density).child(panel_title(
             Icon::Lock,
             palette.success,
             tr!("integration_disabled_kept"),
             palette,
             density,
+            cx,
         ));
         let mut body = div()
             .pt(scaled(KEPT_PAD_TOP, density))
@@ -436,6 +444,7 @@ impl IntegrationDisabledView {
                 tr!("integration_disabled_nothing_kept"),
                 palette,
                 density,
+                cx,
             ));
         }
         for kept in &self.kept {
@@ -450,7 +459,7 @@ impl IntegrationDisabledView {
                     .flex()
                     .items_center()
                     .gap(scaled(KEPT_ROW_GAP, density))
-                    .font_family(body_family())
+                    .font_family(cx.body_family())
                     .text_size(FONT_XS)
                     .text_color(palette.text_secondary)
                     .child(icon(Icon::Check, KEPT_ICON, palette.success))
@@ -490,12 +499,13 @@ fn panel_title(
     label: String,
     palette: &ForgePalette,
     density: Density,
+    cx: &App,
 ) -> impl IntoElement {
     div()
         .flex()
         .items_center()
         .gap(scaled(PANEL_TITLE_GAP, density))
-        .font_family(body_family())
+        .font_family(cx.body_family())
         .font_weight(FontWeight::MEDIUM)
         .text_size(PANEL_TITLE)
         .text_color(palette.text_primary)
@@ -503,10 +513,10 @@ fn panel_title(
         .child(label)
 }
 
-fn empty_line(text: String, palette: &ForgePalette, density: Density) -> gpui::Div {
+fn empty_line(text: String, palette: &ForgePalette, density: Density, cx: &App) -> gpui::Div {
     div()
         .px(scaled(PANEL_HEAD_PAD_H, density))
-        .font_family(body_family())
+        .font_family(cx.body_family())
         .text_size(FONT_XS)
         .italic()
         .text_color(palette.text_faint)
@@ -537,14 +547,17 @@ impl Render for IntegrationDisabledView {
         let palette = cx.palette();
         let status =
             CardStatus::resolve(&self.state(cx), ConnectionAffordance::Connectionless, false);
-        let badge = card_status_badge(&self.id, &status, &palette, density);
+        let badge = card_status_badge(&self.id, &status, &palette, density, cx);
 
         let panels = div()
             .w_full()
             .flex()
             .gap(scaled(PANEL_GAP, density))
             .child(grow_cell(self.affected(&palette, cx), AFFECTED_WEIGHT))
-            .child(grow_cell(self.kept_panel(&palette, density), KEPT_WEIGHT));
+            .child(grow_cell(
+                self.kept_panel(&palette, density, cx),
+                KEPT_WEIGHT,
+            ));
 
         let body = div()
             .id("integration-disabled-scroll")
@@ -557,7 +570,7 @@ impl Render for IntegrationDisabledView {
                     .py(scaled(BODY_PAD_V, density))
                     .px(scaled(BODY_PAD_H, density))
                     .child(self.hero(&palette, cx))
-                    .children(self.disclaimer(&palette, density))
+                    .children(self.disclaimer(&palette, density, cx))
                     .child(panels),
             );
 

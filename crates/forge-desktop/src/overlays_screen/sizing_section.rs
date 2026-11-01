@@ -1,5 +1,4 @@
-use forge_components::ActivePresentation;
-use forge_components::{ForgePalette, field_label, scaled, section_label, tr};
+use forge_components::{ActivePresentation, ForgePalette, field_label, scaled, section_label, tr};
 use forge_overlay::config::{
     DESIGN_HEIGHT, DESIGN_SIZE_MAX_PX, DESIGN_SIZE_MIN_PX, DESIGN_WIDTH, MARGIN_SIDES,
 };
@@ -96,6 +95,7 @@ impl OverlayPropertyPanel {
                             &view,
                             &handlers,
                             density,
+                            cx,
                         ),
                     )
                     .tone(palette.text_faint)
@@ -124,13 +124,20 @@ impl OverlayPropertyPanel {
                 tr!("overlays_source_size_hint"),
                 palette,
                 density,
+                cx,
             ))
         });
 
         let last = margins.len().saturating_sub(1);
         let margin_rows = margins.into_iter().enumerate().map(|(index, field)| {
             let row = if index == last {
-                hinted(field, tr!("overlays_source_margin_hint"), palette, density)
+                hinted(
+                    field,
+                    tr!("overlays_source_margin_hint"),
+                    palette,
+                    density,
+                    cx,
+                )
             } else {
                 field.into_any_element()
             };
@@ -145,6 +152,7 @@ impl OverlayPropertyPanel {
                 .child(div().pb(SECTION_GAP).child(section_label(
                     PanelSection::Source.heading().to_uppercase(),
                     palette,
+                    cx,
                 )))
                 .children(size_row)
                 .children(margin_rows)

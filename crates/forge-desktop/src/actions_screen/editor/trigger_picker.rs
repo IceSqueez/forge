@@ -4,13 +4,12 @@ use crate::async_bridge;
 use crate::picker_favorites::{bind_picker, follow_picker_event};
 use crate::repo_failure::RepoFailure;
 use crate::triggers_screen::platform_dot_color;
-use forge_components::ActivePresentation;
 use forge_components::GridScope;
 use forge_components::focus_inside_modal;
 use forge_components::{
-    ForgePalette, GlyphArt, GridPicker, GridPickerArt, GridPickerConfig, GridPickerEvent,
-    GridPickerGroup, GridPickerItem, GridPickerItemState, GridPickerSubtitle, Icon,
-    OverlayPosition, overlay, tr,
+    ActivePresentation, ForgePalette, GlyphArt, GridPicker, GridPickerArt, GridPickerConfig,
+    GridPickerEvent, GridPickerGroup, GridPickerItem, GridPickerItemState, GridPickerSubtitle,
+    Icon, OverlayPosition, overlay, tr,
 };
 use forge_registry::{TriggerKindDescriptor, TriggerRegistry};
 use forge_types::{TriggerInstance, TriggerInstanceId};

@@ -133,7 +133,7 @@ mod tests {
                 .map(|choices| {
                     choices
                         .iter()
-                        .map(|(_, title)| title.clone())
+                        .map(|option| option.label.clone())
                         .collect::<Vec<_>>()
                 })
         })

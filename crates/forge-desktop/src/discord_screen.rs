@@ -13,10 +13,10 @@ use std::sync::Arc;
 
 use forge_components::OverflowRevealingFocus;
 use forge_components::{
-    BORDER_THIN, BreadcrumbCrumb, ConfirmTone, FONT_XS, ForgePalette, Icon, MenuPlacement,
-    OverlayPosition, SectionLabel, ToastKind, badge, body_family, card, confirm_modal,
-    fmt_display_relative, icon, menu_button, menu_divider, menu_item, mono_family, overlay,
-    pad_tile, page_frame, scaled, status_dot, tr,
+    ActivePresentation, BORDER_THIN, BreadcrumbCrumb, ConfirmTone, FONT_XS, ForgePalette, Icon,
+    MenuPlacement, OverlayPosition, SectionLabel, ToastKind, badge, card, confirm_modal,
+    fmt_display_relative, icon, menu_button, menu_divider, menu_item, overlay, pad_tile,
+    page_frame, scaled, status_dot, tr,
 };
 use forge_discord::{DiscordClient, DiscordSendHealth, WebhookPost};
 use forge_runtime::EventBus;
@@ -37,7 +37,6 @@ use crate::load_notice::{LoadNotice, NoticeWidth, load_notice};
 use crate::navigation::NavRequested;
 use crate::repo_failure::RepoFailure;
 use crate::runtime_event;
-use forge_components::ActivePresentation;
 use forge_components::PushToast;
 use forge_components::{grow_cell, stat_card};
 use forge_host::integrations::BuiltinObject;
@@ -515,7 +514,7 @@ impl Render for DiscordScreenView {
             .child(icon(Icon::BrandDiscord, HEADER_GLYPH, palette.brand))
             .child(
                 div()
-                    .font_family(body_family())
+                    .font_family(cx.body_family())
                     .text_size(HEADER_FS)
                     .text_color(palette.text_muted)
                     .child(tr!(
@@ -531,7 +530,10 @@ impl Render for DiscordScreenView {
             .items_start()
             .gap(scaled(COLUMN_GAP, density))
             .child(grow_cell(self.render_bindings(&palette, cx), COLUMN_FLEX))
-            .child(grow_cell(self.render_posts(&palette, density), COLUMN_FLEX));
+            .child(grow_cell(
+                self.render_posts(&palette, density, cx),
+                COLUMN_FLEX,
+            ));
 
         let body = div()
             .id("discord-scroll")
@@ -546,10 +548,10 @@ impl Render for DiscordScreenView {
                     .px(scaled(SCROLL_PAD_X, density))
                     .flex()
                     .flex_col()
-                    .child(self.render_hero(&palette, density))
-                    .child(self.render_stats(&palette, density))
+                    .child(self.render_hero(&palette, density, cx))
+                    .child(self.render_stats(&palette, density, cx))
                     .child(columns)
-                    .child(self.render_footer(&palette, density)),
+                    .child(self.render_footer(&palette, density, cx)),
             );
 
         let frame = page_frame(

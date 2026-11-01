@@ -2,8 +2,8 @@ use std::ops::RangeInclusive;
 use std::sync::Arc;
 
 use forge_components::{
-    DISABLED_OPACITY, Density, FONT_SM, FONT_XS, ForgePalette, Icon, InputEvent, KeyActivated,
-    PushToast, Radius, SettingRow, Spacing, TextInput, ToastKind, body_family,
+    ActivePresentation, DISABLED_OPACITY, Density, FONT_SM, FONT_XS, ForgePalette, Icon,
+    InputEvent, KeyActivated, PushToast, Radius, SettingRow, Spacing, TextInput, ToastKind,
     error_row_with_retry, icon, icon_button, radius, setting_block, setting_groups, setting_row,
     setting_rows, spacing, toggle, tr,
 };
@@ -13,7 +13,7 @@ use forge_storage::{
     write_setting,
 };
 use gpui::{
-    AnyElement, ClickEvent, Context, Entity, Pixels, SharedString, Subscription, Window, div,
+    AnyElement, App, ClickEvent, Context, Entity, Pixels, SharedString, Subscription, Window, div,
     prelude::*, px,
 };
 
@@ -22,7 +22,6 @@ use crate::async_bridge::{
 };
 use crate::navigation::SettingsSection;
 use crate::settings_pane_header::SettingsPaneHeader;
-use forge_components::ActivePresentation;
 
 const REMOVE_GLYPH: Pixels = px(11.0);
 const NUMERIC_INPUT_WIDTH: Pixels = px(120.0);
@@ -468,6 +467,7 @@ impl SettingsScriptingView {
                 palette,
                 cx.listener(|this, _: &ClickEvent, _, cx| this.load_domains(cx)),
                 density,
+                cx,
             )
         });
 
@@ -520,7 +520,7 @@ impl SettingsScriptingView {
             .bg(palette.surface_overlay)
             .child(
                 div()
-                    .font_family(body_family())
+                    .font_family(cx.body_family())
                     .text_size(FONT_SM)
                     .text_color(palette.text_primary)
                     .child(domain.to_owned()),
@@ -542,7 +542,7 @@ impl SettingsScriptingView {
             )
     }
 
-    fn engine_block(&self, palette: &ForgePalette, density: Density) -> AnyElement {
+    fn engine_block(&self, palette: &ForgePalette, density: Density, cx: &App) -> AnyElement {
         let rows = setting_rows(palette)
             .rows(
                 [NumericSetting::OpLimit, NumericSetting::EngineTimeoutMs]
@@ -557,6 +557,7 @@ impl SettingsScriptingView {
             rows,
             palette,
             density,
+            cx,
         )
         .into_any_element()
     }
@@ -610,9 +611,10 @@ impl SettingsScriptingView {
         setting_block(
             tr!("settings_scripting_http_section"),
             None,
-            with_ssrf_warning(rows, self.allow_local, palette, density),
+            with_ssrf_warning(rows, self.allow_local, palette, density, cx),
             palette,
             density,
+            cx,
         )
         .into_any_element()
     }
@@ -638,9 +640,10 @@ impl SettingsScriptingView {
         setting_block(
             tr!("settings_scripting_http_action_section"),
             None,
-            with_ssrf_warning(rows, self.core_allow_local, palette, density),
+            with_ssrf_warning(rows, self.core_allow_local, palette, density, cx),
             palette,
             density,
+            cx,
         )
         .into_any_element()
     }
@@ -657,7 +660,7 @@ impl Render for SettingsScriptingView {
             .child(SettingsPaneHeader::new(SettingsSection::Scripting))
             .child(setting_groups(
                 [
-                    self.engine_block(&palette, density),
+                    self.engine_block(&palette, density, cx),
                     self.script_http_block(&palette, density, cx),
                     self.http_action_block(&palette, density, cx),
                 ],
@@ -671,6 +674,7 @@ fn with_ssrf_warning(
     allow_local: bool,
     palette: &ForgePalette,
     density: Density,
+    cx: &App,
 ) -> impl IntoElement {
     let mut content = div()
         .flex()
@@ -680,7 +684,7 @@ fn with_ssrf_warning(
     if allow_local {
         content = content.child(
             div()
-                .font_family(body_family())
+                .font_family(cx.body_family())
                 .text_size(FONT_XS)
                 .text_color(palette.danger)
                 .child(tr!("settings_scripting_ssrf_warning")),

@@ -1,11 +1,10 @@
-use forge_components::ActivePresentation;
 use forge_components::FONT_LABEL;
 use forge_components::ROW_OFF_OPACITY;
 use forge_components::{
-    BORDER_THIN, DISABLED_OPACITY, Density, ForgePalette, Icon, KeyActivated, MenuPlacement, badge,
-    body_family, card, icon, menu_button, menu_item, mono_family, scaled, toggle, tr,
+    ActivePresentation, BORDER_THIN, DISABLED_OPACITY, Density, ForgePalette, Icon, KeyActivated,
+    MenuPlacement, badge, card, icon, menu_button, menu_item, scaled, toggle, tr,
 };
-use gpui::{AnyElement, ClickEvent, Context, Pixels, div, prelude::*, px};
+use gpui::{AnyElement, App, ClickEvent, Context, Pixels, div, prelude::*, px};
 
 use super::HotkeysScreenView;
 use super::capture::Capture;
@@ -45,9 +44,13 @@ impl HotkeysScreenView {
             palette.text_faint
         };
         let combo: AnyElement = match (shortcuts, chord) {
-            (_, Some(chord)) => keycaps(&chord_caps(&chord), palette, density).into_any_element(),
-            (Some(_), None) => unbound_chip(tr!("settings_shortcuts_unbound"), palette, density),
-            (None, None) => unbound_chip(UNKNOWN_CHORD.to_owned(), palette, density),
+            (_, Some(chord)) => {
+                keycaps(&chord_caps(&chord), palette, density, cx).into_any_element()
+            }
+            (Some(_), None) => {
+                unbound_chip(tr!("settings_shortcuts_unbound"), palette, density, cx)
+            }
+            (None, None) => unbound_chip(UNKNOWN_CHORD.to_owned(), palette, density, cx),
         };
 
         let body = div()
@@ -92,7 +95,7 @@ impl HotkeysScreenView {
                     .flex_1()
                     .min_w_0()
                     .truncate()
-                    .font_family(body_family())
+                    .font_family(cx.body_family())
                     .text_size(TARGET_FS)
                     .text_color(palette.text_primary)
                     .child(tr!(entry.label_key)),
@@ -184,7 +187,7 @@ impl HotkeysScreenView {
     }
 }
 
-fn unbound_chip(label: String, palette: &ForgePalette, density: Density) -> AnyElement {
+fn unbound_chip(label: String, palette: &ForgePalette, density: Density, cx: &App) -> AnyElement {
     div()
         .flex_none()
         .py(scaled(UNBOUND_PAD_V, density))
@@ -193,7 +196,7 @@ fn unbound_chip(label: String, palette: &ForgePalette, density: Density) -> AnyE
         .border(BORDER_THIN)
         .border_color(palette.border_regular)
         .bg(palette.shell)
-        .font_family(mono_family())
+        .font_family(cx.mono_family())
         .text_size(UNBOUND_FS)
         .text_color(palette.text_faint)
         .child(label)

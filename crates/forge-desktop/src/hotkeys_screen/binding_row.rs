@@ -1,8 +1,7 @@
-use forge_components::ActivePresentation;
 use forge_components::ROW_OFF_OPACITY;
 use forge_components::{
-    FONT_XXS, ForgePalette, Icon, KeyActivated, MenuPlacement, badge, body_family, card, icon,
-    menu_button, menu_divider, menu_item, mono_family, scaled, toggle, tr,
+    ActivePresentation, FONT_XXS, ForgePalette, Icon, KeyActivated, MenuPlacement, badge, card,
+    icon, menu_button, menu_divider, menu_item, scaled, toggle, tr,
 };
 use gpui::{AnyElement, ClickEvent, Context, Pixels, div, prelude::*, px};
 
@@ -91,7 +90,7 @@ impl HotkeysScreenView {
                             this.start_capture(Capture::Rebind(key), cx);
                         }
                     }))
-                    .child(keycaps(&row.combo, palette, density)),
+                    .child(keycaps(&row.combo, palette, density, cx)),
             )
             .child(
                 badge(
@@ -117,7 +116,7 @@ impl HotkeysScreenView {
                     .flex_1()
                     .min_w_0()
                     .truncate()
-                    .font_family(body_family())
+                    .font_family(cx.body_family())
                     .text_size(TARGET_FS)
                     .text_color(target_ink)
                     .child(target_text),
@@ -127,7 +126,7 @@ impl HotkeysScreenView {
                     .flex_none()
                     .max_w(STOP_TARGET_MAX_W)
                     .truncate()
-                    .font_family(mono_family())
+                    .font_family(cx.mono_family())
                     .text_size(FONT_XXS)
                     .text_color(palette.text_faint)
                     .child(text)

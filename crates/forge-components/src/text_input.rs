@@ -15,9 +15,7 @@ use crate::palette::{FORGE_DEFAULT, ForgePalette, with_alpha};
 use crate::text_buffer::TextBuffer;
 use crate::text_edit::{content_offset_for_mask, mask_graphemes, mask_offset};
 use crate::text_editing::*;
-use crate::tokens::{
-    BORDER_THIN, FONT_SM, FONT_XS, Radius, Spacing, body_family, mono_family, radius, spacing,
-};
+use crate::tokens::{BORDER_THIN, FONT_SM, FONT_XS, Radius, Spacing, radius, spacing};
 
 const KEY_CONTEXT: &str = "ForgeTextInput";
 pub const SEARCH_FIELD_WIDTH: Pixels = px(240.0);
@@ -748,9 +746,9 @@ impl Render for TextInput {
                 .rounded(radius(corner));
         }
         let font_family = if self.mono {
-            mono_family()
+            cx.mono_family()
         } else {
-            body_family()
+            cx.body_family()
         };
         let mut field = field
             .font_family(font_family)
@@ -780,7 +778,7 @@ impl Render for TextInput {
             field = field.child(
                 div()
                     .flex_none()
-                    .font_family(mono_family())
+                    .font_family(cx.mono_family())
                     .text_size(self.font_size)
                     .text_color(self.palette.text_faint)
                     .child(prefix),

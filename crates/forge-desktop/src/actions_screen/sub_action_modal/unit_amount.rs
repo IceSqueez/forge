@@ -2,10 +2,9 @@ use super::field::SubFormField;
 use super::*;
 use crate::amount_scale::{AmountScale, AmountSeed};
 use crate::config_form::INTEGER_PLACEHOLDER;
-use forge_components::ActivePresentation;
-use forge_components::InputEvent;
 use forge_components::int_entry_invalid;
 use forge_components::scaled;
+use forge_components::{ActivePresentation, InputEvent};
 use forge_types::SubActionConfig;
 
 impl SubFormField {

@@ -1,10 +1,9 @@
 use super::*;
 use crate::config_field_label::{field_label, form_field_label};
-use forge_components::ActivePresentation;
 use forge_components::BORDER_THIN;
 use forge_components::{
-    Density, FONT_XS, ForgePalette, Icon, InputEvent, KeyActivated, Spacing, TextInput,
-    body_family, icon, mono_family, spacing, tr,
+    ActivePresentation, Density, FONT_XS, ForgePalette, Icon, InputEvent, KeyActivated, Spacing,
+    TextInput, icon, spacing, tr,
 };
 use forge_registry::FormField;
 use forge_runtime::{DEFAULT_CHAIN_KEY, ELSE_CHAIN_KEY, LOOP_BODY_KEY, THEN_CHAIN_KEY};
@@ -27,10 +26,11 @@ fn drill_in_chip(
     label: &str,
     count: usize,
     disabled: bool,
-    palette: &ForgePalette,
     handler: impl Fn(&ClickEvent, &mut Window, &mut App) + 'static,
     density: Density,
+    cx: &App,
 ) -> AnyElement {
+    let palette = &cx.palette();
     let color = if disabled {
         palette.disabled
     } else {
@@ -47,7 +47,7 @@ fn drill_in_chip(
         .border_color(palette.border_regular)
         .child(
             div()
-                .font_family(body_family())
+                .font_family(cx.body_family())
                 .text_size(FONT_XS)
                 .text_color(color)
                 .child(format!("{label} \u{00b7} {count}")),
@@ -284,7 +284,7 @@ impl ActionEditor {
             if idx > 0 {
                 row = row.child(
                     div()
-                        .font_family(mono_family())
+                        .font_family(cx.mono_family())
                         .text_size(FONT_XS)
                         .text_color(palette.text_faint)
                         .child("\u{25B8}"),
@@ -302,7 +302,7 @@ impl ActionEditor {
                             .items_center()
                             .gap(spacing(Spacing::Xxs, density))
                             .children(leading)
-                            .font_family(mono_family())
+                            .font_family(cx.mono_family())
                             .text_size(FONT_XS)
                             .text_color(palette.text_muted)
                             .cursor_pointer()
@@ -322,7 +322,7 @@ impl ActionEditor {
                     };
                     row = row.child(
                         div()
-                            .font_family(mono_family())
+                            .font_family(cx.mono_family())
                             .text_size(FONT_XS)
                             .text_color(color)
                             .child(label),
@@ -365,11 +365,11 @@ impl ActionEditor {
                         &label,
                         count,
                         disabled,
-                        palette,
                         cx.listener(move |this, _: &ClickEvent, _, cx| {
                             this.enter_branch(step_index, key_owned.clone(), None, cx)
                         }),
                         density,
+                        cx,
                     ));
                 }
                 FormField::CaseList { key, .. } => {
@@ -377,7 +377,7 @@ impl ActionEditor {
                     let case_total = nav::case_count(step, key);
                     rows.push(
                         div()
-                            .font_family(body_family())
+                            .font_family(cx.body_family())
                             .text_size(FONT_XS)
                             .text_color(palette.text_muted)
                             .child(format!("{label}:"))
@@ -405,7 +405,7 @@ impl ActionEditor {
         if capped_empty {
             rows.push(
                 div()
-                    .font_family(body_family())
+                    .font_family(cx.body_family())
                     .text_size(FONT_XS)
                     .text_color(palette.warning)
                     .child(tr!("action_editor_branch_cap"))
@@ -445,7 +445,7 @@ impl ActionEditor {
 
         let match_el: AnyElement = if nav::case_match_is_multi(step, key, ci) {
             div()
-                .font_family(body_family())
+                .font_family(cx.body_family())
                 .text_size(FONT_XS)
                 .text_color(palette.text_faint)
                 .child(tr!("action_editor_case_multi"))
@@ -468,11 +468,11 @@ impl ActionEditor {
             &tr!("action_editor_branch_chain"),
             count,
             disabled,
-            palette,
             cx.listener(move |this, _: &ClickEvent, _, cx| {
                 this.enter_branch(step_index, key_owned.clone(), Some(ci), cx)
             }),
             density,
+            cx,
         );
         let up_key = key.to_owned();
         let down_key = key.to_owned();
@@ -539,7 +539,7 @@ impl ActionEditor {
             .child(icon(Icon::Plus, BRANCH_GLYPH, palette.brand))
             .child(
                 div()
-                    .font_family(body_family())
+                    .font_family(cx.body_family())
                     .text_size(FONT_XS)
                     .text_color(palette.brand)
                     .child(tr!("action_editor_add_case")),

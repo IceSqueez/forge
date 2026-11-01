@@ -1,11 +1,10 @@
-use forge_components::ActivePresentation;
 use forge_components::Spacing;
 use forge_components::spacing;
 use std::sync::Arc;
 
 use forge_components::{
-    BORDER_THIN, ConfirmTone, Density, FONT_XS, FONT_XXS, ForgePalette, Icon, OverlayPosition,
-    body_family, confirm_modal, ghost_button_with_icon, overlay, scaled, section_label, tr,
+    ActivePresentation, BORDER_THIN, ConfirmTone, Density, FONT_XS, FONT_XXS, ForgePalette, Icon,
+    OverlayPosition, confirm_modal, ghost_button_with_icon, overlay, scaled, section_label, tr,
 };
 use forge_events::Event;
 use forge_overlay::config::{HEADLINE, PLACEHOLDER, PLATFORM, SLOT, SUBLINE};
@@ -314,17 +313,19 @@ impl OverlayPropertyPanel {
                 .child(div().pb(SECTION_GAP).child(section_label(
                     tr!("overlays_latest_section").to_uppercase(),
                     palette,
+                    cx,
                 )))
                 .child(div().pb(SECTION_GAP).child(value_card(
                     self.latest.current(),
                     palette,
                     density,
+                    cx,
                 )))
                 .child(
                     div().pb(scaled(FIELD_GAP, density)).child(reset).child(
                         div()
                             .pt(spacing(Spacing::Xxs, density))
-                            .font_family(body_family())
+                            .font_family(cx.body_family())
                             .text_size(FONT_XXS)
                             .line_height(NOTICE_LINE_H)
                             .text_color(if warn {
@@ -344,6 +345,7 @@ fn value_card(
     current: Option<&CurrentValue>,
     palette: &ForgePalette,
     density: Density,
+    cx: &App,
 ) -> AnyElement {
     let card = div()
         .w_full()
@@ -356,7 +358,7 @@ fn value_card(
         .border(BORDER_THIN)
         .border_color(palette.border_regular)
         .bg(palette.base)
-        .font_family(body_family());
+        .font_family(cx.body_family());
 
     let line = |text: String, size, color| {
         div()

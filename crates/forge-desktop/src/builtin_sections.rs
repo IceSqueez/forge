@@ -1,12 +1,14 @@
+use std::sync::Arc;
+
 use forge_components::FONT_LABEL;
 use forge_components::FONT_MICRO;
 use forge_components::FONT_ROW;
 use forge_components::FONT_SECTION_LABEL;
 use forge_components::TINT_FILL_ALPHA;
 use forge_components::{
-    BORDER_THIN, Density, FONT_LG, FONT_SM, FONT_XS, FONT_XXS, ForgePalette, Icon, KeyActivated,
-    Radius, Spacing, body_family, card_shell, divider, grow_cell, icon, mono_family, radius,
-    scaled, spacing, status_dot, tr, with_alpha,
+    ActivePresentation, BORDER_THIN, Density, FONT_LG, FONT_SM, FONT_XS, FONT_XXS, ForgePalette,
+    Icon, KeyActivated, Radius, Spacing, card_shell, divider, grow_cell, icon, radius, scaled,
+    spacing, status_dot, tr, with_alpha,
 };
 use forge_platform_core::{
     ActiveRow, BannerLevel, ContentList, ContentListItem, DetailSection, HealthBar, HealthLevel,
@@ -103,17 +105,17 @@ fn content_list_region_h(list: &ContentList) -> Option<f32> {
         .map(|rows| f32::from(rows) * content_list_row_h(list))
 }
 
-fn mono(s: impl Into<SharedString>, size: gpui::Pixels, color: Rgba) -> Div {
+fn mono(s: impl Into<SharedString>, size: gpui::Pixels, color: Rgba, cx: &App) -> Div {
     div()
-        .font_family(mono_family())
+        .font_family(cx.mono_family())
         .text_size(size)
         .text_color(color)
         .child(s.into())
 }
 
-fn body(s: impl Into<SharedString>, size: gpui::Pixels, color: Rgba) -> Div {
+fn body(s: impl Into<SharedString>, size: gpui::Pixels, color: Rgba, cx: &App) -> Div {
     div()
-        .font_family(body_family())
+        .font_family(cx.body_family())
         .text_size(size)
         .text_color(color)
         .child(s.into())
@@ -124,6 +126,7 @@ pub(crate) fn content_sections(
     hooks: &SectionHooks,
     palette: &ForgePalette,
     density: Density,
+    cx: &App,
 ) -> AnyElement {
     let mut col = div()
         .w_full()
@@ -131,7 +134,7 @@ pub(crate) fn content_sections(
         .flex_col()
         .gap(spacing(Spacing::Lg, density));
     for section in sections {
-        col = col.child(dispatch_section(section, hooks, palette, density));
+        col = col.child(dispatch_section(section, hooks, palette, density, cx));
     }
     col.into_any_element()
 }
@@ -141,10 +144,11 @@ fn dispatch_section(
     hooks: &SectionHooks,
     palette: &ForgePalette,
     density: Density,
+    cx: &App,
 ) -> AnyElement {
     match section {
         DetailSection::TwoColumnLists { left, right } => {
-            render_two_column_lists(left, right, hooks, palette, density)
+            render_two_column_lists(left, right, hooks, palette, density, cx)
         }
         DetailSection::KeyValueList {
             title,
@@ -157,6 +161,7 @@ fn dispatch_section(
             items,
             palette,
             density,
+            cx,
         ),
         DetailSection::ActiveItemList {
             title,
@@ -169,6 +174,7 @@ fn dispatch_section(
             items,
             palette,
             density,
+            cx,
         ),
         DetailSection::WarningBanner {
             level,
@@ -182,6 +188,7 @@ fn dispatch_section(
             cta.as_ref().map(user_text_string).as_deref(),
             palette,
             density,
+            cx,
         ),
         DetailSection::SubscriptionList {
             title,
@@ -196,8 +203,8 @@ fn dispatch_section(
             items,
             footer.as_ref(),
             banner.as_ref().map(user_text_string).as_deref(),
-            palette,
             density,
+            cx,
         ),
         DetailSection::ScopesList {
             title,
@@ -212,9 +219,10 @@ fn dispatch_section(
             footer.as_ref(),
             palette,
             density,
+            cx,
         ),
         DetailSection::TwoColumn { left, right } => {
-            render_two_column(left, right, hooks, palette, density)
+            render_two_column(left, right, hooks, palette, density, cx)
         }
         DetailSection::InfoCard {
             title,
@@ -228,6 +236,7 @@ fn dispatch_section(
             health_bar.as_ref(),
             palette,
             density,
+            cx,
         ),
         DetailSection::StatsGrid {
             title,
@@ -240,6 +249,7 @@ fn dispatch_section(
             columns,
             palette,
             density,
+            cx,
         ),
         DetailSection::ChipGrid {
             title,
@@ -254,6 +264,7 @@ fn dispatch_section(
             items,
             palette,
             density,
+            cx,
         ),
     }
 }
@@ -264,6 +275,7 @@ fn render_two_column_lists(
     hooks: &SectionHooks,
     palette: &ForgePalette,
     density: Density,
+    cx: &App,
 ) -> AnyElement {
     let (left_h, right_h) = match (content_list_region_h(left), content_list_region_h(right)) {
         (Some(a), Some(b)) => (Some(a.max(b)), Some(a.max(b))),
@@ -274,11 +286,11 @@ fn render_two_column_lists(
         .flex()
         .gap(spacing(Spacing::Md, density))
         .child(grow_cell(
-            content_list_panel(left, left_h, hooks, palette, density),
+            content_list_panel(left, left_h, hooks, palette, density, cx),
             10.0,
         ))
         .child(grow_cell(
-            content_list_panel(right, right_h, hooks, palette, density),
+            content_list_panel(right, right_h, hooks, palette, density, cx),
             13.0,
         ))
         .into_any_element()
@@ -290,15 +302,14 @@ fn render_key_value_list(
     items: &[KeyValueRow],
     palette: &ForgePalette,
     density: Density,
+    cx: &App,
 ) -> AnyElement {
     let mut rows = div().w_full().flex().flex_col();
     for item in items {
-        rows = rows.child(key_value_row_elem(item, palette, density));
+        rows = rows.child(key_value_row_elem(item, palette, density, cx));
     }
     card_shell(palette)
-        .child(panel_header_row(
-            icon, title, None, None, None, palette, density,
-        ))
+        .child(panel_header_row(icon, title, None, None, None, density, cx))
         .child(divider(palette))
         .child(rows)
         .into_any_element()
@@ -310,6 +321,7 @@ fn render_active_item_list(
     items: &[ActiveRow],
     palette: &ForgePalette,
     density: Density,
+    cx: &App,
 ) -> AnyElement {
     let count = if items.is_empty() {
         None
@@ -318,7 +330,7 @@ fn render_active_item_list(
     };
     let mut rows = div().w_full().flex().flex_col();
     for item in items {
-        rows = rows.child(active_item_row_elem(item, palette, density));
+        rows = rows.child(active_item_row_elem(item, palette, density, cx));
     }
     card_shell(palette)
         .child(panel_header_row(
@@ -327,8 +339,8 @@ fn render_active_item_list(
             None,
             count.as_deref(),
             None,
-            palette,
             density,
+            cx,
         ))
         .child(divider(palette))
         .child(rows)
@@ -342,6 +354,7 @@ fn render_warning_banner(
     cta: Option<&str>,
     palette: &ForgePalette,
     density: Density,
+    cx: &App,
 ) -> AnyElement {
     let level_color = banner_level_color(level, palette);
     let glyph = match level {
@@ -355,13 +368,19 @@ fn render_warning_banner(
         .flex()
         .flex_col()
         .gap(spacing(Spacing::Xs, density))
-        .child(body(title.to_owned(), FONT_SM, palette.text_primary))
-        .child(body(banner_body.to_owned(), FONT_SM, palette.text_muted));
+        .child(body(title.to_owned(), FONT_SM, palette.text_primary, cx))
+        .child(body(
+            banner_body.to_owned(),
+            FONT_SM,
+            palette.text_muted,
+            cx,
+        ));
     if let Some(cta_label) = cta {
         text_col = text_col.child(body(
             format!("{cta_label} \u{2192}"),
             FONT_SM,
             palette.brand,
+            cx,
         ));
     }
 
@@ -376,7 +395,7 @@ fn render_warning_banner(
         .border(BORDER_THIN)
         .border_color(level_color)
         .bg(palette.elevated)
-        .child(body(glyph, FONT_SM, level_color))
+        .child(body(glyph, FONT_SM, level_color, cx))
         .child(text_col)
         .into_any_element()
 }
@@ -384,25 +403,26 @@ fn render_warning_banner(
 fn render_subscription_list(
     title: &str,
     icon: PanelIcon<'_>,
-    items: &[SubscriptionRow],
+    items: &Arc<[SubscriptionRow]>,
     footer: Option<&ListFooter>,
     banner: Option<&str>,
-    palette: &ForgePalette,
     density: Density,
+    cx: &App,
 ) -> AnyElement {
+    let palette = &cx.palette();
     let count = tr!(
         "widget_builtin_active_count",
         count = i64::try_from(items.len()).unwrap_or(i64::MAX)
     );
     let list_region: AnyElement = if panel_overflows(items.len()) {
-        let owned: Vec<SubscriptionRow> = items.to_vec();
+        let owned = Arc::clone(items);
         let pal = *palette;
         uniform_list(
             SharedString::from(format!("eventsub-scroll-{title}")),
             owned.len(),
-            move |range, _window, _cx| {
+            move |range, _window, cx| {
                 range
-                    .map(|i| subscription_row_elem(&owned[i], &pal, density))
+                    .map(|i| subscription_row_elem(&owned[i], &pal, density, cx))
                     .collect::<Vec<_>>()
             },
         )
@@ -421,8 +441,8 @@ fn render_subscription_list(
             .overflow_y_revealing_focus()
             .flex()
             .flex_col();
-        for item in items {
-            rows = rows.child(subscription_row_elem(item, palette, density));
+        for item in items.iter() {
+            rows = rows.child(subscription_row_elem(item, palette, density, cx));
         }
         rows.into_any_element()
     };
@@ -434,21 +454,26 @@ fn render_subscription_list(
             None,
             Some(&count),
             None,
-            palette,
             density,
+            cx,
         ))
         .child(divider(palette));
     if let Some(message) = banner {
-        card = card.child(subscription_banner(message, palette, density));
+        card = card.child(subscription_banner(message, palette, density, cx));
     }
     card = card.child(list_region);
     if let Some(f) = footer {
-        card = card.child(list_footer_bar(f, palette, density));
+        card = card.child(list_footer_bar(f, palette, density, cx));
     }
     card.into_any_element()
 }
 
-fn subscription_banner(message: &str, palette: &ForgePalette, density: Density) -> AnyElement {
+fn subscription_banner(
+    message: &str,
+    palette: &ForgePalette,
+    density: Density,
+    cx: &App,
+) -> AnyElement {
     div()
         .w_full()
         .flex_none()
@@ -463,7 +488,7 @@ fn subscription_banner(message: &str, palette: &ForgePalette, density: Density) 
             div()
                 .flex_1()
                 .min_w(px(0.0))
-                .font_family(mono_family())
+                .font_family(cx.mono_family())
                 .text_size(FONT_XS)
                 .text_color(palette.danger)
                 .child(message.to_owned()),
@@ -474,21 +499,22 @@ fn subscription_banner(message: &str, palette: &ForgePalette, density: Density) 
 fn render_scopes_list(
     title: &str,
     icon_token: PanelIcon<'_>,
-    scopes: &[String],
+    scopes: &Arc<[String]>,
     footer: Option<&ListFooter>,
     palette: &ForgePalette,
     density: Density,
+    cx: &App,
 ) -> AnyElement {
     let count = scopes.len().to_string();
     let list_region: AnyElement = if panel_overflows(scopes.len()) {
-        let owned: Vec<String> = scopes.to_vec();
+        let owned = Arc::clone(scopes);
         let pal = *palette;
         uniform_list(
             SharedString::from(format!("scopes-scroll-{title}")),
             owned.len(),
-            move |range, _window, _cx| {
+            move |range, _window, cx| {
                 range
-                    .map(|i| scope_row_elem(&owned[i], &pal, density))
+                    .map(|i| scope_row_elem(&owned[i], &pal, density, cx))
                     .collect::<Vec<_>>()
             },
         )
@@ -507,8 +533,8 @@ fn render_scopes_list(
             .overflow_y_revealing_focus()
             .flex()
             .flex_col();
-        for scope in scopes {
-            rows = rows.child(scope_row_elem(scope, palette, density));
+        for scope in scopes.iter() {
+            rows = rows.child(scope_row_elem(scope, palette, density, cx));
         }
         rows.into_any_element()
     };
@@ -520,13 +546,13 @@ fn render_scopes_list(
             None,
             Some(&count),
             None,
-            palette,
             density,
+            cx,
         ))
         .child(divider(palette))
         .child(list_region);
     if let Some(f) = footer {
-        card = card.child(list_footer_bar(f, palette, density));
+        card = card.child(list_footer_bar(f, palette, density, cx));
     }
     card.into_any_element()
 }
@@ -537,6 +563,7 @@ fn render_two_column(
     hooks: &SectionHooks,
     palette: &ForgePalette,
     density: Density,
+    cx: &App,
 ) -> AnyElement {
     div()
         .w_full()
@@ -544,11 +571,11 @@ fn render_two_column(
         .items_stretch()
         .gap(scaled(PANEL_SPLIT_GAP, density))
         .child(grow_cell(
-            dispatch_section(left, hooks, palette, density),
+            dispatch_section(left, hooks, palette, density, cx),
             10.0,
         ))
         .child(grow_cell(
-            dispatch_section(right, hooks, palette, density),
+            dispatch_section(right, hooks, palette, density, cx),
             13.0,
         ))
         .into_any_element()
@@ -561,12 +588,13 @@ fn render_info_card(
     health_bar: Option<&HealthBar>,
     palette: &ForgePalette,
     density: Density,
+    cx: &App,
 ) -> AnyElement {
     let mut fields_grid = div().flex().flex_col().gap(spacing(Spacing::Md, density));
     for chunk in fields.chunks(2) {
         let mut row = div().flex().gap(spacing(Spacing::Md, density));
         for field in chunk {
-            row = row.child(info_field_cell(field, palette, density));
+            row = row.child(info_field_cell(field, palette, density, cx));
         }
         fields_grid = fields_grid.child(row);
     }
@@ -577,7 +605,7 @@ fn render_info_card(
         .gap(spacing(Spacing::Md, density))
         .child(fields_grid);
     if let Some(bar) = health_bar {
-        content_col = content_col.child(health_bar_section(bar, palette, density));
+        content_col = content_col.child(health_bar_section(bar, palette, density, cx));
     }
 
     let content_padded = div()
@@ -587,7 +615,7 @@ fn render_info_card(
         .child(content_col);
 
     card_shell(palette)
-        .child(info_card_header(title, live, palette, density))
+        .child(info_card_header(title, live, palette, density, cx))
         .child(divider(palette))
         .child(content_padded)
         .into_any_element()
@@ -599,6 +627,7 @@ fn render_stats_grid(
     columns: &[StatColumn],
     palette: &ForgePalette,
     density: Density,
+    cx: &App,
 ) -> AnyElement {
     let mut stats_row = div().w_full().flex();
     for (i, col) in columns.iter().enumerate() {
@@ -606,12 +635,10 @@ fn render_stats_grid(
             stats_row =
                 stats_row.child(div().flex_none().w(BORDER_THIN).bg(palette.border_regular));
         }
-        stats_row = stats_row.child(stat_column_cell(col, palette, density));
+        stats_row = stats_row.child(stat_column_cell(col, palette, density, cx));
     }
     card_shell(palette)
-        .child(panel_header_row(
-            icon, title, None, None, None, palette, density,
-        ))
+        .child(panel_header_row(icon, title, None, None, None, density, cx))
         .child(divider(palette))
         .child(stats_row)
         .into_any_element()
@@ -628,6 +655,7 @@ fn render_chip_grid(
     items: &[String],
     palette: &ForgePalette,
     density: Density,
+    cx: &App,
 ) -> AnyElement {
     let panel_body: AnyElement = if items.is_empty() {
         div()
@@ -640,6 +668,7 @@ fn render_chip_grid(
                 tr!("widget_builtin_chip_grid_empty"),
                 FONT_XS,
                 palette.text_secondary,
+                cx,
             ))
             .into_any_element()
     } else {
@@ -649,7 +678,7 @@ fn render_chip_grid(
             .grid_cols(CHIP_GRID_COLUMNS)
             .gap(spacing(Spacing::Xs, density));
         for item in items {
-            grid = grid.child(chip_elem(chip_icon, item, palette, density));
+            grid = grid.child(chip_elem(chip_icon, item, palette, density, cx));
         }
         div()
             .id(SharedString::from(format!("chip-grid-{title}")))
@@ -662,7 +691,7 @@ fn render_chip_grid(
     };
     card_shell(palette)
         .child(panel_header_row(
-            icon_token, title, None, None, None, palette, density,
+            icon_token, title, None, None, None, density, cx,
         ))
         .child(divider(palette))
         .child(panel_body)
@@ -674,6 +703,7 @@ fn chip_elem(
     name: &str,
     palette: &ForgePalette,
     density: Density,
+    cx: &App,
 ) -> AnyElement {
     div()
         .flex()
@@ -690,7 +720,12 @@ fn chip_elem(
             CHIP_ICON_GLYPH,
             palette.warning,
         ))
-        .child(body(name.to_owned(), CHIP_NAME_FONT, palette.text_primary))
+        .child(body(
+            name.to_owned(),
+            CHIP_NAME_FONT,
+            palette.text_primary,
+            cx,
+        ))
         .into_any_element()
 }
 
@@ -700,6 +735,7 @@ fn content_list_panel(
     hooks: &SectionHooks,
     palette: &ForgePalette,
     density: Density,
+    cx: &App,
 ) -> AnyElement {
     let row_h = content_list_row_h(list);
     let rows = RowHooks {
@@ -712,14 +748,14 @@ fn content_list_panel(
         Some(h) if list.items.len() as f32 * row_h > h => {
             let whole_rows = (h / row_h).floor().max(1.0);
             slack = h - whole_rows * row_h;
-            let owned: Vec<ContentListItem> = list.items.clone();
+            let owned = Arc::clone(&list.items);
             let pal = *palette;
             uniform_list(
                 rows.scope.clone(),
                 owned.len(),
-                move |range, _window, _cx| {
+                move |range, _window, cx| {
                     range
-                        .map(|i| content_list_item_row(&owned[i], i, &rows, &pal, density))
+                        .map(|i| content_list_item_row(&owned[i], i, &rows, &pal, density, cx))
                         .collect::<Vec<_>>()
                 },
             )
@@ -736,7 +772,7 @@ fn content_list_panel(
             }
             for (row_index, item) in list.items.iter().enumerate() {
                 stack = stack.child(content_list_item_row(
-                    item, row_index, &rows, palette, density,
+                    item, row_index, &rows, palette, density, cx,
                 ));
             }
             stack.into_any_element()
@@ -750,8 +786,8 @@ fn content_list_panel(
             list.inline_label.as_ref().map(user_text_string).as_deref(),
             list.count_label.as_ref().map(user_text_string).as_deref(),
             refresh,
-            palette,
             density,
+            cx,
         ))
         .child(divider(palette))
         .child(list_region);
@@ -759,7 +795,7 @@ fn content_list_panel(
         card = card.child(div().w_full().flex_none().h(px(slack)));
     }
     if let Some(f) = &list.footer {
-        card = card.child(list_footer_bar(f, palette, density));
+        card = card.child(list_footer_bar(f, palette, density, cx));
     }
     card.into_any_element()
 }
@@ -770,6 +806,7 @@ fn content_list_item_row(
     rows: &RowHooks,
     palette: &ForgePalette,
     density: Density,
+    cx: &App,
 ) -> AnyElement {
     let dim = if item.enabled { 1.0 } else { 0.5 };
     let text_color = with_alpha(
@@ -792,9 +829,9 @@ fn content_list_item_row(
     );
 
     let (name_family, name_font) = if item.monospace_name {
-        (mono_family(), ROW_MONO_NAME_FONT)
+        (cx.mono_family(), ROW_MONO_NAME_FONT)
     } else {
-        (body_family(), ROW_NAME_FONT)
+        (cx.body_family(), ROW_NAME_FONT)
     };
     let name_el = div()
         .flex_1()
@@ -811,7 +848,7 @@ fn content_list_item_row(
     if item.active
         && let Some(label) = &item.active_label
     {
-        trailing = trailing.child(active_badge(&user_text_string(label), palette, density));
+        trailing = trailing.child(active_badge(&user_text_string(label), palette, density, cx));
     }
     for (index, token) in item.trailing.iter().enumerate() {
         let site = TokenSite {
@@ -820,7 +857,7 @@ fn content_list_item_row(
             row_index,
             index,
         };
-        trailing = trailing.child(trailing_token_elem(token, dim, &site, palette, density));
+        trailing = trailing.child(trailing_token_elem(token, dim, &site, palette, density, cx));
     }
 
     let content = div()
@@ -860,11 +897,16 @@ fn content_list_item_row(
     }
 }
 
-fn key_value_row_elem(item: &KeyValueRow, palette: &ForgePalette, density: Density) -> AnyElement {
+fn key_value_row_elem(
+    item: &KeyValueRow,
+    palette: &ForgePalette,
+    density: Density,
+    cx: &App,
+) -> AnyElement {
     let name_el = div()
         .flex_1()
         .min_w(px(0.0))
-        .font_family(mono_family())
+        .font_family(cx.mono_family())
         .text_size(FONT_SM)
         .text_color(palette.text_primary)
         .child(user_text_string(&item.name));
@@ -881,7 +923,7 @@ fn key_value_row_elem(item: &KeyValueRow, palette: &ForgePalette, density: Densi
         ))
         .child(name_el);
     if let Some(tag) = &item.tag {
-        row = row.child(mono(user_text_string(tag), FONT_XS, palette.text_faint));
+        row = row.child(mono(user_text_string(tag), FONT_XS, palette.text_faint, cx));
     }
     if let Some(action) = &item.action {
         let ic = match action {
@@ -892,7 +934,12 @@ fn key_value_row_elem(item: &KeyValueRow, palette: &ForgePalette, density: Densi
     plain_row_wrapper(row.into_any_element(), DEFAULT_ROW_PAD_Y, palette, density)
 }
 
-fn active_item_row_elem(item: &ActiveRow, palette: &ForgePalette, density: Density) -> AnyElement {
+fn active_item_row_elem(
+    item: &ActiveRow,
+    palette: &ForgePalette,
+    density: Density,
+    cx: &App,
+) -> AnyElement {
     let text_color = if item.active {
         palette.text_primary
     } else {
@@ -901,7 +948,7 @@ fn active_item_row_elem(item: &ActiveRow, palette: &ForgePalette, density: Densi
     let name_el = div()
         .flex_1()
         .min_w(px(0.0))
-        .font_family(mono_family())
+        .font_family(cx.mono_family())
         .text_size(FONT_SM)
         .text_color(text_color)
         .child(item.name.clone());
@@ -917,9 +964,15 @@ fn active_item_row_elem(item: &ActiveRow, palette: &ForgePalette, density: Densi
             &tr!("widget_builtin_active_badge"),
             palette,
             density,
+            cx,
         ));
     } else if let Some(mode) = &item.mode_label {
-        row = row.child(body(user_text_string(mode), FONT_XS, palette.text_faint));
+        row = row.child(body(
+            user_text_string(mode),
+            FONT_XS,
+            palette.text_faint,
+            cx,
+        ));
     }
 
     if item.active {
@@ -933,13 +986,14 @@ fn subscription_row_elem(
     item: &SubscriptionRow,
     palette: &ForgePalette,
     density: Density,
+    cx: &App,
 ) -> AnyElement {
     let name_el = div()
         .flex_1()
         .min_w(px(0.0))
         .overflow_hidden()
         .truncate()
-        .font_family(mono_family())
+        .font_family(cx.mono_family())
         .text_size(FONT_XS)
         .text_color(palette.text_primary)
         .child(user_text_string(&item.name));
@@ -955,10 +1009,10 @@ fn subscription_row_elem(
         ))
         .child(name_el);
     if let Some(ver) = &item.version {
-        row = row.child(mono(ver.clone(), FONT_XXS, palette.text_faint));
+        row = row.child(mono(ver.clone(), FONT_XXS, palette.text_faint, cx));
     }
     let trailing: AnyElement = if let Some(err) = &item.error_label {
-        body(user_text_string(err), FONT_XXS, palette.danger).into_any_element()
+        body(user_text_string(err), FONT_XXS, palette.danger, cx).into_any_element()
     } else if let Some(count) = item.event_count {
         body(
             tr!(
@@ -967,6 +1021,7 @@ fn subscription_row_elem(
             ),
             FONT_XXS,
             palette.text_muted,
+            cx,
         )
         .into_any_element()
     } else {
@@ -976,7 +1031,7 @@ fn subscription_row_elem(
     plain_row_wrapper(row.into_any_element(), DEFAULT_ROW_PAD_Y, palette, density)
 }
 
-fn scope_row_elem(scope: &str, palette: &ForgePalette, density: Density) -> AnyElement {
+fn scope_row_elem(scope: &str, palette: &ForgePalette, density: Density, cx: &App) -> AnyElement {
     let row = div()
         .w_full()
         .flex()
@@ -987,7 +1042,7 @@ fn scope_row_elem(scope: &str, palette: &ForgePalette, density: Density) -> AnyE
             div()
                 .flex_1()
                 .min_w(px(0.0))
-                .font_family(mono_family())
+                .font_family(cx.mono_family())
                 .text_size(FONT_XS)
                 .text_color(palette.text_primary)
                 .child(scope.to_owned()),
@@ -995,11 +1050,16 @@ fn scope_row_elem(scope: &str, palette: &ForgePalette, density: Density) -> AnyE
     plain_row_wrapper(row.into_any_element(), DEFAULT_ROW_PAD_Y, palette, density)
 }
 
-fn info_field_cell(field: &InfoField, palette: &ForgePalette, density: Density) -> AnyElement {
+fn info_field_cell(
+    field: &InfoField,
+    palette: &ForgePalette,
+    density: Density,
+    cx: &App,
+) -> AnyElement {
     let value_family = if field.monospace_value {
-        mono_family()
+        cx.mono_family()
     } else {
-        body_family()
+        cx.body_family()
     };
     div()
         .flex_1()
@@ -1011,6 +1071,7 @@ fn info_field_cell(field: &InfoField, palette: &ForgePalette, density: Density) 
             user_text_string(&field.label).to_uppercase(),
             FONT_XS,
             palette.text_muted,
+            cx,
         ))
         .child(
             div()
@@ -1022,7 +1083,12 @@ fn info_field_cell(field: &InfoField, palette: &ForgePalette, density: Density) 
         .into_any_element()
 }
 
-fn health_bar_section(bar: &HealthBar, palette: &ForgePalette, density: Density) -> AnyElement {
+fn health_bar_section(
+    bar: &HealthBar,
+    palette: &ForgePalette,
+    density: Density,
+    cx: &App,
+) -> AnyElement {
     let level_color = health_level_color(&bar.level, palette);
     let fraction = bar.fraction.clamp(0.0, 1.0);
 
@@ -1046,7 +1112,7 @@ fn health_bar_section(bar: &HealthBar, palette: &ForgePalette, density: Density)
         .items_center()
         .gap(spacing(Spacing::Sm, density))
         .child(track)
-        .child(mono(user_text_string(&bar.label), FONT_XS, level_color));
+        .child(mono(user_text_string(&bar.label), FONT_XS, level_color, cx));
 
     div()
         .flex()
@@ -1056,12 +1122,18 @@ fn health_bar_section(bar: &HealthBar, palette: &ForgePalette, density: Density)
             tr!("widget_builtin_stream_health"),
             FONT_XS,
             palette.text_muted,
+            cx,
         ))
         .child(bar_row)
         .into_any_element()
 }
 
-fn stat_column_cell(col: &StatColumn, palette: &ForgePalette, density: Density) -> AnyElement {
+fn stat_column_cell(
+    col: &StatColumn,
+    palette: &ForgePalette,
+    density: Density,
+    cx: &App,
+) -> AnyElement {
     div()
         .flex_1()
         .min_w(px(0.0))
@@ -1074,16 +1146,19 @@ fn stat_column_cell(col: &StatColumn, palette: &ForgePalette, density: Density) 
             user_text_string(&col.label).to_uppercase(),
             FONT_XS,
             palette.text_muted,
+            cx,
         ))
         .child(mono(
             user_text_string(&col.value),
             FONT_LG,
             palette.text_primary,
+            cx,
         ))
         .child(mono(
             user_text_string(&col.subtitle),
             FONT_XS,
             palette.success,
+            cx,
         ))
         .into_any_element()
 }
@@ -1119,9 +1194,10 @@ pub(crate) fn panel_header_row(
     inline_label: Option<&str>,
     count: Option<&str>,
     refresh: Option<SectionRefresh>,
-    palette: &ForgePalette,
     density: Density,
+    cx: &App,
 ) -> AnyElement {
+    let palette = &cx.palette();
     let mut left = div()
         .flex_1()
         .min_w(px(0.0))
@@ -1134,11 +1210,16 @@ pub(crate) fn panel_header_row(
             panel_icon.color(palette),
         ))
         .child(
-            body(title.to_owned(), PANEL_TITLE_FONT, palette.text_primary)
+            body(title.to_owned(), PANEL_TITLE_FONT, palette.text_primary, cx)
                 .font_weight(FontWeight::MEDIUM),
         );
     if let Some(label) = inline_label {
-        left = left.child(body(label.to_owned(), PANEL_TITLE_FONT, palette.text_faint));
+        left = left.child(body(
+            label.to_owned(),
+            PANEL_TITLE_FONT,
+            palette.text_faint,
+            cx,
+        ));
     }
 
     let mut row = div()
@@ -1150,7 +1231,7 @@ pub(crate) fn panel_header_row(
         .px(scaled(PANEL_ROW_PAD_H, density))
         .child(left);
     if let Some(c) = count {
-        row = row.child(mono(c.to_owned(), FONT_XXS, palette.text_faint));
+        row = row.child(mono(c.to_owned(), FONT_XXS, palette.text_faint, cx));
     }
     if let Some(handler) = refresh {
         row = row.child(
@@ -1171,6 +1252,7 @@ fn info_card_header(
     live: bool,
     palette: &ForgePalette,
     density: Density,
+    cx: &App,
 ) -> AnyElement {
     let mut row = div()
         .w_full()
@@ -1182,6 +1264,7 @@ fn info_card_header(
             title.to_owned(),
             FONT_SM,
             palette.text_primary,
+            cx,
         )));
     if live {
         let badge = div()
@@ -1197,13 +1280,19 @@ fn info_card_header(
                 tr!("widget_builtin_live_badge"),
                 FONT_XS,
                 palette.success,
+                cx,
             ));
         row = row.child(badge);
     }
     row.into_any_element()
 }
 
-fn list_footer_bar(footer: &ListFooter, palette: &ForgePalette, density: Density) -> AnyElement {
+fn list_footer_bar(
+    footer: &ListFooter,
+    palette: &ForgePalette,
+    density: Density,
+    cx: &App,
+) -> AnyElement {
     let mut row = div()
         .w_full()
         .flex_none()
@@ -1218,12 +1307,17 @@ fn list_footer_bar(footer: &ListFooter, palette: &ForgePalette, density: Density
 
     let lead = div().flex_1().min_w(px(0.0));
     if let Some(cta) = &footer.cta_label {
-        row = row.child(lead.child(body(user_text_string(cta), FONT_XS, palette.brand)));
+        row = row.child(lead.child(body(user_text_string(cta), FONT_XS, palette.brand, cx)));
     } else {
         row = row.child(lead);
     }
     if let Some(trail) = &footer.trailing_label {
-        row = row.child(mono(user_text_string(trail), FONT_XS, palette.text_faint));
+        row = row.child(mono(
+            user_text_string(trail),
+            FONT_XS,
+            palette.text_faint,
+            cx,
+        ));
     }
     row.into_any_element()
 }
@@ -1268,7 +1362,7 @@ fn plain_row_wrapper(
         .into_any_element()
 }
 
-fn active_badge(label: &str, palette: &ForgePalette, density: Density) -> AnyElement {
+fn active_badge(label: &str, palette: &ForgePalette, density: Density, cx: &App) -> AnyElement {
     div()
         .flex_none()
         .py(BADGE_PAD_V)
@@ -1279,6 +1373,7 @@ fn active_badge(label: &str, palette: &ForgePalette, density: Density) -> AnyEle
             label.to_uppercase(),
             PANEL_BADGE_FONT,
             palette.success,
+            cx,
         ))
         .into_any_element()
 }
@@ -1289,6 +1384,7 @@ fn trailing_token_elem(
     site: &TokenSite,
     palette: &ForgePalette,
     density: Density,
+    cx: &App,
 ) -> AnyElement {
     match token {
         TrailingToken::Badge(label, color) => {
@@ -1299,7 +1395,7 @@ fn trailing_token_elem(
                 .px(spacing(Spacing::Xs, density))
                 .rounded(radius(Radius::Md))
                 .bg(palette.surface_overlay)
-                .child(body(user_text_string(label), PANEL_BADGE_FONT, tc))
+                .child(body(user_text_string(label), PANEL_BADGE_FONT, tc, cx))
                 .into_any_element()
         }
         TrailingToken::Icon(ic, color) => {
@@ -1310,12 +1406,14 @@ fn trailing_token_elem(
             user_text_string(label),
             FONT_XXS,
             with_alpha(palette.text_faint, dim),
+            cx,
         )
         .into_any_element(),
         TrailingToken::TintedLabel(label, color) => mono(
             user_text_string(label),
             ROW_TINTED_LABEL_FONT,
             with_alpha(token_color_value(color, palette), dim),
+            cx,
         )
         .into_any_element(),
         TrailingToken::ActionIcon {
@@ -1401,6 +1499,7 @@ pub(crate) fn health_grid(
     loading: bool,
     palette: &ForgePalette,
     density: Density,
+    cx: &App,
 ) -> AnyElement {
     let mut row = div().w_full().flex().gap(spacing(Spacing::Sm, density));
     for metric in metrics.iter() {
@@ -1408,7 +1507,7 @@ pub(crate) fn health_grid(
             div()
                 .flex_1()
                 .min_w(px(0.0))
-                .child(health_metric_card(metric, loading, palette, density)),
+                .child(health_metric_card(metric, loading, palette, density, cx)),
         );
     }
     row.into_any_element()
@@ -1419,11 +1518,12 @@ fn health_metric_card(
     loading: bool,
     palette: &ForgePalette,
     density: Density,
+    cx: &App,
 ) -> AnyElement {
     let value_col: AnyElement = if loading {
-        body("-", FONT_SM, palette.text_faint).into_any_element()
+        body("-", FONT_SM, palette.text_faint, cx).into_any_element()
     } else {
-        health_value_col(&metric.value, palette, density)
+        health_value_col(&metric.value, palette, density, cx)
     };
 
     div()
@@ -1441,12 +1541,18 @@ fn health_metric_card(
             health_metric_label(&metric.id).to_uppercase(),
             FONT_XXS,
             palette.text_muted,
+            cx,
         ))
         .child(value_col)
         .into_any_element()
 }
 
-fn health_value_col(value: &HealthValue, palette: &ForgePalette, density: Density) -> AnyElement {
+fn health_value_col(
+    value: &HealthValue,
+    palette: &ForgePalette,
+    density: Density,
+    cx: &App,
+) -> AnyElement {
     match value {
         HealthValue::Status {
             label,
@@ -1463,28 +1569,28 @@ fn health_value_col(value: &HealthValue, palette: &ForgePalette, density: Densit
                 .items_center()
                 .gap(spacing(Spacing::Xs, density))
                 .child(status_dot(color, ROW_DOT))
-                .child(body(health_text(label), FONT_SM, color));
+                .child(body(health_text(label), FONT_SM, color, cx));
             if let Some(d) = detail {
                 div()
                     .flex()
                     .flex_col()
                     .gap(scaled(HEALTH_VALUE_HINT_GAP, density))
                     .child(value_row)
-                    .child(mono(health_text(d), FONT_XXS, palette.text_faint))
+                    .child(mono(health_text(d), FONT_XXS, palette.text_faint, cx))
                     .into_any_element()
             } else {
                 value_row.into_any_element()
             }
         }
         HealthValue::Text { primary, secondary } => {
-            let primary_el = body(health_text(primary), FONT_SM, palette.text_primary);
+            let primary_el = body(health_text(primary), FONT_SM, palette.text_primary, cx);
             if let Some(sec) = secondary {
                 div()
                     .flex()
                     .flex_col()
                     .gap(scaled(HEALTH_VALUE_HINT_GAP, density))
                     .child(primary_el)
-                    .child(mono(health_text(sec), FONT_XXS, palette.text_faint))
+                    .child(mono(health_text(sec), FONT_XXS, palette.text_faint, cx))
                     .into_any_element()
             } else {
                 primary_el.into_any_element()
@@ -1494,6 +1600,7 @@ fn health_value_col(value: &HealthValue, palette: &ForgePalette, density: Densit
             format!("{} \u{00b7} {}", health_text(left), health_text(right)),
             FONT_SM,
             palette.text_primary,
+            cx,
         )
         .into_any_element(),
         HealthValue::Ratio {
@@ -1501,14 +1608,19 @@ fn health_value_col(value: &HealthValue, palette: &ForgePalette, density: Densit
             total,
             reset_hint,
         } => {
-            let ratio_el = body(format!("{used} / {total}"), FONT_SM, palette.text_primary);
+            let ratio_el = body(
+                format!("{used} / {total}"),
+                FONT_SM,
+                palette.text_primary,
+                cx,
+            );
             if let Some(hint) = reset_hint {
                 div()
                     .flex()
                     .flex_col()
                     .gap(scaled(HEALTH_VALUE_HINT_GAP, density))
                     .child(ratio_el)
-                    .child(mono(health_text(hint), FONT_XXS, palette.text_faint))
+                    .child(mono(health_text(hint), FONT_XXS, palette.text_faint, cx))
                     .into_any_element()
             } else {
                 ratio_el.into_any_element()
@@ -1576,7 +1688,7 @@ mod tests {
             visible_rows: None,
             row_padding_y_px: 7,
             refreshable: false,
-            items,
+            items: items.into(),
             footer: None,
         }
     }
@@ -1587,7 +1699,7 @@ mod tests {
     }
 
     impl Render for Host {
-        fn render(&mut self, _window: &mut Window, _cx: &mut Context<Self>) -> impl IntoElement {
+        fn render(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
             let fired = Rc::clone(&self.fired);
             let run_step: SectionStepRun = Rc::new(move |click: &StepClick, _, _| {
                 if let Some(current) = fired.borrow_mut().last_mut() {
@@ -1603,6 +1715,7 @@ mod tests {
                 &hooks,
                 &FORGE_DEFAULT,
                 Density::default(),
+                cx,
             ))
         }
     }
@@ -1610,6 +1723,7 @@ mod tests {
     fn click_everywhere(left: ContentList, right: ContentList, cx: &mut TestAppContext) -> Fired {
         let fired: Fired = Rc::default();
         let host_fired = Rc::clone(&fired);
+        crate::test_support::install_presentation(cx);
         let (_host, vcx) = cx.add_window_view(|_window, _cx| Host {
             sections: vec![DetailSection::TwoColumnLists {
                 left: Box::new(left),

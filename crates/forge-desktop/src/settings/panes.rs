@@ -1,4 +1,5 @@
 use super::*;
+use forge_components::ActivePresentation;
 
 const SKETCH_RADIUS: gpui::Pixels = px(2.0);
 const SWATCH_RADIUS: gpui::Pixels = px(11.0);
@@ -25,7 +26,7 @@ impl SettingsView {
                     .px(spacing(Spacing::Sm, density))
                     .py(spacing(Spacing::Xs, density))
                     .mb(spacing(Spacing::Xxs, density))
-                    .font_family(mono_family())
+                    .font_family(cx.mono_family())
                     .text_size(NAV_GROUP_LABEL_FONT)
                     .text_color(palette.text_faint)
                     .child(tr!(group)),
@@ -79,7 +80,7 @@ impl SettingsView {
             .mb(NAV_ROW_MB)
             .rounded(radius(Radius::Sm))
             .cursor_pointer()
-            .font_family(body_family())
+            .font_family(cx.body_family())
             .text_size(NAV_ROW_FONT)
             .text_color(text_color)
             .child(icon(section.icon(), NAV_ROW_ICON, icon_color))
@@ -144,6 +145,7 @@ impl SettingsView {
             theme_grid,
             palette,
             density,
+            cx,
         );
 
         let accent_row = setting_row(
@@ -170,6 +172,7 @@ impl SettingsView {
             density_rows,
             palette,
             density,
+            cx,
         );
 
         let fonts_block = setting_block(
@@ -182,19 +185,20 @@ impl SettingsView {
                 .child(self.font_field(
                     tr!("settings_appearance_font_interface").into(),
                     FontTarget::Body,
-                    body_family(),
+                    cx.body_family(),
                     palette,
                     cx,
                 ))
                 .child(self.font_field(
                     tr!("settings_appearance_font_monospace").into(),
                     FontTarget::Mono,
-                    mono_family(),
+                    cx.mono_family(),
                     palette,
                     cx,
                 )),
             palette,
             density,
+            cx,
         );
 
         div()
@@ -360,7 +364,7 @@ impl SettingsView {
 
         let mut footer = div().flex().items_center().justify_between().child(
             div()
-                .font_family(body_family())
+                .font_family(cx.body_family())
                 .font_weight(FontWeight::MEDIUM)
                 .text_size(FONT_SM)
                 .text_color(palette.text_primary)
@@ -398,7 +402,7 @@ impl SettingsView {
             .child(footer)
             .child(
                 div()
-                    .font_family(body_family())
+                    .font_family(cx.body_family())
                     .text_size(FONT_XS)
                     .text_color(palette.text_muted)
                     .child(subtitle),
@@ -416,10 +420,11 @@ impl SettingsView {
         choice_row(
             SharedString::from(format!("settings-density-{}", option.storage_key())),
             label.into(),
-            field_hint(hint, palette).into_any_element(),
+            field_hint(hint, palette, cx).into_any_element(),
             active,
             palette,
             cx.density(),
+            cx,
         )
         .key_activated(palette.text_primary)
         .on_click(cx.listener(move |this, _: &ClickEvent, _, cx| this.select_density(option, cx)))
@@ -467,10 +472,11 @@ impl SettingsView {
         choice_row(
             SharedString::from(format!("settings-language-{lang}")),
             native_label.into(),
-            field_hint(bcp47, palette).into_any_element(),
+            field_hint(bcp47, palette, cx).into_any_element(),
             self.language == lang,
             palette,
             density,
+            cx,
         )
         .key_activated(palette.text_primary)
         .on_click(cx.listener(move |this, _: &ClickEvent, _, cx| this.select_language(lang, cx)))
@@ -495,7 +501,7 @@ impl SettingsView {
             .bg(palette.brand)
             .child(
                 div()
-                    .font_family(body_family())
+                    .font_family(cx.body_family())
                     .font_weight(FontWeight::SEMIBOLD)
                     .text_size(FONT_XXL)
                     .text_color(palette.base)
@@ -507,14 +513,14 @@ impl SettingsView {
             .gap(spacing(Spacing::Xs, density))
             .child(
                 div()
-                    .font_family(body_family())
+                    .font_family(cx.body_family())
                     .text_size(FONT_MD)
                     .text_color(palette.text_primary)
                     .child("Forge"),
             )
             .child(
                 div()
-                    .font_family(mono_family())
+                    .font_family(cx.mono_family())
                     .text_size(FONT_XS)
                     .text_color(palette.text_muted)
                     .child(format!("v{version}")),
@@ -532,12 +538,12 @@ impl SettingsView {
                     .child(name_line)
                     .child(
                         div()
-                            .font_family(body_family())
+                            .font_family(cx.body_family())
                             .text_size(FONT_XS)
                             .text_color(palette.text_muted)
                             .child(tr!("settings_version_license")),
                     )
-                    .children(status_line(&self.update_check, palette)),
+                    .children(status_line(&self.update_check, palette, cx)),
             )
             .child(div().flex_1())
             .children(self.update_check.offers_release_page().then(|| {

@@ -168,11 +168,17 @@ impl IntegrationDetail {
             self.shown.connection,
             ConnectionState::Connecting | ConnectionState::Reconnecting
         );
-        let state_banner = self.state_banner(palette, density);
+        let state_banner = self.state_banner(palette, density, cx);
         let credential_banner = self
             .needed_credential_recovery()
             .map(|recovery| self.credential_banner(recovery, palette, density, cx));
-        let health = health_grid(&self.shown.health_display, reconnecting, palette, density);
+        let health = health_grid(
+            &self.shown.health_display,
+            reconnecting,
+            palette,
+            density,
+            cx,
+        );
         let refresh: SectionRefresh =
             Rc::new(cx.listener(|this, _: &ClickEvent, _, cx| this.resync_content(cx)));
         let run_step: SectionStepRun =
@@ -181,7 +187,7 @@ impl IntegrationDetail {
             refresh: Some(refresh),
             run_step: Some(run_step),
         };
-        let content = content_sections(&self.shown.sections, &hooks, palette, density);
+        let content = content_sections(&self.shown.sections, &hooks, palette, density, cx);
         let donation_settings = self
             .sign_in
             .donation_settings
@@ -213,12 +219,12 @@ impl IntegrationDetail {
     ) -> Option<AnyElement> {
         let is_oauth_platform = self.is_oauth_platform();
         match &self.sign_in.connect {
-            Some(connect) => Some(connect.view.read(cx).status_indicator(palette, density)),
+            Some(connect) => Some(connect.view.read(cx).status_indicator(palette, density, cx)),
             None if is_oauth_platform && self.shown.connection == ConnectionState::Connected => {
-                Some(self.header_right_connected(palette, density))
+                Some(self.header_right_connected(palette, density, cx))
             }
             None if is_oauth_platform => None,
-            None => Some(self.header_right_connection(palette, density)),
+            None => Some(self.header_right_connection(palette, density, cx)),
         }
     }
 }

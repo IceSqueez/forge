@@ -4,14 +4,14 @@ use forge_components::OverflowRevealingFocus;
 use forge_components::focus_inside_modal;
 use forge_components::{
     ActivePresentation, BORDER_THIN, Density, FONT_XS, FONT_XXS, ForgePalette, Icon, InputEvent,
-    KeyActivated, ModalSize, OverlayPosition, Radius, SearchState, Spacing, TextInput, body_family,
-    checkbox, failure_note, field_column, field_frame, ghost_button, icon, modal, modal_width,
-    mono_family, overlay, primary_button, radius, section_label, spacing, tr,
+    KeyActivated, ModalSize, OverlayPosition, Radius, SearchState, Spacing, TextInput, checkbox,
+    failure_note, field_column, field_frame, ghost_button, icon, modal, modal_width, overlay,
+    primary_button, radius, section_label, spacing, tr,
 };
 use forge_transfer::{PackInventory, PackMetadata, PackSelection, resolve_pack_closure};
 use forge_types::ActionId;
 use gpui::{
-    AnyElement, ClickEvent, Context, Entity, EventEmitter, Pixels, SharedString, Subscription,
+    AnyElement, App, ClickEvent, Context, Entity, EventEmitter, Pixels, SharedString, Subscription,
     Window, div, prelude::*, px,
 };
 
@@ -332,17 +332,18 @@ impl PackExportModal {
         cx: &mut Context<Self>,
     ) -> AnyElement {
         let list = match &self.source {
-            Loadable::Loading => list_message(tr!("pack_export_loading"), palette, density),
+            Loadable::Loading => list_message(tr!("pack_export_loading"), palette, density, cx),
             Loadable::Failed(failure) => {
                 let reason = failure.text();
                 list_message(
                     tr!("pack_export_load_failed", error = reason.as_str()),
                     palette,
                     density,
+                    cx,
                 )
             }
             Loadable::Loaded(ready) if ready.choices.is_empty() => {
-                list_message(tr!("pack_export_no_actions"), palette, density)
+                list_message(tr!("pack_export_no_actions"), palette, density, cx)
             }
             Loadable::Loaded(ready) => {
                 let rows: Vec<AnyElement> = ready
@@ -352,7 +353,7 @@ impl PackExportModal {
                     .map(|choice| self.render_action_row(choice, palette, density, cx))
                     .collect();
                 if rows.is_empty() {
-                    list_message(tr!("pack_export_no_matches"), palette, density)
+                    list_message(tr!("pack_export_no_matches"), palette, density, cx)
                 } else {
                     div().w_full().flex().flex_col().children(rows)
                 }
@@ -366,10 +367,11 @@ impl PackExportModal {
             .child(section_label(
                 tr!("pack_export_actions_label").to_uppercase(),
                 palette,
+                cx,
             ))
             .child(
                 div()
-                    .font_family(mono_family())
+                    .font_family(cx.mono_family())
                     .text_size(FONT_XXS)
                     .text_color(palette.text_muted)
                     .child(tr!(
@@ -434,7 +436,7 @@ impl PackExportModal {
                     .flex_1()
                     .min_w_0()
                     .truncate()
-                    .font_family(body_family())
+                    .font_family(cx.body_family())
                     .text_size(FONT_XS)
                     .text_color(if checked {
                         palette.text_primary
@@ -469,6 +471,7 @@ impl PackExportModal {
                     .child(self.name.clone())
                     .into_any_element(),
                 density,
+                cx,
             ))
             .child(field_column(
                 palette,
@@ -479,6 +482,7 @@ impl PackExportModal {
                     .child(self.author.clone())
                     .into_any_element(),
                 density,
+                cx,
             ))
             .child(field_column(
                 palette,
@@ -489,30 +493,34 @@ impl PackExportModal {
                     .child(self.description.clone())
                     .into_any_element(),
                 density,
+                cx,
             ))
-            .child(self.render_summary(palette, density))
+            .child(self.render_summary(palette, density, cx))
             .into_any_element()
     }
 
-    fn render_summary(&self, palette: &ForgePalette, density: Density) -> AnyElement {
+    fn render_summary(&self, palette: &ForgePalette, density: Density, cx: &App) -> AnyElement {
         let body: AnyElement = match (&self.closure, &self.closure_failure) {
             (_, Some(message)) => failure_note(
                 &tr!("pack_export_summary_failed", error = message.as_str()),
                 palette,
                 density,
+                cx,
             ),
-            (Some(selection), None) => self.render_closure(selection, palette, density),
+            (Some(selection), None) => self.render_closure(selection, palette, density, cx),
             (None, None) if self.resolving => summary_line(
                 tr!("pack_export_summary_resolving"),
                 palette.text_muted,
                 Icon::Refresh,
                 density,
+                cx,
             ),
             (None, None) => summary_line(
                 tr!("pack_export_summary_empty"),
                 palette.text_muted,
                 Icon::InfoCircle,
                 density,
+                cx,
             ),
         };
         div()
@@ -528,6 +536,7 @@ impl PackExportModal {
             .child(section_label(
                 tr!("pack_export_summary_label").to_uppercase(),
                 palette,
+                cx,
             ))
             .child(body)
             .into_any_element()
@@ -538,6 +547,7 @@ impl PackExportModal {
         selection: &PackSelection,
         palette: &ForgePalette,
         density: Density,
+        cx: &App,
     ) -> AnyElement {
         let counts = PackItemCount::ALL.chunks(COUNT_COLUMNS).map(|pair| {
             div()
@@ -546,7 +556,7 @@ impl PackExportModal {
                 .gap(spacing(Spacing::Md, density))
                 .children(
                     pair.iter()
-                        .map(|kind| count_cell(kind.label(), kind.count(selection), palette)),
+                        .map(|kind| count_cell(kind.label(), kind.count(selection), palette, cx)),
                 )
         });
         let integrations = if selection.required_integrations.is_empty() {
@@ -574,10 +584,11 @@ impl PackExportModal {
                     .child(section_label(
                         tr!("pack_export_integrations_label").to_uppercase(),
                         palette,
+                        cx,
                     ))
                     .child(
                         div()
-                            .font_family(body_family())
+                            .font_family(cx.body_family())
                             .text_size(FONT_XS)
                             .text_color(palette.text_primary)
                             .child(integrations),
@@ -592,6 +603,7 @@ impl PackExportModal {
                 palette.warning,
                 Icon::AlertTriangle,
                 density,
+                cx,
             ));
         }
         column
@@ -600,6 +612,7 @@ impl PackExportModal {
                 palette.text_muted,
                 Icon::InfoCircle,
                 density,
+                cx,
             ))
             .into_any_element()
     }
@@ -631,19 +644,19 @@ impl PackExportModal {
     }
 }
 
-fn list_message(message: String, palette: &ForgePalette, density: Density) -> gpui::Div {
+fn list_message(message: String, palette: &ForgePalette, density: Density, cx: &App) -> gpui::Div {
     div()
         .w_full()
         .py(spacing(Spacing::Lg, density))
         .flex()
         .justify_center()
-        .font_family(body_family())
+        .font_family(cx.body_family())
         .text_size(FONT_XS)
         .text_color(palette.text_muted)
         .child(message)
 }
 
-fn count_cell(label: String, count: usize, palette: &ForgePalette) -> AnyElement {
+fn count_cell(label: String, count: usize, palette: &ForgePalette, cx: &App) -> AnyElement {
     div()
         .flex_1()
         .min_w(px(0.0))
@@ -652,14 +665,14 @@ fn count_cell(label: String, count: usize, palette: &ForgePalette) -> AnyElement
         .justify_between()
         .child(
             div()
-                .font_family(body_family())
+                .font_family(cx.body_family())
                 .text_size(FONT_XS)
                 .text_color(palette.text_muted)
                 .child(label),
         )
         .child(
             div()
-                .font_family(mono_family())
+                .font_family(cx.mono_family())
                 .text_size(FONT_XS)
                 .text_color(if count == 0 {
                     palette.text_faint
@@ -671,7 +684,13 @@ fn count_cell(label: String, count: usize, palette: &ForgePalette) -> AnyElement
         .into_any_element()
 }
 
-fn summary_line(text: String, color: gpui::Rgba, glyph: Icon, density: Density) -> AnyElement {
+fn summary_line(
+    text: String,
+    color: gpui::Rgba,
+    glyph: Icon,
+    density: Density,
+    cx: &App,
+) -> AnyElement {
     div()
         .w_full()
         .flex()
@@ -682,7 +701,7 @@ fn summary_line(text: String, color: gpui::Rgba, glyph: Icon, density: Density) 
             div()
                 .flex_1()
                 .min_w(px(0.0))
-                .font_family(body_family())
+                .font_family(cx.body_family())
                 .text_size(FONT_XS)
                 .text_color(color)
                 .child(SharedString::from(text)),

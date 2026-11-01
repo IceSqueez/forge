@@ -18,7 +18,7 @@ use crate::presentation::ActivePresentation;
 use crate::text_buffer::TextBuffer;
 use crate::text_editing::*;
 use crate::text_input::{CommitFocusedField, FocusNextField, FocusPreviousField, InputEvent};
-use crate::tokens::{BORDER_THIN, Density, FONT_XS, Radius, Spacing, mono_family, radius, spacing};
+use crate::tokens::{BORDER_THIN, Density, FONT_XS, Radius, Spacing, radius, spacing};
 
 use element::{CodeEditorElement, PAD_Y};
 use layout::{Geometry, Lines};
@@ -452,7 +452,7 @@ impl Render for CodeEditor {
         let editor = with_multiline_actions(with_editing_actions(editor, cx), cx)
             .w_full()
             .overflow_hidden()
-            .font_family(mono_family())
+            .font_family(cx.mono_family())
             .text_size(self.font_size)
             .text_color(self.palette.text_primary)
             .line_height(self.line_height);

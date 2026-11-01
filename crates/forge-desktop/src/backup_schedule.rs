@@ -8,9 +8,9 @@ use std::sync::Arc;
 use forge_components::{
     ActivePresentation, BORDER_THIN, DISABLED_OPACITY, DateShape, Density, FONT_SM, FONT_XS,
     ForgePalette, Icon, InputEvent, KeyActivated, PushToast, Radius, SettingRow, Spacing,
-    TextInput, ToastKind, body_family, checkbox, error_row_with_retry, fmt_bytes, fmt_display,
-    fmt_display_relative, ghost_button, ghost_button_with_icon, mono_family, radius, setting_row,
-    setting_rows, spacing, toggle, tr,
+    TextInput, ToastKind, checkbox, error_row_with_retry, fmt_bytes, fmt_display,
+    fmt_display_relative, ghost_button, ghost_button_with_icon, radius, setting_row, setting_rows,
+    spacing, toggle, tr,
 };
 use forge_storage::settings::core_settings::{
     BACKUP_SCHEDULE_DESTINATION, BACKUP_SCHEDULE_ENABLED, BACKUP_SCHEDULE_INCLUDE_ASSETS,
@@ -956,6 +956,7 @@ impl Render for BackupScheduleView {
                     &palette,
                     cx.listener(|this, _: &ClickEvent, _, cx| this.load(cx)),
                     density,
+                    cx,
                 ))
                 .into_any_element()
         });
@@ -963,18 +964,18 @@ impl Render for BackupScheduleView {
             .rows(failure)
             .row(self.schedule_row(&palette, density, cx))
             .rows(
-                self.number_row(ScheduleNumber::Interval, &palette, density)
+                self.number_row(ScheduleNumber::Interval, &palette, density, cx)
                     .map(IntoElement::into_any_element),
             )
             .row(self.contents_row(&palette, density, cx))
             .row(self.folder_row(&palette, density, cx));
         for number in [ScheduleNumber::KeepNewest, ScheduleNumber::KeepDailyDays] {
             rows = rows.rows(
-                self.number_row(number, &palette, density)
+                self.number_row(number, &palette, density, cx)
                     .map(IntoElement::into_any_element),
             );
         }
-        rows.row(self.storage_used_row(&palette, density))
+        rows.row(self.storage_used_row(&palette, density, cx))
             .in_card(&palette)
     }
 }

@@ -2,9 +2,9 @@ use std::sync::Arc;
 
 use forge_components::{
     ActivePresentation, BORDER_THIN, Density, FONT_SM, FONT_XS, FONT_XXS, ForgePalette, Icon,
-    Radius, Spacing, body_family, card_shell, divider, error_row, ghost_button,
-    ghost_button_with_icon, icon, mono_family, primary_button, primary_button_with_icon, radius,
-    scaled, secondary_button, spacing, spinner, status_dot, tr, with_alpha,
+    Radius, Spacing, card_shell, divider, error_row, ghost_button, ghost_button_with_icon, icon,
+    primary_button, primary_button_with_icon, radius, scaled, secondary_button, spacing, spinner,
+    status_dot, tr, with_alpha,
 };
 use forge_platform_twitch::{
     BotModerator, BotStatus, DeviceCodeInfo, TwitchBotAccount, TwitchError,
@@ -323,7 +323,11 @@ impl TwitchBotSection {
                 },
                 _,
             ) => column
-                .child(muted_text(tr!("twitch_bot_private_window_hint"), palette))
+                .child(muted_text(
+                    tr!("twitch_bot_private_window_hint"),
+                    palette,
+                    cx,
+                ))
                 .child(copy_row(
                     "twitch-bot-copy-link",
                     tr!("twitch_bot_activation_link"),
@@ -344,10 +348,10 @@ impl TwitchBotSection {
                 ))
                 .child(self.waiting_row(palette, density, cx)),
             (BotLogin::Failed(message), _) => column
-                .child(error_row(message.clone(), palette, density))
+                .child(error_row(message.clone(), palette, density, cx))
                 .child(self.retry_row(palette, density, cx)),
             (BotLogin::Idle, BotStatus::NotConnected) => column
-                .child(muted_text(tr!("twitch_bot_intro"), palette))
+                .child(muted_text(tr!("twitch_bot_intro"), palette, cx))
                 .child(
                     div().flex().child(
                         primary_button_with_icon(
@@ -376,7 +380,7 @@ impl TwitchBotSection {
         };
         column.children(self.problem.as_ref().map(|problem| match problem {
             BotProblem::Disconnect(message) | BotProblem::Moderator(message) => {
-                error_row(message.clone(), palette, density).into_any_element()
+                error_row(message.clone(), palette, density, cx).into_any_element()
             }
             BotProblem::StreamerSignIn(message) => {
                 self.streamer_sign_in_row(message.clone(), palette, density, cx)
@@ -397,7 +401,7 @@ impl TwitchBotSection {
                 div()
                     .flex_1()
                     .min_w(px(0.0))
-                    .font_family(body_family())
+                    .font_family(cx.body_family())
                     .text_size(FONT_XS)
                     .text_color(palette.text_primary)
                     .child(message),
@@ -424,6 +428,7 @@ impl TwitchBotSection {
             tr!("twitch_bot_requesting"),
             palette,
             density,
+            cx,
         )
         .child(self.cancel_button(palette, density, cx))
         .into_any_element()
@@ -440,6 +445,7 @@ impl TwitchBotSection {
             tr!("twitch_bot_waiting"),
             palette,
             density,
+            cx,
         )
         .child(self.cancel_button(palette, density, cx))
         .into_any_element()
@@ -502,7 +508,7 @@ impl TwitchBotSection {
                     .flex_1()
                     .min_w(px(0.0))
                     .truncate()
-                    .font_family(mono_family())
+                    .font_family(cx.mono_family())
                     .text_size(FONT_XS)
                     .text_color(palette.text_primary)
                     .child(format!("@{login}")),
@@ -532,7 +538,7 @@ impl TwitchBotSection {
                 div()
                     .flex_1()
                     .min_w(px(0.0))
-                    .font_family(body_family())
+                    .font_family(cx.body_family())
                     .text_size(FONT_XS)
                     .text_color(palette.text_primary)
                     .flex()
@@ -569,7 +575,7 @@ impl TwitchBotSection {
                 div()
                     .flex_1()
                     .min_w(px(0.0))
-                    .font_family(body_family())
+                    .font_family(cx.body_family())
                     .text_size(FONT_XS)
                     .text_color(palette.text_primary)
                     .child(tr!("twitch_bot_not_moderator_note")),
@@ -610,7 +616,7 @@ impl TwitchBotSection {
                 div()
                     .w(VALUE_LABEL_W)
                     .flex_none()
-                    .font_family(mono_family())
+                    .font_family(cx.mono_family())
                     .text_size(FONT_XXS)
                     .text_color(palette.text_muted)
                     .child(tr!("twitch_bot_sent_as_label")),
@@ -618,7 +624,7 @@ impl TwitchBotSection {
             .child(
                 div()
                     .flex_none()
-                    .font_family(mono_family())
+                    .font_family(cx.mono_family())
                     .text_size(FONT_XS)
                     .text_color(palette.text_primary)
                     .child(value),
@@ -628,7 +634,7 @@ impl TwitchBotSection {
                     .flex_1()
                     .min_w(px(0.0))
                     .truncate()
-                    .font_family(body_family())
+                    .font_family(cx.body_family())
                     .text_size(FONT_XXS)
                     .text_color(palette.text_faint)
                     .child(role),
@@ -656,8 +662,8 @@ impl Render for TwitchBotSection {
                 None,
                 Some(&header_status),
                 None,
-                &palette,
                 density,
+                cx,
             ))
             .child(divider(&palette))
             .child(body)
@@ -713,16 +719,22 @@ pub(crate) fn moderator_failure(error: &TwitchError) -> String {
     }
 }
 
-fn muted_text(text: String, palette: &ForgePalette) -> Div {
+fn muted_text(text: String, palette: &ForgePalette, cx: &App) -> Div {
     div()
         .w_full()
-        .font_family(body_family())
+        .font_family(cx.body_family())
         .text_size(FONT_XS)
         .text_color(palette.text_muted)
         .child(text)
 }
 
-fn progress_row(id: &'static str, label: String, palette: &ForgePalette, density: Density) -> Div {
+fn progress_row(
+    id: &'static str,
+    label: String,
+    palette: &ForgePalette,
+    density: Density,
+    cx: &App,
+) -> Div {
     div()
         .w_full()
         .flex()
@@ -738,7 +750,7 @@ fn progress_row(id: &'static str, label: String, palette: &ForgePalette, density
             div()
                 .flex_1()
                 .min_w(px(0.0))
-                .font_family(body_family())
+                .font_family(cx.body_family())
                 .text_size(FONT_XS)
                 .text_color(palette.text_primary)
                 .child(label),
@@ -784,7 +796,7 @@ fn copy_row(
             div()
                 .w(VALUE_LABEL_W)
                 .flex_none()
-                .font_family(mono_family())
+                .font_family(cx.mono_family())
                 .text_size(FONT_XXS)
                 .text_color(palette.text_muted)
                 .child(label),
@@ -800,7 +812,7 @@ fn copy_row(
                 .border(BORDER_THIN)
                 .border_color(palette.border_regular)
                 .bg(palette.shell)
-                .font_family(mono_family())
+                .font_family(cx.mono_family())
                 .font_weight(weight)
                 .text_size(size)
                 .text_color(color)

@@ -5,15 +5,14 @@ use crate::navigation::Screen;
 use crate::picker_favorites::{SUB_ACTION_FAVORITES, StoredFavorites, TRIGGER_FAVORITES};
 use crate::repo_failure::RepoFailure;
 use crate::run_history_modal::RunHistoryModal;
-use forge_components::ActivePresentation;
 use forge_components::PushToast;
 use forge_components::Radius;
 use forge_components::drive_overlay_focus;
 use forge_components::radius;
 use forge_components::{
-    BreadcrumbCrumb, Density, ForgePalette, GridPicker, Icon, InlineEdit, KeyActivated,
-    OverlayPosition, SearchState, TextArea, TextInput, ToastKind, fmt_display_relative, fmt_number,
-    icon, overlay, page_frame, primary_button_with_icon, tr,
+    ActivePresentation, BreadcrumbCrumb, Density, ForgePalette, GridPicker, Icon, InlineEdit,
+    KeyActivated, OverlayPosition, SearchState, TextArea, TextInput, ToastKind,
+    fmt_display_relative, fmt_number, icon, overlay, page_frame, primary_button_with_icon, tr,
 };
 use forge_overlay::OverlayKindRegistry;
 use forge_registry::{SubActionRegistry, TriggerCategory, TriggerRegistry};
@@ -334,7 +333,7 @@ impl Render for ScreenActionsView {
         let density = cx.density();
         let palette = cx.palette();
 
-        let stats = self.tree.read(cx).render_stats(&palette, density);
+        let stats = self.tree.read(cx).render_stats(&palette, density, cx);
         let filter_left = self
             .tree
             .update(cx, |tree, cx| tree.render_filter_left(&palette, cx));

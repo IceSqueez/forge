@@ -32,8 +32,8 @@ mod writes;
 use std::sync::Arc;
 
 use forge_components::{
-    BreadcrumbCrumb, Confirm, Density, FONT_XS, ForgePalette, Icon, ToastKind, body_family, icon,
-    page_frame, scaled, tr,
+    ActivePresentation, BreadcrumbCrumb, Confirm, Density, FONT_XS, ForgePalette, Icon, ToastKind,
+    icon, page_frame, scaled, tr,
 };
 use forge_overlay::OverlayKindRegistry;
 use forge_registry::{SubActionRegistry, TriggerRegistry};
@@ -47,14 +47,14 @@ use forge_soundboard::ClipLibrary;
 use forge_speak_queue::SpeakQueueHandle;
 use forge_storage::{MediaRepo, OverlayDefinition, OverlayId, OverlayRepo, SettingsRepo};
 use gpui::{
-    AnyElement, Context, Entity, EventEmitter, Pixels, Subscription, Window, div, prelude::*, px,
+    AnyElement, App, Context, Entity, EventEmitter, Pixels, Subscription, Window, div, prelude::*,
+    px,
 };
 
 use crate::hub_crumb::{core_category, hub_crumb};
 use crate::navigation::NavRequested;
 use crate::navigation::Screen;
 use crate::picker_favorites::StoredFavorites;
-use forge_components::ActivePresentation;
 use forge_components::PushToast;
 use forge_host::audio_router::AudioRouter;
 
@@ -217,7 +217,12 @@ impl OverlaysView {
         cx.notify();
     }
 
-    fn render_header_right(&self, palette: &ForgePalette, density: Density) -> AnyElement {
+    fn render_header_right(
+        &self,
+        palette: &ForgePalette,
+        density: Density,
+        cx: &App,
+    ) -> AnyElement {
         let (dot, summary) = match self.served.bind_address.filter(|_| self.served.running) {
             Some(address) => (
                 palette.success,
@@ -245,7 +250,7 @@ impl OverlaysView {
             .child(icon(Icon::Browser, HEADER_GLYPH, dot))
             .child(
                 div()
-                    .font_family(body_family())
+                    .font_family(cx.body_family())
                     .text_size(FONT_XS)
                     .text_color(palette.text_muted)
                     .child(summary),
@@ -268,7 +273,7 @@ impl Render for OverlaysView {
             .flex_row()
             .child(self.render_registry_pane(&palette, cx))
             .child(self.render_editor_pane(&palette, cx))
-            .children(self.render_property_pane(&palette, density));
+            .children(self.render_property_pane(&palette, density, cx));
 
         let frame = page_frame(
             vec![
@@ -277,7 +282,7 @@ impl Render for OverlaysView {
             ],
             &palette,
         )
-        .header_right(self.render_header_right(&palette, density))
+        .header_right(self.render_header_right(&palette, density, cx))
         .density(density)
         .body(body);
 

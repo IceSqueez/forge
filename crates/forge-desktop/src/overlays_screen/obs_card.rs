@@ -1,16 +1,17 @@
-use forge_components::ActivePresentation;
 use forge_components::Density;
 use forge_components::Spacing;
 use forge_components::spacing;
 use forge_components::{
-    BORDER_THIN, FONT_XS, FONT_XXS, ForgePalette, Icon, KeyActivated, body_family, icon,
-    mono_family, scaled, section_label, tr,
+    ActivePresentation, BORDER_THIN, FONT_XS, FONT_XXS, ForgePalette, Icon, KeyActivated, icon,
+    scaled, section_label, tr,
 };
 use forge_overlay::config::{SOUND, SPEECH};
 use forge_overlay::{OverlayConfig, PreviewCanvas};
 use forge_storage::OverlayDefinition;
 use forge_types::Variant;
-use gpui::{AnyElement, ClickEvent, Context, Pixels, SharedString, div, prelude::*, px, relative};
+use gpui::{
+    AnyElement, App, ClickEvent, Context, Pixels, SharedString, div, prelude::*, px, relative,
+};
 
 use super::OverlaysView;
 use crate::clipboard::copy_to_clipboard;
@@ -71,9 +72,11 @@ impl OverlaysView {
                     palette,
                     cx.listener(move |this, _: &ClickEvent, _, cx| this.copy_url(&id, cx)),
                     density,
+                    cx,
                 )),
                 palette,
                 density,
+                cx,
             ),
             None => value_row(
                 tr!("overlays_obs_url"),
@@ -81,6 +84,7 @@ impl OverlaysView {
                 None,
                 palette,
                 density,
+                cx,
             ),
         };
 
@@ -97,6 +101,7 @@ impl OverlaysView {
                     width,
                     palette,
                     density,
+                    cx,
                 )))
                 .child(div().w(relative(HALF)).child(copyable_row(
                     "height",
@@ -104,6 +109,7 @@ impl OverlaysView {
                     height,
                     palette,
                     density,
+                    cx,
                 )))
         });
 
@@ -117,24 +123,28 @@ impl OverlaysView {
                 switch_text(false),
                 palette,
                 density,
+                cx,
             ))
             .child(tip(
                 tr!("overlays_obs_refresh"),
                 switch_text(false),
                 palette,
                 density,
+                cx,
             ))
             .child(tip(
                 tr!("overlays_obs_custom_css"),
                 tr!("overlays_obs_custom_css_value"),
                 palette,
                 density,
+                cx,
             ))
             .child(tip(
                 tr!("overlays_obs_audio"),
                 switch_text(control_audio),
                 palette,
                 density,
+                cx,
             ));
 
         div()
@@ -158,6 +168,7 @@ impl OverlaysView {
                     .child(section_label(
                         tr!("overlays_obs_title").to_uppercase(),
                         palette,
+                        cx,
                     )),
             )
             .child(url_row)
@@ -165,7 +176,7 @@ impl OverlaysView {
             .child(tips)
             .child(
                 div()
-                    .font_family(body_family())
+                    .font_family(cx.body_family())
                     .text_size(FONT_XXS)
                     .text_color(palette.text_faint)
                     .child(tr!("overlays_preview_approximate")),
@@ -179,6 +190,7 @@ fn copy_link(
     palette: &ForgePalette,
     on_click: impl Fn(&ClickEvent, &mut gpui::Window, &mut gpui::App) + 'static,
     density: Density,
+    cx: &App,
 ) -> AnyElement {
     div()
         .id(id.into())
@@ -187,7 +199,7 @@ fn copy_link(
         .items_center()
         .gap(scaled(COPY_GAP, density))
         .cursor_pointer()
-        .font_family(mono_family())
+        .font_family(cx.mono_family())
         .text_size(FONT_XXS)
         .text_color(palette.brand)
         .key_activated(palette.text_primary)
@@ -203,6 +215,7 @@ fn copyable_row(
     value: String,
     palette: &ForgePalette,
     density: Density,
+    cx: &App,
 ) -> AnyElement {
     let copied = value.clone();
     let link = copy_link(
@@ -210,8 +223,9 @@ fn copyable_row(
         palette,
         move |_: &ClickEvent, _, cx| copy_to_clipboard(copied.clone(), cx),
         density,
+        cx,
     );
-    value_row(label, value, Some(link), palette, density)
+    value_row(label, value, Some(link), palette, density, cx)
 }
 
 fn value_row(
@@ -220,6 +234,7 @@ fn value_row(
     action: Option<AnyElement>,
     palette: &ForgePalette,
     density: Density,
+    cx: &App,
 ) -> AnyElement {
     div()
         .w_full()
@@ -230,7 +245,7 @@ fn value_row(
             div()
                 .flex_none()
                 .w(KEY_W)
-                .font_family(mono_family())
+                .font_family(cx.mono_family())
                 .text_size(FONT_XXS)
                 .text_color(palette.text_faint)
                 .child(label.to_uppercase()),
@@ -239,7 +254,7 @@ fn value_row(
             div()
                 .min_w(px(0.0))
                 .truncate()
-                .font_family(mono_family())
+                .font_family(cx.mono_family())
                 .text_size(FONT_XS)
                 .text_color(palette.text_secondary)
                 .child(value),
@@ -248,14 +263,20 @@ fn value_row(
         .into_any_element()
 }
 
-fn tip(label: String, value: String, palette: &ForgePalette, density: Density) -> AnyElement {
+fn tip(
+    label: String,
+    value: String,
+    palette: &ForgePalette,
+    density: Density,
+    cx: &App,
+) -> AnyElement {
     div()
         .w(relative(HALF))
         .flex()
         .items_center()
         .gap(spacing(Spacing::Xs, density))
         .pr(scaled(ROW_GAP, density))
-        .font_family(body_family())
+        .font_family(cx.body_family())
         .text_size(FONT_XXS)
         .child(
             div()
@@ -267,7 +288,7 @@ fn tip(label: String, value: String, palette: &ForgePalette, density: Density) -
         .child(
             div()
                 .flex_none()
-                .font_family(mono_family())
+                .font_family(cx.mono_family())
                 .text_color(palette.text_secondary)
                 .child(value),
         )

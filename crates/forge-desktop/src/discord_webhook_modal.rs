@@ -3,18 +3,17 @@ use forge_components::Spacing;
 use forge_components::focus_inside_modal;
 use forge_components::spacing;
 use forge_components::{
-    BORDER_THIN, FONT_XS, FONT_XXS, ForgePalette, Icon, InputEvent, KeyActivated, ModalSize,
-    OverlayPosition, Radius, TextInput, body_family, ghost_button_with_icon, icon, modal,
-    modal_width, mono_family, overlay, primary_button, scaled, secondary_button, tr,
+    ActivePresentation, BORDER_THIN, FONT_XS, FONT_XXS, ForgePalette, Icon, InputEvent,
+    KeyActivated, ModalSize, OverlayPosition, Radius, TextInput, ghost_button_with_icon, icon,
+    modal, modal_width, overlay, primary_button, scaled, secondary_button, tr,
 };
 use forge_discord::validate_webhook_url;
 use gpui::{
-    AnyElement, ClickEvent, Context, Entity, EventEmitter, Pixels, SharedString, Subscription,
+    AnyElement, App, ClickEvent, Context, Entity, EventEmitter, Pixels, SharedString, Subscription,
     Window, div, prelude::*, px,
 };
 
 use crate::clipboard::copy_to_clipboard;
-use forge_components::ActivePresentation;
 
 const BODY_PAD_H: Pixels = px(18.0);
 
@@ -180,11 +179,11 @@ impl DiscordWebhookModal {
         cx.emit(DiscordWebhookModalEvent::Cancel);
     }
 
-    fn render_name(&self, palette: &ForgePalette, density: Density) -> AnyElement {
+    fn render_name(&self, palette: &ForgePalette, density: Density, cx: &App) -> AnyElement {
         let value: AnyElement = match &self.original_name {
             Some(name) => div()
                 .w_full()
-                .font_family(mono_family())
+                .font_family(cx.mono_family())
                 .text_size(NAME_LOCK_FS)
                 .text_color(palette.text_muted)
                 .child(name.clone())
@@ -198,11 +197,11 @@ impl DiscordWebhookModal {
             .flex_col()
             .gap(spacing(Spacing::Xs, density))
             .mb(FIELD_MB)
-            .child(field_caption(&tr!("discord_modal_name_label"), palette))
+            .child(field_caption(&tr!("discord_modal_name_label"), palette, cx))
             .child(value_box(palette, density).child(div().flex_1().min_w(px(0.0)).child(value)));
 
         if self.original_name.is_some() {
-            column = column.child(field_hint(&tr!("discord_modal_name_locked"), palette));
+            column = column.child(field_hint(&tr!("discord_modal_name_locked"), palette, cx));
         }
 
         column.into_any_element()
@@ -243,12 +242,12 @@ impl DiscordWebhookModal {
 
         let hint = if invalid {
             div()
-                .font_family(body_family())
+                .font_family(cx.body_family())
                 .text_size(FONT_XXS)
                 .text_color(palette.danger)
                 .child(tr!("discord_modal_url_invalid"))
         } else {
-            field_hint(&tr!("discord_modal_url_hint"), palette)
+            field_hint(&tr!("discord_modal_url_hint"), palette, cx)
         };
 
         div()
@@ -257,7 +256,7 @@ impl DiscordWebhookModal {
             .flex_col()
             .gap(spacing(Spacing::Xs, density))
             .mb(FIELD_MB)
-            .child(field_caption(&tr!("discord_modal_url_label"), palette))
+            .child(field_caption(&tr!("discord_modal_url_label"), palette, cx))
             .child(box_row)
             .child(hint)
             .into_any_element()
@@ -327,17 +326,17 @@ fn value_box(palette: &ForgePalette, density: Density) -> gpui::Div {
         .bg(palette.shell)
 }
 
-fn field_caption(label: &str, palette: &ForgePalette) -> impl IntoElement {
+fn field_caption(label: &str, palette: &ForgePalette, cx: &App) -> impl IntoElement {
     div()
-        .font_family(mono_family())
+        .font_family(cx.mono_family())
         .text_size(FONT_XXS)
         .text_color(palette.text_muted)
         .child(SharedString::from(label.to_uppercase()))
 }
 
-fn field_hint(text: &str, palette: &ForgePalette) -> gpui::Div {
+fn field_hint(text: &str, palette: &ForgePalette, cx: &App) -> gpui::Div {
     div()
-        .font_family(body_family())
+        .font_family(cx.body_family())
         .text_size(FONT_XXS)
         .text_color(palette.text_faint)
         .child(text.to_owned())
@@ -366,7 +365,7 @@ impl Render for DiscordWebhookModal {
             .px(scaled(BODY_PAD_H, density))
             .flex()
             .flex_col()
-            .child(self.render_name(&palette, density))
+            .child(self.render_name(&palette, density, cx))
             .child(self.render_url(&palette, cx));
 
         let title = if self.original_name.is_some() {

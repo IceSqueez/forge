@@ -2,8 +2,8 @@ use std::sync::Arc;
 
 use forge_components::OverflowRevealingFocus;
 use forge_components::{
-    Confirm, ConfirmTone, ForgePalette, Icon, OverlayPosition, ToastKind, body_family,
-    confirm_modal, modal, mono_family, overlay, primary_button_with_icon, secondary_button, tr,
+    ActivePresentation, Confirm, ConfirmTone, ForgePalette, Icon, OverlayPosition, ToastKind,
+    confirm_modal, modal, overlay, primary_button_with_icon, secondary_button, tr,
 };
 use forge_platform_core::{
     BuiltinCollections, CollectionFailure, CollectionItem, CollectionItemId, CollectionMetadata,
@@ -22,7 +22,6 @@ use crate::collection_text::collection_failure_message;
 use crate::repo_failure::RepoFailure;
 use crate::user_text::resolve_message;
 use crate::user_text::user_text_string;
-use forge_components::ActivePresentation;
 use forge_components::PushToast;
 
 const MANAGER_WIDTH: gpui::Pixels = px(560.0);
@@ -431,7 +430,7 @@ impl CollectionManager {
         );
         footer_row(
             div()
-                .font_family(mono_family())
+                .font_family(cx.mono_family())
                 .text_size(FOOTER_FONT)
                 .text_color(count_color)
                 .child(self.count_label(cx))
@@ -464,7 +463,7 @@ impl CollectionManager {
         );
         footer_row(
             div()
-                .font_family(body_family())
+                .font_family(cx.body_family())
                 .text_size(FOOTER_FONT)
                 .text_color(palette.text_faint)
                 .child(tr!("collection_form_footer"))

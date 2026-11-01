@@ -1,11 +1,10 @@
 use super::*;
 use forge_components::BORDER_THIN;
 use forge_components::{
-    ActivePresentation, FONT_SM, FONT_XXS, ForgePalette, KeyActivated, Radius, mono_family, radius,
-    scaled, tr,
+    ActivePresentation, FONT_SM, FONT_XXS, ForgePalette, KeyActivated, Radius, radius, scaled, tr,
 };
 use forge_types::ExecutionOutcome;
-use gpui::{AnyElement, ClickEvent, Context, Rgba, SharedString, div};
+use gpui::{AnyElement, App, ClickEvent, Context, Rgba, SharedString, div};
 
 impl ActionEditor {
     pub(super) fn render_stats_row(
@@ -55,6 +54,7 @@ impl ActionEditor {
                 palette.text_primary,
                 palette,
                 density,
+                cx,
             ))
             .child(self.render_history_link_cell(
                 "actions-runs-history-link",
@@ -70,6 +70,7 @@ impl ActionEditor {
                 palette.success,
                 palette,
                 density,
+                cx,
             ))
             .child(self.render_history_link_cell(
                 "actions-execution-history-link",
@@ -97,6 +98,7 @@ impl ActionEditor {
         value_color: Rgba,
         palette: &ForgePalette,
         density: Density,
+        cx: &App,
     ) -> AnyElement {
         div()
             .flex_1()
@@ -105,14 +107,14 @@ impl ActionEditor {
             .gap(scaled(STAT_VALUE_GAP, density))
             .child(
                 div()
-                    .font_family(mono_family())
+                    .font_family(cx.mono_family())
                     .text_size(FONT_XXS)
                     .text_color(palette.text_faint)
                     .child(label.into()),
             )
             .child(
                 div()
-                    .font_family(mono_family())
+                    .font_family(cx.mono_family())
                     .text_size(FONT_SM)
                     .text_color(value_color)
                     .child(value.into()),
@@ -138,7 +140,7 @@ impl ActionEditor {
             .gap(scaled(STAT_VALUE_GAP, density))
             .child(
                 div()
-                    .font_family(mono_family())
+                    .font_family(cx.mono_family())
                     .text_size(FONT_XXS)
                     .text_color(palette.text_faint)
                     .child(label.into()),
@@ -147,7 +149,7 @@ impl ActionEditor {
                 div()
                     .id(id)
                     .cursor_pointer()
-                    .font_family(mono_family())
+                    .font_family(cx.mono_family())
                     .text_size(FONT_SM)
                     .text_color(value_color)
                     .underline()

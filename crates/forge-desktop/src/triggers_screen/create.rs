@@ -13,14 +13,13 @@ use crate::config_form::{
 use crate::integration_catalog::{catalog_text, tint_color};
 use crate::picker_favorites::{StoredFavorites, bind_picker, follow_picker_event};
 use crate::trigger_form_shape::{trigger_form_defaults, trigger_form_specs};
-use forge_components::ActivePresentation;
 use forge_components::focus_inside_modal;
 use forge_components::{
-    BORDER_THIN, FONT_XXS, ForgePalette, GlyphArt, GridPicker, GridPickerArt, GridPickerConfig,
-    GridPickerEvent, GridPickerGroup, GridPickerItem, GridPickerItemState, GridPickerSubtitle,
-    GridScope, Icon, InputEvent, ModalSize, OverlayPosition, Picker, PickerEvent, Radius, Spacing,
-    TextInput, body_family, ghost_button_with_icon, modal, mono_family, overlay, primary_button,
-    radius, secondary_button, spacing, tr,
+    ActivePresentation, BORDER_THIN, FONT_XXS, ForgePalette, GlyphArt, GridPicker, GridPickerArt,
+    GridPickerConfig, GridPickerEvent, GridPickerGroup, GridPickerItem, GridPickerItemState,
+    GridPickerSubtitle, GridScope, Icon, InputEvent, ModalSize, OverlayPosition, Picker,
+    PickerEvent, Radius, Spacing, TextInput, ghost_button_with_icon, modal, overlay,
+    primary_button, radius, secondary_button, spacing, tr,
 };
 use forge_host::integration_catalog::{declaration_of, declarations};
 use forge_host::integrations::BuiltinRegistry;
@@ -29,8 +28,8 @@ use forge_registry::{TriggerCategory, TriggerKindDescriptor, TriggerRegistry};
 use forge_types::{TriggerInstance, TriggerInstanceId};
 use gpui::Rgba;
 use gpui::{
-    AnyElement, ClickEvent, Context, Entity, EventEmitter, SharedString, Subscription, Window, div,
-    prelude::*,
+    AnyElement, App, ClickEvent, Context, Entity, EventEmitter, SharedString, Subscription, Window,
+    div, prelude::*,
 };
 use std::collections::HashMap;
 use std::sync::Arc;
@@ -406,7 +405,7 @@ impl TriggerCreateFlow {
             .flex()
             .flex_col()
             .gap(spacing(Spacing::Xs, density))
-            .child(self.fill_section_label(tr!("triggers_create_section_name"), palette))
+            .child(self.fill_section_label(tr!("triggers_create_section_name"), palette, cx))
             .child(div().child(form.name_field.clone()));
 
         let config_card: AnyElement = if form.fields.is_empty() {
@@ -414,7 +413,7 @@ impl TriggerCreateFlow {
                 .py(spacing(Spacing::Sm, density))
                 .px(spacing(Spacing::Sm, density))
                 .italic()
-                .font_family(body_family())
+                .font_family(cx.body_family())
                 .text_size(FILL_VAL_FS)
                 .text_color(palette.text_faint)
                 .child(tr!("triggers_sheet_no_config"))
@@ -433,6 +432,7 @@ impl TriggerCreateFlow {
                     &cx.entity(),
                     &handlers,
                     density,
+                    cx,
                 ));
             }
             div()
@@ -449,12 +449,13 @@ impl TriggerCreateFlow {
             .flex()
             .flex_col()
             .gap(spacing(Spacing::Xs, density))
-            .child(self.fill_section_label(tr!("triggers_create_section_config"), palette))
+            .child(self.fill_section_label(tr!("triggers_create_section_config"), palette, cx))
             .child(config_card)
             .children(timer_field_hints(
                 self.deps.registry.get(&form.kind_id),
                 palette,
                 density,
+                cx,
             ));
 
         let body = div()
@@ -522,9 +523,10 @@ impl TriggerCreateFlow {
         &self,
         label: impl Into<SharedString>,
         palette: &ForgePalette,
+        cx: &App,
     ) -> AnyElement {
         div()
-            .font_family(mono_family())
+            .font_family(cx.mono_family())
             .text_size(FONT_XXS)
             .text_color(palette.text_muted)
             .child(label.into())

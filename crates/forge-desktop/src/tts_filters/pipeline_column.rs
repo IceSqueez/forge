@@ -1,9 +1,9 @@
 use super::TtsFiltersView;
 use forge_components::OverflowRevealingFocus;
 use forge_components::{
-    BORDER_THIN, DISABLED_OPACITY, Density, FONT_SM, FONT_XS, FONT_XXS, ForgePalette, Icon,
-    KeyActivated, Radius, Spacing, TINT_FILL_ALPHA, body_family, card, error_row_with_retry, icon,
-    mono_family, radius, scaled, spacing, toggle, tr, with_alpha,
+    ActivePresentation, BORDER_THIN, DISABLED_OPACITY, Density, FONT_SM, FONT_XS, FONT_XXS,
+    ForgePalette, Icon, KeyActivated, Radius, Spacing, TINT_FILL_ALPHA, card, error_row_with_retry,
+    icon, radius, scaled, spacing, toggle, tr, with_alpha,
 };
 use gpui::prelude::*;
 use gpui::{AnyElement, App, ClickEvent, Context, Pixels, Rgba, SharedString, Window, div, px};
@@ -21,7 +21,7 @@ impl TtsFiltersView {
         cx: &mut Context<Self>,
     ) -> AnyElement {
         let intro = div()
-            .font_family(body_family())
+            .font_family(cx.body_family())
             .text_size(FONT_XS)
             .text_color(palette.text_muted)
             .child(tr!("tts_filters_pipeline_intro"));
@@ -44,7 +44,7 @@ impl TtsFiltersView {
                     .border(BORDER_THIN)
                     .border_color(palette.danger)
                     .bg(with_alpha(palette.danger, TINT_FILL_ALPHA))
-                    .font_family(mono_family())
+                    .font_family(cx.mono_family())
                     .text_size(FONT_XS)
                     .text_color(palette.danger)
                     .child(err.clone()),
@@ -58,6 +58,7 @@ impl TtsFiltersView {
                 palette,
                 cx.listener(|this, _: &ClickEvent, _, cx| this.retry_load(cx)),
                 density,
+                cx,
             ));
         }
 
@@ -98,6 +99,7 @@ impl TtsFiltersView {
         body: AnyElement,
         palette: &ForgePalette,
         density: Density,
+        cx: &App,
     ) -> AnyElement {
         let circle = div()
             .flex_none()
@@ -109,7 +111,7 @@ impl TtsFiltersView {
             .bg(color)
             .child(
                 div()
-                    .font_family(mono_family())
+                    .font_family(cx.mono_family())
                     .text_size(FONT_XXS)
                     .text_color(palette.shell)
                     .child(n.to_string()),
@@ -129,7 +131,7 @@ impl TtsFiltersView {
             .child(
                 div()
                     .flex_1()
-                    .font_family(body_family())
+                    .font_family(cx.body_family())
                     .text_size(FONT_SM)
                     .text_color(palette.text_primary)
                     .child(title.into()),
@@ -159,6 +161,7 @@ impl TtsFiltersView {
         handler: impl Fn(&ClickEvent, &mut Window, &mut App) + 'static,
         palette: &ForgePalette,
         density: Density,
+        cx: &App,
     ) -> AnyElement {
         div()
             .id(id)
@@ -171,7 +174,7 @@ impl TtsFiltersView {
             .child(icon(Icon::Plus, FONT_XS, palette.brand))
             .child(
                 div()
-                    .font_family(body_family())
+                    .font_family(cx.body_family())
                     .text_size(FONT_XS)
                     .text_color(palette.brand)
                     .child(tr!("tts_filters_stage_add")),
@@ -196,6 +199,7 @@ impl TtsFiltersView {
         on_x: impl Fn(&ClickEvent, &mut Window, &mut App) + 'static,
         palette: &ForgePalette,
         density: Density,
+        cx: &App,
     ) -> AnyElement {
         let label_color = if on {
             palette.text_primary
@@ -219,7 +223,7 @@ impl TtsFiltersView {
                 div()
                     .flex_1()
                     .min_w(px(0.0))
-                    .font_family(body_family())
+                    .font_family(cx.body_family())
                     .text_size(FONT_XS)
                     .text_color(label_color)
                     .child(label),
@@ -227,7 +231,7 @@ impl TtsFiltersView {
         if let Some(meta) = meta {
             row = row.child(
                 div()
-                    .font_family(mono_family())
+                    .font_family(cx.mono_family())
                     .text_size(FONT_XXS)
                     .text_color(palette.text_faint)
                     .child(meta),

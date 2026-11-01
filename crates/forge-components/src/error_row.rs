@@ -1,4 +1,4 @@
-use crate::TINT_FILL_ALPHA;
+use crate::{ActivePresentation, TINT_FILL_ALPHA};
 use gpui::{
     App, ClickEvent, Div, ElementId, IntoElement, ParentElement, Pixels, SharedString, Styled,
     Window, div, px,
@@ -7,14 +7,12 @@ use gpui::{
 use crate::buttons::ghost_button;
 use crate::icons::{Icon, icon};
 use crate::palette::{ForgePalette, with_alpha};
-use crate::tokens::{
-    BORDER_THIN, Density, FONT_SM, FONT_XS, Radius, Spacing, body_family, radius, spacing,
-};
+use crate::tokens::{BORDER_THIN, Density, FONT_SM, FONT_XS, Radius, Spacing, radius, spacing};
 use crate::tr;
 
 const GLYPH: Pixels = px(13.0);
 
-fn error_frame(message: SharedString, palette: &ForgePalette, density: Density) -> Div {
+fn error_frame(message: SharedString, palette: &ForgePalette, density: Density, cx: &App) -> Div {
     div()
         .w_full()
         .flex()
@@ -31,7 +29,7 @@ fn error_frame(message: SharedString, palette: &ForgePalette, density: Density) 
             div()
                 .flex_1()
                 .min_w(px(0.0))
-                .font_family(body_family())
+                .font_family(cx.body_family())
                 .text_size(FONT_SM)
                 .text_color(palette.danger)
                 .child(message),
@@ -42,8 +40,9 @@ pub fn error_row(
     message: impl Into<SharedString>,
     palette: &ForgePalette,
     density: Density,
+    cx: &App,
 ) -> impl IntoElement {
-    error_frame(message.into(), palette, density)
+    error_frame(message.into(), palette, density, cx)
 }
 
 pub(crate) fn compact_error_with_retry(
@@ -52,6 +51,7 @@ pub(crate) fn compact_error_with_retry(
     palette: &ForgePalette,
     on_retry: impl Fn(&ClickEvent, &mut Window, &mut App) + 'static,
     density: Density,
+    cx: &App,
 ) -> impl IntoElement {
     let message: SharedString = message.into();
     div()
@@ -77,7 +77,7 @@ pub(crate) fn compact_error_with_retry(
                     div()
                         .flex_1()
                         .min_w(px(0.0))
-                        .font_family(body_family())
+                        .font_family(cx.body_family())
                         .text_size(FONT_XS)
                         .text_color(palette.danger)
                         .child(message),
@@ -92,7 +92,8 @@ pub fn error_row_with_retry(
     palette: &ForgePalette,
     on_retry: impl Fn(&ClickEvent, &mut Window, &mut App) + 'static,
     density: Density,
+    cx: &App,
 ) -> impl IntoElement {
-    error_frame(message.into(), palette, density)
+    error_frame(message.into(), palette, density, cx)
         .child(ghost_button(tr!("widget_field_retry"), palette).on_click(id, on_retry))
 }

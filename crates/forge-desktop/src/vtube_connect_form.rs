@@ -2,7 +2,7 @@ use forge_components::FONT_META;
 use std::sync::Arc;
 
 use forge_components::{
-    ActivePresentation, Density, ForgePalette, Icon, TextInput, body_family, pulse_dot, scaled, tr,
+    ActivePresentation, Density, ForgePalette, Icon, TextInput, pulse_dot, scaled, tr,
 };
 use forge_events::EventPublisher;
 use forge_storage::{CredentialsRepo, SettingsRepo};
@@ -10,8 +10,8 @@ use forge_vtube::{
     PLUGIN_NAME, VTubeAttemptPhase, VTubeClient, VTubeConfig, VTubeConnectAttempt, VTubeProbeResult,
 };
 use gpui::{
-    AnyElement, AsyncApp, Context, Entity, EventEmitter, Focusable, Pixels, Rgba, Subscription,
-    Task, WeakEntity, Window, div, prelude::*, px,
+    AnyElement, App, AsyncApp, Context, Entity, EventEmitter, Focusable, Pixels, Rgba,
+    Subscription, Task, WeakEntity, Window, div, prelude::*, px,
 };
 
 use crate::async_bridge;
@@ -320,9 +320,9 @@ impl VTubeConnectForm {
         cx.notify();
     }
 
-    fn status_strip(&self, palette: &ForgePalette, density: Density) -> AnyElement {
+    fn status_strip(&self, palette: &ForgePalette, density: Density, cx: &App) -> AnyElement {
         match &self.status {
-            Status::Idle => idle_strip(palette, density),
+            Status::Idle => idle_strip(palette, density, cx),
             Status::AwaitingApproval => outcome_strip(
                 StripContent {
                     accent: palette.warning,
@@ -333,10 +333,15 @@ impl VTubeConnectForm {
                 ACTIVE_LOOK,
                 palette,
                 density,
+                cx,
             ),
-            Status::Attempt(attempt) => {
-                attempt.strip("vtube-connect-status-spin", ACTIVE_LOOK, palette, density)
-            }
+            Status::Attempt(attempt) => attempt.strip(
+                "vtube-connect-status-spin",
+                ACTIVE_LOOK,
+                palette,
+                density,
+                cx,
+            ),
         }
     }
 }
@@ -357,6 +362,7 @@ impl Render for VTubeConnectForm {
             },
             &palette,
             density,
+            cx,
         );
 
         let plugin_field = div()
@@ -369,11 +375,12 @@ impl Render for VTubeConnectForm {
                 None,
                 &palette,
                 density,
+                cx,
             ))
             .child(
                 box_frame(&palette, density)
                     .border_color(palette.border_input)
-                    .child(mono_box_text(PLUGIN_NAME, &palette)),
+                    .child(mono_box_text(PLUGIN_NAME, &palette, cx)),
             );
 
         let flag_rows = flag_rows(&FLAGS, self.flags, &palette, Self::on_toggle_flag, cx);
@@ -405,18 +412,18 @@ impl Render for VTubeConnectForm {
             .child(endpoint)
             .child(plugin_field)
             .children(flag_rows)
-            .child(self.status_strip(&palette, density))
+            .child(self.status_strip(&palette, density, cx))
             .child(buttons)
     }
 }
 
-fn idle_strip(palette: &ForgePalette, density: Density) -> AnyElement {
+fn idle_strip(palette: &ForgePalette, density: Density, cx: &App) -> AnyElement {
     strip_frame(IDLE_LOOK, palette, density)
         .border_color(palette.border_regular)
         .child(strip_icon(Icon::Clock, palette.text_faint))
         .child(
             div()
-                .font_family(body_family())
+                .font_family(cx.body_family())
                 .text_size(IDLE_TEXT_SIZE)
                 .text_color(palette.text_muted)
                 .child(tr!("vtube_connect_idle_hint")),

@@ -7,12 +7,12 @@ use crate::integration_switch::integration_name;
 use crate::user_text::resolve_user_text;
 use forge_components::ROW_OFF_OPACITY;
 use forge_components::{
-    BORDER_THIN, FONT_XS, FONT_XXS, ForgePalette, Icon, Radius, Spacing, body_family, health_tile,
-    icon, mono_family, radius, row_card, scaled, spacing, tooltip_lines_builder, tr,
+    ActivePresentation, BORDER_THIN, FONT_XS, FONT_XXS, ForgePalette, Icon, Radius, Spacing,
+    health_tile, icon, radius, row_card, scaled, spacing, tooltip_lines_builder, tr,
 };
 use forge_registry::{Finding, FormField, HealthSeverity, StepHealth, UndecodableStep};
 use forge_types::SubActionStep;
-use gpui::{AnyElement, ClickEvent, Context, FontWeight, Rgba, SharedString, div, px};
+use gpui::{AnyElement, App, ClickEvent, Context, FontWeight, Rgba, SharedString, div, px};
 
 fn analyzer_finding_message(
     finding: &Finding,
@@ -87,7 +87,7 @@ fn analyzer_finding_message(
     SharedString::from(text)
 }
 
-fn step_number_column(i: usize, is_last: bool, palette: &ForgePalette) -> gpui::Div {
+fn step_number_column(i: usize, is_last: bool, palette: &ForgePalette, cx: &App) -> gpui::Div {
     let circle = div()
         .flex()
         .items_center()
@@ -97,7 +97,7 @@ fn step_number_column(i: usize, is_last: bool, palette: &ForgePalette) -> gpui::
         .bg(palette.brand)
         .child(
             div()
-                .font_family(mono_family())
+                .font_family(cx.mono_family())
                 .text_size(FONT_XS)
                 .text_color(palette.shell)
                 .child((i + 1).to_string()),
@@ -131,7 +131,7 @@ impl ActionEditor {
         let header = if at_root {
             div().flex().items_center().child(
                 div()
-                    .font_family(mono_family())
+                    .font_family(cx.mono_family())
                     .text_size(FONT_XXS)
                     .text_color(palette.text_muted)
                     .child(tr!(
@@ -147,7 +147,7 @@ impl ActionEditor {
                 .child(div().flex_1())
                 .child(
                     div()
-                        .font_family(mono_family())
+                        .font_family(cx.mono_family())
                         .text_size(FONT_XXS)
                         .text_color(palette.text_faint)
                         .child(total.to_string()),
@@ -167,6 +167,7 @@ impl ActionEditor {
                 empty_label,
                 palette,
                 density,
+                cx,
             ));
         }
         for (i, item) in current.iter().enumerate() {
@@ -188,11 +189,11 @@ impl ActionEditor {
                     Icon::Plus,
                     tr!("action_editor_add_step"),
                     palette.brand,
-                    palette,
                     cx.listener(|this, _: &ClickEvent, window, cx| {
                         this.open_grid_picker(window, cx)
                     }),
                     density,
+                    cx,
                 )),
         );
 
@@ -267,7 +268,7 @@ impl ActionEditor {
         let title = div()
             .flex_1()
             .min_w_0()
-            .font_family(body_family())
+            .font_family(cx.body_family())
             .text_size(FONT_XS)
             .text_color(palette.text_secondary)
             .child(tr!(
@@ -283,7 +284,7 @@ impl ActionEditor {
             .flex()
             .items_start()
             .gap(spacing(Spacing::Xs, density))
-            .child(step_number_column(i, is_last, palette))
+            .child(step_number_column(i, is_last, palette, cx))
             .child(div().flex_1().min_w(px(0.0)).child(card));
         let row = div()
             .w_full()
@@ -303,12 +304,12 @@ impl ActionEditor {
         cx: &mut Context<Self>,
     ) -> AnyElement {
         let Some(gate) = closed_gate else {
-            return variable_text(detail, palette).into_any_element();
+            return variable_text(detail, palette, cx).into_any_element();
         };
         div()
             .flex()
             .flex_col()
-            .child(variable_text(detail, palette))
+            .child(variable_text(detail, palette, cx))
             .child(
                 div()
                     .mt(STEP_NOTICE_MT)
@@ -376,7 +377,7 @@ impl ActionEditor {
             .or_else(|| runner.map(crate::kind_copy::step_summary))
             .unwrap_or_else(|| step.kind_id.clone());
 
-        let left_col = step_number_column(i, is_last, palette);
+        let left_col = step_number_column(i, is_last, palette, cx);
 
         let grip = self.render_step_grip(
             i,
@@ -389,7 +390,7 @@ impl ActionEditor {
         let title_text = div()
             .flex_1()
             .min_w_0()
-            .font_family(body_family())
+            .font_family(cx.body_family())
             .font_weight(FontWeight::SEMIBOLD)
             .text_size(FONT_XS)
             .text_color(palette.text_primary)

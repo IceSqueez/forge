@@ -8,10 +8,10 @@ use std::sync::Arc;
 
 use forge_components::OverflowRevealingFocus;
 use forge_components::{
-    BORDER_THIN, DISABLED_OPACITY, Density, FONT_MD, FONT_XS, FONT_XXS, ForgePalette, Icon,
-    KeyActivated, PushToast, Radius, Spacing, ToastKind, avatar_tile, body_family, card,
-    empty_state, error_row_with_retry, hash_accent, icon, mono_family, radius, section_label,
-    slider, spacing, status_dot, toggle, tr,
+    ActivePresentation, BORDER_THIN, DISABLED_OPACITY, Density, FONT_MD, FONT_XS, FONT_XXS,
+    ForgePalette, Icon, KeyActivated, PushToast, Radius, Spacing, ToastKind, avatar_tile, card,
+    empty_state, error_row_with_retry, hash_accent, icon, radius, section_label, slider, spacing,
+    status_dot, toggle, tr,
 };
 use forge_speak_queue::{
     EmoteTokenSet, Priority, RequestId, SpeakCommand, SpeakQueueHandle, SpeakRequest,
@@ -22,8 +22,8 @@ use forge_storage::{CredentialsRepo, EngineParams, SettingsRepo, StorageError};
 use forge_tts_cloud::CloudGateways;
 use forge_tts_core::EngineClass;
 use gpui::{
-    AnyElement, ClickEvent, Context, Entity, FontWeight, Pixels, Rgba, SharedString, Subscription,
-    Window, div, prelude::*, px,
+    AnyElement, App, ClickEvent, Context, Entity, FontWeight, Pixels, Rgba, SharedString,
+    Subscription, Window, div, prelude::*, px,
 };
 
 use crate::async_bridge::{
@@ -36,7 +36,6 @@ use crate::repo_failure::RepoFailure;
 use crate::tts_engine_roster::{
     RosterEngine, engine_class_label, load_engine_roster, voice_descriptor_label,
 };
-use forge_components::ActivePresentation;
 
 const RAIL_W: Pixels = px(240.0);
 const TILE: Pixels = px(36.0);
@@ -535,6 +534,7 @@ fn param_row(
     on_change: impl Fn(&f32, &mut Window, &mut gpui::App) + 'static,
     palette: &ForgePalette,
     density: Density,
+    cx: &App,
 ) -> impl IntoElement {
     let label: SharedString = label.into();
     div()
@@ -547,7 +547,7 @@ fn param_row(
             div()
                 .w(PARAM_LABEL_W)
                 .flex_shrink_0()
-                .font_family(body_family())
+                .font_family(cx.body_family())
                 .text_size(FONT_XS)
                 .text_color(palette.text_muted)
                 .child(label),
@@ -563,7 +563,7 @@ fn param_row(
                 .w(PARAM_VALUE_W)
                 .flex_shrink_0()
                 .text_right()
-                .font_family(mono_family())
+                .font_family(cx.mono_family())
                 .text_size(FONT_LABEL)
                 .text_color(palette.text_primary)
                 .child(value_text.into()),

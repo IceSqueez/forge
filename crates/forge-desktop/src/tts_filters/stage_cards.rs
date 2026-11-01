@@ -2,8 +2,8 @@ use super::TtsFiltersView;
 use super::filter_options::{ModalStage, OutputOpt, SkipRule};
 use super::preview::is_replacement_kind;
 use forge_components::{
-    Density, FONT_XS, FONT_XXS, ForgePalette, Icon, KeyActivated, Radius, Spacing, body_family,
-    icon, mono_family, radio_row, radio_row_label, radius, scaled, spacing, tr,
+    ActivePresentation, Density, FONT_XS, FONT_XXS, ForgePalette, Icon, KeyActivated, Radius,
+    Spacing, icon, radio_row, radio_row_label, radius, scaled, spacing, tr,
 };
 use forge_speak_queue::configured_skip_prefix;
 use forge_storage::{BlocklistMode, FilterRule, FilterRuleKind};
@@ -80,6 +80,7 @@ impl TtsFiltersView {
                 cx.listener(move |this, _: &ClickEvent, _, cx| this.set_skip(rule, false, cx)),
                 palette,
                 density,
+                cx,
             ));
         }
         if let Some(prefix) = prefix_display {
@@ -96,6 +97,7 @@ impl TtsFiltersView {
                 cx.listener(|this, _: &ClickEvent, _, cx| this.clear_skip_prefix(cx)),
                 palette,
                 density,
+                cx,
             ));
         }
         for (ri, regex) in settings.skip_custom_regexes.iter().enumerate() {
@@ -119,6 +121,7 @@ impl TtsFiltersView {
                     cx.listener(move |this, _: &ClickEvent, _, cx| this.remove_skip_regex(ri, cx)),
                     palette,
                     density,
+                    cx,
                 ),
             );
         }
@@ -128,6 +131,7 @@ impl TtsFiltersView {
             cx.listener(|this, _: &ClickEvent, _, cx| this.open_add_modal(ModalStage::Skip, cx)),
             palette,
             density,
+            cx,
         );
 
         self.stage_frame(
@@ -139,6 +143,7 @@ impl TtsFiltersView {
             body.into_any_element(),
             palette,
             density,
+            cx,
         )
     }
 
@@ -168,6 +173,7 @@ impl TtsFiltersView {
                         censor_on,
                         palette,
                         density,
+                        cx,
                     ),
                     palette,
                 )
@@ -186,6 +192,7 @@ impl TtsFiltersView {
                         skip_on,
                         palette,
                         density,
+                        cx,
                     ),
                     palette,
                 )
@@ -207,6 +214,7 @@ impl TtsFiltersView {
             }),
             palette,
             density,
+            cx,
         );
 
         self.stage_frame(
@@ -218,6 +226,7 @@ impl TtsFiltersView {
             body.into_any_element(),
             palette,
             density,
+            cx,
         )
     }
 
@@ -239,7 +248,7 @@ impl TtsFiltersView {
         if words.is_empty() {
             return div()
                 .py(spacing(Spacing::Xs, density))
-                .font_family(body_family())
+                .font_family(cx.body_family())
                 .text_size(FONT_XS)
                 .text_color(palette.text_muted)
                 .child(tr!("tts_filters_blocklist_empty"))
@@ -273,7 +282,7 @@ impl TtsFiltersView {
                     .bg(palette.surface_overlay)
                     .child(
                         div()
-                            .font_family(mono_family())
+                            .font_family(cx.mono_family())
                             .text_size(FONT_XXS)
                             .text_color(palette.text_primary)
                             .child(word),
@@ -305,7 +314,7 @@ impl TtsFiltersView {
                     .on_click(cx.listener(|this, _: &ClickEvent, _, cx| this.expand_blocklist(cx)))
                     .child(
                         div()
-                            .font_family(mono_family())
+                            .font_family(cx.mono_family())
                             .text_size(FONT_XXS)
                             .text_color(palette.text_faint)
                             .child(tr!(
@@ -337,7 +346,7 @@ impl TtsFiltersView {
         let body: AnyElement = if reps.is_empty() {
             div()
                 .py(spacing(Spacing::Xs, density))
-                .font_family(body_family())
+                .font_family(cx.body_family())
                 .text_size(FONT_XS)
                 .text_color(palette.text_muted)
                 .child(tr!("tts_filters_replacements_empty"))
@@ -360,6 +369,7 @@ impl TtsFiltersView {
                     cx.listener(move |this, _: &ClickEvent, _, cx| this.delete_rule(index, cx)),
                     palette,
                     density,
+                    cx,
                 ));
             }
             col.into_any_element()
@@ -370,6 +380,7 @@ impl TtsFiltersView {
             cx.listener(|this, _: &ClickEvent, _, cx| this.open_add_modal(ModalStage::Replace, cx)),
             palette,
             density,
+            cx,
         );
 
         self.stage_frame(
@@ -381,6 +392,7 @@ impl TtsFiltersView {
             body,
             palette,
             density,
+            cx,
         )
     }
 
@@ -452,6 +464,7 @@ impl TtsFiltersView {
                 cx.listener(move |this, _: &ClickEvent, _, cx| this.set_output(opt, false, cx)),
                 palette,
                 density,
+                cx,
             ));
         }
         if let Some(secs) = max_duration {
@@ -468,6 +481,7 @@ impl TtsFiltersView {
                 cx.listener(|this, _: &ClickEvent, _, cx| this.clear_output_max_duration(cx)),
                 palette,
                 density,
+                cx,
             ));
         }
         if let Some(lang_on) = language {
@@ -484,6 +498,7 @@ impl TtsFiltersView {
                 cx.listener(|this, _: &ClickEvent, _, cx| this.clear_output_lang(cx)),
                 palette,
                 density,
+                cx,
             ));
         }
 
@@ -492,6 +507,7 @@ impl TtsFiltersView {
             cx.listener(|this, _: &ClickEvent, _, cx| this.open_add_modal(ModalStage::Output, cx)),
             palette,
             density,
+            cx,
         );
 
         self.stage_frame(
@@ -503,6 +519,7 @@ impl TtsFiltersView {
             body.into_any_element(),
             palette,
             density,
+            cx,
         )
     }
 }

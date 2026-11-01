@@ -14,7 +14,7 @@ use tokio_tungstenite::tungstenite::Message;
 
 use super::{build, collected, config, dynamic_select};
 use crate::config_form::{CollectionChoices, ConfigField, FieldConfig};
-use crate::option_choices::resolve_options;
+use crate::option_choices::{ChoiceOption, resolve_options};
 
 #[path = "../../../../forge-obs/tests/common/mod.rs"]
 mod fake_obs;
@@ -68,7 +68,7 @@ impl Picker {
         }
     }
 
-    fn reload(&mut self, rt: &Runtime) -> Vec<(String, String)> {
+    fn reload(&mut self, rt: &Runtime) -> Vec<ChoiceOption> {
         let keys = self.choices.option_keys();
         let options = rt.block_on(resolve_options(self.builtins.clone(), keys));
         self.choices.refresh(&mut self.fields, &options, None);
@@ -78,7 +78,7 @@ impl Picker {
         }
     }
 
-    fn reload_until_offered(&mut self, rt: &Runtime) -> Vec<(String, String)> {
+    fn reload_until_offered(&mut self, rt: &Runtime) -> Vec<ChoiceOption> {
         let keys = self.choices.option_keys();
         let builtins = &self.builtins;
         rt.block_on(settle_until_async(
@@ -96,8 +96,8 @@ impl Picker {
     }
 }
 
-fn pair(value: &str, label: &str) -> (String, String) {
-    (value.to_owned(), label.to_owned())
+fn pair(value: &str, label: &str) -> ChoiceOption {
+    ChoiceOption::new(value, label)
 }
 
 fn studio_with_two_scenes(seen: Seen<'_>) -> Reply {

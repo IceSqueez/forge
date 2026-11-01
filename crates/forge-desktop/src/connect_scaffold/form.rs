@@ -1,4 +1,3 @@
-use forge_components::ActivePresentation;
 use forge_components::CTA_HOVER_ALPHA;
 use forge_components::Density;
 use forge_components::FONT_LABEL;
@@ -9,12 +8,12 @@ use forge_components::spacing;
 use std::sync::Arc;
 
 use forge_components::{
-    BORDER_THIN, FONT_XS, FONT_XXS, ForgePalette, Icon, KeyActivated, Radius, TextInput,
-    body_family, grow_cell, icon, mono_family, radius, scaled, spinner, toggle, tr, with_alpha,
+    ActivePresentation, BORDER_THIN, FONT_XS, FONT_XXS, ForgePalette, Icon, KeyActivated, Radius,
+    TextInput, grow_cell, icon, radius, scaled, spinner, toggle, tr, with_alpha,
 };
 use forge_storage::{Flag, Setting, SettingsRepo, read_setting_or_default, write_setting};
 use gpui::{
-    AnyElement, ClickEvent, Context, Entity, FontWeight, Pixels, Rgba, SharedString, div,
+    AnyElement, App, ClickEvent, Context, Entity, FontWeight, Pixels, Rgba, SharedString, div,
     prelude::*, px,
 };
 
@@ -195,16 +194,17 @@ pub(crate) fn endpoint_row(
     fields: EndpointFields<'_>,
     palette: &ForgePalette,
     density: Density,
+    cx: &App,
 ) -> AnyElement {
     let host_field = div()
         .flex()
         .flex_col()
-        .child(field_label(fields.host_label, None, palette, density))
+        .child(field_label(fields.host_label, None, palette, density, cx))
         .child(input_box(fields.host_focused, palette, density).child(fields.host.clone()));
     let port_field = div()
         .flex()
         .flex_col()
-        .child(field_label(fields.port_label, None, palette, density))
+        .child(field_label(fields.port_label, None, palette, density, cx))
         .child(input_box(fields.port_focused, palette, density).child(fields.port.clone()));
 
     div()
@@ -223,6 +223,7 @@ pub(crate) fn field_label(
     note: Option<String>,
     palette: &ForgePalette,
     density: Density,
+    cx: &App,
 ) -> impl IntoElement {
     let mut row = div()
         .w_full()
@@ -232,7 +233,7 @@ pub(crate) fn field_label(
         .mb(spacing(Spacing::Xs, density))
         .child(
             div()
-                .font_family(mono_family())
+                .font_family(cx.mono_family())
                 .text_size(FIELD_LABEL_SIZE)
                 .text_color(palette.text_muted)
                 .child(label),
@@ -240,7 +241,7 @@ pub(crate) fn field_label(
     if let Some(note) = note {
         row = row.child(
             div()
-                .font_family(body_family())
+                .font_family(cx.body_family())
                 .text_size(FIELD_LABEL_SIZE)
                 .text_color(palette.text_faint)
                 .child(note),
@@ -270,9 +271,13 @@ pub(crate) fn input_box(focused: bool, palette: &ForgePalette, density: Density)
     box_frame(palette, density).border_color(border)
 }
 
-pub(crate) fn mono_box_text(text: impl Into<SharedString>, palette: &ForgePalette) -> gpui::Div {
+pub(crate) fn mono_box_text(
+    text: impl Into<SharedString>,
+    palette: &ForgePalette,
+    cx: &App,
+) -> gpui::Div {
     div()
-        .font_family(mono_family())
+        .font_family(cx.mono_family())
         .text_size(BOX_TEXT_SIZE)
         .text_color(palette.text_primary)
         .child(text.into())
@@ -348,14 +353,14 @@ fn flag_row<V: 'static>(
         .flex_col()
         .child(
             div()
-                .font_family(body_family())
+                .font_family(cx.body_family())
                 .text_size(TOGGLE_LABEL_SIZE)
                 .text_color(palette.text_primary)
                 .child(row.label),
         )
         .child(
             div()
-                .font_family(body_family())
+                .font_family(cx.body_family())
                 .text_size(TOGGLE_HINT_SIZE)
                 .text_color(palette.text_faint)
                 .child(row.hint),
@@ -411,6 +416,7 @@ impl AttemptStatus {
         look: StripLook,
         palette: &ForgePalette,
         density: Density,
+        cx: &App,
     ) -> AnyElement {
         let content = match self {
             AttemptStatus::Busy(label) => StripContent {
@@ -438,7 +444,7 @@ impl AttemptStatus {
                 detail: Some((detail.clone(), palette.text_muted)),
             },
         };
-        outcome_strip(content, look, palette, density)
+        outcome_strip(content, look, palette, density, cx)
     }
 }
 
@@ -465,10 +471,11 @@ pub(crate) fn outcome_strip(
     look: StripLook,
     palette: &ForgePalette,
     density: Density,
+    cx: &App,
 ) -> AnyElement {
     let mut text = div().flex_1().min_w(px(0.0)).flex().flex_col().child(
         div()
-            .font_family(body_family())
+            .font_family(cx.body_family())
             .font_weight(FontWeight::MEDIUM)
             .text_size(STRIP_TITLE_SIZE)
             .text_color(palette.text_primary)
@@ -477,7 +484,7 @@ pub(crate) fn outcome_strip(
     if let Some((detail, tint)) = content.detail {
         text = text.child(
             div()
-                .font_family(mono_family())
+                .font_family(cx.mono_family())
                 .text_size(FONT_XXS)
                 .text_color(tint)
                 .child(detail),
@@ -538,7 +545,7 @@ pub(crate) fn form_buttons<V: 'static>(
         ))
         .child(
             div()
-                .font_family(body_family())
+                .font_family(cx.body_family())
                 .text_size(FONT_XS)
                 .text_color(palette.text_secondary)
                 .child(buttons.test_label),
@@ -565,7 +572,7 @@ pub(crate) fn form_buttons<V: 'static>(
         .child(icon(buttons.submit_glyph, BUTTON_GLYPH, palette.shell))
         .child(
             div()
-                .font_family(body_family())
+                .font_family(cx.body_family())
                 .font_weight(FontWeight::MEDIUM)
                 .text_size(FONT_XS)
                 .text_color(palette.shell)

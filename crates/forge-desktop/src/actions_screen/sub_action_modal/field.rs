@@ -1,5 +1,6 @@
 use super::*;
 use crate::amount_scale::AmountScale;
+use crate::option_choices::ChoiceOption;
 use forge_components::CodeEditor;
 use forge_registry::{CodeKind, CodeLanguage};
 use forge_types::{Variant, normalize_var_name};
@@ -59,7 +60,7 @@ pub(super) enum SubFormField {
         key: String,
         label: String,
         options_key: Option<String>,
-        options: Vec<(String, String)>,
+        options: Vec<ChoiceOption>,
         gate: Option<String>,
         selected: String,
         dependency: Option<SelectDependency>,
@@ -80,7 +81,7 @@ pub(super) enum SubFormField {
 }
 
 pub(super) struct SelectEntries {
-    pub(super) options: Vec<(String, String)>,
+    pub(super) options: Vec<ChoiceOption>,
     pub(super) selected: String,
     pub(super) accepts_typed_value: bool,
 }

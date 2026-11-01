@@ -1,17 +1,17 @@
 use forge_components::OverflowRevealingFocus;
 use forge_components::{
     ActivePresentation, BORDER_THIN, Density, FONT_SM, FONT_XS, FONT_XXS, ForgePalette, Icon,
-    ModalSize, OverlayPosition, Radius, Spacing, badge, body_family, failure_note, ghost_button,
-    icon, modal, modal_width, mono_family, overlay, primary_button, radius, section_label, segment,
-    segmented, spacing, tr, with_alpha,
+    ModalSize, OverlayPosition, Radius, Spacing, badge, failure_note, ghost_button, icon, modal,
+    modal_width, overlay, primary_button, radius, section_label, segment, segmented, spacing, tr,
+    with_alpha,
 };
 use forge_transfer::{
     ExecutableContent, PackConflict, PackImportLimit, PackImportPlan, PackItemKey, PackItemKind,
     PackManifest, PackPlanItem, PackResolution, PackWarning,
 };
 use gpui::{
-    AnyElement, ClickEvent, Context, EventEmitter, FontWeight, Pixels, Rgba, SharedString, Window,
-    div, prelude::*, px, relative,
+    AnyElement, App, ClickEvent, Context, EventEmitter, FontWeight, Pixels, Rgba, SharedString,
+    Window, div, prelude::*, px, relative,
 };
 
 use crate::integration_switch::integration_name;
@@ -258,7 +258,7 @@ impl PackImportModal {
                 .py(spacing(Spacing::Lg, density))
                 .flex()
                 .justify_center()
-                .font_family(body_family())
+                .font_family(cx.body_family())
                 .text_size(FONT_XS)
                 .text_color(palette.text_muted)
                 .child(tr!("pack_import_empty"))
@@ -293,10 +293,11 @@ impl PackImportModal {
                     .child(section_label(
                         tr!("pack_import_items_label").to_uppercase(),
                         palette,
+                        cx,
                     ))
                     .child(
                         div()
-                            .font_family(mono_family())
+                            .font_family(cx.mono_family())
                             .text_size(FONT_XXS)
                             .text_color(palette.text_muted)
                             .child(tr!(
@@ -337,10 +338,11 @@ impl PackImportModal {
             .child(section_label(
                 kind_label(group.kind).to_uppercase(),
                 palette,
+                cx,
             ))
             .child(
                 div()
-                    .font_family(mono_family())
+                    .font_family(cx.mono_family())
                     .text_size(FONT_XXS)
                     .text_color(palette.text_faint)
                     .child(group.items.len().to_string()),
@@ -394,7 +396,7 @@ impl PackImportModal {
                     .flex_1()
                     .min_w_0()
                     .truncate()
-                    .font_family(body_family())
+                    .font_family(cx.body_family())
                     .text_size(FONT_XS)
                     .text_color(palette.text_primary)
                     .child(item.name.clone()),
@@ -437,19 +439,19 @@ impl PackImportModal {
             .into_any_element()
     }
 
-    fn render_notices(&self, palette: &ForgePalette, density: Density) -> AnyElement {
+    fn render_notices(&self, palette: &ForgePalette, density: Density, cx: &App) -> AnyElement {
         let mut column = div()
             .flex_1()
             .min_w(px(0.0))
             .flex()
             .flex_col()
             .gap(spacing(Spacing::Sm, density))
-            .child(self.render_header(palette, density));
+            .child(self.render_header(palette, density, cx));
         if !self.plan.executable_content().is_empty() {
-            column = column.child(self.render_executable(palette, density));
+            column = column.child(self.render_executable(palette, density, cx));
         }
         if !self.plan.warnings().is_empty() {
-            column = column.child(self.render_warnings(palette, density));
+            column = column.child(self.render_warnings(palette, density, cx));
         }
         let mut notes = div()
             .w_full()
@@ -462,6 +464,7 @@ impl PackImportModal {
                 palette.text_muted,
                 Icon::InfoCircle,
                 density,
+                cx,
             ));
         }
         if self.plan.replaces_anything() {
@@ -470,20 +473,22 @@ impl PackImportModal {
                 palette.info,
                 Icon::Shield,
                 density,
+                cx,
             ));
         }
         column.child(notes).into_any_element()
     }
 
-    fn render_header(&self, palette: &ForgePalette, density: Density) -> AnyElement {
+    fn render_header(&self, palette: &ForgePalette, density: Density, cx: &App) -> AnyElement {
         let mut card = card(palette.border_regular, palette.shell, density)
             .child(section_label(
                 tr!("pack_import_pack_label").to_uppercase(),
                 palette,
+                cx,
             ))
             .child(
                 div()
-                    .font_family(body_family())
+                    .font_family(cx.body_family())
                     .text_size(FONT_SM)
                     .font_weight(FontWeight::MEDIUM)
                     .text_color(palette.text_primary)
@@ -491,7 +496,7 @@ impl PackImportModal {
             )
             .child(
                 div()
-                    .font_family(body_family())
+                    .font_family(cx.body_family())
                     .text_size(FONT_XS)
                     .text_color(palette.text_muted)
                     .child(if self.header.author.is_empty() {
@@ -503,7 +508,7 @@ impl PackImportModal {
         if !self.header.description.is_empty() {
             card = card.child(
                 div()
-                    .font_family(body_family())
+                    .font_family(cx.body_family())
                     .text_size(FONT_XS)
                     .text_color(palette.text_secondary)
                     .child(self.header.description.clone()),
@@ -512,11 +517,11 @@ impl PackImportModal {
         card.into_any_element()
     }
 
-    fn render_executable(&self, palette: &ForgePalette, density: Density) -> AnyElement {
+    fn render_executable(&self, palette: &ForgePalette, density: Density, cx: &App) -> AnyElement {
         let lines = self.plan.executable_content().iter().map(|content| {
             div()
                 .w_full()
-                .font_family(mono_family())
+                .font_family(cx.mono_family())
                 .text_size(FONT_XXS)
                 .text_color(palette.text_secondary)
                 .child(executable_text(content))
@@ -531,6 +536,7 @@ impl PackImportModal {
             palette.warning,
             Icon::Code,
             density,
+            cx,
         ))
         .child(
             div()
@@ -544,11 +550,12 @@ impl PackImportModal {
         .into_any_element()
     }
 
-    fn render_warnings(&self, palette: &ForgePalette, density: Density) -> AnyElement {
+    fn render_warnings(&self, palette: &ForgePalette, density: Density, cx: &App) -> AnyElement {
         card(palette.border_regular, palette.shell, density)
             .child(section_label(
                 tr!("pack_import_warnings_label").to_uppercase(),
                 palette,
+                cx,
             ))
             .children(self.plan.warnings().iter().map(|warning| {
                 summary_line(
@@ -556,6 +563,7 @@ impl PackImportModal {
                     palette.warning,
                     Icon::AlertTriangle,
                     density,
+                    cx,
                 )
             }))
             .into_any_element()
@@ -577,7 +585,7 @@ impl PackImportModal {
                 div()
                     .flex_1()
                     .min_w(px(0.0))
-                    .child(failure_note(message, palette, density)),
+                    .child(failure_note(message, palette, density, cx)),
             ),
             None => row.child(div().flex_1()),
         };
@@ -639,7 +647,7 @@ fn tag(label: String, ink: Rgba, palette: &ForgePalette) -> AnyElement {
         .into_any_element()
 }
 
-fn summary_line(text: String, color: Rgba, glyph: Icon, density: Density) -> AnyElement {
+fn summary_line(text: String, color: Rgba, glyph: Icon, density: Density, cx: &App) -> AnyElement {
     div()
         .w_full()
         .flex()
@@ -650,7 +658,7 @@ fn summary_line(text: String, color: Rgba, glyph: Icon, density: Density) -> Any
             div()
                 .flex_1()
                 .min_w(px(0.0))
-                .font_family(body_family())
+                .font_family(cx.body_family())
                 .text_size(FONT_XS)
                 .text_color(color)
                 .child(SharedString::from(text)),
@@ -669,7 +677,7 @@ impl Render for PackImportModal {
             .items_start()
             .gap(spacing(Spacing::Md, density))
             .child(self.render_items(&palette, density, cx))
-            .child(self.render_notices(&palette, density));
+            .child(self.render_notices(&palette, density, cx));
 
         let card = modal(tr!("pack_import_title"), body, &palette)
             .header_icon(Icon::Download, palette.brand)

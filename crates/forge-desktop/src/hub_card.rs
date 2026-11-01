@@ -1,4 +1,3 @@
-use forge_components::ActivePresentation;
 use forge_components::Density;
 use forge_components::FONT_LABEL;
 use forge_components::FONT_META;
@@ -17,8 +16,8 @@ use forge_components::ForgePalette;
 use forge_components::status_dot;
 use forge_components::tooltip_builder;
 use forge_components::{
-    BORDER_THIN, FONT_SECTION_LABEL, FONT_XXS, KeyActivated, Radius, body_family, mono_family,
-    radius, scaled,
+    ActivePresentation, BORDER_THIN, FONT_SECTION_LABEL, FONT_XXS, KeyActivated, Radius, radius,
+    scaled,
 };
 use forge_components::{Icon, icon, spinner};
 
@@ -77,6 +76,7 @@ pub(crate) fn hub_tile(
     muted: bool,
     size: Pixels,
     palette: &ForgePalette,
+    cx: &App,
 ) -> impl IntoElement {
     let frame = div()
         .flex_none()
@@ -95,7 +95,7 @@ pub(crate) fn hub_tile(
             };
             frame
                 .bg(bg)
-                .font_family(body_family())
+                .font_family(cx.body_family())
                 .font_weight(FontWeight::SEMIBOLD)
                 .text_size(glyph_size)
                 .text_color(fg)
@@ -123,6 +123,7 @@ pub(crate) fn lifecycle_badge(
     color: Rgba,
     palette: &ForgePalette,
     density: Density,
+    cx: &App,
 ) -> impl IntoElement {
     let mut row = div()
         .flex_none()
@@ -133,7 +134,7 @@ pub(crate) fn lifecycle_badge(
         .px(spacing(Spacing::Xs, density))
         .rounded(BADGE_RADIUS)
         .bg(palette.surface_overlay)
-        .font_family(body_family())
+        .font_family(cx.body_family())
         .font_weight(FontWeight::MEDIUM)
         .text_size(BADGE_SIZE)
         .text_color(color);
@@ -276,7 +277,7 @@ impl HubCard {
         self
     }
 
-    fn render_header(&mut self, density: Density) -> AnyElement {
+    fn render_header(&mut self, density: Density, cx: &App) -> AnyElement {
         let palette = &self.palette;
         let title_color = if self.muted {
             palette.text_secondary
@@ -293,7 +294,7 @@ impl HubCard {
                 div()
                     .min_w_0()
                     .truncate()
-                    .font_family(body_family())
+                    .font_family(cx.body_family())
                     .font_weight(FontWeight::MEDIUM)
                     .text_size(TITLE_SIZE)
                     .text_color(title_color)
@@ -303,7 +304,7 @@ impl HubCard {
         let description = div()
             .h(DESC_LINE * DESC_LINES as f32)
             .overflow_hidden()
-            .font_family(body_family())
+            .font_family(cx.body_family())
             .text_size(DESC_SIZE)
             .line_height(DESC_LINE)
             .text_color(palette.text_muted)
@@ -319,7 +320,7 @@ impl HubCard {
             .into_any_element()
     }
 
-    fn render_note(&mut self, density: Density) -> AnyElement {
+    fn render_note(&mut self, density: Density, cx: &App) -> AnyElement {
         let mut row = div()
             .id(ElementId::NamedChild(
                 Arc::new(self.id.clone()),
@@ -348,7 +349,7 @@ impl HubCard {
                         .flex_1()
                         .min_w_0()
                         .truncate()
-                        .font_family(body_family())
+                        .font_family(cx.body_family())
                         .text_size(NOTE_SIZE)
                         .text_color(ink)
                         .child(note.text),
@@ -385,8 +386,8 @@ impl HubCard {
 impl RenderOnce for HubCard {
     fn render(mut self, _window: &mut Window, cx: &mut App) -> impl IntoElement {
         let density = cx.density();
-        let header = self.render_header(density);
-        let note = self.render_note(density);
+        let header = self.render_header(density, cx);
+        let note = self.render_note(density, cx);
         let footer = self.render_footer(density);
         let bg = if self.muted {
             self.palette.shell
@@ -513,7 +514,7 @@ impl RenderOnce for CompactButton {
             .px(pad_h)
             .rounded(radius(Radius::Sm))
             .cursor_pointer()
-            .font_family(body_family())
+            .font_family(cx.body_family())
             .text_size(COMPACT_SIZE)
             .text_color(ink)
             .child(icon(self.glyph, glyph_size, ink));
@@ -550,6 +551,7 @@ pub(crate) fn hub_section_header(
     count: Option<SharedString>,
     palette: &ForgePalette,
     density: Density,
+    cx: &App,
 ) -> impl IntoElement {
     let label: SharedString = label.into();
     div()
@@ -560,7 +562,7 @@ pub(crate) fn hub_section_header(
         .child(
             div()
                 .flex_none()
-                .font_family(mono_family())
+                .font_family(cx.mono_family())
                 .text_size(FONT_SECTION_LABEL)
                 .text_color(palette.text_muted)
                 .child(SharedString::from(label.to_uppercase())),
@@ -568,7 +570,7 @@ pub(crate) fn hub_section_header(
         .child(
             div()
                 .flex_none()
-                .font_family(body_family())
+                .font_family(cx.body_family())
                 .text_size(SECTION_BLURB_SIZE)
                 .text_color(palette.text_faint)
                 .child(blurb.into()),
@@ -577,7 +579,7 @@ pub(crate) fn hub_section_header(
         .children(count.map(|count| {
             div()
                 .flex_none()
-                .font_family(mono_family())
+                .font_family(cx.mono_family())
                 .text_size(FONT_XXS)
                 .text_color(palette.text_faint)
                 .child(count)

@@ -5,15 +5,17 @@ use forge_audio::{
     stored_output_device,
 };
 use forge_components::{
-    BORDER_THIN, Density, FONT_SM, FONT_XS, ForgePalette, Icon, KeyActivated, Radius, Spacing,
-    body_family, drive_overlay_focus, dropdown, dropdown_list, dropdown_row,
+    ActivePresentation, BORDER_THIN, Density, FONT_SM, FONT_XS, ForgePalette, Icon, KeyActivated,
+    Radius, Spacing, drive_overlay_focus, dropdown, dropdown_list, dropdown_row,
     ghost_button_with_icon, icon, icon_button, radius, scaled, setting_block, setting_groups,
     setting_row, setting_rows, spacing, tr,
 };
 use forge_speech_types::PcmBuffer;
 use forge_storage::settings::core_settings;
 use forge_storage::{DataProvider, SettingsRepo, read_setting, write_setting};
-use gpui::{AnyElement, ClickEvent, Context, Entity, FocusHandle, Window, div, prelude::*, px};
+use gpui::{
+    AnyElement, App, ClickEvent, Context, Entity, FocusHandle, Window, div, prelude::*, px,
+};
 
 use crate::async_bridge::{self, Loadable};
 use crate::load_notice::{LoadNotice, NoticeWidth, load_notice};
@@ -23,7 +25,6 @@ use crate::settings::SettingsAudioLaunch;
 use crate::settings_audio_routing::SettingsAudioRoutingView;
 use crate::settings_pane_header::SettingsPaneHeader;
 use crate::settings_voice_gate::SettingsVoiceGateView;
-use forge_components::ActivePresentation;
 
 const DEVICE_TRIGGER_PAD_V: gpui::Pixels = px(7.0);
 
@@ -273,6 +274,7 @@ impl SettingsAudioView {
             cx.listener(|this, _: &ClickEvent, _, cx| this.load_devices(true, cx)),
             palette,
             density,
+            cx,
         );
         if let Some(notice) = notice {
             return notice;
@@ -309,7 +311,7 @@ impl SettingsAudioView {
             .on_click(cx.listener(|this, _: &ClickEvent, _, cx| this.toggle_picker(cx)))
             .child(
                 div()
-                    .font_family(body_family())
+                    .font_family(cx.body_family())
                     .text_size(FONT_SM)
                     .text_color(palette.text_primary)
                     .child(selected_name),
@@ -380,9 +382,10 @@ impl SettingsAudioView {
         key: &'static str,
         message: &str,
         palette: &ForgePalette,
+        cx: &App,
     ) -> impl IntoElement {
         div()
-            .font_family(body_family())
+            .font_family(cx.body_family())
             .text_size(FONT_SM)
             .text_color(palette.danger)
             .child(tr!(key, error = message))
@@ -421,11 +424,16 @@ impl Render for SettingsAudioView {
             .gap(spacing(Spacing::Xs, density))
             .child(output_rows);
         if let Some(message) = &self.test_error {
-            output = output.child(self.error_text("settings_audio_test_error", message, &palette));
+            output =
+                output.child(self.error_text("settings_audio_test_error", message, &palette, cx));
         }
         if let Some(message) = &self.persist_error {
-            output =
-                output.child(self.error_text("settings_audio_persist_error", message, &palette));
+            output = output.child(self.error_text(
+                "settings_audio_persist_error",
+                message,
+                &palette,
+                cx,
+            ));
         }
 
         div()
@@ -434,8 +442,15 @@ impl Render for SettingsAudioView {
             .child(SettingsPaneHeader::new(SettingsSection::Audio))
             .child(setting_groups(
                 [
-                    setting_block(tr!("settings_audio_title"), None, output, &palette, density)
-                        .into_any_element(),
+                    setting_block(
+                        tr!("settings_audio_title"),
+                        None,
+                        output,
+                        &palette,
+                        density,
+                        cx,
+                    )
+                    .into_any_element(),
                     self.routing.clone().into_any_element(),
                     self.voice_gate.clone().into_any_element(),
                 ],

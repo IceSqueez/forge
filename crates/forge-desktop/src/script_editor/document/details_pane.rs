@@ -2,11 +2,10 @@ use super::ScriptDocument;
 use forge_components::OverflowRevealingFocus;
 use forge_components::{
     ActivePresentation, BORDER_THIN, Density, FONT_BADGE, FONT_XS, FONT_XXS, ForgePalette,
-    ResizeEdge, ResizeRange, Spacing, body_family, fmt_display_relative, install_resize,
-    mono_family, scaled, spacing, tr,
+    ResizeEdge, ResizeRange, Spacing, fmt_display_relative, install_resize, scaled, spacing, tr,
 };
 use gpui::prelude::*;
-use gpui::{AnyElement, Context, FontWeight, Pixels, Rgba, SharedString, div, px};
+use gpui::{AnyElement, App, Context, FontWeight, Pixels, Rgba, SharedString, div, px};
 
 const DETAILS_PANE_PAD: Pixels = px(14.0);
 const DETAILS_MAX_W: Pixels = px(420.0);
@@ -61,23 +60,26 @@ impl ScriptDocument {
                 false,
                 palette,
                 density,
+                cx,
             ))
             .child(detail_row(
                 tr!("script_editor_details_type"),
                 div().text_color(type_color).child(type_label),
                 palette,
                 density,
+                cx,
             ));
 
         if let Some(linked) = linked {
             inner = inner.child(detail_row(
                 tr!("script_editor_details_linked"),
                 div()
-                    .font_family(mono_family())
+                    .font_family(cx.mono_family())
                     .text_color(palette.text_primary)
                     .child(SharedString::from(linked.name.clone())),
                 palette,
                 density,
+                cx,
             ));
         }
 
@@ -85,16 +87,18 @@ impl ScriptDocument {
             .child(detail_row(
                 tr!("script_editor_details_lines"),
                 div()
-                    .font_family(mono_family())
+                    .font_family(cx.mono_family())
                     .child(line_count.to_string()),
                 palette,
                 density,
+                cx,
             ))
             .child(detail_row(
                 tr!("script_editor_details_edited"),
                 SharedString::from(edited),
                 palette,
                 density,
+                cx,
             ));
 
         inner = inner.child(self.signature_section(palette, cx));
@@ -125,6 +129,7 @@ impl ScriptDocument {
                 true,
                 palette,
                 density,
+                cx,
             ))
             .child(
                 div()
@@ -136,6 +141,7 @@ impl ScriptDocument {
                         palette.text_primary,
                         palette,
                         density,
+                        cx,
                     ))
                     .child(mini_stat(
                         tr!("script_editor_stat_avg"),
@@ -143,6 +149,7 @@ impl ScriptDocument {
                         palette.success,
                         palette,
                         density,
+                        cx,
                     )),
             );
 
@@ -178,9 +185,10 @@ pub(super) fn details_heading(
     signature: bool,
     palette: &ForgePalette,
     density: Density,
+    cx: &App,
 ) -> impl IntoElement {
     let heading = div()
-        .font_family(mono_family())
+        .font_family(cx.mono_family())
         .text_size(FONT_XXS)
         .text_color(palette.text_muted)
         .child(label.into());
@@ -199,6 +207,7 @@ fn mini_stat(
     value_color: Rgba,
     palette: &ForgePalette,
     density: Density,
+    cx: &App,
 ) -> impl IntoElement {
     div()
         .flex_1()
@@ -212,7 +221,7 @@ fn mini_stat(
         .px(scaled(MINI_STAT_PAD_X, density))
         .child(
             div()
-                .font_family(mono_family())
+                .font_family(cx.mono_family())
                 .text_size(FONT_BADGE)
                 .text_color(palette.text_faint)
                 .pb(scaled(MINI_STAT_LABEL_GAP, density))
@@ -220,7 +229,7 @@ fn mini_stat(
         )
         .child(
             div()
-                .font_family(mono_family())
+                .font_family(cx.mono_family())
                 .font_weight(FontWeight::SEMIBOLD)
                 .text_size(FONT_XS)
                 .text_color(value_color)
@@ -233,6 +242,7 @@ fn detail_row(
     value: impl IntoElement,
     palette: &ForgePalette,
     density: Density,
+    cx: &App,
 ) -> impl IntoElement {
     div()
         .flex()
@@ -241,14 +251,14 @@ fn detail_row(
         .py(spacing(Spacing::Xxs, density))
         .child(
             div()
-                .font_family(body_family())
+                .font_family(cx.body_family())
                 .text_size(FONT_XS)
                 .text_color(palette.text_faint)
                 .child(label.into()),
         )
         .child(
             div()
-                .font_family(body_family())
+                .font_family(cx.body_family())
                 .text_size(FONT_XS)
                 .text_color(palette.text_secondary)
                 .child(value),

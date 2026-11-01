@@ -1,13 +1,13 @@
 use forge_components::PushToast;
 use forge_components::{
-    Density, FONT_XS, FONT_XXS, ForgePalette, Icon, Spacing, ToastKind, body_family,
-    ghost_button_with_icon, mono_family, spacing, tr,
+    ActivePresentation, Density, FONT_XS, FONT_XXS, ForgePalette, Icon, Spacing, ToastKind,
+    ghost_button_with_icon, spacing, tr,
 };
 use gpui::{AnyElement, App, ClickEvent, Window, div, prelude::*};
 
 use crate::repo_failure::RepoFailure;
 
-pub(super) fn files_root_note(palette: &ForgePalette, density: Density) -> AnyElement {
+pub(super) fn files_root_note(palette: &ForgePalette, density: Density, cx: &App) -> AnyElement {
     let root = crate::app_paths::app_paths().assets_dir();
     let caption = div()
         .flex()
@@ -15,21 +15,21 @@ pub(super) fn files_root_note(palette: &ForgePalette, density: Density) -> AnyEl
         .gap(spacing(Spacing::Xxs, density))
         .child(
             div()
-                .font_family(mono_family())
+                .font_family(cx.mono_family())
                 .text_size(FONT_XXS)
                 .text_color(palette.text_muted)
                 .child(tr!("actions_sub_files_root_label")),
         )
         .child(
             div()
-                .font_family(mono_family())
+                .font_family(cx.mono_family())
                 .text_size(FONT_XS)
                 .text_color(palette.text_primary)
                 .child(root.display().to_string()),
         )
         .child(
             div()
-                .font_family(body_family())
+                .font_family(cx.body_family())
                 .text_size(FONT_XXS)
                 .text_color(palette.text_faint)
                 .child(tr!("actions_sub_files_root_hint")),

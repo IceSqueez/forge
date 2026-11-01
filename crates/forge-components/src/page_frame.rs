@@ -9,7 +9,7 @@ use crate::cards::toolbar_row;
 use crate::palette::ForgePalette;
 use crate::presentation::ActivePresentation;
 use crate::status::status_dot;
-use crate::tokens::{Density, FONT_XS, Spacing, body_family, scaled, spacing};
+use crate::tokens::{Density, FONT_XS, Spacing, scaled, spacing};
 
 const HEADER_STAT_FS: Pixels = FONT_LABEL;
 
@@ -39,7 +39,8 @@ pub fn header_stats(
     stats: Vec<HeaderStat>,
     palette: &ForgePalette,
     density: Density,
-) -> impl IntoElement {
+    cx: &App,
+) -> impl IntoElement + use<> {
     let muted = palette.text_muted;
     let faint = palette.text_faint;
     let last = stats.len().saturating_sub(1);
@@ -56,7 +57,7 @@ pub fn header_stats(
             .gap(spacing(Spacing::Xxs, density))
             .child(
                 div()
-                    .font_family(body_family())
+                    .font_family(cx.body_family())
                     .font_weight(FontWeight::MEDIUM)
                     .text_size(HEADER_STAT_FS)
                     .text_color(stat.value_color)
@@ -64,7 +65,7 @@ pub fn header_stats(
             )
             .child(
                 div()
-                    .font_family(body_family())
+                    .font_family(cx.body_family())
                     .text_size(HEADER_STAT_FS)
                     .text_color(muted)
                     .child(stat.label),
@@ -75,7 +76,7 @@ pub fn header_stats(
         if i != last {
             row = row.child(
                 div()
-                    .font_family(body_family())
+                    .font_family(cx.body_family())
                     .text_size(HEADER_STAT_FS)
                     .text_color(faint)
                     .child("\u{b7}"),

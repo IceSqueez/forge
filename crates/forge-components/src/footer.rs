@@ -1,12 +1,13 @@
+use crate::ActivePresentation;
 use gpui::{
-    AnyElement, ElementId, InteractiveElement, IntoElement, ParentElement, Pixels, Rgba,
+    AnyElement, App, ElementId, InteractiveElement, IntoElement, ParentElement, Pixels, Rgba,
     SharedString, StatefulInteractiveElement, Styled, div, px,
 };
 
 use crate::icons::{Icon, icon};
 use crate::palette::ForgePalette;
 use crate::status::status_dot;
-use crate::tokens::{BORDER_THIN, Density, FONT_XS, Spacing, mono_family, scaled, spacing};
+use crate::tokens::{BORDER_THIN, Density, FONT_XS, Spacing, scaled, spacing};
 use crate::tooltip::tooltip_lines_builder;
 
 pub const FOOTER_HEIGHT: Pixels = px(24.0);
@@ -29,9 +30,14 @@ pub(crate) fn split_version_stage(version: &str) -> (&str, Option<&str>) {
     }
 }
 
-fn mono_cell(text: impl Into<SharedString>, color: Rgba, size: Pixels) -> impl IntoElement {
+fn mono_cell(
+    text: impl Into<SharedString>,
+    color: Rgba,
+    size: Pixels,
+    cx: &App,
+) -> impl IntoElement {
     div()
-        .font_family(mono_family())
+        .font_family(cx.mono_family())
         .text_size(size)
         .text_color(color)
         .child(text.into())
@@ -50,6 +56,7 @@ pub fn app_footer(
     trailing: Vec<AnyElement>,
     palette: &ForgePalette,
     density: Density,
+    cx: &App,
 ) -> impl IntoElement {
     let shell = palette.shell;
     let border_color = palette.border_regular;
@@ -68,12 +75,14 @@ pub fn app_footer(
             SharedString::from(format!("v{version_base}")),
             text_muted,
             FONT_XS,
+            cx,
         ));
     if let Some(stage) = stage_tag {
         version_group = version_group.child(mono_cell(
             SharedString::from(stage.to_owned()),
             brand,
             FONT_XS,
+            cx,
         ));
     }
 
@@ -81,8 +90,8 @@ pub fn app_footer(
         .flex()
         .items_center()
         .gap(scaled(LEFT_GAP, density))
-        .child(mono_cell(app_label, text_muted, FONT_XS))
-        .child(mono_cell("·", text_faint, FONT_XS))
+        .child(mono_cell(app_label, text_muted, FONT_XS, cx))
+        .child(mono_cell("·", text_faint, FONT_XS, cx))
         .child(version_group);
 
     let dot_color = if connected == 0 { text_faint } else { success };
@@ -91,24 +100,26 @@ pub fn app_footer(
         .items_center()
         .gap(spacing(Spacing::Xs, density))
         .child(status_dot(dot_color, STATUS_DOT_SIZE))
-        .child(mono_cell(connected_label, text_secondary, FONT_XS));
+        .child(mono_cell(connected_label, text_secondary, FONT_XS, cx));
 
     let uptime_row = div()
         .flex()
         .items_center()
         .gap(scaled(UPTIME_GAP, density))
         .child(icon(Icon::Clock, CLOCK_ICON_SIZE, text_faint))
-        .child(mono_cell(uptime_label, text_secondary, FONT_XS));
+        .child(mono_cell(uptime_label, text_secondary, FONT_XS, cx));
 
     let mut right = div()
         .flex()
         .items_center()
         .gap(scaled(RIGHT_GAP, density))
         .child(conn_row)
-        .child(mono_cell("·", text_faint, FONT_XS))
+        .child(mono_cell("·", text_faint, FONT_XS, cx))
         .child(uptime_row);
     for item in trailing {
-        right = right.child(mono_cell("·", text_faint, FONT_XS)).child(item);
+        right = right
+            .child(mono_cell("·", text_faint, FONT_XS, cx))
+            .child(item);
     }
 
     div()
@@ -132,6 +143,7 @@ pub fn footer_alert(
     details: Vec<SharedString>,
     palette: &ForgePalette,
     density: Density,
+    cx: &App,
 ) -> impl IntoElement {
     footer_indicator(
         id,
@@ -142,6 +154,7 @@ pub fn footer_alert(
         details,
         palette,
         density,
+        cx,
     )
 }
 
@@ -158,6 +171,7 @@ pub fn footer_indicator(
     details: Vec<SharedString>,
     palette: &ForgePalette,
     density: Density,
+    cx: &App,
 ) -> impl IntoElement {
     div()
         .id(id)
@@ -165,7 +179,7 @@ pub fn footer_indicator(
         .items_center()
         .gap(scaled(ALERT_GAP, density))
         .child(icon(glyph, ALERT_ICON_SIZE, icon_color))
-        .child(mono_cell(label, label_color, FONT_XS))
+        .child(mono_cell(label, label_color, FONT_XS, cx))
         .tooltip(tooltip_lines_builder(details, palette))
 }
 

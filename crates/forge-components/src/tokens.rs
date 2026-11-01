@@ -1,7 +1,4 @@
-use forge_types::RecoverRwLock;
-use std::sync::RwLock;
-
-use gpui::{BoxShadow, Pixels, SharedString, hsla, point, px};
+use gpui::{BoxShadow, Pixels, hsla, point, px};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default)]
 pub enum Density {
@@ -167,40 +164,6 @@ pub(crate) fn elevation_shadow(e: Elevation) -> Vec<BoxShadow> {
 
 pub(crate) const DEFAULT_BODY_FAMILY: &str = "Inter";
 pub(crate) const DEFAULT_MONO_FAMILY: &str = "JetBrains Mono";
-
-static BODY_FAMILY_OVERRIDE: RwLock<Option<SharedString>> = RwLock::new(None);
-static MONO_FAMILY_OVERRIDE: RwLock<Option<SharedString>> = RwLock::new(None);
-
-pub fn body_family() -> SharedString {
-    resolve_family(&BODY_FAMILY_OVERRIDE, DEFAULT_BODY_FAMILY)
-}
-
-pub fn mono_family() -> SharedString {
-    resolve_family(&MONO_FAMILY_OVERRIDE, DEFAULT_MONO_FAMILY)
-}
-
-pub fn set_body_family(family: Option<SharedString>) {
-    {
-        let mut guard = BODY_FAMILY_OVERRIDE.write_recover();
-        *guard = family;
-    }
-}
-
-pub fn set_mono_family(family: Option<SharedString>) {
-    {
-        let mut guard = MONO_FAMILY_OVERRIDE.write_recover();
-        *guard = family;
-    }
-}
-
-fn resolve_family(slot: &RwLock<Option<SharedString>>, fallback: &'static str) -> SharedString {
-    match slot.read() {
-        Ok(guard) => guard
-            .clone()
-            .unwrap_or_else(|| SharedString::from(fallback)),
-        Err(_) => SharedString::from(fallback),
-    }
-}
 
 #[cfg(test)]
 mod tests {

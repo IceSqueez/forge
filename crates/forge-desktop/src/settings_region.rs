@@ -250,6 +250,7 @@ impl SettingsRegionView {
             palette,
             cx.listener(move |this, _: &ClickEvent, _, cx| this.toggle_menu(row, cx)),
             density,
+            cx,
         );
         let mut field = div()
             .relative()

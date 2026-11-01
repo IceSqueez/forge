@@ -450,7 +450,7 @@ fn reward_choice(fixture: &Fixture, cx: &mut gpui::TestAppContext) -> (String, V
                     ..
                 } if key == REWARD_FIELD => Some((
                     selected.clone(),
-                    options.iter().map(|(value, _)| value.clone()).collect(),
+                    options.iter().map(|option| option.value.clone()).collect(),
                 )),
                 _ => None,
             })

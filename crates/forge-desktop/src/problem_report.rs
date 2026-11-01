@@ -8,8 +8,8 @@ use forge_audio::stored_output_device;
 use forge_components::OverflowRevealingFocus;
 use forge_components::{
     ActivePresentation, Density, FONT_SM, FONT_XS, ForgePalette, Icon, ModalSize, OverlayPosition,
-    PushToast, Spacing, ToastAction, ToastKind, body_family, card, ghost_button, modal,
-    mono_family, overlay, primary_button, spacing, tr,
+    PushToast, Spacing, ToastAction, ToastKind, card, ghost_button, modal, overlay, primary_button,
+    spacing, tr,
 };
 use forge_storage::settings::core_settings::AUDIO_OUTPUT_DEVICE_ID;
 use forge_storage::{
@@ -288,20 +288,22 @@ impl ProblemReport {
             .flex()
             .flex_col()
             .gap(spacing(Spacing::Sm, density))
-            .child(paragraph(lead, palette.text_primary, FONT_SM))
+            .child(paragraph(lead, palette.text_primary, FONT_SM, cx))
             .child(paragraph(
                 tr!("problem_report_files_note"),
                 palette.text_secondary,
                 FONT_XS,
+                cx,
             ));
         for note in export_statement(&draft.bundle, &draft.level) {
-            body = body.child(statement_row(note, palette, density));
+            body = body.child(statement_row(note, palette, density, cx));
         }
         body = body
             .child(paragraph(
                 tr!("problem_report_issue_note"),
                 palette.text_secondary,
                 FONT_XS,
+                cx,
             ))
             .child(
                 card(
@@ -309,7 +311,7 @@ impl ProblemReport {
                         .id("problem-report-issue-text")
                         .max_h(ISSUE_TEXT_MAX_HEIGHT)
                         .overflow_y_revealing_focus()
-                        .font_family(mono_family())
+                        .font_family(cx.mono_family())
                         .text_size(FONT_XS)
                         .text_color(palette.text_secondary)
                         .child(draft.form.preview_text()),
@@ -388,9 +390,9 @@ impl Render for ProblemReport {
     }
 }
 
-fn paragraph(text: String, color: gpui::Rgba, size: Pixels) -> impl IntoElement {
+fn paragraph(text: String, color: gpui::Rgba, size: Pixels, cx: &App) -> impl IntoElement {
     div()
-        .font_family(body_family())
+        .font_family(cx.body_family())
         .text_size(size)
         .text_color(color)
         .child(text)

@@ -1,4 +1,3 @@
-use forge_components::ActivePresentation;
 use forge_components::Density;
 use forge_components::FONT_META;
 use forge_components::FONT_ROW;
@@ -10,12 +9,12 @@ use forge_components::spacing;
 use std::ops::Range;
 
 use forge_components::{
-    ForgePalette, Icon, KeyActivated, ModalSize, OverlayPosition, Radius, body_family,
-    ghost_button, icon, modal, mono_family, overlay, radius, scaled, tr,
+    ActivePresentation, ForgePalette, Icon, KeyActivated, ModalSize, OverlayPosition, Radius,
+    ghost_button, icon, modal, overlay, radius, scaled, tr,
 };
 use gpui::{
-    AnyElement, ClickEvent, Context, FontWeight, HighlightStyle, Hsla, Pixels, Rgba, SharedString,
-    StyledText, div, prelude::*, px,
+    AnyElement, App, ClickEvent, Context, FontWeight, HighlightStyle, Hsla, Pixels, Rgba,
+    SharedString, StyledText, div, prelude::*, px,
 };
 
 use crate::integrations_hub::IntegrationsHubView;
@@ -84,7 +83,7 @@ impl Emphasis {
     }
 }
 
-fn lead(prompt: &DisablePrompt, palette: &ForgePalette) -> AnyElement {
+fn lead(prompt: &DisablePrompt, palette: &ForgePalette, cx: &App) -> AnyElement {
     let actions = prompt.references.actions.len();
     let triggers = prompt.references.triggers;
     let mut text = Emphasis::new();
@@ -121,7 +120,7 @@ fn lead(prompt: &DisablePrompt, palette: &ForgePalette) -> AnyElement {
         ..HighlightStyle::default()
     };
     div()
-        .font_family(body_family())
+        .font_family(cx.body_family())
         .text_size(LEAD_SIZE)
         .line_height(LEAD_LINE)
         .text_color(palette.text_secondary)
@@ -135,12 +134,13 @@ fn consequence(
     text: StyledText,
     palette: &ForgePalette,
     density: Density,
+    cx: &App,
 ) -> AnyElement {
     div()
         .flex()
         .items_start()
         .gap(scaled(LINE_GAP, density))
-        .font_family(body_family())
+        .font_family(cx.body_family())
         .text_size(LINE_SIZE)
         .text_color(palette.text_secondary)
         .child(
@@ -152,7 +152,12 @@ fn consequence(
         .into_any_element()
 }
 
-fn consequences(prompt: &DisablePrompt, palette: &ForgePalette, density: Density) -> AnyElement {
+fn consequences(
+    prompt: &DisablePrompt,
+    palette: &ForgePalette,
+    density: Density,
+    cx: &App,
+) -> AnyElement {
     let mut fails = Emphasis::new();
     fails.plain(&tr!("integration_disable_fails_prefix", name = prompt.name));
     fails.strong(&tr!("integration_disable_reason"));
@@ -171,6 +176,7 @@ fn consequences(prompt: &DisablePrompt, palette: &ForgePalette, density: Density
             fails.styled(red),
             palette,
             density,
+            cx,
         ));
     if prompt.references.triggers > 0 {
         lines = lines.child(consequence(
@@ -181,6 +187,7 @@ fn consequences(prompt: &DisablePrompt, palette: &ForgePalette, density: Density
             ))),
             palette,
             density,
+            cx,
         ));
     }
     lines
@@ -190,11 +197,17 @@ fn consequences(prompt: &DisablePrompt, palette: &ForgePalette, density: Density
             StyledText::new(SharedString::from(tr!("integration_disable_kept"))),
             palette,
             density,
+            cx,
         ))
         .into_any_element()
 }
 
-fn used_by(prompt: &DisablePrompt, palette: &ForgePalette, density: Density) -> Option<AnyElement> {
+fn used_by(
+    prompt: &DisablePrompt,
+    palette: &ForgePalette,
+    density: Density,
+    cx: &App,
+) -> Option<AnyElement> {
     let actions = &prompt.references.actions;
     if actions.is_empty() {
         return None;
@@ -210,7 +223,7 @@ fn used_by(prompt: &DisablePrompt, palette: &ForgePalette, density: Density) -> 
                 .px(scaled(CHIP_PAD_H, density))
                 .rounded(radius(Radius::Sm))
                 .bg(palette.shell)
-                .font_family(mono_family())
+                .font_family(cx.mono_family())
                 .text_size(CHIP_SIZE)
                 .text_color(palette.text_secondary)
                 .child(icon(Icon::Bolt, CHIP_ICON, palette.brand))
@@ -223,7 +236,7 @@ fn used_by(prompt: &DisablePrompt, palette: &ForgePalette, density: Density) -> 
             div()
                 .py(scaled(CHIP_PAD_V, density))
                 .px(spacing(Spacing::Xxs, density))
-                .font_family(mono_family())
+                .font_family(cx.mono_family())
                 .text_size(CHIP_SIZE)
                 .text_color(palette.text_faint)
                 .child(tr!(
@@ -237,7 +250,7 @@ fn used_by(prompt: &DisablePrompt, palette: &ForgePalette, density: Density) -> 
             .child(
                 div()
                     .mb(spacing(Spacing::Xs, density))
-                    .font_family(mono_family())
+                    .font_family(cx.mono_family())
                     .text_size(USED_BY_SIZE)
                     .text_color(palette.text_faint)
                     .child(tr!("integration_disable_used_by").to_uppercase()),
@@ -259,9 +272,9 @@ pub(crate) fn render_disable_modal(
         .flex()
         .flex_col()
         .gap(scaled(BODY_GAP, density))
-        .child(lead(prompt, palette))
-        .child(consequences(prompt, palette, density))
-        .children(used_by(prompt, palette, density));
+        .child(lead(prompt, palette, cx))
+        .child(consequences(prompt, palette, density, cx))
+        .children(used_by(prompt, palette, density, cx));
 
     let confirm = div()
         .id("integration-disable-confirm")
@@ -273,7 +286,7 @@ pub(crate) fn render_disable_modal(
         .rounded(radius(Radius::Sm))
         .bg(palette.warning)
         .cursor_pointer()
-        .font_family(body_family())
+        .font_family(cx.body_family())
         .font_weight(FontWeight::MEDIUM)
         .text_size(CONFIRM_SIZE)
         .text_color(palette.shell)
@@ -288,7 +301,7 @@ pub(crate) fn render_disable_modal(
         .justify_between()
         .child(
             div()
-                .font_family(body_family())
+                .font_family(cx.body_family())
                 .text_size(FOOTER_HINT)
                 .text_color(palette.text_faint)
                 .child(tr!("integration_disable_esc_hint")),

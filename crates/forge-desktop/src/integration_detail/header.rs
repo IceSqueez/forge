@@ -1,15 +1,15 @@
 use super::IntegrationDetail;
 use crate::health_text::connection_label;
 use crate::integration_catalog::{identity_of, tint_color};
-use crate::integration_quick_actions::outline_button;
+use crate::integration_quick_actions::outline_icon_button;
 use crate::user_text::user_text_string;
 use forge_components::{
-    ActivePresentation, Density, FONT_XS, ForgePalette, Icon, Radius, Spacing, badge, body_family,
-    icon, mono_family, platform_hero, radius, scaled, spacing, status_dot, tr,
+    ActivePresentation, Density, FONT_XS, ForgePalette, Icon, Radius, Spacing, badge,
+    platform_hero, radius, scaled, spacing, status_dot, tr,
 };
 use forge_platform_core::{ConnectionState, HeaderAction, HeroBadge, HeroBadgeTone};
 use forge_types::IntegrationId;
-use gpui::{AnyElement, ClickEvent, Context, FontWeight, Pixels, Rgba, div, prelude::*, px};
+use gpui::{AnyElement, App, ClickEvent, Context, FontWeight, Pixels, Rgba, div, prelude::*, px};
 
 const BADGE_PAD_X: Pixels = px(2.0);
 const BADGE_PAD_Y: Pixels = px(6.0);
@@ -75,6 +75,7 @@ impl IntegrationDetail {
         &self,
         palette: &ForgePalette,
         density: Density,
+        cx: &App,
     ) -> AnyElement {
         let mut row = div()
             .flex()
@@ -88,7 +89,7 @@ impl IntegrationDetail {
                     .child(status_dot(palette.success, STATUS_DOT))
                     .child(
                         div()
-                            .font_family(body_family())
+                            .font_family(cx.body_family())
                             .text_size(FONT_XS)
                             .text_color(palette.success)
                             .child(tr!("integration_status_authenticated")),
@@ -104,7 +105,7 @@ impl IntegrationDetail {
                 )
                 .child(
                     div()
-                        .font_family(mono_family())
+                        .font_family(cx.mono_family())
                         .text_size(FONT_XS)
                         .text_color(palette.text_muted)
                         .child(suffix),
@@ -117,6 +118,7 @@ impl IntegrationDetail {
         &self,
         palette: &ForgePalette,
         density: Density,
+        cx: &App,
     ) -> AnyElement {
         let (dot, text) = match self.shown.connection {
             ConnectionState::Connected => (palette.success, palette.success),
@@ -132,7 +134,7 @@ impl IntegrationDetail {
             .child(status_dot(dot, STATUS_DOT))
             .child(
                 div()
-                    .font_family(body_family())
+                    .font_family(cx.body_family())
                     .text_size(FONT_XS)
                     .text_color(text)
                     .child(label),
@@ -191,7 +193,6 @@ impl IntegrationDetail {
         palette: &ForgePalette,
         cx: &mut Context<Self>,
     ) -> AnyElement {
-        let density = cx.density();
         let signing_out = self.live.signing_out && matches!(action, HeaderAction::Disconnect);
         let label = if signing_out {
             tr!("integration_signing_out")
@@ -209,7 +210,7 @@ impl IntegrationDetail {
             HeaderAction::Settings => Icon::Settings,
         };
         let hover_border = palette.border_input;
-        outline_button(("header-action", idx), palette, density)
+        outline_icon_button(("header-action", idx), glyph, label, text_color, cx)
             .when(!signing_out, |button| {
                 button
                     .cursor_pointer()
@@ -218,14 +219,6 @@ impl IntegrationDetail {
                         this.on_header_action(action.clone(), window, cx)
                     }))
             })
-            .child(icon(glyph, FONT_XS, text_color))
-            .child(
-                div()
-                    .font_family(body_family())
-                    .text_size(FONT_XS)
-                    .text_color(text_color)
-                    .child(label),
-            )
             .into_any_element()
     }
 }

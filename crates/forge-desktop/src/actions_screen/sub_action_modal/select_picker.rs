@@ -1,8 +1,9 @@
 use super::field::{SelectEntries, SubFormField};
 use super::*;
+use crate::option_choices::ChoiceOption;
 use forge_components::{
-    BORDER_THIN, FONT_SM, FONT_XS, FONT_XXS, KeyActivated, Picker, PickerEvent, PickerItem,
-    PickerLabels, Radius, Spacing, body_family, dropdown, mono_family, radius, spacing,
+    ActivePresentation, BORDER_THIN, FONT_SM, FONT_XS, FONT_XXS, KeyActivated, Picker, PickerEvent,
+    PickerItem, PickerLabels, Radius, Spacing, dropdown, radius, spacing,
 };
 use gpui::Rgba;
 
@@ -129,7 +130,7 @@ impl EditSubActionForm {
         &self,
         key: &str,
         label: &str,
-        options: &[(String, String)],
+        options: &[ChoiceOption],
         selected: &str,
         open_picker: Option<&SelectPickerForm>,
         palette: &ForgePalette,
@@ -142,7 +143,7 @@ impl EditSubActionForm {
             .gap(spacing(Spacing::Xxs, density))
             .child(
                 div()
-                    .font_family(mono_family())
+                    .font_family(cx.mono_family())
                     .text_size(FONT_XXS)
                     .text_color(palette.text_muted)
                     .child(label.to_owned()),
@@ -154,7 +155,7 @@ impl EditSubActionForm {
     pub(super) fn render_select_trigger(
         &self,
         key: &str,
-        options: &[(String, String)],
+        options: &[ChoiceOption],
         selected: &str,
         open_picker: Option<&SelectPickerForm>,
         palette: &ForgePalette,
@@ -163,8 +164,8 @@ impl EditSubActionForm {
         let density = cx.density();
         let selected_label = options
             .iter()
-            .find(|(value, _)| value == selected)
-            .map(|(_, label)| label.clone());
+            .find(|option| option.value == selected)
+            .map(|option| option.label.clone());
         let (display, display_color): (String, Rgba) = match selected_label {
             Some(label) => (label, palette.text_primary),
             None if !selected.is_empty() => (selected.to_owned(), palette.text_primary),
@@ -200,7 +201,7 @@ impl EditSubActionForm {
             .child(
                 div()
                     .flex_1()
-                    .font_family(body_family())
+                    .font_family(cx.body_family())
                     .text_size(FONT_XS)
                     .text_color(display_color)
                     .child(display),
@@ -229,10 +230,10 @@ impl EditSubActionForm {
     }
 }
 
-pub(super) fn select_picker_items(options: &[(String, String)]) -> Vec<PickerItem> {
+pub(super) fn select_picker_items(options: &[ChoiceOption]) -> Vec<PickerItem> {
     options
         .iter()
-        .map(|(value, label)| PickerItem {
+        .map(|ChoiceOption { value, label }| PickerItem {
             id: SharedString::from(value.clone()),
             label: SharedString::from(label.clone()),
             sublabel: None,

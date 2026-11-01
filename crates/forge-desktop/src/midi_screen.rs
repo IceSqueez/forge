@@ -161,7 +161,7 @@ impl Render for MidiScreenView {
                 .flex()
                 .flex_col()
                 .child(self.render_devices(&palette, cx))
-                .child(self.render_monitor(&palette, density)),
+                .child(self.render_monitor(&palette, density, cx)),
             LEFT_COLUMN_FLEX,
         );
 
@@ -197,7 +197,7 @@ impl Render for MidiScreenView {
                             .child(left)
                             .child(right),
                     )
-                    .child(self.render_footer(&palette, density)),
+                    .child(self.render_footer(&palette, density, cx)),
             );
 
         let frame = page_frame(

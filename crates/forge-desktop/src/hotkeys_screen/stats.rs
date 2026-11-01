@@ -2,7 +2,7 @@ use forge_components::Density;
 use forge_components::Spacing;
 use forge_components::spacing;
 use forge_components::{ForgePalette, fmt_display_relative, scaled, stat_card, tr};
-use gpui::{AnyElement, Pixels, div, prelude::*, px};
+use gpui::{AnyElement, App, Pixels, div, prelude::*, px};
 
 use super::HotkeysScreenView;
 
@@ -11,7 +11,12 @@ const STAT_MARGIN_B: Pixels = px(14.0);
 const NO_VALUE: &str = "-";
 
 impl HotkeysScreenView {
-    pub(super) fn render_stats(&self, palette: &ForgePalette, density: Density) -> AnyElement {
+    pub(super) fn render_stats(
+        &self,
+        palette: &ForgePalette,
+        density: Density,
+        cx: &App,
+    ) -> AnyElement {
         let active = self.active_count();
         let conflicts = self.conflicts;
         let (conflicts_ink, conflicts_hint, conflicts_hint_ink) = if conflicts == 0 {
@@ -47,8 +52,8 @@ impl HotkeysScreenView {
                     count = i64::try_from(active).unwrap_or(i64::MAX)
                 ),
                 palette.success,
-                palette,
                 density,
+                cx,
             ))
             .child(stat_card(
                 tr!("hotkeys_stat_global"),
@@ -56,8 +61,8 @@ impl HotkeysScreenView {
                 palette.text_primary,
                 tr!("hotkeys_stat_global_hint"),
                 palette.text_faint,
-                palette,
                 density,
+                cx,
             ))
             .child(stat_card(
                 tr!("hotkeys_stat_conflicts"),
@@ -65,8 +70,8 @@ impl HotkeysScreenView {
                 conflicts_ink,
                 conflicts_hint,
                 conflicts_hint_ink,
-                palette,
                 density,
+                cx,
             ))
             .child(stat_card(
                 tr!("hotkeys_stat_last_fired"),
@@ -74,8 +79,8 @@ impl HotkeysScreenView {
                 palette.text_primary,
                 fired_hint,
                 palette.text_faint,
-                palette,
                 density,
+                cx,
             ))
             .into_any_element()
     }

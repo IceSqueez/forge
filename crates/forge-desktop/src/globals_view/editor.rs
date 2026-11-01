@@ -2,9 +2,8 @@ use crate::globals::{Global, Globals, variant_kind_color};
 use forge_components::{
     ActivePresentation, BORDER_THIN, ChipGlyph, CodeEditor, Density, FONT_XS, FONT_XXS,
     ForgePalette, Icon, InputEvent, Language, ModalSize, NAME_FIELD_LIMIT, OverlayPosition, Radius,
-    Spacing, TINT_BORDER_ALPHA, TINT_FILL_ALPHA, TextInput, body_family, chip, icon, modal,
-    mono_family, overlay, primary_button, radius, secondary_button, spacing, toggle, tr,
-    with_alpha,
+    Spacing, TINT_BORDER_ALPHA, TINT_FILL_ALPHA, TextInput, chip, icon, modal, overlay,
+    primary_button, radius, secondary_button, spacing, toggle, tr, with_alpha,
 };
 use forge_types::{Variant, VariantKind};
 use gpui::Div;
@@ -313,7 +312,7 @@ impl GlobalEditor {
             .child(div().flex_1().child(self.name_input.clone()))
             .child(
                 div()
-                    .font_family(mono_family())
+                    .font_family(cx.mono_family())
                     .text_size(FONT_XS)
                     .text_color(palette.text_faint)
                     .child(format!("{name_len}/{NAME_FIELD_LIMIT}")),
@@ -323,6 +322,7 @@ impl GlobalEditor {
             tr!("globals_editor_section_name"),
             name_row,
             density,
+            cx,
         )
     }
 
@@ -358,7 +358,7 @@ impl GlobalEditor {
         if locked {
             type_children = type_children.child(
                 div()
-                    .font_family(body_family())
+                    .font_family(cx.body_family())
                     .text_size(FONT_XXS)
                     .text_color(palette.text_faint)
                     .child(tr!("globals_editor_type_locked_hint")),
@@ -369,6 +369,7 @@ impl GlobalEditor {
             tr!("globals_editor_section_type"),
             type_children,
             density,
+            cx,
         )
     }
 
@@ -388,14 +389,14 @@ impl GlobalEditor {
                     .flex_col()
                     .child(
                         div()
-                            .font_family(body_family())
+                            .font_family(cx.body_family())
                             .text_size(FONT_XS)
                             .text_color(palette.text_primary)
                             .child(tr!("globals_editor_persist_label")),
                     )
                     .child(
                         div()
-                            .font_family(body_family())
+                            .font_family(cx.body_family())
                             .text_size(FONT_XXS)
                             .text_color(palette.text_muted)
                             .child(tr!("globals_editor_persist_desc")),
@@ -410,6 +411,7 @@ impl GlobalEditor {
             tr!("globals_editor_section_persistence"),
             persist_row,
             density,
+            cx,
         )
     }
 
@@ -440,7 +442,7 @@ impl GlobalEditor {
     }
 }
 
-fn error_banner(message: SharedString, palette: &ForgePalette, density: Density) -> Div {
+fn error_banner(message: SharedString, palette: &ForgePalette, density: Density, cx: &App) -> Div {
     div()
         .w_full()
         .flex()
@@ -454,7 +456,7 @@ fn error_banner(message: SharedString, palette: &ForgePalette, density: Density)
         .child(icon(Icon::AlertTriangle, FONT_XS, palette.danger))
         .child(
             div()
-                .font_family(body_family())
+                .font_family(cx.body_family())
                 .text_size(FONT_XS)
                 .text_color(palette.text_primary)
                 .child(message),
@@ -478,7 +480,9 @@ impl Render for GlobalEditor {
             tr!("globals_editor_section_value"),
             value_control,
             density,
-        );
+            cx,
+        )
+        .into_any_element();
 
         let mut body = div()
             .flex()
@@ -489,7 +493,7 @@ impl Render for GlobalEditor {
             .child(self.persist_section(palette, density, cx))
             .child(value_section);
         if let Some(err) = ed.error.clone() {
-            body = body.child(error_banner(err, palette, density));
+            body = body.child(error_banner(err, palette, density, cx));
         }
 
         let card = modal(title, body, palette)
@@ -535,7 +539,7 @@ impl GlobalEditor {
                     ))
                     .child(
                         div()
-                            .font_family(mono_family())
+                            .font_family(cx.mono_family())
                             .text_size(FONT_XS)
                             .text_color(hue)
                             .child(label),
@@ -555,6 +559,7 @@ fn section(
     label: impl Into<SharedString>,
     control: impl IntoElement,
     density: Density,
+    cx: &App,
 ) -> impl IntoElement {
     div()
         .flex()
@@ -562,7 +567,7 @@ fn section(
         .gap(spacing(Spacing::Xxs, density))
         .child(
             div()
-                .font_family(mono_family())
+                .font_family(cx.mono_family())
                 .text_size(FONT_XXS)
                 .text_color(palette.text_faint)
                 .child(label.into()),

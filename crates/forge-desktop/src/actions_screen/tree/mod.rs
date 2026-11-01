@@ -2,7 +2,7 @@ use super::*;
 use crate::load_notice::{LoadNotice, NoticeWidth, load_notice};
 use crate::navigable_list::{ListCursor, ListStep, NavigableList, navigable_list};
 use forge_components::{
-    Confirm, FONT_XS, InlineEditEvent, InputEvent, Spacing, body_family, inline_edit, spacing,
+    Confirm, FONT_XS, InlineEditEvent, InputEvent, Spacing, inline_edit, spacing,
 };
 use forge_storage::ScheduledRunRepo;
 use gpui::ScrollHandle;

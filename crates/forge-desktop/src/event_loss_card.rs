@@ -1,9 +1,9 @@
 use forge_components::{
-    BORDER_THIN, Density, FONT_SM, FONT_XS, FONT_XXS, ForgePalette, Icon, Spacing, body_family,
-    card, icon, mono_family, scaled, spacing, status_dot, tr,
+    ActivePresentation, BORDER_THIN, Density, FONT_SM, FONT_XS, FONT_XXS, ForgePalette, Icon,
+    Spacing, card, icon, scaled, spacing, status_dot, tr,
 };
 use forge_runtime::ConsumerLoss;
-use gpui::{AnyElement, IntoElement, Pixels, Rgba, div, prelude::*, px};
+use gpui::{AnyElement, App, IntoElement, Pixels, Rgba, div, prelude::*, px};
 
 use crate::event_loss::{EventLoss, breakdown, consumer_label, tier_label};
 
@@ -25,6 +25,7 @@ fn loss_row(
     last: bool,
     palette: &ForgePalette,
     density: Density,
+    cx: &App,
 ) -> AnyElement {
     let color = row_color(row, palette);
     let total = row.loss.total();
@@ -38,7 +39,7 @@ fn loss_row(
         .child(
             div()
                 .flex_none()
-                .font_family(body_family())
+                .font_family(cx.body_family())
                 .text_size(FONT_XS)
                 .text_color(palette.text_primary)
                 .child(consumer_label(row.consumer)),
@@ -47,7 +48,7 @@ fn loss_row(
             div()
                 .flex_none()
                 .w(TIER_W)
-                .font_family(mono_family())
+                .font_family(cx.mono_family())
                 .text_size(FONT_XXS)
                 .text_color(palette.text_faint)
                 .child(tier_label(row.tier)),
@@ -57,7 +58,7 @@ fn loss_row(
                 .flex_1()
                 .min_w(px(0.0))
                 .truncate()
-                .font_family(mono_family())
+                .font_family(cx.mono_family())
                 .text_size(FONT_XXS)
                 .text_color(palette.text_muted)
                 .child(breakdown(&row.loss)),
@@ -65,7 +66,7 @@ fn loss_row(
         .child(
             div()
                 .flex_none()
-                .font_family(mono_family())
+                .font_family(cx.mono_family())
                 .text_size(FONT_SM)
                 .text_color(color)
                 .child(total.to_string()),
@@ -78,7 +79,7 @@ fn loss_row(
     line.into_any_element()
 }
 
-fn quiet_row(palette: &ForgePalette, density: Density) -> AnyElement {
+fn quiet_row(palette: &ForgePalette, density: Density, cx: &App) -> AnyElement {
     div()
         .w_full()
         .flex()
@@ -88,7 +89,7 @@ fn quiet_row(palette: &ForgePalette, density: Density) -> AnyElement {
         .child(status_dot(palette.success, ROW_DOT))
         .child(
             div()
-                .font_family(body_family())
+                .font_family(cx.body_family())
                 .text_size(FONT_XS)
                 .text_color(palette.text_muted)
                 .child(tr!("event_loss_none")),
@@ -100,6 +101,7 @@ pub(crate) fn event_loss_card(
     loss: &EventLoss,
     palette: &ForgePalette,
     density: Density,
+    cx: &App,
 ) -> impl IntoElement + use<> {
     let rows = loss.rows();
     let priority_lost = loss.priority_dropped() > 0;
@@ -124,7 +126,7 @@ pub(crate) fn event_loss_card(
                 .child(icon(Icon::AlertTriangle, HEADER_ICON, header_color))
                 .child(
                     div()
-                        .font_family(body_family())
+                        .font_family(cx.body_family())
                         .text_size(FONT_SM)
                         .text_color(palette.text_primary)
                         .child(tr!("event_loss_title")),
@@ -132,7 +134,7 @@ pub(crate) fn event_loss_card(
         )
         .child(
             div()
-                .font_family(mono_family())
+                .font_family(cx.mono_family())
                 .text_size(FONT_XS)
                 .text_color(palette.text_faint)
                 .child(tr!("event_loss_scope_hint")),
@@ -140,11 +142,11 @@ pub(crate) fn event_loss_card(
 
     let mut body = div().w_full().flex().flex_col();
     if rows.is_empty() {
-        body = body.child(quiet_row(palette, density));
+        body = body.child(quiet_row(palette, density, cx));
     } else {
         let last = rows.len() - 1;
         for (index, row) in rows.iter().enumerate() {
-            body = body.child(loss_row(row, index == last, palette, density));
+            body = body.child(loss_row(row, index == last, palette, density, cx));
         }
     }
 

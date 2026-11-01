@@ -1,4 +1,6 @@
 use super::*;
+use forge_components::ActivePresentation;
+use gpui::App;
 
 impl TtsDashboardView {
     pub(super) fn control_strip(
@@ -33,7 +35,7 @@ impl TtsDashboardView {
             .child(icon(pause_glyph, PAUSE_GLYPH, palette.shell))
             .child(
                 div()
-                    .font_family(body_family())
+                    .font_family(cx.body_family())
                     .font_weight(FontWeight::MEDIUM)
                     .text_size(BTN_FONT)
                     .text_color(palette.shell)
@@ -49,6 +51,7 @@ impl TtsDashboardView {
             palette,
             cx.listener(|this, _: &ClickEvent, _, cx| this.skip(cx)),
             density,
+            cx,
         );
         let stop_btn = self.ghost_strip_button(
             "tts-stop",
@@ -59,12 +62,13 @@ impl TtsDashboardView {
             palette,
             cx.listener(|this, _: &ClickEvent, _, cx| this.arm_stop_all(cx)),
             density,
+            cx,
         );
 
         let vol_pct = (self.volume * 100.0).round() as u32;
         let vol_text = div()
             .w(VOL_PCT_W)
-            .font_family(mono_family())
+            .font_family(cx.mono_family())
             .text_size(VOL_PCT_FONT)
             .text_color(palette.text_muted)
             .child(format!("{vol_pct}%"));
@@ -136,7 +140,7 @@ impl TtsDashboardView {
             .child(icon(Icon::PlayerPlayFilled, SPEAK_BTN_GLYPH, palette.shell))
             .child(
                 div()
-                    .font_family(body_family())
+                    .font_family(cx.body_family())
                     .font_weight(FontWeight::MEDIUM)
                     .text_size(BTN_FONT)
                     .text_color(palette.shell)
@@ -178,6 +182,7 @@ impl TtsDashboardView {
         palette: &ForgePalette,
         handler: impl Fn(&ClickEvent, &mut Window, &mut gpui::App) + 'static,
         density: Density,
+        cx: &App,
     ) -> AnyElement {
         let hover_border = palette.border_input;
         div()
@@ -198,7 +203,7 @@ impl TtsDashboardView {
             .child(icon(glyph, STRIP_BTN_GLYPH, text_color))
             .child(
                 div()
-                    .font_family(body_family())
+                    .font_family(cx.body_family())
                     .text_size(BTN_FONT)
                     .child(label.into()),
             )
@@ -223,6 +228,7 @@ impl TtsDashboardView {
                 palette,
                 true,
                 density,
+                cx,
             ))
             .child(stat_row(
                 tr!("tts_dash_stat_skipped"),
@@ -231,6 +237,7 @@ impl TtsDashboardView {
                 palette,
                 true,
                 density,
+                cx,
             ))
             .child(stat_row(
                 tr!("tts_dash_stat_filtered"),
@@ -239,6 +246,7 @@ impl TtsDashboardView {
                 palette,
                 true,
                 density,
+                cx,
             ))
             .child(stat_row(
                 tr!("tts_dash_stat_avg_latency"),
@@ -247,13 +255,14 @@ impl TtsDashboardView {
                 palette,
                 false,
                 density,
+                cx,
             ));
 
         let mut content = div()
             .flex()
             .flex_col()
             .child(section_heading(
-                section_label(tr!("tts_dash_session_header"), palette),
+                section_label(tr!("tts_dash_session_header"), palette, cx),
                 None,
                 density,
             ))
@@ -268,7 +277,7 @@ impl TtsDashboardView {
                 ),
             )
             .child(section_heading(
-                section_label(tr!("tts_dash_engines_header"), palette),
+                section_label(tr!("tts_dash_engines_header"), palette, cx),
                 None,
                 density,
             ));
@@ -276,7 +285,7 @@ impl TtsDashboardView {
         if self.engines.is_empty() {
             content = content.child(
                 div()
-                    .font_family(body_family())
+                    .font_family(cx.body_family())
                     .text_size(STAT_LABEL_FONT)
                     .text_color(palette.text_muted)
                     .child(tr!("tts_dash_engines_none")),
@@ -301,7 +310,14 @@ impl TtsDashboardView {
             } else {
                 class
             };
-            content = content.child(engine_card(eng.name.clone(), meta, color, palette, density));
+            content = content.child(engine_card(
+                eng.name.clone(),
+                meta,
+                color,
+                palette,
+                density,
+                cx,
+            ));
         }
 
         let panel = div()
@@ -389,12 +405,12 @@ impl TtsDashboardView {
             .flex()
             .items_center()
             .gap(spacing(Spacing::Xs, density))
-            .child(section_label(tr!("tts_dash_queue_header"), palette))
+            .child(section_label(tr!("tts_dash_queue_header"), palette, cx))
             .child(count_badge);
         let total = (!queue.is_empty()).then(|| {
             let total: u32 = queue.iter().map(|item| item.duration_secs).sum();
             div()
-                .font_family(mono_family())
+                .font_family(cx.mono_family())
                 .text_size(FONT_XXS)
                 .text_color(palette.text_faint)
                 .child(tr!("tts_dash_queue_total", secs = total))
@@ -444,7 +460,7 @@ impl TtsDashboardView {
             .w(QUEUE_POS_W)
             .flex_shrink_0()
             .text_center()
-            .font_family(mono_family())
+            .font_family(cx.mono_family())
             .text_size(QUEUE_INDEX_FONT)
             .text_color(palette.text_faint)
             .child(format!("{}", index + 1));
@@ -461,7 +477,7 @@ impl TtsDashboardView {
             .gap(spacing(Spacing::Xs, density))
             .child(
                 div()
-                    .font_family(body_family())
+                    .font_family(cx.body_family())
                     .font_weight(FontWeight::MEDIUM)
                     .text_size(QUEUE_NAME_FONT)
                     .text_color(hash_accent(&item.viewer_name, palette))
@@ -480,7 +496,7 @@ impl TtsDashboardView {
         if !item.engine_voice.is_empty() {
             name_row = name_row.child(
                 div()
-                    .font_family(mono_family())
+                    .font_family(cx.mono_family())
                     .text_size(QUEUE_PREVIEW_FONT)
                     .text_color(palette.text_faint)
                     .child(item.engine_voice.clone()),
@@ -496,7 +512,7 @@ impl TtsDashboardView {
             .child(
                 div()
                     .truncate()
-                    .font_family(body_family())
+                    .font_family(cx.body_family())
                     .text_size(QUEUE_MSG_FONT)
                     .text_color(palette.text_muted)
                     .child(item.text.clone()),
@@ -504,7 +520,7 @@ impl TtsDashboardView {
 
         let duration = div()
             .flex_shrink_0()
-            .font_family(mono_family())
+            .font_family(cx.mono_family())
             .text_size(QUEUE_DUR_FONT)
             .text_color(palette.text_faint)
             .child(format!("~{}", fmt_clock(u64::from(item.duration_secs))));

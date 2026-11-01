@@ -10,8 +10,7 @@ use crate::key_activation::KeyActivated;
 use crate::palette::ForgePalette;
 use crate::presentation::ActivePresentation;
 use crate::tokens::{
-    BORDER_THIN, Density, FONT_SM, FONT_XS, FONT_XXS, Radius, Spacing, body_family, mono_family,
-    radius, scaled, spacing,
+    BORDER_THIN, Density, FONT_SM, FONT_XS, FONT_XXS, Radius, Spacing, radius, scaled, spacing,
 };
 
 #[derive(IntoElement)]
@@ -66,7 +65,7 @@ impl RenderOnce for FieldLabel {
             .gap(spacing(Spacing::Xxs, density))
             .child(
                 div()
-                    .font_family(mono_family())
+                    .font_family(cx.mono_family())
                     .text_size(self.size)
                     .text_color(self.tone)
                     .child(self.label),
@@ -75,18 +74,26 @@ impl RenderOnce for FieldLabel {
     }
 }
 
-pub fn field_title(text: impl Into<SharedString>, palette: &ForgePalette) -> impl IntoElement {
+pub fn field_title(
+    text: impl Into<SharedString>,
+    palette: &ForgePalette,
+    cx: &App,
+) -> impl IntoElement {
     div()
-        .font_family(body_family())
+        .font_family(cx.body_family())
         .font_weight(FontWeight::MEDIUM)
         .text_size(FONT_SM)
         .text_color(palette.text_primary)
         .child(text.into())
 }
 
-pub fn field_hint(text: impl Into<SharedString>, palette: &ForgePalette) -> impl IntoElement {
+pub fn field_hint(
+    text: impl Into<SharedString>,
+    palette: &ForgePalette,
+    cx: &App,
+) -> impl IntoElement {
     div()
-        .font_family(body_family())
+        .font_family(cx.body_family())
         .text_size(FONT_XS)
         .text_color(palette.text_muted)
         .child(text.into())
@@ -209,6 +216,7 @@ pub fn metric_card(
     sublabel_color: Option<Rgba>,
     palette: &ForgePalette,
     density: Density,
+    cx: &App,
 ) -> impl IntoElement {
     let label_upper = SharedString::from(label.into().to_uppercase());
 
@@ -218,14 +226,14 @@ pub fn metric_card(
         .gap(spacing(Spacing::Xxs, density))
         .child(
             div()
-                .font_family(mono_family())
+                .font_family(cx.mono_family())
                 .text_size(FONT_XXS)
                 .text_color(palette.text_muted)
                 .child(label_upper),
         )
         .child(
             div()
-                .font_family(body_family())
+                .font_family(cx.body_family())
                 .font_weight(FontWeight::MEDIUM)
                 .text_size(FONT_SM)
                 .text_color(palette.text_primary)
@@ -235,7 +243,7 @@ pub fn metric_card(
     if let Some(sub) = sublabel {
         col = col.child(
             div()
-                .font_family(mono_family())
+                .font_family(cx.mono_family())
                 .text_size(FONT_XXS)
                 .text_color(sublabel_color.unwrap_or(palette.text_faint))
                 .child(sub.into()),
@@ -255,6 +263,7 @@ pub fn stat_row(
     label: impl Into<SharedString>,
     value: impl Into<SharedString>,
     palette: &ForgePalette,
+    cx: &App,
 ) -> impl IntoElement {
     div()
         .flex()
@@ -262,14 +271,14 @@ pub fn stat_row(
         .justify_between()
         .child(
             div()
-                .font_family(body_family())
+                .font_family(cx.body_family())
                 .text_size(FONT_SM)
                 .text_color(palette.text_muted)
                 .child(label.into()),
         )
         .child(
             div()
-                .font_family(body_family())
+                .font_family(cx.body_family())
                 .text_size(FONT_SM)
                 .text_color(palette.text_primary)
                 .child(value.into()),
@@ -357,7 +366,7 @@ impl RenderOnce for EmptyState {
         }
         col = col.child(
             div()
-                .font_family(body_family())
+                .font_family(cx.body_family())
                 .text_size(FONT_SM)
                 .text_color(self.message_color)
                 .child(self.message),
@@ -807,7 +816,7 @@ impl RenderOnce for PadTile {
                     .min_w_0()
                     .overflow_hidden()
                     .text_ellipsis()
-                    .font_family(body_family())
+                    .font_family(cx.body_family())
                     .text_size(PAD_TILE_TITLE_FS)
                     .font_weight(FontWeight::MEDIUM)
                     .text_color(self.title_color)
@@ -845,7 +854,7 @@ impl RenderOnce for PadTile {
                 .child(self.glyph)
                 .child(
                     div()
-                        .font_family(body_family())
+                        .font_family(cx.body_family())
                         .text_size(FONT_XS)
                         .font_weight(FontWeight::MEDIUM)
                         .text_color(self.title_color)
@@ -1031,9 +1040,10 @@ pub fn stat_card(
     value_color: Rgba,
     hint: impl Into<SharedString>,
     hint_color: Rgba,
-    palette: &ForgePalette,
     density: Density,
+    cx: &App,
 ) -> impl IntoElement {
+    let palette = &cx.palette();
     let body = div()
         .w_full()
         .flex()
@@ -1041,7 +1051,7 @@ pub fn stat_card(
         .child(
             div()
                 .mb(spacing(Spacing::Xxs, density))
-                .font_family(mono_family())
+                .font_family(cx.mono_family())
                 .text_size(FONT_XXS)
                 .text_color(palette.text_muted)
                 .child(SharedString::from(label.into().to_uppercase())),
@@ -1050,7 +1060,7 @@ pub fn stat_card(
             div()
                 .w_full()
                 .truncate()
-                .font_family(body_family())
+                .font_family(cx.body_family())
                 .text_size(FONT_SM)
                 .font_weight(FontWeight::MEDIUM)
                 .text_color(value_color)
@@ -1059,7 +1069,7 @@ pub fn stat_card(
         .child(
             div()
                 .mt(STAT_CARD_HINT_MT)
-                .font_family(mono_family())
+                .font_family(cx.mono_family())
                 .text_size(FONT_XXS)
                 .text_color(hint_color)
                 .child(hint.into()),

@@ -5,10 +5,10 @@ use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
 use forge_components::{
-    BORDER_THIN, Density, ForgePalette, GlyphArt, GridPicker, GridPickerArt, GridPickerConfig,
-    GridPickerEvent, GridPickerGroup, GridPickerItem, GridPickerItemState, GridPickerSubtitle,
-    Icon, OverlayPosition, Radius, Spacing, body_family, glyph_art, icon, overlay, radius, scaled,
-    spacing, tr,
+    ActivePresentation, BORDER_THIN, Density, ForgePalette, GlyphArt, GridPicker, GridPickerArt,
+    GridPickerConfig, GridPickerEvent, GridPickerGroup, GridPickerItem, GridPickerItemState,
+    GridPickerSubtitle, Icon, OverlayPosition, Radius, Spacing, glyph_art, icon, overlay, radius,
+    scaled, spacing, tr,
 };
 use forge_overlay::config::ICON;
 use forge_overlay::{
@@ -20,7 +20,7 @@ use forge_storage::{
     MediaBlob, MediaBlobId, MediaFormat, MediaKind, OverlayDefinition, StorageError,
 };
 use gpui::{
-    AnyElement, Context, Div, Entity, Pixels, Rgba, SharedString, Subscription, Window, div,
+    AnyElement, App, Context, Div, Entity, Pixels, Rgba, SharedString, Subscription, Window, div,
     prelude::*, px,
 };
 
@@ -30,7 +30,6 @@ use crate::async_bridge::{self, DialogFilter};
 use crate::clip_messages::storage_refusal_message;
 use crate::config_form::{CHOICE_GLYPH, CHOICE_PAD_H, CHOICE_PAD_V, FILL_VAL_FS};
 use crate::picker_favorites::{FavoritesList, bind_picker, follow_picker_event};
-use forge_components::ActivePresentation;
 
 pub(super) const NO_ICON_ID: &str = "forge-icon-none";
 pub(super) const IMPORT_ICON_ID: &str = "forge-icon-import";
@@ -261,6 +260,7 @@ pub(super) fn icon_field_row(
     accent: Rgba,
     palette: &ForgePalette,
     density: Density,
+    cx: &App,
 ) -> Div {
     let choice = icon_choice(selected, images);
     let art = icon_art(&choice);
@@ -297,7 +297,7 @@ pub(super) fn icon_field_row(
                 .flex_1()
                 .min_w(px(0.0))
                 .truncate()
-                .font_family(body_family())
+                .font_family(cx.body_family())
                 .text_size(FILL_VAL_FS)
                 .text_color(tone)
                 .child(label),

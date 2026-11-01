@@ -3,6 +3,7 @@ use crate::async_bridge;
 use crate::config_form::dependent_options_key;
 use crate::donation_services::donation_provider_options;
 use crate::engine_voice_choices::engine_voice_options;
+use crate::option_choices::ChoiceOption;
 use forge_components::tr;
 pub(super) use forge_registry::SOUNDBOARD_CLIP_OPTIONS_KEY as CLIP_OPTIONS_KEY;
 use forge_registry::{
@@ -19,7 +20,7 @@ use gpui::Context;
 use std::collections::HashMap;
 
 struct SelectOptionsFetch {
-    options: HashMap<String, Vec<(String, String)>>,
+    options: HashMap<String, Vec<ChoiceOption>>,
     failed_keys: Vec<&'static str>,
     overlay_kind_by_identity: HashMap<String, String>,
     concurrent_queue_ids: HashSet<String>,
@@ -41,13 +42,9 @@ fn loaded_options<T, E: std::fmt::Display>(
     }
 }
 
-fn mark_unavailable_clips(
-    clips: &mut [(String, String)],
-    unavailable: &HashSet<String>,
-    suffix: &str,
-) {
-    for (id, label) in clips.iter_mut() {
-        if unavailable.contains(id) {
+fn mark_unavailable_clips(clips: &mut [ChoiceOption], unavailable: &HashSet<String>, suffix: &str) {
+    for ChoiceOption { value, label } in clips.iter_mut() {
+        if unavailable.contains(value) {
             *label = format!("{label} - {suffix}");
         }
     }
@@ -87,7 +84,7 @@ impl SelectOptionsFetch {
         loaded_options(result, key, &mut self.failed_keys)
     }
 
-    fn put(&mut self, key: &str, entries: impl Iterator<Item = (String, String)>) {
+    fn put(&mut self, key: &str, entries: impl Iterator<Item = ChoiceOption>) {
         self.options.insert(key.to_owned(), entries.collect());
     }
 }
@@ -110,7 +107,9 @@ impl SelectOptionSources {
         if let Some(actions) = fetch.listed(self.action_repo.list().await, ACTION_OPTIONS_KEY) {
             fetch.put(
                 ACTION_OPTIONS_KEY,
-                actions.into_iter().map(|a| (a.id.to_string(), a.name)),
+                actions
+                    .into_iter()
+                    .map(|a| ChoiceOption::new(a.id.to_string(), a.name)),
             );
         }
     }
@@ -124,7 +123,9 @@ impl SelectOptionSources {
                 .collect();
             fetch.put(
                 QUEUE_OPTIONS_KEY,
-                queues.into_iter().map(|q| (q.id.to_string(), q.name)),
+                queues
+                    .into_iter()
+                    .map(|q| ChoiceOption::new(q.id.to_string(), q.name)),
             );
         }
     }
@@ -136,7 +137,9 @@ impl SelectOptionSources {
         ) {
             fetch.put(
                 TRIGGER_INSTANCE_OPTIONS_KEY,
-                instances.into_iter().map(|ti| (ti.id.to_string(), ti.name)),
+                instances
+                    .into_iter()
+                    .map(|ti| ChoiceOption::new(ti.id.to_string(), ti.name)),
             );
         }
     }
@@ -145,7 +148,9 @@ impl SelectOptionSources {
         if let Some(scripts) = fetch.listed(self.script_repo.list().await, SCRIPT_OPTIONS_KEY) {
             fetch.put(
                 SCRIPT_OPTIONS_KEY,
-                scripts.into_iter().map(|s| (s.name.clone(), s.name)),
+                scripts
+                    .into_iter()
+                    .map(|s| ChoiceOption::new(s.name.clone(), s.name)),
             );
         }
     }
@@ -162,7 +167,9 @@ impl SelectOptionSources {
                 .collect();
             fetch.put(
                 CLIP_OPTIONS_KEY,
-                clips.into_iter().map(|c| (c.id.to_string(), c.name)),
+                clips
+                    .into_iter()
+                    .map(|c| ChoiceOption::new(c.id.to_string(), c.name)),
             );
         }
     }
@@ -171,7 +178,9 @@ impl SelectOptionSources {
         if let Some(globals) = fetch.listed(self.globals_repo.list().await, GLOBAL_OPTIONS_KEY) {
             fetch.put(
                 GLOBAL_OPTIONS_KEY,
-                globals.into_iter().map(|g| (g.name.clone(), g.name)),
+                globals
+                    .into_iter()
+                    .map(|g| ChoiceOption::new(g.name.clone(), g.name)),
             );
         }
     }
@@ -183,7 +192,7 @@ impl SelectOptionSources {
                 overlays
                     .iter()
                     .filter(|o| self.overlay_schema.takes_sends(&o.kind_id))
-                    .map(|o| (o.id.to_string(), o.display_name.clone())),
+                    .map(|o| ChoiceOption::new(o.id.to_string(), o.display_name.clone())),
             );
             fetch.overlay_kind_by_identity = overlays
                 .into_iter()
@@ -201,7 +210,7 @@ impl SelectOptionSources {
             speak
                 .registered_engine_ids()
                 .into_iter()
-                .map(|id| (id.0.clone(), id.0)),
+                .map(|id| ChoiceOption::new(id.0.clone(), id.0)),
         );
         let voices = speak.available_voices();
         for voice in voices.iter() {
@@ -212,7 +221,7 @@ impl SelectOptionSources {
                     &voice.engine_id.0,
                 ))
                 .or_default()
-                .push((voice.id.0.clone(), voice.name.clone()));
+                .push(ChoiceOption::new(voice.id.0.clone(), voice.name.clone()));
         }
         fetch.options.insert(
             ENGINE_VOICE_OPTIONS_KEY.to_owned(),
@@ -309,10 +318,10 @@ mod tests {
 
     const MISSING: &str = "file missing";
 
-    fn options(entries: &[(&str, &str)]) -> Vec<(String, String)> {
+    fn options(entries: &[(&str, &str)]) -> Vec<ChoiceOption> {
         entries
             .iter()
-            .map(|(id, label)| ((*id).to_owned(), (*label).to_owned()))
+            .map(|(id, label)| ChoiceOption::new(*id, *label))
             .collect()
     }
 
@@ -508,7 +517,7 @@ mod tests {
     }
 
     impl FlakyListing {
-        fn action_options(&self, cx: &mut gpui::TestAppContext) -> Option<Vec<(String, String)>> {
+        fn action_options(&self, cx: &mut gpui::TestAppContext) -> Option<Vec<ChoiceOption>> {
             self.view.read_with(cx, |view, _| {
                 view.choices.select_options.get(ACTION_OPTIONS_KEY).cloned()
             })

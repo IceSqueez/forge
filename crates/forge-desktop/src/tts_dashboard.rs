@@ -14,11 +14,11 @@ use forge_components::FONT_ROW;
 use forge_components::FONT_SECTION_LABEL;
 use forge_components::FONT_XS;
 use forge_components::{
-    BORDER_THIN, ChipGlyph, ConfirmTone, DRAG_SOURCE_OPACITY, Density, FONT_SM, FONT_XXS,
-    ForgePalette, Icon, InputEvent, KeyActivated, OverlayPosition, Radius, ResizeEdge, ResizeRange,
-    Spacing, TextInput, badge, body_family, card, chip, confirm_modal, empty_state, fmt_clock,
-    hash_accent, icon, install_resize, mono_family, overlay, radius, scaled, section_label, slider,
-    spacing, status_dot, tooltip_builder, tr, with_alpha,
+    ActivePresentation, BORDER_THIN, ChipGlyph, ConfirmTone, DRAG_SOURCE_OPACITY, Density, FONT_SM,
+    FONT_XXS, ForgePalette, Icon, InputEvent, KeyActivated, OverlayPosition, Radius, ResizeEdge,
+    ResizeRange, Spacing, TextInput, badge, card, chip, confirm_modal, empty_state, fmt_clock,
+    hash_accent, icon, install_resize, overlay, radius, scaled, section_label, slider, spacing,
+    status_dot, tooltip_builder, tr, with_alpha,
 };
 use std::sync::Arc;
 use std::time::Duration;
@@ -39,7 +39,6 @@ use gpui::{
 use crate::async_bridge;
 use crate::speak_state::{NowSpeaking, QueueItem, SessionStats, SpeakState};
 use crate::tts_engine_roster::{RosterEngine, engine_class_label, load_engine_roster};
-use forge_components::ActivePresentation;
 use forge_components::{PushToast, ToastKind};
 
 const NO_LATENCY_READING: &str = "-";
@@ -155,7 +154,7 @@ impl Render for QueueRowGhost {
             .child(
                 div()
                     .flex_shrink_0()
-                    .font_family(body_family())
+                    .font_family(cx.body_family())
                     .font_weight(FontWeight::MEDIUM)
                     .text_size(QUEUE_NAME_FONT)
                     .text_color(self.name_color)
@@ -164,7 +163,7 @@ impl Render for QueueRowGhost {
             .child(
                 div()
                     .truncate()
-                    .font_family(body_family())
+                    .font_family(cx.body_family())
                     .text_size(QUEUE_MSG_FONT)
                     .text_color(self.text_color)
                     .child(self.text.clone()),
@@ -395,6 +394,7 @@ impl Render for TtsDashboardView {
             manual_paused,
             &palette,
             density,
+            cx,
         );
         let queue_section = self.queue_section(&queue, &palette, density, cx);
         let right_pane = self.right_pane(&stats, &palette, cx);

@@ -1,4 +1,3 @@
-use crate::FONT_FIELD;
 use crate::FONT_LABEL;
 use crate::FONT_META;
 use crate::cards::field_label;
@@ -9,10 +8,9 @@ use crate::toggle::toggle;
 use crate::tokens::Density;
 use crate::tokens::Spacing;
 use crate::tokens::spacing;
-use crate::tokens::{
-    BORDER_THIN, FONT_XS, FONT_XXS, Radius, body_family, mono_family, radius, scaled,
-};
+use crate::tokens::{BORDER_THIN, FONT_XS, FONT_XXS, Radius, radius, scaled};
 use crate::tr;
+use crate::{ActivePresentation, FONT_FIELD};
 use gpui::{
     AnyElement, App, ClickEvent, ElementId, Pixels, SharedString, Window, div, prelude::*, px,
 };
@@ -32,6 +30,7 @@ pub fn field_column(
     error: Option<&str>,
     control: AnyElement,
     density: Density,
+    cx: &App,
 ) -> AnyElement {
     let mut column = div()
         .w_full()
@@ -40,11 +39,11 @@ pub fn field_column(
         .gap(spacing(Spacing::Xxs, density))
         .child(field_label(palette, label.to_uppercase(), control));
     if let Some(error) = error {
-        column = column.child(failure_note(error, palette, density));
+        column = column.child(failure_note(error, palette, density, cx));
     } else if let Some(hint) = hint {
         column = column.child(
             div()
-                .font_family(body_family())
+                .font_family(cx.body_family())
                 .text_size(HINT_FONT)
                 .text_color(palette.text_faint)
                 .child(hint.to_owned()),
@@ -59,6 +58,7 @@ pub fn toggle_row(
     palette: &ForgePalette,
     on_click: impl Fn(&ClickEvent, &mut Window, &mut App) + 'static,
     density: Density,
+    cx: &App,
 ) -> AnyElement {
     let (state_label, state_color) = if value {
         (tr!("widget_toggle_on"), palette.success)
@@ -69,7 +69,7 @@ pub fn toggle_row(
         .justify_between()
         .child(
             div()
-                .font_family(mono_family())
+                .font_family(cx.mono_family())
                 .text_size(FONT_FIELD)
                 .text_color(state_color)
                 .child(state_label),
@@ -89,6 +89,7 @@ pub fn choice_trigger(
     palette: &ForgePalette,
     on_click: impl Fn(&ClickEvent, &mut Window, &mut App) + 'static,
     density: Density,
+    cx: &App,
 ) -> AnyElement {
     let text_color = if has_selection {
         palette.text_primary
@@ -108,7 +109,7 @@ pub fn choice_trigger(
             div()
                 .flex_1()
                 .min_w(px(0.0))
-                .font_family(body_family())
+                .font_family(cx.body_family())
                 .text_size(FONT_FIELD)
                 .text_color(text_color)
                 .child(selected),
@@ -117,7 +118,12 @@ pub fn choice_trigger(
         .into_any_element()
 }
 
-pub fn failure_note(reason: &str, palette: &ForgePalette, density: Density) -> AnyElement {
+pub fn failure_note(
+    reason: &str,
+    palette: &ForgePalette,
+    density: Density,
+    cx: &App,
+) -> AnyElement {
     div()
         .flex()
         .items_center()
@@ -127,7 +133,7 @@ pub fn failure_note(reason: &str, palette: &ForgePalette, density: Density) -> A
             div()
                 .flex_1()
                 .min_w(px(0.0))
-                .font_family(body_family())
+                .font_family(cx.body_family())
                 .text_size(NOTE_FONT)
                 .text_color(palette.danger)
                 .child(reason.to_owned()),
@@ -141,13 +147,14 @@ pub fn failure_with_retry(
     palette: &ForgePalette,
     on_retry: impl Fn(&ClickEvent, &mut Window, &mut App) + 'static,
     density: Density,
+    cx: &App,
 ) -> AnyElement {
     div()
         .w_full()
         .flex()
         .flex_col()
         .gap(spacing(Spacing::Xs, density))
-        .child(failure_note(reason, palette, density))
+        .child(failure_note(reason, palette, density, cx))
         .child(
             div()
                 .id(id)
@@ -160,7 +167,7 @@ pub fn failure_with_retry(
                 .child(icon(Icon::Refresh, FONT_XXS, palette.info))
                 .child(
                     div()
-                        .font_family(body_family())
+                        .font_family(cx.body_family())
                         .text_size(NOTE_FONT)
                         .text_color(palette.info)
                         .child(tr!("widget_field_retry")),

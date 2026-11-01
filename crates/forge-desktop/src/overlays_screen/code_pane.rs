@@ -7,9 +7,9 @@ use forge_components::Spacing;
 use forge_components::radius;
 use forge_components::spacing;
 use forge_components::{
-    BORDER_THIN, CodeEditor, Confirm, ConfirmTone, FONT_XS, FONT_XXS, ForgePalette, Icon,
-    InputEvent, KeyActivated, OverlayPosition, SaveCode, body_family, confirm_modal, empty_state,
-    ghost_button_with_icon, icon, mono_family, overlay, primary_button_with_icon, scaled,
+    ActivePresentation, BORDER_THIN, CodeEditor, Confirm, ConfirmTone, FONT_XS, FONT_XXS,
+    ForgePalette, Icon, InputEvent, KeyActivated, OverlayPosition, SaveCode, confirm_modal,
+    empty_state, ghost_button_with_icon, icon, overlay, primary_button_with_icon, scaled,
     status_dot, tr,
 };
 use forge_overlay::{MediaIssue, OVERRIDABLE_FILES};
@@ -23,7 +23,6 @@ use std::sync::Arc;
 use crate::async_bridge;
 use crate::repo_failure::RepoFailure;
 use crate::unsaved_work::UnsavedWork;
-use forge_components::ActivePresentation;
 
 use super::OverlaysView;
 use super::editor_state::EditorMode;
@@ -434,7 +433,7 @@ impl OverlaysView {
             .child(self.render_file_tabs(definition, palette, cx))
             .child(self.render_escape_hint(palette, cx))
             .child(self.render_editor(palette, cx))
-            .child(self.render_code_footer(definition, palette, density))
+            .child(self.render_code_footer(definition, palette, density, cx))
             .into_any_element()
     }
 
@@ -480,7 +479,7 @@ impl OverlaysView {
                     .rounded(TAB_RADIUS)
                     .cursor_pointer()
                     .when(active, |tab| tab.bg(palette.surface_overlay))
-                    .font_family(mono_family())
+                    .font_family(cx.mono_family())
                     .text_size(TAB_FS)
                     .text_color(if active {
                         palette.text_primary
@@ -519,7 +518,7 @@ impl OverlaysView {
 
         div()
             .flex_none()
-            .font_family(mono_family())
+            .font_family(cx.mono_family())
             .text_size(FONT_XXS)
             .text_color(palette.text_faint)
             .child(tr!(
@@ -609,7 +608,7 @@ impl OverlaysView {
                 div()
                     .flex_1()
                     .min_w(px(0.0))
-                    .font_family(body_family())
+                    .font_family(cx.body_family())
                     .text_size(FONT_XS)
                     .text_color(palette.text_muted)
                     .child(message),
@@ -659,6 +658,7 @@ impl OverlaysView {
         definition: &OverlayDefinition,
         palette: &ForgePalette,
         density: Density,
+        cx: &App,
     ) -> AnyElement {
         div()
             .flex_none()
@@ -674,14 +674,14 @@ impl OverlaysView {
             .child(icon(Icon::InfoCircle, FOOT_GLYPH, palette.text_faint))
             .child(
                 div()
-                    .font_family(body_family())
+                    .font_family(cx.body_family())
                     .text_size(FOOT_FS)
                     .text_color(palette.text_faint)
                     .child(tr!("overlays_code_footer_reload")),
             )
             .child(
                 div()
-                    .font_family(mono_family())
+                    .font_family(cx.mono_family())
                     .text_size(FOOT_FS)
                     .text_color(palette.text_muted)
                     .child(self.displayed_served_path(&definition.id, self.editor.code.file)),
@@ -694,6 +694,7 @@ impl OverlaysView {
         definition: &OverlayDefinition,
         palette: &ForgePalette,
         density: Density,
+        cx: &App,
     ) -> Option<AnyElement> {
         if definition.source_overrides.is_empty() {
             return None;
@@ -719,7 +720,7 @@ impl OverlaysView {
                 .child(icon(Icon::InfoCircle, HINT_GLYPH, palette.info))
                 .child(
                     div()
-                        .font_family(body_family())
+                        .font_family(cx.body_family())
                         .text_size(FONT_XS)
                         .text_color(palette.text_muted)
                         .child(tr!("overlays_code_schema_notice", files = files.as_str())),

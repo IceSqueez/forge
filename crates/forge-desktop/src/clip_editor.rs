@@ -1,14 +1,13 @@
 use forge_components::FONT_LABEL;
 use forge_components::FONT_XXS;
 use forge_components::TINT_FILL_ALPHA;
-use forge_components::{Density, ForgePalette, TINT_BORDER_ALPHA};
+use forge_components::{ActivePresentation, Density, ForgePalette, TINT_BORDER_ALPHA};
 use std::path::PathBuf;
 
 use forge_components::{
     BORDER_THIN, ChipGlyph, FONT_XS, Icon, InputEvent, KeyActivated, OverlayPosition, Radius,
-    Spacing, TextInput, body_family, chip, ghost_button_with_icon, icon,
-    integration_disabled_notice, modal, mono_family, overlay, primary_button, radius, scaled,
-    secondary_button, spacing, toggle, tr, with_alpha,
+    Spacing, TextInput, chip, ghost_button_with_icon, icon, integration_disabled_notice, modal,
+    overlay, primary_button, radius, scaled, secondary_button, spacing, toggle, tr, with_alpha,
 };
 use forge_types::ClipId;
 use gpui::{
@@ -27,7 +26,6 @@ use crate::soundboard::hotkeys_notice::hotkeys_integration;
 use crate::soundboard::{
     CATEGORY_ORDER, audio_dialog_extensions, category_color, category_label, field_lite_label,
 };
-use forge_components::ActivePresentation;
 
 const MODAL_W: Pixels = px(440.0);
 const LABEL_FS: Pixels = FONT_LABEL;
@@ -385,15 +383,15 @@ impl ClipEditor {
                 .child(icon(Icon::Keyboard, KEY_LISTEN_GLYPH, palette.success))
                 .child(
                     div()
-                        .font_family(body_family())
+                        .font_family(cx.body_family())
                         .text_size(FONT_XS)
                         .text_color(palette.success)
                         .child(tr!("hotkeys_capture_prompt")),
                 ),
-            (Some(combo), false) => display.child(keycaps(combo, &palette, density)),
+            (Some(combo), false) => display.child(keycaps(combo, &palette, density, cx)),
             (None, false) => display.child(
                 div()
-                    .font_family(mono_family())
+                    .font_family(cx.mono_family())
                     .text_size(FONT_XS)
                     .text_color(palette.text_muted)
                     .child(tr!("soundboard_modal_key_none")),
@@ -439,7 +437,7 @@ impl ClipEditor {
             )
             .child(
                 div()
-                    .font_family(body_family())
+                    .font_family(cx.body_family())
                     .text_size(HINT_FS)
                     .text_color(palette.text_faint)
                     .child(tr!("soundboard_modal_key_hint")),
@@ -500,7 +498,7 @@ impl ClipEditor {
                     .min_w_0()
                     .overflow_hidden()
                     .text_ellipsis()
-                    .font_family(mono_family())
+                    .font_family(cx.mono_family())
                     .text_size(FONT_XS)
                     .text_color(if file_set {
                         palette.text_secondary
@@ -557,14 +555,14 @@ impl ClipEditor {
                     .flex_col()
                     .child(
                         div()
-                            .font_family(body_family())
+                            .font_family(cx.body_family())
                             .text_size(FONT_XS)
                             .text_color(palette.text_primary)
                             .child(tr!("soundboard_modal_loop_label")),
                     )
                     .child(
                         div()
-                            .font_family(body_family())
+                            .font_family(cx.body_family())
                             .text_size(HINT_FS)
                             .text_color(palette.text_faint)
                             .child(tr!("soundboard_modal_loop_hint")),
@@ -586,7 +584,7 @@ impl ClipEditor {
         let saveable = self.is_saveable(cx);
         let hint = div()
             .flex_1()
-            .font_family(body_family())
+            .font_family(cx.body_family())
             .text_size(LABEL_FS)
             .text_color(palette.text_faint)
             .child(if !saveable {
@@ -629,6 +627,7 @@ fn clip_error_banner(
     error: SharedString,
     palette: &ForgePalette,
     density: Density,
+    cx: &App,
 ) -> impl IntoElement {
     div()
         .w_full()
@@ -643,7 +642,7 @@ fn clip_error_banner(
         .child(icon(Icon::InfoCircle, FONT_XS, palette.danger))
         .child(
             div()
-                .font_family(body_family())
+                .font_family(cx.body_family())
                 .text_size(FONT_XS)
                 .text_color(palette.text_primary)
                 .child(error),
@@ -668,24 +667,28 @@ impl Render for ClipEditor {
                 tr!("soundboard_modal_section_name"),
                 &palette,
                 density,
+                cx,
             ))
             .child(div().child(self.name_input.clone()))
             .child(field_lite_label(
                 tr!("soundboard_modal_section_category"),
                 &palette,
                 density,
+                cx,
             ))
             .child(category_row)
             .child(field_lite_label(
                 tr!("soundboard_modal_section_file"),
                 &palette,
                 density,
+                cx,
             ))
             .child(file_row)
             .child(field_lite_label(
                 tr!("soundboard_modal_section_playback"),
                 &palette,
                 density,
+                cx,
             ))
             .child(loop_row);
 
@@ -695,12 +698,13 @@ impl Render for ClipEditor {
                     tr!("soundboard_modal_section_key"),
                     &palette,
                     density,
+                    cx,
                 ))
                 .child(key_field);
         }
 
         if let Some(error) = self.error.clone() {
-            body = body.child(clip_error_banner(error, &palette, density));
+            body = body.child(clip_error_banner(error, &palette, density, cx));
         }
 
         let title = if self.edit_id.is_some() {

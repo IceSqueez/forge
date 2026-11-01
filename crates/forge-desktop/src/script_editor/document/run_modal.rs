@@ -1,8 +1,8 @@
 use super::input_parsing::{input_syntax_example, parse_input_to_variant};
 use forge_components::{
     ActivePresentation, FONT_SM, FONT_XS, ForgePalette, InputEvent, ModalSize, OverlayPosition,
-    Radius, Spacing, TextInput, body_family, ghost_button, modal, overlay, primary_button, radius,
-    spacing, tr, with_alpha,
+    Radius, Spacing, TextInput, ghost_button, modal, overlay, primary_button, radius, spacing, tr,
+    with_alpha,
 };
 use forge_types::{ArgStack, ScriptId, VariantKind};
 use gpui::prelude::*;
@@ -156,7 +156,7 @@ impl Render for RunModal {
                     .gap(spacing(Spacing::Xxs, density))
                     .child(
                         div()
-                            .font_family(body_family())
+                            .font_family(cx.body_family())
                             .text_size(FONT_XS)
                             .text_color(palette.text_muted)
                             .child(format!("{}: {}", field.name, field.label)),
@@ -167,7 +167,7 @@ impl Render for RunModal {
         if let Some(err) = &modal_state.error {
             body = body.child(
                 div()
-                    .font_family(body_family())
+                    .font_family(cx.body_family())
                     .text_size(FONT_XS)
                     .text_color(palette.danger)
                     .child(err.clone()),
@@ -184,7 +184,7 @@ impl Render for RunModal {
                 .bg(with_alpha(palette.success, 0.5))
                 .child(
                     div()
-                        .font_family(body_family())
+                        .font_family(cx.body_family())
                         .font_weight(FontWeight::MEDIUM)
                         .text_size(FONT_XS)
                         .text_color(palette.shell)

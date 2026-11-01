@@ -4,8 +4,8 @@ pub(crate) use self::commands::{enqueue_builtin_step, reachable_quick_actions};
 use forge_components::FONT_LABEL;
 use forge_components::{
     ActivePresentation, BORDER_THIN, Density, FONT_SM, FONT_XS, FONT_XXS, ForgePalette, Icon,
-    KeyActivated, Radius, SearchState, Spacing, body_family, icon, mono_family, pulse_dot, radius,
-    scaled, spacing, tooltip_builder, tr, with_alpha,
+    KeyActivated, Radius, SearchState, Spacing, icon, pulse_dot, radius, scaled, spacing,
+    tooltip_builder, tr, with_alpha,
 };
 use forge_platform_core::{
     BuiltinCollections, BuiltinOptionSource, QuickAction, QuickActionAccent, QuickActionGroup,
@@ -16,8 +16,8 @@ use forge_runtime::ActionEngineHandle;
 use forge_storage::HistoryRepo;
 use forge_types::IntegrationId;
 use gpui::{
-    AnyElement, ClickEvent, Context, Entity, EventEmitter, Pixels, Rgba, Stateful, Subscription,
-    Window, div, prelude::*, px,
+    AnyElement, App, ClickEvent, Context, Entity, EventEmitter, Pixels, Rgba, SharedString,
+    Stateful, Subscription, Window, div, prelude::*, px,
 };
 use std::sync::Arc;
 
@@ -42,11 +42,14 @@ const OUTLINE_BUTTON_GAP: Pixels = px(5.0);
 const OUTLINE_BUTTON_PAD_Y: Pixels = px(5.0);
 const OUTLINE_BUTTON_PAD_X: Pixels = px(11.0);
 
-pub(crate) fn outline_button(
+pub(crate) fn outline_icon_button(
     id: impl Into<gpui::ElementId>,
-    palette: &ForgePalette,
-    density: Density,
+    glyph: Icon,
+    label: impl Into<SharedString>,
+    color: Rgba,
+    cx: &App,
 ) -> Stateful<gpui::Div> {
+    let density = cx.density();
     div()
         .id(id)
         .flex()
@@ -56,7 +59,15 @@ pub(crate) fn outline_button(
         .px(scaled(OUTLINE_BUTTON_PAD_X, density))
         .rounded(radius(Radius::Sm))
         .border(BORDER_THIN)
-        .border_color(palette.border_regular)
+        .border_color(cx.palette().border_regular)
+        .child(icon(glyph, FONT_XS, color))
+        .child(
+            div()
+                .font_family(cx.body_family())
+                .text_size(FONT_XS)
+                .text_color(color)
+                .child(label.into()),
+        )
 }
 
 #[derive(Clone)]
@@ -176,13 +187,13 @@ impl QuickActionsPanel {
                     .child(icon(Icon::Bolt, FONT_SM, palette.warning))
                     .child(
                         div()
-                            .font_family(body_family())
+                            .font_family(cx.body_family())
                             .text_size(FONT_SM)
                             .text_color(palette.text_primary)
                             .child(tr!("widget_quick_actions_title")),
                     ),
             )
-            .child(div().flex_1().min_w(px(0.0)))
+            .child(div().flex_1().min_w_0())
             .child(
                 div()
                     .flex_none()
@@ -218,7 +229,7 @@ impl QuickActionsPanel {
                     .justify_center()
                     .child(
                         div()
-                            .font_family(body_family())
+                            .font_family(cx.body_family())
                             .text_size(FONT_XS)
                             .text_color(palette.text_muted)
                             .child(tr!("integration_qa_no_matches")),
@@ -246,24 +257,20 @@ impl QuickActionsPanel {
     }
 
     fn history_button(&self, palette: &ForgePalette, cx: &mut Context<Self>) -> AnyElement {
-        let density = cx.density();
-        let text_color = palette.text_secondary;
         let hover_border = palette.border_input;
-        outline_button("integration-run-history", palette, density)
-            .flex_none()
-            .cursor_pointer()
-            .hover(move |s| s.border_color(hover_border))
-            .key_activated(palette.text_primary)
-            .on_click(cx.listener(|this, _: &ClickEvent, _, cx| this.open_run_history(cx)))
-            .child(icon(Icon::History, FONT_XS, text_color))
-            .child(
-                div()
-                    .font_family(body_family())
-                    .text_size(FONT_XS)
-                    .text_color(text_color)
-                    .child(tr!("integration_run_history")),
-            )
-            .into_any_element()
+        outline_icon_button(
+            "integration-run-history",
+            Icon::History,
+            tr!("integration_run_history"),
+            palette.text_secondary,
+            cx,
+        )
+        .flex_none()
+        .cursor_pointer()
+        .hover(move |s| s.border_color(hover_border))
+        .key_activated(palette.text_primary)
+        .on_click(cx.listener(|this, _: &ClickEvent, _, cx| this.open_run_history(cx)))
+        .into_any_element()
     }
 
     fn qa_group(
@@ -288,7 +295,7 @@ impl QuickActionsPanel {
         if let Some(group) = group {
             let mut label_row = div()
                 .flex_1()
-                .min_w(px(0.0))
+                .min_w_0()
                 .flex()
                 .items_center()
                 .gap(spacing(Spacing::Xs, density));
@@ -299,7 +306,7 @@ impl QuickActionsPanel {
             ));
             label_row = label_row.child(
                 div()
-                    .font_family(mono_family())
+                    .font_family(cx.mono_family())
                     .text_size(FONT_XXS)
                     .text_color(palette.text_muted)
                     .child(user_text_string(&group.label).to_uppercase()),
@@ -313,7 +320,7 @@ impl QuickActionsPanel {
                     .child(label_row)
                     .child(
                         div()
-                            .font_family(mono_family())
+                            .font_family(cx.mono_family())
                             .text_size(FONT_XXS)
                             .text_color(palette.text_faint)
                             .child(members.len().to_string()),
@@ -379,8 +386,8 @@ impl QuickActionsPanel {
             .child(
                 div()
                     .flex_1()
-                    .min_w(px(0.0))
-                    .font_family(body_family())
+                    .min_w_0()
+                    .font_family(cx.body_family())
                     .text_size(FONT_LABEL)
                     .line_height(BUTTON_LINE_H)
                     .text_color(label_color)
@@ -399,7 +406,7 @@ impl QuickActionsPanel {
 
         let mut btn = div()
             .id(("quick-action", idx))
-            .min_w(px(0.0))
+            .min_w_0()
             .py(scaled(BUTTON_PAD_Y, density))
             .px(spacing(Spacing::Sm, density))
             .rounded(radius(Radius::Sm))

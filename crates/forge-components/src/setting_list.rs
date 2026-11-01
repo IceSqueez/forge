@@ -7,9 +7,7 @@ use gpui::{
 use crate::cards::{card, field_hint, field_title};
 use crate::icons::{Icon, icon};
 use crate::palette::ForgePalette;
-use crate::tokens::{
-    BORDER_THIN, Density, FONT_XS, FONT_XXS, Spacing, body_family, mono_family, scaled, spacing,
-};
+use crate::tokens::{BORDER_THIN, Density, FONT_XS, FONT_XXS, Spacing, scaled, spacing};
 
 const LABEL_GAP: Pixels = px(2.0);
 const ROW_PAD_V: Pixels = px(8.0);
@@ -57,13 +55,14 @@ pub fn setting_value_row(
     value: impl Into<SharedString>,
     palette: &ForgePalette,
     density: Density,
+    cx: &App,
 ) -> SettingRow {
     let mut row = setting_row(
         title,
         None,
         div()
             .min_w(px(0.0))
-            .font_family(mono_family())
+            .font_family(cx.mono_family())
             .text_size(FONT_XS)
             .text_color(palette.text_muted)
             .child(value.into()),
@@ -105,7 +104,7 @@ impl RenderOnce for SettingRow {
             .gap(scaled(LABEL_GAP, density))
             .child(
                 div()
-                    .font_family(body_family())
+                    .font_family(cx.body_family())
                     .text_size(FONT_XS)
                     .text_color(self.title_color)
                     .child(self.title),
@@ -113,7 +112,7 @@ impl RenderOnce for SettingRow {
         if let Some(hint) = self.hint {
             labels = labels.child(
                 div()
-                    .font_family(body_family())
+                    .font_family(cx.body_family())
                     .text_size(FONT_XXS)
                     .text_color(self.hint_color)
                     .child(hint),
@@ -228,14 +227,15 @@ pub fn setting_block(
     content: impl IntoElement,
     palette: &ForgePalette,
     density: Density,
+    cx: &App,
 ) -> Div {
     let mut heading = div()
         .flex()
         .flex_col()
         .gap(scaled(LABEL_GAP, density))
-        .child(field_title(title, palette));
+        .child(field_title(title, palette, cx));
     if let Some(hint) = hint {
-        heading = heading.child(field_hint(hint, palette));
+        heading = heading.child(field_hint(hint, palette, cx));
     }
     div()
         .w_full()

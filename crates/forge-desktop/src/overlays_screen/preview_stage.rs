@@ -1,4 +1,3 @@
-use forge_components::ActivePresentation;
 use forge_components::Density;
 use forge_components::FONT_BADGE;
 use forge_components::FONT_XXS;
@@ -7,8 +6,8 @@ use forge_components::spacing;
 use std::time::Duration;
 
 use forge_components::{
-    BORDER_THIN, ForgePalette, GlyphArt, Icon, body_family, empty_state, ghost_button_with_icon,
-    icon, mono_family, scaled, section_label, segment, segmented, tooltip_builder, tr,
+    ActivePresentation, BORDER_THIN, ForgePalette, GlyphArt, Icon, empty_state,
+    ghost_button_with_icon, icon, scaled, section_label, segment, segmented, tooltip_builder, tr,
 };
 use forge_overlay::{
     ContentMargins, OverlayConfig, PreviewCanvas, PreviewComposition, PreviewPosition, ShowTiming,
@@ -18,8 +17,8 @@ use forge_runtime::{OverlayDelivery, TestFire};
 use forge_storage::{OverlayDefinition, OverlayId};
 use forge_types::NamesLanguage;
 use gpui::{
-    AnyElement, Bounds, ClickEvent, Context, Pixels, Rgba, Size, Window, canvas, div, fill, point,
-    prelude::*, px, size,
+    AnyElement, App, Bounds, ClickEvent, Context, Pixels, Rgba, Size, Window, canvas, div, fill,
+    point, prelude::*, px, size,
 };
 
 use crate::async_bridge::{self, ErrorSink};
@@ -375,12 +374,11 @@ impl OverlaysView {
                     badge: visuals.icon,
                     icon: preview.icon.clone(),
                 },
-                palette,
                 cx,
             ))
             .children(self.render_motion_timing(definition, served, palette, cx))
             .child(self.render_obs_card(definition, preview.composition.canvas, palette, cx))
-            .child(self.render_hints(definition, served, palette))
+            .child(self.render_hints(definition, served, palette, cx))
             .children(event_wiring::render_readout(&self.wiring.view, palette, cx))
             .into_any_element()
     }
@@ -416,7 +414,7 @@ impl OverlaysView {
             );
             div()
                 .flex_none()
-                .child(section_label(label.to_uppercase(), palette))
+                .child(section_label(label.to_uppercase(), palette, cx))
         });
         let scale_switch = page.then(|| self.render_scale_switch(palette, cx));
         let open_button = page.then(|| {
@@ -495,7 +493,6 @@ impl OverlaysView {
         composition: &PreviewComposition,
         plan: ElementPlan,
         glyphs: StageGlyphs,
-        palette: &ForgePalette,
         cx: &mut Context<Self>,
     ) -> AnyElement {
         let density = cx.density();
@@ -538,8 +535,8 @@ impl OverlaysView {
                 fit,
                 self.stage.scale,
                 &glyphs,
-                palette,
                 density,
+                cx,
             ))
             .into_any_element()
     }
@@ -549,6 +546,7 @@ impl OverlaysView {
         definition: &OverlayDefinition,
         served: bool,
         palette: &ForgePalette,
+        cx: &App,
     ) -> AnyElement {
         let stopped = (!served).then(|| {
             hint_row(
@@ -556,6 +554,7 @@ impl OverlaysView {
                 palette.text_faint,
                 tr!("overlays_url_not_served"),
                 palette.text_faint,
+                cx,
             )
         });
 
@@ -571,9 +570,10 @@ impl OverlaysView {
                 palette.text_faint,
                 tr!("overlays_preview_browser_counts"),
                 palette.text_faint,
+                cx,
             ))
             .children(stopped)
-            .children(self.render_delivery_hint(definition, palette))
+            .children(self.render_delivery_hint(definition, palette, cx))
             .into_any_element()
     }
 
@@ -581,6 +581,7 @@ impl OverlaysView {
         &self,
         definition: &OverlayDefinition,
         palette: &ForgePalette,
+        cx: &App,
     ) -> Option<AnyElement> {
         let run = self
             .stage
@@ -622,7 +623,7 @@ impl OverlaysView {
             ),
         };
 
-        Some(hint_row(glyph, tint, message, tint).into_any_element())
+        Some(hint_row(glyph, tint, message, tint, cx).into_any_element())
     }
 }
 
@@ -632,9 +633,10 @@ fn render_canvas(
     fit: CanvasFit,
     mode: PreviewScale,
     glyphs: &StageGlyphs,
-    palette: &ForgePalette,
     density: Density,
+    cx: &App,
 ) -> AnyElement {
+    let palette = &cx.palette();
     let scale = Scale::new(
         match mode {
             PreviewScale::Zoom => ZOOM_FACTOR,
@@ -670,7 +672,7 @@ fn render_canvas(
                 .absolute()
                 .top(CANVAS_NOTE_TOP)
                 .left(CANVAS_NOTE_LEFT)
-                .font_family(mono_family())
+                .font_family(cx.mono_family())
                 .text_size(CANVAS_NOTE_FS)
                 .text_color(palette.text_faint)
                 .opacity(CANVAS_NOTE_OPACITY)
@@ -721,6 +723,7 @@ fn render_canvas(
             glyphs,
             palette,
             density,
+            cx,
         )))
         .into_any_element()
 }
@@ -783,7 +786,13 @@ fn paint_checkerboard(bounds: Bounds<Pixels>, tint: Rgba, window: &mut Window) {
     }
 }
 
-fn hint_row(glyph: Icon, tint: Rgba, message: String, text_color: Rgba) -> impl IntoElement {
+fn hint_row(
+    glyph: Icon,
+    tint: Rgba,
+    message: String,
+    text_color: Rgba,
+    cx: &App,
+) -> impl IntoElement {
     div()
         .w_full()
         .flex()
@@ -794,7 +803,7 @@ fn hint_row(glyph: Icon, tint: Rgba, message: String, text_color: Rgba) -> impl 
             div()
                 .flex_1()
                 .min_w(px(0.0))
-                .font_family(body_family())
+                .font_family(cx.body_family())
                 .text_size(HINT_FS)
                 .text_color(text_color)
                 .child(message),

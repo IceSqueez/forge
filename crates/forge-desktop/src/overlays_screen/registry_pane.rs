@@ -1,5 +1,4 @@
 use crate::load_notice::{LoadNotice, NoticeWidth, load_notice};
-use forge_components::ActivePresentation;
 use forge_components::Density;
 use forge_components::FONT_FIELD;
 use forge_components::FONT_ROW;
@@ -8,13 +7,12 @@ use forge_components::OverflowRevealingFocus;
 use forge_components::Spacing;
 use forge_components::spacing;
 use forge_components::{
-    BORDER_THIN, FONT_XXS, ForgePalette, Icon, KeyActivated, MenuPlacement, body_family, icon,
-    menu_button, menu_divider, menu_item, mono_family, pad_tile, scaled, toggle, tooltip_builder,
-    tr,
+    ActivePresentation, BORDER_THIN, FONT_XXS, ForgePalette, Icon, KeyActivated, MenuPlacement,
+    icon, menu_button, menu_divider, menu_item, pad_tile, scaled, toggle, tooltip_builder, tr,
 };
 use forge_storage::{OverlayDefinition, OverlayId};
 use gpui::{
-    AnyElement, ClickEvent, Context, ElementId, FontWeight, Pixels, Rgba, SharedString, div,
+    AnyElement, App, ClickEvent, Context, ElementId, FontWeight, Pixels, Rgba, SharedString, div,
     prelude::*, px,
 };
 
@@ -71,13 +69,13 @@ impl OverlaysView {
             .bg(palette.shell)
             .border_r(BORDER_THIN)
             .border_color(palette.border_regular)
-            .child(self.render_pane_header(palette, density))
+            .child(self.render_pane_header(palette, density, cx))
             .child(self.render_list(palette, cx))
             .child(self.render_add_bar(palette, cx))
             .into_any_element()
     }
 
-    fn render_pane_header(&self, palette: &ForgePalette, density: Density) -> AnyElement {
+    fn render_pane_header(&self, palette: &ForgePalette, density: Density, cx: &App) -> AnyElement {
         div()
             .flex_none()
             .flex()
@@ -90,7 +88,7 @@ impl OverlaysView {
             .border_color(palette.border_regular)
             .child(
                 div()
-                    .font_family(body_family())
+                    .font_family(cx.body_family())
                     .font_weight(FontWeight::SEMIBOLD)
                     .text_size(PANE_TITLE_FS)
                     .text_color(palette.text_primary)
@@ -98,7 +96,7 @@ impl OverlaysView {
             )
             .child(
                 div()
-                    .font_family(mono_family())
+                    .font_family(cx.mono_family())
                     .text_size(FONT_XXS)
                     .text_color(palette.text_faint)
                     .child(self.registry.overlays.len().to_string()),
@@ -128,10 +126,11 @@ impl OverlaysView {
                 cx.listener(|this, _: &ClickEvent, _, cx| this.load(cx)),
                 palette,
                 density,
+                cx,
             );
             return list
                 .child(notice.unwrap_or_else(|| {
-                    empty_note(tr!("overlays_pane_empty"), palette, density).into_any_element()
+                    empty_note(tr!("overlays_pane_empty"), palette, density, cx).into_any_element()
                 }))
                 .into_any_element();
         }
@@ -197,7 +196,7 @@ impl OverlaysView {
                 div()
                     .w_full()
                     .truncate()
-                    .font_family(body_family())
+                    .font_family(cx.body_family())
                     .font_weight(FontWeight::MEDIUM)
                     .text_size(ROW_NAME_FS)
                     .text_color(name_color)
@@ -207,7 +206,7 @@ impl OverlaysView {
                 div()
                     .w_full()
                     .truncate()
-                    .font_family(mono_family())
+                    .font_family(cx.mono_family())
                     .text_size(ROW_KIND_FS)
                     .text_color(palette.text_faint)
                     .child(kind_label),
@@ -347,12 +346,17 @@ impl OverlaysView {
     }
 }
 
-fn empty_note(message: String, palette: &ForgePalette, density: Density) -> impl IntoElement {
+fn empty_note(
+    message: String,
+    palette: &ForgePalette,
+    density: Density,
+    cx: &App,
+) -> impl IntoElement {
     div()
         .w_full()
         .px(spacing(Spacing::Sm, density))
         .py(scaled(EMPTY_PAD_V, density))
-        .font_family(body_family())
+        .font_family(cx.body_family())
         .text_size(FONT_XXS)
         .text_color(palette.text_faint)
         .child(SharedString::from(message))

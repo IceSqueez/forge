@@ -43,13 +43,12 @@ pub(crate) fn hub_crumb<V: EventEmitter<NavRequested>>(
 
 #[cfg(test)]
 mod tests {
-    use forge_components::breadcrumb;
+    use forge_components::{ActivePresentation, breadcrumb};
     use gpui::{IntoElement, Render, TestAppContext, Window, div, prelude::*};
 
     use super::*;
     use crate::navigation::TtsSection;
     use crate::test_support::hub_crumb_targets;
-    use forge_components::ActivePresentation;
 
     #[test]
     fn core_screens_map_to_their_hub_category_regardless_of_payload() {

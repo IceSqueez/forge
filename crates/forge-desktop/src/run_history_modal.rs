@@ -1,15 +1,14 @@
 use crate::actions_screen::parse_variable_segments;
 use crate::integration_switch::integration_name;
 use crate::user_text::{ResolvedText, resolve_user_text};
-use forge_components::ActivePresentation;
 use forge_components::BORDER_THIN;
 use forge_components::Language;
 use forge_components::OverflowRevealingFocus;
 use forge_components::{
-    Density, FONT_SM, FONT_XS, FONT_XXS, ForgePalette, Icon, KeyActivated, ModalSize,
-    OverlayPosition, Radius, Spacing, body_family, error_row, fmt_display_relative,
-    highlighted_text, icon, integration_disabled_reason, modal, mono_family, overlay, radius,
-    scaled, spacing, status_dot, tooltip_builder, tr,
+    ActivePresentation, Density, FONT_SM, FONT_XS, FONT_XXS, ForgePalette, Icon, KeyActivated,
+    ModalSize, OverlayPosition, Radius, Spacing, error_row, fmt_display_relative, highlighted_text,
+    icon, integration_disabled_reason, modal, overlay, radius, scaled, spacing, status_dot,
+    tooltip_builder, tr,
 };
 use forge_registry::{TriggerKindDescriptor, TriggerRegistry};
 use forge_types::{
@@ -17,8 +16,8 @@ use forge_types::{
     SubActionOutcome, SubActionTelemetry,
 };
 use gpui::{
-    AnyElement, ClickEvent, Context, ElementId, EventEmitter, Pixels, Rgba, SharedString, Window,
-    div, prelude::*, px,
+    AnyElement, App, ClickEvent, Context, ElementId, EventEmitter, Pixels, Rgba, SharedString,
+    Window, div, prelude::*, px,
 };
 use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
@@ -77,6 +76,7 @@ fn disabled_reason_link(
             ),
             palette,
             density,
+            cx,
         ))
         .tooltip(tooltip_builder(
             tr!(
@@ -205,14 +205,14 @@ impl RunHistoryModal {
         cx.emit(RunHistoryOpenIntegration(integration));
     }
 
-    fn render_loading(&self, palette: &ForgePalette, density: Density) -> AnyElement {
+    fn render_loading(&self, palette: &ForgePalette, density: Density, cx: &App) -> AnyElement {
         div()
             .w_full()
             .flex()
             .items_center()
             .justify_center()
             .py(spacing(Spacing::Lg, density))
-            .font_family(body_family())
+            .font_family(cx.body_family())
             .text_size(FONT_SM)
             .text_color(palette.text_muted)
             .child(tr!("action_editor_run_history_loading"))
@@ -224,15 +224,16 @@ impl RunHistoryModal {
         message: &SharedString,
         palette: &ForgePalette,
         density: Density,
+        cx: &App,
     ) -> AnyElement {
         div()
             .w_full()
             .p(spacing(Spacing::Md, density))
-            .child(error_row(message.clone(), palette, density))
+            .child(error_row(message.clone(), palette, density, cx))
             .into_any_element()
     }
 
-    fn render_empty(&self, palette: &ForgePalette, density: Density) -> AnyElement {
+    fn render_empty(&self, palette: &ForgePalette, density: Density, cx: &App) -> AnyElement {
         div()
             .w_full()
             .flex()
@@ -243,14 +244,14 @@ impl RunHistoryModal {
             .child(icon(Icon::History, EMPTY_GLYPH, palette.text_faint))
             .child(
                 div()
-                    .font_family(body_family())
+                    .font_family(cx.body_family())
                     .text_size(FONT_SM)
                     .text_color(palette.text_secondary)
                     .child(tr!("action_editor_run_history_empty_title")),
             )
             .child(
                 div()
-                    .font_family(body_family())
+                    .font_family(cx.body_family())
                     .text_size(FONT_XS)
                     .text_color(palette.text_muted)
                     .child(tr!("action_editor_run_history_empty_hint")),
@@ -346,7 +347,7 @@ impl RunHistoryModal {
                     .flex_1()
                     .min_w(px(0.0))
                     .truncate()
-                    .font_family(body_family())
+                    .font_family(cx.body_family())
                     .text_size(FONT_XS)
                     .text_color(time_color)
                     .child(when),
@@ -358,7 +359,7 @@ impl RunHistoryModal {
             .child(
                 div()
                     .flex_none()
-                    .font_family(mono_family())
+                    .font_family(cx.mono_family())
                     .text_size(FONT_XXS)
                     .text_color(palette.text_muted)
                     .child(duration),
@@ -406,7 +407,7 @@ impl RunHistoryModal {
                 .px(spacing(Spacing::Xs, density))
                 .rounded(CHIP_RADIUS)
                 .bg(palette.surface_overlay)
-                .font_family(mono_family())
+                .font_family(cx.mono_family())
                 .text_size(FONT_XXS)
                 .text_color(badge_color)
                 .child(badge_label)
@@ -421,7 +422,7 @@ impl RunHistoryModal {
             .child(
                 div()
                     .flex_1()
-                    .font_family(body_family())
+                    .font_family(cx.body_family())
                     .text_size(FONT_XS)
                     .text_color(palette.text_primary)
                     .child(when),
@@ -429,7 +430,7 @@ impl RunHistoryModal {
             .child(
                 div()
                     .flex_shrink_0()
-                    .font_family(mono_family())
+                    .font_family(cx.mono_family())
                     .text_size(FONT_XXS)
                     .text_color(palette.text_muted)
                     .child(duration),
@@ -444,12 +445,12 @@ impl RunHistoryModal {
             .flex_col()
             .gap(spacing(Spacing::Xs, density))
             .child(top)
-            .child(self.render_run_trigger(ctx, palette, density));
+            .child(self.render_run_trigger(ctx, palette, density, cx));
         if let Some(message) = error_message
             && !step_failed
         {
             col = col.child(
-                resolved_message_block(message, palette.danger, palette)
+                resolved_message_block(message, palette.danger, palette, cx)
                     .pl(ROW_DOT + spacing(Spacing::Xs, density)),
             );
         }
@@ -476,6 +477,7 @@ impl RunHistoryModal {
         ctx: &ExecutionContext,
         palette: &ForgePalette,
         density: Density,
+        cx: &App,
     ) -> AnyElement {
         let (glyph, label): (Icon, SharedString) = match &ctx.metadata {
             ExecutionMetadata::Trigger { trigger_kind, .. } => {
@@ -508,7 +510,7 @@ impl RunHistoryModal {
             .child(icon(glyph, FONT_XS, palette.text_muted))
             .child(
                 div()
-                    .font_family(body_family())
+                    .font_family(cx.body_family())
                     .text_size(FONT_XS)
                     .text_color(palette.text_secondary)
                     .child(label),
@@ -527,7 +529,7 @@ impl RunHistoryModal {
                     .min_w(px(0.))
                     .overflow_hidden()
                     .pl(spacing(Spacing::Xs, density))
-                    .font_family(mono_family())
+                    .font_family(cx.mono_family())
                     .text_size(FONT_XXS)
                     .text_color(palette.text_muted)
                     .child(highlighted_text(Language::Json, json.clone(), palette)),
@@ -585,7 +587,7 @@ impl RunHistoryModal {
                 div()
                     .flex_shrink_0()
                     .w(spacing(Spacing::Lg, density))
-                    .font_family(mono_family())
+                    .font_family(cx.mono_family())
                     .text_size(FONT_XXS)
                     .text_color(palette.text_faint)
                     .child(marker),
@@ -594,7 +596,7 @@ impl RunHistoryModal {
             .child(
                 div()
                     .flex_1()
-                    .font_family(mono_family())
+                    .font_family(cx.mono_family())
                     .text_size(FONT_XXS)
                     .text_color(palette.text_secondary)
                     .child(step.kind.clone()),
@@ -602,7 +604,7 @@ impl RunHistoryModal {
             .child(
                 div()
                     .flex_shrink_0()
-                    .font_family(mono_family())
+                    .font_family(cx.mono_family())
                     .text_size(FONT_XXS)
                     .text_color(palette.text_muted)
                     .child(tr!(
@@ -619,7 +621,7 @@ impl RunHistoryModal {
                 ),
                 _ => div()
                     .flex_shrink_0()
-                    .font_family(mono_family())
+                    .font_family(cx.mono_family())
                     .text_size(FONT_XXS)
                     .text_color(status_color)
                     .child(status_label)
@@ -638,8 +640,8 @@ impl RunHistoryModal {
                 name,
                 value,
                 palette.text_muted,
-                palette,
                 density,
+                cx,
             ));
         }
 
@@ -649,14 +651,14 @@ impl RunHistoryModal {
                 name,
                 value,
                 palette.warning,
-                palette,
                 density,
+                cx,
             ));
         }
 
         if let Some(text) = message {
             row = row.child(
-                resolved_message_block(text, status_color, palette).pl(spacing(
+                resolved_message_block(text, status_color, palette, cx).pl(spacing(
                     Spacing::Lg,
                     density,
                 ) + spacing(
@@ -674,9 +676,10 @@ impl RunHistoryModal {
         name: &str,
         value: &str,
         name_color: Rgba,
-        palette: &ForgePalette,
         density: Density,
+        cx: &App,
     ) -> AnyElement {
+        let palette = &cx.palette();
         let io_indent = spacing(Spacing::Lg, density) + spacing(Spacing::Xs, density);
         let value = if value.is_empty() { "\"\"" } else { value };
         let multiline = value.contains('\n') || self.structured_values.contains(value);
@@ -688,7 +691,7 @@ impl RunHistoryModal {
             .child(
                 div()
                     .flex_shrink_0()
-                    .font_family(mono_family())
+                    .font_family(cx.mono_family())
                     .text_size(FONT_XXS)
                     .text_color(palette.text_muted)
                     .child(tag.into()),
@@ -696,7 +699,7 @@ impl RunHistoryModal {
             .child(
                 div()
                     .flex_shrink_0()
-                    .font_family(mono_family())
+                    .font_family(cx.mono_family())
                     .text_size(FONT_XXS)
                     .text_color(name_color)
                     .child(name.to_owned()),
@@ -709,7 +712,7 @@ impl RunHistoryModal {
                 .min_w(px(0.))
                 .flex()
                 .flex_wrap()
-                .font_family(mono_family())
+                .font_family(cx.mono_family())
                 .text_size(FONT_XXS);
             if is_string {
                 for (chunk, is_var) in parse_variable_segments(value) {
@@ -747,7 +750,7 @@ impl RunHistoryModal {
                     .min_w(px(0.))
                     .overflow_hidden()
                     .pl(spacing(Spacing::Xs, density))
-                    .font_family(mono_family())
+                    .font_family(cx.mono_family())
                     .text_size(FONT_XXS)
                     .text_color(palette.text_secondary)
                     .child(highlighted_text(Language::Json, value.to_owned(), palette)),
@@ -764,9 +767,9 @@ impl Render for RunHistoryModal {
 
         let has_runs = matches!(&self.load, Load::Ready(runs) if !runs.is_empty());
         let body = match &self.load {
-            Load::Pending => self.render_loading(palette, density),
-            Load::Failed(message) => self.render_failed(message, palette, density),
-            Load::Ready(runs) if runs.is_empty() => self.render_empty(palette, density),
+            Load::Pending => self.render_loading(palette, density, cx),
+            Load::Failed(message) => self.render_failed(message, palette, density, cx),
+            Load::Ready(runs) if runs.is_empty() => self.render_empty(palette, density, cx),
             Load::Ready(runs) => self.render_master_detail(runs, self.selected, palette, cx),
         };
 
@@ -793,11 +796,16 @@ impl Render for RunHistoryModal {
     }
 }
 
-fn resolved_message_block(text: ResolvedText, color: Rgba, palette: &ForgePalette) -> gpui::Div {
+fn resolved_message_block(
+    text: ResolvedText,
+    color: Rgba,
+    palette: &ForgePalette,
+    cx: &App,
+) -> gpui::Div {
     let block = div()
         .flex()
         .flex_col()
-        .font_family(mono_family())
+        .font_family(cx.mono_family())
         .text_size(FONT_XXS)
         .text_color(color)
         .child(text.primary);

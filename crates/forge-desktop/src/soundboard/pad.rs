@@ -1,8 +1,8 @@
 use std::time::Instant;
 
 use forge_components::{
-    Density, FONT_XXS, ForgePalette, Icon, KeyActivated, Radius, empty_state, icon, mono_family,
-    pad_tile, radius, scaled, tooltip_builder, tr, with_alpha,
+    ActivePresentation, Density, FONT_XXS, ForgePalette, Icon, KeyActivated, Radius, empty_state,
+    icon, pad_tile, radius, scaled, tooltip_builder, tr, with_alpha,
 };
 use gpui::{
     AnyElement, ClickEvent, Context, Pixels, Rgba, SharedString, Window, div, prelude::*, px, svg,
@@ -12,7 +12,6 @@ use super::adoption::{LibraryBadge, library_badge};
 use super::categories::category_color;
 use super::playback::{readout_total, time_readout};
 use super::{SoundClip, SoundboardView};
-use forge_components::ActivePresentation;
 
 const PAD_STATUS_GAP: Pixels = px(5.0);
 const PAD_FOOTER_GAP: Pixels = px(5.0);
@@ -50,7 +49,7 @@ impl SoundboardView {
         let hotkey_badge = clip
             .hotkey
             .as_deref()
-            .map(|hk| self.render_hotkey_badge(index, id, hk, palette, density));
+            .map(|hk| self.render_hotkey_badge(index, id, hk, palette, density, cx));
 
         let edit_btn = self.pad_action_button(
             ("sb-pad-edit", index),
@@ -105,7 +104,7 @@ impl SoundboardView {
                 .child(
                     div()
                         .flex_none()
-                        .font_family(mono_family())
+                        .font_family(cx.mono_family())
                         .text_size(FONT_XXS)
                         .text_color(palette.warning)
                         .child(tr!("soundboard_pad_source_missing")),
@@ -119,7 +118,7 @@ impl SoundboardView {
                         div()
                             .id(("sb-pad-refused", index))
                             .flex_none()
-                            .font_family(mono_family())
+                            .font_family(cx.mono_family())
                             .text_size(FONT_XXS)
                             .text_color(palette.warning)
                             .tooltip(tooltip_builder(reason, palette))
@@ -130,7 +129,7 @@ impl SoundboardView {
                 status = status.child(
                     div()
                         .flex_none()
-                        .font_family(mono_family())
+                        .font_family(cx.mono_family())
                         .text_size(FONT_XXS)
                         .text_color(palette.text_faint)
                         .child(tr!("soundboard_pad_not_in_library")),
@@ -141,7 +140,7 @@ impl SoundboardView {
         if playing {
             status = status.child(
                 div()
-                    .font_family(mono_family())
+                    .font_family(cx.mono_family())
                     .text_size(FONT_XXS)
                     .text_color(color)
                     .child(tr!("soundboard_pad_playing")),
@@ -158,7 +157,7 @@ impl SoundboardView {
             .child(
                 div()
                     .flex_none()
-                    .font_family(mono_family())
+                    .font_family(cx.mono_family())
                     .text_size(FONT_XXS)
                     .text_color(readout_color)
                     .child(readout),

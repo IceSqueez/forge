@@ -1,9 +1,9 @@
 use std::sync::Arc;
 
 use forge_components::{
-    Density, FONT_SM, ForgePalette, InputEvent, SettingRow, Spacing, TextInput, primary_button,
-    secondary_button, segment, segmented, setting_groups, setting_row, setting_rows,
-    setting_value_row, spacing, tr,
+    ActivePresentation, Density, FONT_SM, ForgePalette, InputEvent, SettingRow, Spacing, TextInput,
+    primary_button, secondary_button, segment, segmented, setting_groups, setting_row,
+    setting_rows, setting_value_row, spacing, tr,
 };
 use forge_runtime::ChatHistoryRetentionHandle;
 use forge_storage::{
@@ -31,7 +31,6 @@ use crate::repo_failure::RepoFailure;
 use crate::safety_copies::SafetyCopiesView;
 use crate::settings_pane_header::SettingsPaneHeader;
 use crate::transfer_flows::TransferFlows;
-use forge_components::ActivePresentation;
 
 const LIMIT_INPUT_W: Pixels = px(120.0);
 const PER_VIEWER_PRESETS: [u32; 3] = [25, 50, 100];
@@ -558,6 +557,7 @@ impl Render for SettingsStorageView {
                 db_path.display().to_string(),
                 &palette,
                 density,
+                cx,
             ))
             .row(setting_row(
                 tr!("settings_storage_backup_label"),
@@ -611,6 +611,7 @@ impl Render for SettingsStorageView {
                     }),
                     &palette,
                     density,
+                    cx,
                 )
             })
             .flatten();

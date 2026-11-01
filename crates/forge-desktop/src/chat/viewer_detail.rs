@@ -5,9 +5,9 @@ use super::viewer_follow::follow_display;
 use crate::chat_drawer::{DASH, SubStatus, ViewerSummary};
 use crate::platform_visuals::{BadgeKind, badge_color, badge_label};
 use forge_components::{
-    BORDER_THIN, DISABLED_OPACITY, Density, FONT_MD, FONT_SM, FONT_XS, FONT_XXS, ForgePalette,
-    Icon, KeyActivated, Radius, Spacing, avatar_tile, badge, body_family, icon, mono_family,
-    radius, spacing, tr,
+    ActivePresentation, BORDER_THIN, DISABLED_OPACITY, Density, FONT_MD, FONT_SM, FONT_XS,
+    FONT_XXS, ForgePalette, Icon, KeyActivated, Radius, Spacing, avatar_tile, badge, icon, radius,
+    spacing, tr,
 };
 use gpui::{
     AnyElement, App, ClickEvent, Context, Div, FontWeight, Pixels, Rgba, SharedString, Window, div,
@@ -52,6 +52,7 @@ fn stat_cell(
     color: Rgba,
     palette: &ForgePalette,
     density: Density,
+    cx: &App,
 ) -> Div {
     div()
         .flex_1()
@@ -63,14 +64,14 @@ fn stat_cell(
         .bg(palette.elevated)
         .child(
             div()
-                .font_family(mono_family())
+                .font_family(cx.mono_family())
                 .text_size(FONT_XXS)
                 .text_color(palette.text_muted)
                 .child(label.into()),
         )
         .child(
             div()
-                .font_family(mono_family())
+                .font_family(cx.mono_family())
                 .text_size(FONT_XS)
                 .text_color(color)
                 .child(value.into()),
@@ -94,10 +95,11 @@ fn drawer_ghost_button(
     glyph: Icon,
     label: impl Into<SharedString>,
     enabled: bool,
-    palette: &ForgePalette,
     density: Density,
     handler: impl Fn(&ClickEvent, &mut Window, &mut App) + 'static,
+    cx: &App,
 ) -> impl IntoElement {
+    let palette = &cx.palette();
     let border = palette.border_regular;
     let border_hover = palette.border_input;
     let surf = palette.surface_overlay;
@@ -118,7 +120,7 @@ fn drawer_ghost_button(
         .child(icon(glyph, DRAWER_ICON, text))
         .child(
             div()
-                .font_family(body_family())
+                .font_family(cx.body_family())
                 .text_size(FONT_XS)
                 .text_color(text)
                 .child(label.into()),
@@ -153,7 +155,7 @@ impl ViewerDrawer {
             return frame
                 .child(
                     div()
-                        .font_family(body_family())
+                        .font_family(cx.body_family())
                         .text_size(FONT_XS)
                         .text_color(palette.text_faint)
                         .child(tr!("chat_drawer_click_hint")),
@@ -176,7 +178,7 @@ impl ViewerDrawer {
             .gap(spacing(Spacing::Xs, density))
             .child(
                 div()
-                    .font_family(body_family())
+                    .font_family(cx.body_family())
                     .font_weight(FontWeight::MEDIUM)
                     .text_size(FONT_SM)
                     .text_color(palette.text_primary)
@@ -196,7 +198,7 @@ impl ViewerDrawer {
             .child(name_row)
             .child(
                 div()
-                    .font_family(mono_family())
+                    .font_family(cx.mono_family())
                     .text_size(FONT_XXS)
                     .text_color(palette.text_muted)
                     .child(last_seen),
@@ -231,6 +233,7 @@ impl ViewerDrawer {
                         palette.text_primary,
                         palette,
                         density,
+                        cx,
                     )
                     .id("chat-drawer-messages")
                     .cursor_pointer()
@@ -253,6 +256,7 @@ impl ViewerDrawer {
                         sub_color,
                         palette,
                         density,
+                        cx,
                     ))
                     .children(follow.map(|(follow_value, follow_color)| {
                         stat_cell(
@@ -261,6 +265,7 @@ impl ViewerDrawer {
                             follow_color,
                             palette,
                             density,
+                            cx,
                         )
                     })),
             );
@@ -277,22 +282,22 @@ impl ViewerDrawer {
                 Icon::Bolt,
                 tr!("chat_drawer_shoutout"),
                 target.supports(&ViewerAction::Shoutout),
-                palette,
                 density,
                 cx.listener(move |this, _: &ClickEvent, _, cx| {
                     this.shoutout_viewer(shoutout_target.clone(), cx)
                 }),
+                cx,
             ))
             .child(drawer_ghost_button(
                 "chat-drawer-whisper",
                 Icon::MessageCircle,
                 tr!("chat_drawer_whisper"),
                 can_whisper,
-                palette,
                 density,
                 cx.listener(move |this, _: &ClickEvent, window, cx| {
                     this.open_whisper(whisper_key.clone(), window, cx)
                 }),
+                cx,
             ))
             .child(self.render_drawer_menu(&summary.key, &target, palette, cx));
 

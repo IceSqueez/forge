@@ -7,7 +7,7 @@ use crate::icons::{Icon, icon};
 use crate::key_activation::KeyActivated;
 use crate::palette::ForgePalette;
 use crate::presentation::ActivePresentation;
-use crate::tokens::{BORDER_THIN, Density, FONT_XS, Spacing, body_family, scaled, spacing};
+use crate::tokens::{BORDER_THIN, Density, FONT_XS, Spacing, scaled, spacing};
 
 type CrumbClick = Box<dyn Fn(&ClickEvent, &mut Window, &mut App) + 'static>;
 
@@ -111,7 +111,7 @@ impl RenderOnce for Breadcrumb {
             trail = trail.child(icon(Icon::ChevronRight, SEPARATOR_ICON_SIZE, faint));
 
             let label = div()
-                .font_family(body_family())
+                .font_family(cx.body_family())
                 .text_size(FONT_XS)
                 .text_color(ink);
 

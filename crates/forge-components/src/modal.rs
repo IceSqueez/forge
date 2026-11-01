@@ -10,8 +10,8 @@ use crate::icons::{Icon, icon, spinner};
 use crate::overlay::confine_tab;
 use crate::palette::ForgePalette;
 use crate::tokens::{
-    BORDER_THIN, Density, FONT_MD, FONT_XS, ModalSize, Radius, Spacing, body_family, modal_width,
-    radius, scaled, spacing,
+    BORDER_THIN, Density, FONT_MD, FONT_XS, ModalSize, Radius, Spacing, modal_width, radius,
+    scaled, spacing,
 };
 
 const BODY_ID: &str = "forge-modal-body";
@@ -141,7 +141,7 @@ impl Modal {
         self
     }
 
-    fn render_header(&mut self, density: Density) -> AnyElement {
+    fn render_header(&mut self, density: Density, cx: &App) -> AnyElement {
         let mut row = div()
             .flex()
             .items_center()
@@ -177,7 +177,7 @@ impl Modal {
                 .overflow_hidden()
                 .child(
                     div()
-                        .font_family(body_family())
+                        .font_family(cx.body_family())
                         .text_size(FONT_MD)
                         .text_color(self.title_color)
                         .child(self.title.clone()),
@@ -185,7 +185,7 @@ impl Modal {
             if let Some(subtitle) = self.subtitle.clone() {
                 titles = titles.child(
                     div()
-                        .font_family(body_family())
+                        .font_family(cx.body_family())
                         .text_size(FONT_XS)
                         .text_color(self.subtitle_color)
                         .child(subtitle),
@@ -243,7 +243,7 @@ impl RenderOnce for Modal {
             .use_state(cx, |_, cx| cx.focus_handle())
             .read(cx)
             .clone();
-        let header = self.render_header(density);
+        let header = self.render_header(density, cx);
         let footer = self.render_footer(density);
 
         let mut body = div().id(BODY_ID).w_full().min_h_0().flex().flex_col();
@@ -283,6 +283,7 @@ pub fn busy_modal(
     detail: impl Into<SharedString>,
     palette: &ForgePalette,
     density: Density,
+    cx: &App,
 ) -> Modal {
     let body = div()
         .w_full()
@@ -294,7 +295,7 @@ pub fn busy_modal(
             div()
                 .flex_1()
                 .min_w(px(0.0))
-                .font_family(body_family())
+                .font_family(cx.body_family())
                 .text_size(FONT_XS)
                 .text_color(palette.text_muted)
                 .child(detail.into()),

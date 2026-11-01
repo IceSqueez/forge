@@ -1,3 +1,4 @@
+use crate::option_choices::ChoiceOption;
 use forge_host::donation_services::DonationServices;
 use forge_platform_core::{BuiltinStatus, ConnectionState, IntegrationCategory};
 use forge_types::IntegrationId;
@@ -7,16 +8,11 @@ use gpui::{App, Entity};
 use crate::platforms::PlatformConnectivity;
 use forge_host::integration_catalog::declarations;
 
-pub(crate) fn donation_provider_options() -> Vec<(String, String)> {
+pub(crate) fn donation_provider_options() -> Vec<ChoiceOption> {
     declarations()
         .into_iter()
         .filter(|declaration| declaration.category == IntegrationCategory::DONATIONS)
-        .map(|declaration| {
-            (
-                declaration.id.as_str().to_owned(),
-                declaration.brand_name.to_owned(),
-            )
-        })
+        .map(|declaration| ChoiceOption::new(declaration.id.as_str(), declaration.brand_name))
         .collect()
 }
 

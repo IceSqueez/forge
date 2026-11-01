@@ -5,8 +5,7 @@ use forge_components::Spacing;
 use forge_components::spacing;
 use forge_components::{
     BORDER_THIN, FONT_XS, FONT_XXS, ForgePalette, Icon, KeyActivated, Radius, ResizeEdge,
-    ResizeRange, body_family, icon, install_resize, mono_family, pulse_dot, radius, scaled,
-    status_dot, tr,
+    ResizeRange, icon, install_resize, pulse_dot, radius, scaled, status_dot, tr,
 };
 use forge_platform_core::{ConnectionAffordance, IntegrationCategory};
 use gpui::{
@@ -251,18 +250,23 @@ impl SidebarNav {
         entries
     }
 
-    fn text_label(label: SharedString) -> AnyElement {
+    fn text_label(label: SharedString, cx: &App) -> AnyElement {
         div()
             .flex_1()
-            .font_family(body_family())
+            .font_family(cx.body_family())
             .text_size(FONT_XS)
             .child(label)
             .into_any_element()
     }
 
-    fn section_label(text: NavText, palette: &ForgePalette, density: Density) -> AnyElement {
+    fn section_label(
+        text: NavText,
+        palette: &ForgePalette,
+        density: Density,
+        cx: &App,
+    ) -> AnyElement {
         div()
-            .font_family(mono_family())
+            .font_family(cx.mono_family())
             .text_size(FONT_XXS)
             .text_color(palette.text_faint)
             .pt(scaled(SECTION_LABEL_PAD_TOP, density))
@@ -272,9 +276,9 @@ impl SidebarNav {
             .into_any_element()
     }
 
-    fn mini_label(text: NavText, palette: &ForgePalette, density: Density) -> AnyElement {
+    fn mini_label(text: NavText, palette: &ForgePalette, density: Density, cx: &App) -> AnyElement {
         div()
-            .font_family(mono_family())
+            .font_family(cx.mono_family())
             .font_weight(FontWeight::MEDIUM)
             .text_size(FONT_XXS)
             .text_color(palette.text_faint)
@@ -348,12 +352,12 @@ impl SidebarNav {
                 icon(ic, SECTION_ICON, palette.text_secondary).into_any_element(),
             )
         };
-        let mut children = vec![glyph, Self::text_label(label.resolve())];
+        let mut children = vec![glyph, Self::text_label(label.resolve(), cx)];
         if let Some(badge) = badge {
             children.push(
                 div()
                     .flex_none()
-                    .font_family(mono_family())
+                    .font_family(cx.mono_family())
                     .text_size(SECTION_BADGE)
                     .text_color(palette.text_faint)
                     .child(badge)
@@ -394,8 +398,8 @@ impl SidebarNav {
     ) -> AnyElement {
         let density = cx.density();
         match entry {
-            NavEntry::SectionLabel(text) => Self::section_label(text, palette, density),
-            NavEntry::MiniLabel(text) => Self::mini_label(text, palette, density),
+            NavEntry::SectionLabel(text) => Self::section_label(text, palette, density, cx),
+            NavEntry::MiniLabel(text) => Self::mini_label(text, palette, density, cx),
             NavEntry::Gap(height) => div()
                 .flex_none()
                 .h(scaled(height, density))
@@ -420,7 +424,7 @@ impl SidebarNav {
                 };
                 let mut children = vec![
                     icon(ic, FLAT_ICON, fg).into_any_element(),
-                    Self::text_label(label.resolve()),
+                    Self::text_label(label.resolve(), cx),
                 ];
                 children.extend(status.map(|status| Self::status_marker(label, status)));
                 Self::nav_frame(
@@ -453,7 +457,7 @@ impl SidebarNav {
                     .rounded(BRAND_DOT_RADIUS)
                     .bg(dot)
                     .into_any_element();
-                let mut children = vec![square, Self::text_label(label.resolve())];
+                let mut children = vec![square, Self::text_label(label.resolve(), cx)];
                 children.extend(status.map(|status| Self::status_marker(label, status)));
                 Self::nav_frame(
                     label.id(),

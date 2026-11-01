@@ -2,11 +2,11 @@ use forge_components::FONT_HERO;
 use std::sync::Arc;
 
 use forge_components::{
-    BORDER_THIN, Density, FONT_XS, ForgePalette, Icon, Radius, Spacing, body_family, icon, radius,
-    scaled, spacing, toggle, tr,
+    ActivePresentation, BORDER_THIN, Density, FONT_XS, ForgePalette, Icon, Radius, Spacing, icon,
+    radius, scaled, spacing, toggle, tr,
 };
 use forge_soundboard::settings::save_enabled;
-use gpui::{AnyElement, ClickEvent, Context, Pixels, div, prelude::*, px};
+use gpui::{AnyElement, App, ClickEvent, Context, Pixels, div, prelude::*, px};
 
 use super::routing::ROUTING_PAD;
 use super::{LABEL_FS, SoundboardView};
@@ -40,6 +40,7 @@ impl SoundboardView {
         &self,
         palette: &ForgePalette,
         density: Density,
+        cx: &App,
     ) -> AnyElement {
         let device = self.device_short_label();
         let summary = tr!(
@@ -54,7 +55,7 @@ impl SoundboardView {
             .child(icon(Icon::Volume, HEADER_ICON, palette.success))
             .child(
                 div()
-                    .font_family(body_family())
+                    .font_family(cx.body_family())
                     .text_size(LABEL_FS)
                     .text_color(palette.text_muted)
                     .child(summary),
@@ -104,7 +105,7 @@ impl SoundboardView {
                     .flex_col()
                     .child(
                         div()
-                            .font_family(body_family())
+                            .font_family(cx.body_family())
                             .text_size(HERO_TITLE_FS)
                             .font_weight(gpui::FontWeight::SEMIBOLD)
                             .text_color(palette.text_primary)
@@ -112,7 +113,7 @@ impl SoundboardView {
                     )
                     .child(
                         div()
-                            .font_family(body_family())
+                            .font_family(cx.body_family())
                             .text_size(FONT_XS)
                             .text_color(palette.text_muted)
                             .child(tr!("soundboard_hero_blurb")),
@@ -125,7 +126,7 @@ impl SoundboardView {
                     .gap(spacing(Spacing::Sm, density))
                     .child(
                         div()
-                            .font_family(body_family())
+                            .font_family(cx.body_family())
                             .text_size(LABEL_FS)
                             .text_color(label_color)
                             .child(if enabled {

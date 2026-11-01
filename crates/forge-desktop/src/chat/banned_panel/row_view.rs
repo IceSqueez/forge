@@ -1,12 +1,12 @@
 use forge_components::{
-    BORDER_THIN, Density, FONT_XS, FONT_XXS, ForgePalette, Spacing, body_family, empty_state,
-    ghost_button, mono_family, scaled, secondary_button, spacing, status_dot, tooltip_builder, tr,
+    ActivePresentation, BORDER_THIN, Density, FONT_XS, FONT_XXS, ForgePalette, Spacing,
+    empty_state, ghost_button, scaled, secondary_button, spacing, status_dot, tooltip_builder, tr,
 };
 use forge_platform_core::{BanDuration, UnbanAbility};
 use forge_storage::BAN_LEDGER_LIST_CAP;
 use forge_types::PlatformId;
 use gpui::{
-    AnyElement, ClickEvent, Context, FontWeight, Pixels, SharedString, div, prelude::*, px,
+    AnyElement, App, ClickEvent, Context, FontWeight, Pixels, SharedString, div, prelude::*, px,
     uniform_list,
 };
 
@@ -30,9 +30,9 @@ const EXPIRY_COLUMN_W: Pixels = px(170.0);
 const UNBAN_COLUMN_W: Pixels = px(84.0);
 
 impl BannedPanel {
-    fn render_note(text: impl Into<SharedString>, color: gpui::Rgba) -> AnyElement {
+    fn render_note(text: impl Into<SharedString>, color: gpui::Rgba, cx: &App) -> AnyElement {
         div()
-            .font_family(body_family())
+            .font_family(cx.body_family())
             .text_size(FONT_XS)
             .text_color(color)
             .child(text.into())
@@ -43,6 +43,7 @@ impl BannedPanel {
         group: &BanGroup,
         palette: &ForgePalette,
         density: Density,
+        cx: &App,
     ) -> AnyElement {
         let kind = group.platform;
         let count = match group.status {
@@ -60,7 +61,7 @@ impl BannedPanel {
             .child(status_dot(platform_color(kind, palette), GROUP_DOT))
             .child(
                 div()
-                    .font_family(body_family())
+                    .font_family(cx.body_family())
                     .text_size(FONT_XS)
                     .font_weight(FontWeight::MEDIUM)
                     .text_color(palette.text_primary)
@@ -68,7 +69,7 @@ impl BannedPanel {
             )
             .child(
                 div()
-                    .font_family(mono_family())
+                    .font_family(cx.mono_family())
                     .text_size(FONT_XXS)
                     .text_color(palette.text_faint)
                     .child(count),
@@ -81,15 +82,17 @@ impl BannedPanel {
         listed_rows: usize,
         palette: &ForgePalette,
         density: Density,
+        cx: &App,
     ) -> Option<AnyElement> {
         let disclaimer = disclaimer_line(
             &platform_integration(platform).builtin_id(),
             palette,
             density,
+            cx,
         );
         let seen_note = lists_only_what_forge_saw(platform).then(|| {
             div()
-                .font_family(body_family())
+                .font_family(cx.body_family())
                 .text_size(FONT_XXS)
                 .text_color(palette.text_faint)
                 .child(tr!("chat_banned_seen_by_forge"))
@@ -99,7 +102,7 @@ impl BannedPanel {
             && listed_rows >= BAN_LEDGER_LIST_CAP)
             .then(|| {
                 div()
-                    .font_family(body_family())
+                    .font_family(cx.body_family())
                     .text_size(FONT_XXS)
                     .text_color(palette.text_faint)
                     .child(tr!("chat_banned_list_capped", count = BAN_LEDGER_LIST_CAP))
@@ -124,10 +127,10 @@ impl BannedPanel {
         )
     }
 
-    fn render_column_header(palette: &ForgePalette, density: Density) -> AnyElement {
+    fn render_column_header(palette: &ForgePalette, density: Density, cx: &App) -> AnyElement {
         let cell = |label: String, width: Option<Pixels>| {
             let base = div()
-                .font_family(mono_family())
+                .font_family(cx.mono_family())
                 .text_size(FONT_XXS)
                 .text_color(palette.text_faint)
                 .child(label);
@@ -162,6 +165,7 @@ impl BannedPanel {
         text: String,
         color: gpui::Rgba,
         palette: &ForgePalette,
+        cx: &App,
     ) -> AnyElement {
         let selector = id.to_string();
         div()
@@ -169,7 +173,7 @@ impl BannedPanel {
             .debug_selector(|| selector)
             .flex_1()
             .min_w(px(0.0))
-            .font_family(body_family())
+            .font_family(cx.body_family())
             .text_size(FONT_XS)
             .text_color(color)
             .truncate()
@@ -197,7 +201,7 @@ impl BannedPanel {
         let row_selector = row_id.to_string();
         let text_cell = |text: String, color: gpui::Rgba, width: Option<Pixels>| {
             let base = div()
-                .font_family(body_family())
+                .font_family(cx.body_family())
                 .text_size(FONT_XS)
                 .text_color(color)
                 .truncate()
@@ -226,12 +230,14 @@ impl BannedPanel {
                 tr!("chat_banned_unban_failed", error = error.clone()),
                 palette.danger,
                 palette,
+                cx,
             )),
             (UnbanAbility::Refused(refusal), _) => Some(Self::render_row_note(
                 note_id,
                 refusal_label(*refusal),
                 palette.text_faint,
                 palette,
+                cx,
             )),
             (UnbanAbility::Allowed, _) => None,
         };
@@ -358,6 +364,7 @@ impl BannedPanel {
                     padded(Self::render_note(
                         unavailable_label(*reason),
                         palette.text_muted,
+                        cx,
                     ))
                     .child(
                         ghost_button(tr!("chat_banned_retry"), palette)
@@ -375,6 +382,7 @@ impl BannedPanel {
             GroupStatus::Loaded if group.rows.is_empty() => padded(Self::render_note(
                 tr!("chat_banned_empty"),
                 palette.text_faint,
+                cx,
             ))
             .into_any_element(),
             GroupStatus::Loaded => {
@@ -400,9 +408,9 @@ impl BannedPanel {
                 .h(scaled(ROW_HEIGHT, density) * group.rows.len())
                 .min_h(px(0.0));
                 let more = group.next.as_ref().map(|_| {
-                    let failed = group
-                        .more_failed
-                        .map(|reason| Self::render_note(unavailable_label(reason), palette.danger));
+                    let failed = group.more_failed.map(|reason| {
+                        Self::render_note(unavailable_label(reason), palette.danger, cx)
+                    });
                     self.keyed_control_row(
                         &BanCursor::LoadMore(platform),
                         padded(
@@ -427,7 +435,7 @@ impl BannedPanel {
                     .flex()
                     .flex_col()
                     .min_h(px(0.0))
-                    .child(Self::render_column_header(palette, density))
+                    .child(Self::render_column_header(palette, density, cx))
                     .child(rows)
                     .children(more)
                     .into_any_element()

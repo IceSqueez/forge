@@ -13,9 +13,7 @@ use crate::palette::{FORGE_DEFAULT, ForgePalette, with_alpha};
 use crate::text_buffer::{EditKind, TextBuffer};
 use crate::text_editing::*;
 use crate::text_input::InputEvent;
-use crate::tokens::{
-    BORDER_THIN, FONT_XS, Radius, Spacing, body_family, mono_family, radius, spacing,
-};
+use crate::tokens::{BORDER_THIN, FONT_XS, Radius, Spacing, radius, spacing};
 
 const KEY_CONTEXT: &str = "ForgeTextArea";
 
@@ -70,7 +68,7 @@ pub struct TextArea {
     motion: CaretMotion,
     palette: ForgePalette,
     font_size: Pixels,
-    font_family: SharedString,
+    mono: bool,
     height: Pixels,
     on_surface: bool,
     follow_caret: bool,
@@ -98,7 +96,7 @@ impl TextArea {
             motion: CaretMotion::default(),
             palette: FORGE_DEFAULT,
             font_size: FONT_XS,
-            font_family: body_family(),
+            mono: false,
             height: DEFAULT_AREA_HEIGHT,
             on_surface: false,
             follow_caret: true,
@@ -127,7 +125,7 @@ impl TextArea {
 
     #[must_use]
     pub fn mono(mut self) -> Self {
-        self.font_family = mono_family();
+        self.mono = true;
         self
     }
 
@@ -598,6 +596,11 @@ impl Render for TextArea {
         } else {
             self.palette.shell
         };
+        let font_family = if self.mono {
+            cx.mono_family()
+        } else {
+            cx.body_family()
+        };
 
         let field = div()
             .key_context(KEY_CONTEXT)
@@ -609,7 +612,7 @@ impl Render for TextArea {
         let field = with_multiline_actions(with_editing_actions(field, cx), cx)
             .w_full()
             .overflow_hidden()
-            .font_family(self.font_family.clone())
+            .font_family(font_family)
             .text_size(self.font_size)
             .text_color(self.palette.text_primary)
             .line_height(self.font_size * LINE_HEIGHT_RATIO)

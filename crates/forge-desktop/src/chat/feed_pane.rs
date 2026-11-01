@@ -6,9 +6,9 @@ use crate::chat_gap_row::chat_gap_row;
 use crate::chat_row::{ChatRow, chat_row};
 use crate::platform_visuals::{platform_mark, role_badge};
 use forge_components::{
-    BORDER_THIN, ChipGlyph, DateShape, Density, FONT_XS, ForgePalette, Icon, KeyActivated, Radius,
-    SEARCH_FIELD_WIDTH, Spacing, chip, empty_state, fmt_display, icon, mono_family, radius,
-    spacing, tr,
+    ActivePresentation, BORDER_THIN, ChipGlyph, DateShape, Density, FONT_XS, ForgePalette, Icon,
+    KeyActivated, Radius, SEARCH_FIELD_WIDTH, Spacing, chip, empty_state, fmt_display, icon,
+    radius, spacing, tr,
 };
 use forge_types::PlatformId;
 use gpui::{
@@ -206,6 +206,7 @@ impl ChatTimeline {
                     gap.label(),
                     &pal,
                     density,
+                    app,
                 )));
             }
             framed = framed.child(row);
@@ -289,7 +290,7 @@ impl ChatTimeline {
                 .child(icon(Icon::ArrowDown, FONT_XS, palette.shell))
                 .child(
                     div()
-                        .font_family(mono_family())
+                        .font_family(cx.mono_family())
                         .text_size(FONT_XS)
                         .text_color(palette.shell)
                         .child(label),

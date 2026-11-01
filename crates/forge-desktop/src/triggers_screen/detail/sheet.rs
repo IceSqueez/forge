@@ -1,13 +1,12 @@
 use super::*;
 use crate::integration_switch::{category_inactive_badge, inactive_badge};
-use forge_components::ActivePresentation;
 use forge_components::FONT_SM;
 use forge_components::OverflowRevealingFocus;
 use forge_components::ROW_OFF_OPACITY;
 use forge_components::{
-    FONT_XXS, Icon, KeyActivated, Radius, ResizeEdge, ResizeRange, Spacing, body_family,
-    ghost_button_with_icon, icon, install_resize, mono_family, primary_button, radius, scaled,
-    spacing, status_dot, toggle, tr,
+    ActivePresentation, FONT_XXS, Icon, KeyActivated, Radius, ResizeEdge, ResizeRange, Spacing,
+    ghost_button_with_icon, icon, install_resize, primary_button, radius, scaled, spacing,
+    status_dot, toggle, tr,
 };
 use gpui::{AnyElement, ClickEvent, FontWeight, SharedString};
 
@@ -71,7 +70,7 @@ impl TriggerDetailPane {
                     .flex()
                     .items_center()
                     .justify_center()
-                    .font_family(body_family())
+                    .font_family(cx.body_family())
                     .text_size(CFG_VAL_FS)
                     .text_color(palette.text_muted)
                     .child(tr!("triggers_detail_loading")),
@@ -122,7 +121,7 @@ impl TriggerDetailPane {
         let name = div()
             .id("triggers-detail-rename")
             .cursor_pointer()
-            .font_family(body_family())
+            .font_family(cx.body_family())
             .font_weight(FontWeight::SEMIBOLD)
             .text_size(NAME_FS)
             .text_color(palette.text_primary)
@@ -139,17 +138,19 @@ impl TriggerDetailPane {
             .child(status_dot(dot_color, KIND_DOT))
             .child(
                 div()
-                    .font_family(mono_family())
+                    .font_family(cx.mono_family())
                     .text_size(KIND_FS)
                     .text_color(palette.text_faint)
                     .child(instance.kind_id.clone()),
             )
             .when_some(self.switched_off_owner(&instance.kind_id), |line, owner| {
-                line.child(inactive_badge(&owner, palette, density))
+                line.child(inactive_badge(&owner, palette, density, cx))
             })
             .when_some(
                 self.uncovered_category(&instance.kind_id),
-                |line, category| line.child(category_inactive_badge(category, palette, density)),
+                |line, category| {
+                    line.child(category_inactive_badge(category, palette, density, cx))
+                },
             );
         let title = div()
             .flex_1()
@@ -251,7 +252,7 @@ impl TriggerDetailPane {
             .child(icon(Icon::Eraser, px(11.0), delete_color))
             .child(
                 div()
-                    .font_family(body_family())
+                    .font_family(cx.body_family())
                     .text_size(CFG_VAL_FS)
                     .text_color(delete_color)
                     .child(tr!("triggers_sheet_delete_btn")),

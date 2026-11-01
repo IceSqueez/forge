@@ -12,14 +12,14 @@ use std::sync::Arc;
 use forge_components::OverflowRevealingFocus;
 use forge_components::RevealsFocusIn;
 use forge_components::{
-    BORDER_THIN, FONT_SECTION_LABEL, ForgePalette, Icon, InputEvent, OverlayPosition, SearchState,
-    TextInput, body_family, ghost_button_with_icon, icon, modal, mono_family, overlay,
+    ActivePresentation, BORDER_THIN, FONT_SECTION_LABEL, ForgePalette, Icon, InputEvent,
+    OverlayPosition, SearchState, TextInput, ghost_button_with_icon, icon, modal, overlay,
     primary_button, scaled, secondary_button, segment, segmented, tr, with_alpha,
 };
 use forge_storage::ActionRepo;
 use forge_types::{ActionId, TriggerInstanceId};
 use gpui::{
-    AnyElement, ClickEvent, Context, Entity, EventEmitter, Pixels, ScrollHandle, SharedString,
+    AnyElement, App, ClickEvent, Context, Entity, EventEmitter, Pixels, ScrollHandle, SharedString,
     Subscription, Window, div, prelude::*, px,
 };
 
@@ -27,7 +27,6 @@ use crate::navigable_list::{ListCursor, ListStep, NavigableList, list_keys};
 
 use crate::async_bridge::{self, Loadable};
 use crate::repo_failure::RepoFailure;
-use forge_components::ActivePresentation;
 use forge_hotkey::{HotkeyEdge, combo_keys};
 
 const MODAL_W: Pixels = px(520.0);
@@ -308,13 +307,13 @@ impl HotkeyActionModal {
                 .child(icon(Icon::Keyboard, LISTEN_GLYPH, palette.success))
                 .child(
                     div()
-                        .font_family(body_family())
+                        .font_family(cx.body_family())
                         .text_size(ROW_FS)
                         .text_color(palette.success)
                         .child(tr!("hotkeys_capture_prompt")),
                 );
         } else {
-            display = display.child(keycaps(&self.combo, palette, density));
+            display = display.child(keycaps(&self.combo, palette, density, cx));
         }
 
         let recapture =
@@ -333,6 +332,7 @@ impl HotkeyActionModal {
             .child(section_caption(
                 &tr!("hotkeys_modal_section_combo"),
                 palette,
+                cx,
             ))
             .child(
                 div()
@@ -388,7 +388,7 @@ impl HotkeyActionModal {
         let hints = self.edge_hints().into_iter().map(|hint| {
             div()
                 .mt(spacing(Spacing::Xs, density))
-                .font_family(body_family())
+                .font_family(cx.body_family())
                 .text_size(FOOTER_HINT_FS)
                 .text_color(palette.text_faint)
                 .child(hint)
@@ -399,7 +399,11 @@ impl HotkeyActionModal {
             .flex()
             .flex_col()
             .mb(spacing(Spacing::Md, density))
-            .child(section_caption(&tr!("hotkeys_modal_section_edge"), palette))
+            .child(section_caption(
+                &tr!("hotkeys_modal_section_edge"),
+                palette,
+                cx,
+            ))
             .child(div().flex().items_center().child(selector))
             .children(hints)
             .into_any_element()
@@ -416,7 +420,7 @@ impl HotkeyActionModal {
             .mb(SECTION_LABEL_MB)
             .child(
                 div()
-                    .font_family(mono_family())
+                    .font_family(cx.mono_family())
                     .text_size(FONT_SECTION_LABEL)
                     .text_color(palette.text_muted)
                     .child(SharedString::from(
@@ -432,7 +436,7 @@ impl HotkeyActionModal {
 
         let list = match &self.actions {
             Loadable::Loading => {
-                list_message(tr!("hotkeys_modal_actions_loading"), palette, density)
+                list_message(tr!("hotkeys_modal_actions_loading"), palette, density, cx)
             }
             Loadable::Failed(failure) => {
                 let reason = failure.text();
@@ -440,10 +444,11 @@ impl HotkeyActionModal {
                     tr!("hotkeys_toast_error", message = reason.as_str()),
                     palette,
                     density,
+                    cx,
                 )
             }
             Loadable::Loaded(actions) if actions.is_empty() => {
-                list_message(tr!("hotkeys_modal_actions_none"), palette, density)
+                list_message(tr!("hotkeys_modal_actions_none"), palette, density, cx)
             }
             Loadable::Loaded(actions) => {
                 let matched: Vec<&ActionChoice> = actions
@@ -451,7 +456,7 @@ impl HotkeyActionModal {
                     .filter(|choice| self.filter.matches(&choice.name))
                     .collect();
                 if matched.is_empty() {
-                    list_message(tr!("hotkeys_modal_actions_empty"), palette, density)
+                    list_message(tr!("hotkeys_modal_actions_empty"), palette, density, cx)
                 } else {
                     let rows: Vec<AnyElement> = matched
                         .into_iter()
@@ -534,7 +539,7 @@ impl HotkeyActionModal {
                     .flex_1()
                     .min_w_0()
                     .truncate()
-                    .font_family(body_family())
+                    .font_family(cx.body_family())
                     .text_size(ROW_FS)
                     .text_color(ink)
                     .child(choice.name.clone()),
@@ -574,7 +579,7 @@ impl HotkeyActionModal {
             .gap(scaled(FILTER_HEADER_GAP, density))
             .child(
                 div()
-                    .font_family(body_family())
+                    .font_family(cx.body_family())
                     .text_size(FOOTER_HINT_FS)
                     .text_color(palette.text_faint)
                     .child(hint),
@@ -601,7 +606,12 @@ impl HotkeyActionModal {
     }
 }
 
-pub(crate) fn keycaps(combo: &str, palette: &ForgePalette, density: Density) -> impl IntoElement {
+pub(crate) fn keycaps(
+    combo: &str,
+    palette: &ForgePalette,
+    density: Density,
+    cx: &App,
+) -> impl IntoElement {
     let mut row = div()
         .flex()
         .items_center()
@@ -618,7 +628,7 @@ pub(crate) fn keycaps(combo: &str, palette: &ForgePalette, density: Density) -> 
                 .border_color(palette.border_regular)
                 .bg(palette.shell)
                 .text_align(gpui::TextAlign::Center)
-                .font_family(mono_family())
+                .font_family(cx.mono_family())
                 .text_size(KEYCAP_FS)
                 .text_color(palette.text_primary)
                 .child(key.to_owned()),
@@ -627,24 +637,24 @@ pub(crate) fn keycaps(combo: &str, palette: &ForgePalette, density: Density) -> 
     row
 }
 
-fn list_message(message: String, palette: &ForgePalette, density: Density) -> gpui::Div {
+fn list_message(message: String, palette: &ForgePalette, density: Density, cx: &App) -> gpui::Div {
     div().w_full().flex().flex_col().child(
         div()
             .w_full()
             .py(scaled(EMPTY_PAD_V, density))
             .text_align(gpui::TextAlign::Center)
-            .font_family(body_family())
+            .font_family(cx.body_family())
             .text_size(ROW_FS)
             .text_color(palette.text_muted)
             .child(message),
     )
 }
 
-fn section_caption(label: &str, palette: &ForgePalette) -> impl IntoElement {
+fn section_caption(label: &str, palette: &ForgePalette, cx: &App) -> impl IntoElement {
     div()
         .w_full()
         .mb(SECTION_LABEL_MB)
-        .font_family(mono_family())
+        .font_family(cx.mono_family())
         .text_size(FONT_SECTION_LABEL)
         .text_color(palette.text_muted)
         .child(SharedString::from(label.to_uppercase()))

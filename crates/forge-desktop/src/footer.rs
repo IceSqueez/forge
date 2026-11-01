@@ -68,6 +68,7 @@ impl Footer {
                 details,
                 palette,
                 density,
+                cx,
             )
             .into_any_element(),
         )
@@ -99,8 +100,16 @@ impl Footer {
             count = i64::try_from(total).unwrap_or(i64::MAX)
         );
         Some(
-            footer_alert("footer-event-loss", label, color, details, palette, density)
-                .into_any_element(),
+            footer_alert(
+                "footer-event-loss",
+                label,
+                color,
+                details,
+                palette,
+                density,
+                cx,
+            )
+            .into_any_element(),
         )
     }
 }
@@ -139,6 +148,7 @@ impl Render for Footer {
             trailing,
             &palette,
             density,
+            cx,
         ))
     }
 }

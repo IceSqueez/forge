@@ -1,17 +1,18 @@
+use crate::option_choices::ChoiceOption;
 use forge_components::tr;
 
 pub(super) const DEFAULT_VOICE: &str = "";
 
-pub(super) fn speech_voice_choices(
-    voices: &[(String, String)],
-    selected: &str,
-) -> Vec<(String, String)> {
-    let mut options = vec![(DEFAULT_VOICE.to_owned(), tr!("overlays_voice_default"))];
+pub(super) fn speech_voice_choices(voices: &[ChoiceOption], selected: &str) -> Vec<ChoiceOption> {
+    let mut options = vec![ChoiceOption::new(
+        DEFAULT_VOICE,
+        tr!("overlays_voice_default"),
+    )];
     options.extend(voices.iter().cloned());
-    let listed = selected == DEFAULT_VOICE || voices.iter().any(|(value, _)| value == selected);
+    let listed = selected == DEFAULT_VOICE || voices.iter().any(|option| option.value == selected);
     if !listed {
-        options.push((
-            selected.to_owned(),
+        options.push(ChoiceOption::new(
+            selected,
             tr!("overlays_voice_not_installed", voice = selected),
         ));
     }
@@ -22,15 +23,15 @@ pub(super) fn speech_voice_choices(
 mod tests {
     use super::*;
 
-    fn installed() -> Vec<(String, String)> {
+    fn installed() -> Vec<ChoiceOption> {
         vec![
-            ("piper/amy".to_owned(), "Piper - amy (en_US)".to_owned()),
-            ("sapi/zira".to_owned(), "Microsoft SAPI 5 - Zira".to_owned()),
+            ChoiceOption::new("piper/amy", "Piper - amy (en_US)"),
+            ChoiceOption::new("sapi/zira", "Microsoft SAPI 5 - Zira"),
         ]
     }
 
-    fn values(options: &[(String, String)]) -> Vec<&str> {
-        options.iter().map(|(value, _)| value.as_str()).collect()
+    fn values(options: &[ChoiceOption]) -> Vec<&str> {
+        options.iter().map(|option| option.value.as_str()).collect()
     }
 
     #[test]
@@ -44,7 +45,7 @@ mod tests {
             let options = speech_voice_choices(&voices, selected);
 
             assert_eq!(values(&options), expected, "selected {selected:?}");
-            assert_eq!(options[0].1, "Default voice");
+            assert_eq!(options[0].label, "Default voice");
         }
     }
 
@@ -54,12 +55,12 @@ mod tests {
         for (voices, selected) in [(installed(), "piper/ghost"), (Vec::new(), "piper/amy")] {
             let options = speech_voice_choices(&voices, selected);
 
-            let (value, label) = options.last().cloned().unwrap_or_default();
+            let last = options.last().expect("the list is never empty");
             assert_eq!(
                 (
                     options.len(),
-                    value.as_str(),
-                    label.replace(crate::test_support::FORMAT_ISOLATES, "")
+                    last.value.as_str(),
+                    last.label.replace(crate::test_support::FORMAT_ISOLATES, "")
                 ),
                 (
                     voices.len() + 2,

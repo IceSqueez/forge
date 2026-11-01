@@ -5,16 +5,16 @@ use super::{
 use crate::async_bridge;
 use crate::platform_visuals::platform_color;
 use forge_components::{
-    BORDER_THIN, ColumnWidth, ConfirmTone, DataRow, Density, FONT_SM, FONT_XS, FONT_XXS,
-    ForgePalette, Icon, KeyActivated, OverlayPosition, PushToast, Radius, Spacing, ToastKind,
-    body_family, card, column, confirm_modal, data_table, empty_state, fmt_number, icon,
-    mono_family, overlay, spacing, status_dot, tooltip_builder, tr, virtual_table,
+    ActivePresentation, BORDER_THIN, ColumnWidth, ConfirmTone, DataRow, Density, FONT_SM, FONT_XS,
+    FONT_XXS, ForgePalette, Icon, KeyActivated, OverlayPosition, PushToast, Radius, Spacing,
+    ToastKind, card, column, confirm_modal, data_table, empty_state, fmt_number, icon, overlay,
+    spacing, status_dot, tooltip_builder, tr, virtual_table,
 };
 use forge_events::EventSource;
 use forge_server::ClientId;
 use forge_types::PlatformId;
 use gpui::{
-    AnyElement, ClickEvent, Context, ElementId, FontWeight, Pixels, Rgba, SharedString, div,
+    AnyElement, App, ClickEvent, Context, ElementId, FontWeight, Pixels, Rgba, SharedString, div,
     prelude::*, px,
 };
 
@@ -34,6 +34,7 @@ fn subscriptions_cell(
     row: &OwnedClientRow,
     palette: &ForgePalette,
     density: Density,
+    cx: &App,
 ) -> AnyElement {
     let mut cell = div()
         .flex()
@@ -45,7 +46,7 @@ fn subscriptions_cell(
                 .min_w(px(0.0))
                 .truncate()
                 .mr(spacing(Spacing::Xxs, density))
-                .font_family(mono_family())
+                .font_family(cx.mono_family())
                 .text_size(FONT_XXS)
                 .text_color(palette.text_muted)
                 .child(row.origin_label.clone()),
@@ -56,7 +57,7 @@ fn subscriptions_cell(
             .child(
                 div()
                     .flex_none()
-                    .font_family(mono_family())
+                    .font_family(cx.mono_family())
                     .text_size(FONT_XXS)
                     .text_color(palette.text_faint)
                     .child("-"),
@@ -66,7 +67,7 @@ fn subscriptions_cell(
 
     let visible = row.subscriptions.len().min(MAX_VISIBLE_CHIPS);
     for chip in &row.subscriptions[..visible] {
-        cell = cell.child(subscription_chip_element(&row.key, chip, palette));
+        cell = cell.child(subscription_chip_element(&row.key, chip, palette, cx));
     }
 
     let overflow = row.subscriptions.len().saturating_sub(MAX_VISIBLE_CHIPS);
@@ -74,7 +75,7 @@ fn subscriptions_cell(
         cell = cell.child(
             div()
                 .flex_none()
-                .font_family(mono_family())
+                .font_family(cx.mono_family())
                 .text_size(FONT_XXS)
                 .text_color(palette.text_faint)
                 .child(format!("+{overflow}")),
@@ -88,12 +89,13 @@ fn subscription_chip_element(
     row_key: &str,
     chip: &OwnedSubscriptionChip,
     palette: &ForgePalette,
+    cx: &App,
 ) -> AnyElement {
     if chip.kind == SubscriptionChipKind::All {
         return div()
             .flex_none()
             .italic()
-            .font_family(mono_family())
+            .font_family(cx.mono_family())
             .text_size(FONT_XXS)
             .text_color(palette.text_faint)
             .child(SUBSCRIBE_ALL_LABEL)
@@ -191,7 +193,7 @@ impl ServerConsoleView {
             .child(icon(Icon::Browser, HEADER_GLYPH, palette.info))
             .child(
                 div()
-                    .font_family(body_family())
+                    .font_family(cx.body_family())
                     .font_weight(FontWeight::MEDIUM)
                     .text_size(FONT_SM)
                     .text_color(palette.text_primary)
@@ -199,7 +201,7 @@ impl ServerConsoleView {
             )
             .child(
                 div()
-                    .font_family(body_family())
+                    .font_family(cx.body_family())
                     .text_size(FONT_SM)
                     .text_color(palette.text_faint)
                     .child(fmt_number(self.clients.connected.len() as f64, 0)),
@@ -207,7 +209,7 @@ impl ServerConsoleView {
             .child(div().flex_1())
             .child(
                 div()
-                    .font_family(mono_family())
+                    .font_family(cx.mono_family())
                     .text_size(FONT_XXS)
                     .text_color(palette.text_faint)
                     .child(tr!("server_clients_live")),
@@ -301,7 +303,7 @@ impl ServerConsoleView {
 
         let name = div()
             .truncate()
-            .font_family(mono_family())
+            .font_family(cx.mono_family())
             .text_size(FONT_XS)
             .text_color(palette.text_primary)
             .child(row.identification.clone());
@@ -318,12 +320,12 @@ impl ServerConsoleView {
             .child(icon(Icon::X, X_GLYPH, palette.text_faint));
 
         let evs = div()
-            .font_family(mono_family())
+            .font_family(cx.mono_family())
             .text_size(FONT_XS)
             .text_color(palette.text_primary)
             .child(fmt_number(row.events_per_second as f64, 1));
         let uptime = div()
-            .font_family(mono_family())
+            .font_family(cx.mono_family())
             .text_size(FONT_XXS)
             .text_color(palette.text_muted)
             .child(row.uptime_short.clone());
@@ -331,7 +333,7 @@ impl ServerConsoleView {
         DataRow::new(vec![
             status_dot(dot_color, CLIENT_DOT).into_any_element(),
             name.into_any_element(),
-            subscriptions_cell(row, palette, density),
+            subscriptions_cell(row, palette, density, cx),
             evs.into_any_element(),
             uptime.into_any_element(),
             x_button.into_any_element(),

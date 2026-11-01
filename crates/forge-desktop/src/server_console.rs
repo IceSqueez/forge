@@ -13,15 +13,15 @@ use crate::server_bearer;
 use forge_components::OverflowRevealingFocus;
 use forge_components::{
     ActivePresentation, BreadcrumbCrumb, Confirm, FONT_XXS, ForgePalette, Spacing, grow_cell,
-    mono_family, page_frame, spacing, tr,
+    page_frame, spacing, tr,
 };
 use forge_events::EventSource;
 use forge_server::{ClientId, ServerHandle};
 use forge_storage::{CredentialsRepo, SettingsRepo};
 use forge_types::Secret;
 use gpui::{
-    Context, EventEmitter, Pixels, SharedString, Subscription, UniformListScrollHandle, Window,
-    div, prelude::*, px,
+    App, Context, EventEmitter, Pixels, SharedString, Subscription, UniformListScrollHandle,
+    Window, div, prelude::*, px,
 };
 use std::net::SocketAddr;
 use std::sync::Arc;
@@ -257,10 +257,10 @@ impl Render for ServerConsoleView {
             .px(spacing(Spacing::Lg, density))
             .children(crate::server_unavailable::unavailable_banner(cx, &palette))
             .child(self.credentials_card(&palette, density, cx))
-            .child(self.stats_grid(&palette, density))
-            .child(self.throughput_card(&palette, density))
+            .child(self.stats_grid(&palette, density, cx))
+            .child(self.throughput_card(&palette, density, cx))
             .child(panels)
-            .child(self.footer_bar(&palette, density));
+            .child(self.footer_bar(&palette, density, cx));
 
         let scroll = div()
             .id("srv-scroll")
@@ -317,9 +317,9 @@ impl Render for ServerConsoleView {
     }
 }
 
-fn caption(label: impl Into<SharedString>, palette: &ForgePalette) -> impl IntoElement {
+fn caption(label: impl Into<SharedString>, palette: &ForgePalette, cx: &App) -> impl IntoElement {
     div()
-        .font_family(mono_family())
+        .font_family(cx.mono_family())
         .text_size(FONT_XXS)
         .text_color(palette.text_muted)
         .child(label.into())

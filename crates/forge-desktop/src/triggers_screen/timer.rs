@@ -1,7 +1,7 @@
-use forge_components::{Density, ForgePalette, Spacing, body_family, spacing, tr};
+use forge_components::{ActivePresentation, Density, ForgePalette, Spacing, spacing, tr};
 use forge_registry::{TriggerCategory, TriggerKindDescriptor};
 use forge_types::TriggerConfig;
-use gpui::{AnyElement, div, prelude::*};
+use gpui::{AnyElement, App, div, prelude::*};
 
 use crate::config_form::FILL_VAL_FS;
 use crate::user_text::resolve_user_text;
@@ -27,6 +27,7 @@ pub(crate) fn timer_field_hints(
     descriptor: Option<&dyn TriggerKindDescriptor>,
     palette: &ForgePalette,
     density: Density,
+    cx: &App,
 ) -> Option<AnyElement> {
     if !descriptor.is_some_and(is_timer) {
         return None;
@@ -42,7 +43,7 @@ pub(crate) fn timer_field_hints(
             .flex_col()
             .gap(spacing(Spacing::Xxs, density))
             .px(spacing(Spacing::Xxs, density))
-            .font_family(body_family())
+            .font_family(cx.body_family())
             .text_size(FILL_VAL_FS)
             .text_color(palette.text_faint)
             .children(hints.into_iter().map(|hint| div().child(hint)))

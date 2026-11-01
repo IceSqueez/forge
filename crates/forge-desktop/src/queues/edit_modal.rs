@@ -6,8 +6,8 @@ use forge_components::Density;
 use forge_components::ForgePalette;
 use forge_components::{
     ActivePresentation, BORDER_THIN, FONT_SM, FONT_XS, FONT_XXS, Icon, InputEvent, ModalSize,
-    OverlayPosition, Spacing, TextInput, body_family, modal, mono_family, overlay, primary_button,
-    scaled, secondary_button, slider, spacing, tr,
+    OverlayPosition, Spacing, TextInput, modal, overlay, primary_button, scaled, secondary_button,
+    slider, spacing, tr,
 };
 use forge_types::QueueId;
 use gpui::Div;
@@ -130,14 +130,14 @@ impl EditQueueModal {
 }
 
 impl EditQueueModal {
-    fn name_field(&self, palette: &ForgePalette, density: Density) -> Div {
+    fn name_field(&self, palette: &ForgePalette, density: Density, cx: &App) -> Div {
         div()
             .flex()
             .flex_col()
             .gap(spacing(Spacing::Xxs, density))
             .child(
                 div()
-                    .font_family(mono_family())
+                    .font_family(cx.mono_family())
                     .text_size(FONT_XXS)
                     .text_color(palette.text_faint)
                     .child(SharedString::from(
@@ -147,7 +147,7 @@ impl EditQueueModal {
             .child(div().child(self.name_input.clone()))
     }
 
-    fn desc_field(&self, palette: &ForgePalette, density: Density) -> Div {
+    fn desc_field(&self, palette: &ForgePalette, density: Density, cx: &App) -> Div {
         div()
             .flex()
             .flex_col()
@@ -159,7 +159,7 @@ impl EditQueueModal {
                     .gap(spacing(Spacing::Xxs, density))
                     .child(
                         div()
-                            .font_family(mono_family())
+                            .font_family(cx.mono_family())
                             .text_size(FONT_XXS)
                             .text_color(palette.text_faint)
                             .child(SharedString::from(
@@ -168,7 +168,7 @@ impl EditQueueModal {
                     )
                     .child(
                         div()
-                            .font_family(body_family())
+                            .font_family(cx.body_family())
                             .text_size(FONT_XXS)
                             .text_color(palette.text_muted)
                             .child(SharedString::from(tr!("queues_create_desc_optional"))),
@@ -228,7 +228,7 @@ impl EditQueueModal {
                             .w(CONCURRENCY_VALUE_W)
                             .flex()
                             .justify_end()
-                            .font_family(mono_family())
+                            .font_family(cx.mono_family())
                             .text_size(FONT_SM)
                             .font_weight(FontWeight::MEDIUM)
                             .text_color(palette.text_primary)
@@ -237,7 +237,7 @@ impl EditQueueModal {
             )
             .child(
                 div()
-                    .font_family(body_family())
+                    .font_family(cx.body_family())
                     .text_size(DESC_FS)
                     .text_color(palette.text_muted)
                     .child(concurrency_hint),
@@ -256,7 +256,7 @@ impl EditQueueModal {
             .gap(spacing(Spacing::Xxs, density))
             .child(
                 div()
-                    .font_family(mono_family())
+                    .font_family(cx.mono_family())
                     .text_size(FONT_XXS)
                     .text_color(palette.text_faint)
                     .child(SharedString::from(
@@ -284,7 +284,7 @@ impl EditQueueModal {
                 cx.listener(|this, _: &ClickEvent, _, cx| this.submit(cx)),
             );
         let hint = div()
-            .font_family(body_family())
+            .font_family(cx.body_family())
             .text_size(FONT_XS)
             .text_color(palette.text_faint)
             .child(SharedString::from(tr!("queues_create_kbd_hint")));
@@ -318,8 +318,8 @@ impl Render for EditQueueModal {
             .flex()
             .flex_col()
             .gap(spacing(Spacing::Sm, density))
-            .child(self.name_field(&palette, density))
-            .child(self.desc_field(&palette, density))
+            .child(self.name_field(&palette, density, cx))
+            .child(self.desc_field(&palette, density, cx))
             .child(self.concurrency_field(&palette, density, cx));
 
         let card = modal(title, body, &palette)

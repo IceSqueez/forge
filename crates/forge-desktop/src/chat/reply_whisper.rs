@@ -1,8 +1,8 @@
 use super::platform_gate;
 use super::{ChatView, ReplyTarget};
 use forge_components::{
-    BORDER_THIN, Density, FONT_XS, FONT_XXS, ForgePalette, InputEvent, KeyActivated, Radius,
-    Spacing, TextInput, ToastKind, body_family, radius, spacing, tr,
+    ActivePresentation, BORDER_THIN, Density, FONT_XS, FONT_XXS, ForgePalette, InputEvent,
+    KeyActivated, Radius, Spacing, TextInput, ToastKind, radius, spacing, tr,
 };
 use forge_platform_twitch::vocabulary::config_keys as twitch_config_keys;
 use forge_types::{PlatformId, SubActionStep, Variant};
@@ -119,7 +119,7 @@ impl ChatView {
         cx: &mut Context<Self>,
     ) -> impl IntoElement + use<> {
         let title = div()
-            .font_family(body_family())
+            .font_family(cx.body_family())
             .font_weight(FontWeight::MEDIUM)
             .text_size(FONT_XXS)
             .text_color(palette.text_muted)
@@ -146,7 +146,7 @@ impl ChatView {
             .on_click(cx.listener(|this, _: &ClickEvent, _, cx| this.cancel_reply(cx)))
             .child(
                 div()
-                    .font_family(body_family())
+                    .font_family(cx.body_family())
                     .text_size(FONT_XS)
                     .text_color(text)
                     .child(tr!("chat_drawer_whisper_cancel")),
@@ -168,7 +168,7 @@ impl ChatView {
             .on_click(cx.listener(|this, _: &ClickEvent, _, cx| this.send_reply(cx)))
             .child(
                 div()
-                    .font_family(body_family())
+                    .font_family(cx.body_family())
                     .font_weight(FontWeight::MEDIUM)
                     .text_size(FONT_XS)
                     .text_color(shell)

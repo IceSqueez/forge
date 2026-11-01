@@ -1,10 +1,9 @@
-use forge_components::ActivePresentation;
 use forge_components::FONT_MICRO;
 use forge_components::Spacing;
 use forge_components::spacing;
 use forge_components::{
-    BORDER_THIN, ForgePalette, Icon, Radius, SectionLabel, error_row_with_retry, icon, mono_family,
-    pad_tile, radius, scaled, tr,
+    ActivePresentation, BORDER_THIN, ForgePalette, Icon, Radius, SectionLabel,
+    error_row_with_retry, icon, pad_tile, radius, scaled, tr,
 };
 use forge_types::TriggerInstanceId;
 use gpui::{
@@ -153,7 +152,7 @@ impl HotkeysScreenView {
     ) -> AnyElement {
         let density = cx.density();
         let hint = div()
-            .font_family(mono_family())
+            .font_family(cx.mono_family())
             .text_size(SECTION_HINT_FS)
             .text_color(palette.text_faint)
             .child(tr!("hotkeys_section_hint"))
@@ -180,6 +179,7 @@ impl HotkeysScreenView {
                 palette,
                 cx.listener(|this, _: &ClickEvent, _, cx| this.load_shortcuts(cx)),
                 density,
+                cx,
             );
             list = list.child(self.with_row_keys(
                 RowKey::RetryShortcuts,
@@ -222,7 +222,7 @@ impl HotkeysScreenView {
                     .px(spacing(Spacing::Xs, density))
                     .rounded(KBD_RADIUS)
                     .bg(palette.surface_overlay)
-                    .font_family(mono_family())
+                    .font_family(cx.mono_family())
                     .text_size(KBD_FS)
                     .font_weight(gpui::FontWeight::NORMAL)
                     .text_color(palette.text_faint)

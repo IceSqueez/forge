@@ -88,7 +88,12 @@ pub(crate) struct SetupConfirmCard<'a> {
     pub failure: Option<&'a str>,
 }
 
-fn count_column(counts: &[SetupCount], palette: &ForgePalette, density: Density) -> AnyElement {
+fn count_column(
+    counts: &[SetupCount],
+    palette: &ForgePalette,
+    density: Density,
+    cx: &App,
+) -> AnyElement {
     div()
         .flex_1()
         .min_w(px(0.0))
@@ -98,7 +103,7 @@ fn count_column(counts: &[SetupCount], palette: &ForgePalette, density: Density)
         .children(
             counts
                 .iter()
-                .map(|count| fact(count.part.label(), &count.count.to_string(), palette)),
+                .map(|count| fact(count.part.label(), &count.count.to_string(), palette, cx)),
         )
         .into_any_element()
 }
@@ -110,6 +115,7 @@ impl SetupConfirmCard<'_> {
         density: Density,
         on_cancel: impl Fn(&ClickEvent, &mut Window, &mut App) + 'static,
         on_confirm: impl Fn(&ClickEvent, &mut Window, &mut App) + 'static,
+        cx: &App,
     ) -> AnyElement {
         let on_cancel = Rc::new(on_cancel);
         let cancel_from_footer = Rc::clone(&on_cancel);
@@ -122,8 +128,8 @@ impl SetupConfirmCard<'_> {
             .p(spacing(Spacing::Sm, density))
             .rounded(radius(Radius::Md))
             .bg(palette.surface_overlay)
-            .child(count_column(left, palette, density))
-            .child(count_column(right, palette, density));
+            .child(count_column(left, palette, density, cx))
+            .child(count_column(right, palette, density, cx));
 
         let statements = div()
             .w_full()
@@ -136,6 +142,7 @@ impl SetupConfirmCard<'_> {
                 tr!("setup_confirm_replaces"),
                 palette,
                 density,
+                cx,
             ))
             .child(statement(
                 Icon::Key,
@@ -143,6 +150,7 @@ impl SetupConfirmCard<'_> {
                 tr!("setup_confirm_keeps"),
                 palette,
                 density,
+                cx,
             ))
             .child(statement(
                 Icon::Database,
@@ -150,6 +158,7 @@ impl SetupConfirmCard<'_> {
                 tr!("setup_confirm_snapshot"),
                 palette,
                 density,
+                cx,
             ));
 
         let mut body = div()
@@ -160,7 +169,7 @@ impl SetupConfirmCard<'_> {
             .child(counts)
             .child(statements);
         if let Some(failure) = self.failure {
-            body = body.child(failure_note(failure, palette, density));
+            body = body.child(failure_note(failure, palette, density, cx));
         }
 
         let confirm_label = if self.applying {

@@ -7,10 +7,10 @@ use forge_components::FONT_XL;
 use forge_components::FONT_XXL;
 use forge_components::RevealsFocusIn;
 use forge_components::{
-    BORDER_THIN, BreadcrumbCrumb, Density, FONT_LG, FONT_MD, FONT_SM, FONT_XS, FONT_XXS,
-    ForgePalette, Icon, KeyActivated, Radius, Spacing, body_family, card, dropdown, dropdown_row,
-    dropdown_surface, empty_state, ghost_button_with_icon, grow_cell, icon, mono_family,
-    page_frame, pulse_dot, radius, scaled, spacing, sparkline, status_dot, tr,
+    ActivePresentation, BORDER_THIN, BreadcrumbCrumb, Density, FONT_LG, FONT_MD, FONT_SM, FONT_XS,
+    FONT_XXS, ForgePalette, Icon, KeyActivated, Radius, Spacing, card, dropdown, dropdown_row,
+    dropdown_surface, empty_state, ghost_button_with_icon, grow_cell, icon, page_frame, pulse_dot,
+    radius, scaled, spacing, sparkline, status_dot, tr,
 };
 use gpui::{
     AnyElement, App, ClickEvent, Context, Entity, EventEmitter, FontWeight, Pixels, Rgba,
@@ -32,7 +32,6 @@ use crate::restore_flow::RestoreFlow;
 use crate::setup_export::SetupExportFlow;
 use crate::setup_import_flow::SetupImportFlow;
 use crate::transfer_flows::TransferFlows;
-use forge_components::ActivePresentation;
 use forge_components::{ClockStyle, DateShape, active_display_formats, fmt_display};
 
 const RECENT_EVENT_ROWS: usize = 5;
@@ -386,8 +385,8 @@ impl Render for HomeView {
         let connections_strip =
             self.render_connections(connections, connected, total, &palette, density, cx);
         let recent_card = self.render_recent_events(recent, &palette, density, cx);
-        let glance_card = self.render_glance(glance, &palette, density);
-        let loss_card = event_loss_card(self.event_loss.read(cx), &palette, density);
+        let glance_card = self.render_glance(glance, &palette, density, cx);
+        let loss_card = event_loss_card(self.event_loss.read(cx), &palette, density, cx);
 
         let bottom = div()
             .w_full()
@@ -403,7 +402,9 @@ impl Render for HomeView {
             .gap(spacing(Spacing::Md, density))
             .child(hero)
             .child(jump_cards)
-            .children(obs_health.map(|health| self.render_stream_health(health, &palette, density)))
+            .children(
+                obs_health.map(|health| self.render_stream_health(health, &palette, density, cx)),
+            )
             .child(loss_card)
             .child(connections_strip)
             .child(bottom);

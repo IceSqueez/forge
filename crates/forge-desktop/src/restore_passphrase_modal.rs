@@ -154,6 +154,7 @@ impl Render for RestorePassphraseModal {
                 .child(self.passphrase.clone())
                 .into_any_element(),
             density,
+            cx,
         ));
 
         let card = modal(tr!("restore_passphrase_title"), body, &palette)

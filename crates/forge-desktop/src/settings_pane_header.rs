@@ -1,5 +1,5 @@
 use forge_components::FONT_ROW;
-use forge_components::{ActivePresentation, FONT_LG, Spacing, body_family, icon, scaled, spacing};
+use forge_components::{ActivePresentation, FONT_LG, Spacing, icon, scaled, spacing};
 use gpui::{
     AnyElement, App, FontWeight, IntoElement, ParentElement, Pixels, RenderOnce, SharedString,
     Styled, Window, div, px,
@@ -55,7 +55,7 @@ impl RenderOnce for SettingsPaneHeader {
             .child(
                 div()
                     .min_w(px(0.0))
-                    .font_family(body_family())
+                    .font_family(cx.body_family())
                     .font_weight(FontWeight::MEDIUM)
                     .text_size(FONT_LG)
                     .text_color(palette.text_primary)
@@ -79,7 +79,7 @@ impl RenderOnce for SettingsPaneHeader {
                 .mb(scaled(CONTENT_GAP_AFTER_SUBTITLE, density))
                 .child(
                     div()
-                        .font_family(body_family())
+                        .font_family(cx.body_family())
                         .text_size(SUBTITLE_FONT)
                         .text_color(palette.text_muted)
                         .child(subtitle),

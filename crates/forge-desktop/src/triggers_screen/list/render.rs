@@ -1,4 +1,6 @@
 use super::*;
+use forge_components::ActivePresentation;
+use gpui::App;
 
 impl Render for TriggerList {
     fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
@@ -31,19 +33,20 @@ fn row_used_count(
     instance: &TriggerInstanceRow,
     palette: &ForgePalette,
     density: Density,
+    cx: &App,
 ) -> AnyElement {
     if instance.used_in_count > 0 {
         div()
             .flex()
             .items_center()
             .gap(spacing(Spacing::Xxs, density))
-            .font_family(body_family())
+            .font_family(cx.body_family())
             .text_size(USED_FS)
             .text_color(palette.text_primary)
             .child(tr!("triggers_used_in_prefix"))
             .child(
                 div()
-                    .font_family(body_family())
+                    .font_family(cx.body_family())
                     .font_weight(FontWeight::MEDIUM)
                     .text_color(palette.success)
                     .child(instance.used_in_count.to_string()),
@@ -52,7 +55,7 @@ fn row_used_count(
     } else {
         div()
             .italic()
-            .font_family(body_family())
+            .font_family(cx.body_family())
             .text_size(USED_FS)
             .text_color(palette.text_faint)
             .child(tr!("triggers_row_unused"))
@@ -65,6 +68,7 @@ impl TriggerList {
         &self,
         palette: &ForgePalette,
         density: Density,
+        cx: &App,
     ) -> AnyElement {
         header_stats(
             vec![
@@ -86,6 +90,7 @@ impl TriggerList {
             ],
             palette,
             density,
+            cx,
         )
         .into_any_element()
     }
@@ -132,7 +137,7 @@ impl TriggerList {
                     .id("triggers-platform-clear")
                     .cursor_pointer()
                     .px(spacing(Spacing::Xs, density))
-                    .font_family(body_family())
+                    .font_family(cx.body_family())
                     .text_size(FONT_XXS)
                     .text_color(palette.text_faint)
                     .child(tr!("triggers_platform_clear"))
@@ -238,22 +243,26 @@ impl TriggerList {
             )
     }
 
-    fn caption_cell(palette: &ForgePalette, label: impl Into<SharedString>) -> AnyElement {
+    fn caption_cell(
+        palette: &ForgePalette,
+        label: impl Into<SharedString>,
+        cx: &App,
+    ) -> AnyElement {
         div()
-            .font_family(mono_family())
+            .font_family(cx.mono_family())
             .text_size(FONT_XXS)
             .text_color(palette.text_faint)
             .child(label.into())
             .into_any_element()
     }
 
-    fn render_caption(&self, palette: &ForgePalette, density: Density) -> AnyElement {
+    fn render_caption(&self, palette: &ForgePalette, density: Density, cx: &App) -> AnyElement {
         let cols = Self::columns(
             div().into_any_element(),
-            Self::caption_cell(palette, tr!("triggers_col_name")),
-            Self::caption_cell(palette, tr!("triggers_col_kind")),
-            Self::caption_cell(palette, tr!("triggers_col_used")),
-            Self::caption_cell(palette, tr!("triggers_col_on")),
+            Self::caption_cell(palette, tr!("triggers_col_name"), cx),
+            Self::caption_cell(palette, tr!("triggers_col_kind"), cx),
+            Self::caption_cell(palette, tr!("triggers_col_used"), cx),
+            Self::caption_cell(palette, tr!("triggers_col_on"), cx),
             div().into_any_element(),
         );
         div()
@@ -281,6 +290,7 @@ impl TriggerList {
                 cx.listener(|this, _: &ClickEvent, _, cx| this.retry_list_load(cx)),
                 palette,
                 density,
+                cx,
             )
             .filter(|_| self.instances.is_empty());
             let empty = notice.unwrap_or_else(|| self.render_empty(palette, cx));
@@ -321,7 +331,7 @@ impl TriggerList {
             .flex()
             .flex_col()
             .bg(palette.base)
-            .child(self.render_caption(palette, density))
+            .child(self.render_caption(palette, density, cx))
             .child(rows)
             .into_any_element()
     }
@@ -333,6 +343,7 @@ impl TriggerList {
         gate_badges: Vec<AnyElement>,
         palette: &ForgePalette,
         density: Density,
+        cx: &App,
     ) -> gpui::Div {
         let descriptor = self.deps.registry.get(&instance.kind_id);
         let kind_glyph = descriptor
@@ -353,7 +364,7 @@ impl TriggerList {
                     .flex_shrink(1.0)
                     .min_w(px(0.0))
                     .truncate()
-                    .font_family(mono_family())
+                    .font_family(cx.mono_family())
                     .text_size(KIND_FS)
                     .text_color(palette.text_muted)
                     .child(kind_label),
@@ -381,7 +392,7 @@ impl TriggerList {
         kind = kind.child(
             div()
                 .flex_none()
-                .font_family(mono_family())
+                .font_family(cx.mono_family())
                 .text_size(KIND_FS)
                 .text_color(palette.accent_peach)
                 .child(gate),
@@ -393,7 +404,7 @@ impl TriggerList {
             kind = kind.child(
                 div()
                     .flex_none()
-                    .font_family(mono_family())
+                    .font_family(cx.mono_family())
                     .text_size(KIND_FS)
                     .text_color(palette.info)
                     .child(permission),
@@ -424,7 +435,7 @@ impl TriggerList {
                 .w(COL_NAME)
                 .flex_none()
                 .truncate()
-                .font_family(mono_family())
+                .font_family(cx.mono_family())
                 .text_size(NAME_FS)
                 .text_color(name_color)
                 .cursor_pointer()
@@ -469,13 +480,13 @@ impl TriggerList {
         let uncovered_category = self.uncovered_category(&instance.kind_id);
         let gate_badges: Vec<AnyElement> = switched_off_owner
             .iter()
-            .map(|owner| inactive_badge(owner, palette, density).into_any_element())
+            .map(|owner| inactive_badge(owner, palette, density, cx).into_any_element())
             .chain(uncovered_category.iter().map(|category| {
-                category_inactive_badge(*category, palette, density).into_any_element()
+                category_inactive_badge(*category, palette, density, cx).into_any_element()
             }))
             .collect();
-        let kind = self.render_row_kind(instance, dot_color, gate_badges, palette, density);
-        let used = row_used_count(instance, palette, density);
+        let kind = self.render_row_kind(instance, dot_color, gate_badges, palette, density, cx);
+        let used = row_used_count(instance, palette, density, cx);
 
         let renaming = self.rename.as_ref().is_some_and(|r| r.id == id);
         let mut select_region = div()
@@ -619,7 +630,7 @@ impl TriggerList {
             .child(tile)
             .child(
                 div()
-                    .font_family(body_family())
+                    .font_family(cx.body_family())
                     .font_weight(FontWeight::MEDIUM)
                     .text_size(EMPTY_TITLE_FS)
                     .text_color(palette.text_primary)
@@ -629,7 +640,7 @@ impl TriggerList {
                 div()
                     .max_w(px(360.0))
                     .text_center()
-                    .font_family(body_family())
+                    .font_family(cx.body_family())
                     .text_size(EMPTY_BODY_FS)
                     .text_color(palette.text_muted)
                     .child(body),

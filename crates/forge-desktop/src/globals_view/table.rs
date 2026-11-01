@@ -4,9 +4,9 @@ use crate::load_notice::{LoadNotice, NoticeWidth, load_notice};
 use crate::navigable_list::navigable_list;
 use forge_components::{
     ActivePresentation, ColumnWidth, DataRow, Density, FONT_SECTION_LABEL, FONT_XS, ForgePalette,
-    Icon, KeyActivated, Radius, Spacing, badge, body_family, column, context_menu, empty_state,
-    hover_reveal, icon, menu_divider, menu_item, mono_family, radius, scaled, spacing, status_dot,
-    toggle, tr, virtual_table, with_alpha,
+    Icon, KeyActivated, Radius, Spacing, badge, column, context_menu, empty_state, hover_reveal,
+    icon, menu_divider, menu_item, radius, scaled, spacing, status_dot, toggle, tr, virtual_table,
+    with_alpha,
 };
 use forge_types::{Variant, VariantKind};
 use gpui::prelude::*;
@@ -45,6 +45,7 @@ impl GlobalsView {
                 cx.listener(|this, _: &ClickEvent, _, cx| this.retry_list_load(cx)),
                 palette,
                 density,
+                cx,
             )
             .filter(|_| self.globals.read(cx).total() == 0);
             let state = notice.unwrap_or_else(|| {
@@ -147,13 +148,13 @@ impl GlobalsView {
         let value_cell = self.value_cell(g, palette, cx);
 
         let modified_cell = div()
-            .font_family(body_family())
+            .font_family(cx.body_family())
             .text_size(FONT_XS)
             .text_color(palette.text_muted)
             .child(g.modified_label());
 
         let rw_cell = div()
-            .font_family(mono_family())
+            .font_family(cx.mono_family())
             .text_size(FONT_XS)
             .text_color(palette.text_muted)
             .child(format!("{} · {}", g.reads, g.writes));
@@ -229,7 +230,7 @@ impl GlobalsView {
         let rename_target = name.clone();
         let menu_target = name.clone();
         div()
-            .font_family(mono_family())
+            .font_family(cx.mono_family())
             .text_size(FONT_XS)
             .text_color(palette.text_primary)
             .cursor_pointer()
@@ -368,7 +369,7 @@ impl GlobalsView {
             .gap(spacing(Spacing::Xxs, density))
             .child(
                 div()
-                    .font_family(mono_family())
+                    .font_family(cx.mono_family())
                     .text_size(FONT_XS)
                     .text_color(palette.text_primary)
                     .child(text),

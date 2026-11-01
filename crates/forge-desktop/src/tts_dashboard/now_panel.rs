@@ -1,4 +1,6 @@
 use super::*;
+use forge_components::ActivePresentation;
+use gpui::App;
 
 pub(super) fn strip_divider(palette: &ForgePalette, density: Density) -> impl IntoElement {
     div()
@@ -60,6 +62,7 @@ pub(super) fn now_speaking_panel(
     manual_paused: bool,
     palette: &ForgePalette,
     density: Density,
+    cx: &App,
 ) -> AnyElement {
     let animate = now.is_some() && !manual_paused;
     let bar_color = if animate {
@@ -71,7 +74,11 @@ pub(super) fn now_speaking_panel(
         .flex()
         .items_center()
         .gap(scaled(NOW_LABEL_GAP, density))
-        .child(section_label(tr!("tts_dash_now_speaking_header"), palette))
+        .child(section_label(
+            tr!("tts_dash_now_speaking_header"),
+            palette,
+            cx,
+        ))
         .child(eq_bars(animate, bar_color));
 
     let body = match now {
@@ -94,7 +101,7 @@ pub(super) fn now_speaking_panel(
                 .mb(NOW_NAME_MB)
                 .child(
                     div()
-                        .font_family(body_family())
+                        .font_family(cx.body_family())
                         .font_weight(FontWeight::MEDIUM)
                         .text_size(NOW_NAME_FONT)
                         .text_color(hash_accent(&ns.viewer_name, palette))
@@ -111,7 +118,7 @@ pub(super) fn now_speaking_panel(
             }
 
             let message = div()
-                .font_family(body_family())
+                .font_family(cx.body_family())
                 .text_size(NOW_MSG_FONT)
                 .line_height(relative(NOW_MSG_LINE_HEIGHT))
                 .text_color(palette.text_primary)
@@ -129,7 +136,7 @@ pub(super) fn now_speaking_panel(
                 .mt(PROGRESS_MT)
                 .child(
                     div()
-                        .font_family(mono_family())
+                        .font_family(cx.mono_family())
                         .text_size(PROGRESS_FONT)
                         .text_color(palette.text_muted)
                         .child(fmt_clock(u64::from(ns.elapsed_secs))),
@@ -150,7 +157,7 @@ pub(super) fn now_speaking_panel(
                 )
                 .child(
                     div()
-                        .font_family(mono_family())
+                        .font_family(cx.mono_family())
                         .text_size(PROGRESS_FONT)
                         .text_color(palette.text_muted)
                         .child(fmt_clock(u64::from(ns.total_secs))),
@@ -179,7 +186,7 @@ pub(super) fn now_speaking_panel(
                 .gap(spacing(Spacing::Xs, density))
                 .child(
                     div()
-                        .font_family(body_family())
+                        .font_family(cx.body_family())
                         .text_size(FONT_SM)
                         .text_color(palette.text_muted)
                         .child(tr!("tts_dash_no_speaking")),
@@ -187,7 +194,7 @@ pub(super) fn now_speaking_panel(
             if let Some(reason) = last_drop {
                 idle = idle.child(
                     div()
-                        .font_family(mono_family())
+                        .font_family(cx.mono_family())
                         .text_size(FONT_XXS)
                         .text_color(palette.warning)
                         .child(tr!("tts_dash_last_drop", reason = reason)),
@@ -234,6 +241,7 @@ pub(super) fn stat_row(
     palette: &ForgePalette,
     border_bottom: bool,
     density: Density,
+    cx: &App,
 ) -> impl IntoElement {
     let mut row = div()
         .w_full()
@@ -244,14 +252,14 @@ pub(super) fn stat_row(
         .child(
             div()
                 .flex_1()
-                .font_family(body_family())
+                .font_family(cx.body_family())
                 .text_size(STAT_LABEL_FONT)
                 .text_color(palette.text_muted)
                 .child(label.into()),
         )
         .child(
             div()
-                .font_family(body_family())
+                .font_family(cx.body_family())
                 .font_weight(FontWeight::MEDIUM)
                 .text_size(STAT_VALUE_FONT)
                 .text_color(value_color)
@@ -271,6 +279,7 @@ pub(super) fn engine_card(
     status_color: Rgba,
     palette: &ForgePalette,
     density: Density,
+    cx: &App,
 ) -> impl IntoElement {
     let name = name.into();
     let meta = meta.into();
@@ -285,7 +294,7 @@ pub(super) fn engine_card(
                 .child(
                     div()
                         .flex_1()
-                        .font_family(body_family())
+                        .font_family(cx.body_family())
                         .font_weight(FontWeight::MEDIUM)
                         .text_size(ENGINE_NAME_FONT)
                         .text_color(palette.text_primary)
@@ -295,7 +304,7 @@ pub(super) fn engine_card(
         )
         .child(
             div()
-                .font_family(mono_family())
+                .font_family(cx.mono_family())
                 .text_size(ENGINE_META_FONT)
                 .text_color(palette.text_faint)
                 .child(meta),

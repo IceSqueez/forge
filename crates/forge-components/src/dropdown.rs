@@ -1,9 +1,8 @@
-use crate::ActivePresentation;
-use crate::Elevation;
 use crate::FONT_META;
 use crate::FONT_ROW;
 use crate::elevation_shadow;
 use crate::key_activation::KeyActivated;
+use crate::{ActivePresentation, Elevation};
 use std::rc::Rc;
 
 use crate::focus_reveal::{FocusRevealingScroll, OverflowRevealingFocus};
@@ -18,7 +17,7 @@ use gpui::{
 use crate::icons::{Icon, icon};
 use crate::overlay::enter_animation;
 use crate::palette::ForgePalette;
-use crate::tokens::{BORDER_THIN, Density, ESCAPE_KEY, FONT_XXS, body_family, mono_family, scaled};
+use crate::tokens::{BORDER_THIN, Density, ESCAPE_KEY, FONT_XXS, scaled};
 
 pub(crate) const DROPDOWN_ROW_HEIGHT: Pixels = px(27.0);
 pub(crate) const DROPDOWN_PADDING: Pixels = px(4.0);
@@ -156,6 +155,7 @@ pub(crate) fn dropdown_group_header(
     label: impl Into<SharedString>,
     palette: &ForgePalette,
     density: Density,
+    cx: &App,
 ) -> Div {
     div()
         .w_full()
@@ -164,7 +164,7 @@ pub(crate) fn dropdown_group_header(
         .flex()
         .items_center()
         .px(scaled(ROW_PAD_X, density))
-        .font_family(mono_family())
+        .font_family(cx.mono_family())
         .text_size(FONT_XXS)
         .text_color(palette.text_faint)
         .child(label.into())
@@ -199,7 +199,7 @@ impl RenderOnce for DropdownRow {
             .flex_1()
             .min_w(px(0.0))
             .truncate()
-            .font_family(self.label_family.unwrap_or_else(body_family))
+            .font_family(self.label_family.unwrap_or_else(|| cx.body_family()))
             .text_size(ROW_FONT)
             .text_color(ink)
             .child(self.label);
@@ -230,7 +230,7 @@ impl RenderOnce for DropdownRow {
                     .flex_1()
                     .min_w(px(0.0))
                     .truncate()
-                    .font_family(body_family())
+                    .font_family(cx.body_family())
                     .text_size(SUFFIX_FONT)
                     .text_color(p.text_faint)
                     .child(suffix),
@@ -240,7 +240,7 @@ impl RenderOnce for DropdownRow {
             row = row.child(
                 div()
                     .flex_none()
-                    .font_family(mono_family())
+                    .font_family(cx.mono_family())
                     .text_size(FONT_XXS)
                     .text_color(tint)
                     .child(tag),

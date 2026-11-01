@@ -14,8 +14,7 @@ use crate::display_zone::{DisplayZone, WallTime};
 use crate::icons::{Icon, icon};
 use crate::palette::ForgePalette;
 use crate::tokens::{
-    BORDER_THIN, Density, FONT_SM, FONT_XS, FONT_XXS, Radius, Spacing, body_family, mono_family,
-    radius, spacing,
+    BORDER_THIN, Density, FONT_SM, FONT_XS, FONT_XXS, Radius, Spacing, radius, spacing,
 };
 
 const PANEL_W: Pixels = px(284.0);
@@ -322,7 +321,7 @@ impl DateTimePicker {
                     .flex_1()
                     .flex()
                     .justify_center()
-                    .font_family(body_family())
+                    .font_family(cx.body_family())
                     .text_size(FONT_SM)
                     .text_color(p.text_primary)
                     .child(self.month_title()),
@@ -336,7 +335,7 @@ impl DateTimePicker {
             .into_any_element()
     }
 
-    fn render_weekday_header(&self) -> AnyElement {
+    fn render_weekday_header(&self, cx: &App) -> AnyElement {
         let p = self.palette;
         let mut row = div().flex();
         for title in self.weekday_titles() {
@@ -345,7 +344,7 @@ impl DateTimePicker {
                     .w(CELL)
                     .flex()
                     .justify_center()
-                    .font_family(mono_family())
+                    .font_family(cx.mono_family())
                     .text_size(FONT_XXS)
                     .text_color(p.text_faint)
                     .child(title),
@@ -376,7 +375,7 @@ impl DateTimePicker {
                     .items_center()
                     .justify_center()
                     .rounded(radius(Radius::Sm))
-                    .font_family(body_family())
+                    .font_family(cx.body_family())
                     .text_size(FONT_XS)
                     .cursor_pointer()
                     .when(selected, |c| c.bg(p.brand).text_color(p.base))
@@ -408,10 +407,11 @@ impl DateTimePicker {
                 cx.listener(|this, _: &ClickEvent, _, cx| this.step_hour(1, cx)),
                 cx.listener(|this, _: &ClickEvent, _, cx| this.step_hour(-1, cx)),
                 density,
+                cx,
             ))
             .child(
                 div()
-                    .font_family(mono_family())
+                    .font_family(cx.mono_family())
                     .text_size(FONT_SM)
                     .text_color(p.text_faint)
                     .child(":"),
@@ -422,6 +422,7 @@ impl DateTimePicker {
                 cx.listener(|this, _: &ClickEvent, _, cx| this.step_minute(1, cx)),
                 cx.listener(|this, _: &ClickEvent, _, cx| this.step_minute(-1, cx)),
                 density,
+                cx,
             ))
             .when(self.clock == ClockStyle::TwelveHour, |row| {
                 row.child(self.render_day_period(cx))
@@ -459,6 +460,7 @@ impl DateTimePicker {
             selected,
             &self.palette,
             density,
+            cx,
         )
         .w(STEPPER_W)
         .on_click(
@@ -484,6 +486,7 @@ impl DateTimePicker {
                     !self.later_in_repeat,
                     &self.palette,
                     density,
+                    cx,
                 )
                 .flex_1()
                 .on_click(cx.listener(|this, _: &ClickEvent, _, cx| this.choose_repeat(false, cx))),
@@ -495,6 +498,7 @@ impl DateTimePicker {
                     self.later_in_repeat,
                     &self.palette,
                     density,
+                    cx,
                 )
                 .flex_1()
                 .on_click(cx.listener(|this, _: &ClickEvent, _, cx| this.choose_repeat(true, cx))),
@@ -509,6 +513,7 @@ impl DateTimePicker {
         on_up: impl Fn(&ClickEvent, &mut Window, &mut App) + 'static,
         on_down: impl Fn(&ClickEvent, &mut Window, &mut App) + 'static,
         density: Density,
+        cx: &App,
     ) -> AnyElement {
         let p = self.palette;
         div()
@@ -527,7 +532,7 @@ impl DateTimePicker {
                     .w(STEPPER_W)
                     .flex()
                     .justify_center()
-                    .font_family(mono_family())
+                    .font_family(cx.mono_family())
                     .text_size(FONT_SM)
                     .text_color(p.text_primary)
                     .child(format!("{value:02}")),
@@ -590,7 +595,7 @@ impl Render for DateTimePicker {
             .border(BORDER_THIN)
             .border_color(p.border_input)
             .child(self.render_month_nav(cx))
-            .child(self.render_weekday_header())
+            .child(self.render_weekday_header(cx))
             .child(self.render_day_grid(cx))
             .child(div().w_full().h(BORDER_THIN).bg(p.border_regular))
             .child(self.render_time(cx))
@@ -635,6 +640,7 @@ fn choice_chip(
     selected: bool,
     palette: &ForgePalette,
     density: Density,
+    cx: &App,
 ) -> gpui::Stateful<gpui::Div> {
     let p = *palette;
     let hover_bg = p.surface_overlay;
@@ -644,7 +650,7 @@ fn choice_chip(
         .justify_center()
         .py(spacing(Spacing::Xxs, density))
         .rounded(radius(Radius::Sm))
-        .font_family(mono_family())
+        .font_family(cx.mono_family())
         .text_size(FONT_XS)
         .key_activated(p.text_primary)
         .cursor_pointer()

@@ -4,8 +4,7 @@ use std::time::{Duration, Instant};
 use forge_awake::StatusWatch;
 use forge_components::{
     Density, FONT_LG, FONT_SM, FONT_XXS, ForgePalette, Icon, Radius, Spacing, ToastKind, Toasts,
-    body_family, card, icon, mono_family, primary_button, radius, secondary_button, spacing,
-    toast_layer, tr,
+    card, icon, primary_button, radius, secondary_button, spacing, toast_layer, tr,
 };
 use forge_events::EventSubscription;
 use forge_platform_core::PlatformEndpoints;
@@ -869,18 +868,18 @@ impl Render for RootView {
         let palette = cx.palette();
         let density = cx.density();
         let failure_screen = match &self.state {
-            BootState::Booting => return splash(tr!("boot_starting"), &palette, density),
+            BootState::Booting => return splash(tr!("boot_starting"), &palette, density, cx),
             BootState::Ready { shell } => {
                 return div().size_full().child(shell.clone()).into_any_element();
             }
             BootState::Failed(BootFailure::UpgradeRequired { expected, found }) => {
-                upgrade_screen(*expected, *found, &palette, density)
+                upgrade_screen(*expected, *found, &palette, density, cx)
             }
             BootState::Failed(BootFailure::PreBaseline { found }) => {
-                pre_baseline_screen(*found, &palette, density)
+                pre_baseline_screen(*found, &palette, density, cx)
             }
             BootState::Failed(BootFailure::Retry { failure }) => {
-                retry_screen(&failure.text(), cx.entity(), &palette, density)
+                retry_screen(&failure.text(), cx.entity(), &palette, density, cx)
             }
         };
         div()
@@ -910,11 +909,11 @@ impl Render for RestoreWaitView {
     fn render(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         let palette = cx.palette();
         let density = cx.density();
-        splash(tr!("boot_finishing_restore"), &palette, density)
+        splash(tr!("boot_finishing_restore"), &palette, density, cx)
     }
 }
 
-fn splash(status: String, palette: &ForgePalette, density: Density) -> AnyElement {
+fn splash(status: String, palette: &ForgePalette, density: Density, cx: &App) -> AnyElement {
     let column = div()
         .flex()
         .flex_col()
@@ -922,14 +921,14 @@ fn splash(status: String, palette: &ForgePalette, density: Density) -> AnyElemen
         .gap(spacing(Spacing::Sm, density))
         .child(
             div()
-                .font_family(body_family())
+                .font_family(cx.body_family())
                 .text_size(FONT_LG)
                 .text_color(palette.brand)
                 .child("forge"),
         )
         .child(
             div()
-                .font_family(body_family())
+                .font_family(cx.body_family())
                 .text_size(FONT_SM)
                 .text_color(palette.text_muted)
                 .child(status),
@@ -942,6 +941,7 @@ fn upgrade_screen(
     found: u32,
     palette: &ForgePalette,
     density: Density,
+    cx: &App,
 ) -> AnyElement {
     let body = div()
         .flex()
@@ -951,21 +951,21 @@ fn upgrade_screen(
         .child(icon(Icon::AlertTriangle, FONT_LG, palette.warning))
         .child(
             div()
-                .font_family(body_family())
+                .font_family(cx.body_family())
                 .text_size(FONT_LG)
                 .text_color(palette.text_primary)
                 .child(tr!("boot_upgrade_title")),
         )
         .child(
             div()
-                .font_family(body_family())
+                .font_family(cx.body_family())
                 .text_size(FONT_SM)
                 .text_color(palette.text_secondary)
                 .child(tr!("boot_upgrade_body", found = found, expected = expected)),
         )
         .child(
             div()
-                .font_family(body_family())
+                .font_family(cx.body_family())
                 .text_size(FONT_SM)
                 .text_color(palette.text_muted)
                 .child(tr!("boot_upgrade_reassure")),
@@ -973,7 +973,12 @@ fn upgrade_screen(
     centered(card(body, palette), palette, density)
 }
 
-fn pre_baseline_screen(found: u32, palette: &ForgePalette, density: Density) -> AnyElement {
+fn pre_baseline_screen(
+    found: u32,
+    palette: &ForgePalette,
+    density: Density,
+    cx: &App,
+) -> AnyElement {
     let actions = div()
         .flex()
         .gap(spacing(Spacing::Sm, density))
@@ -997,14 +1002,14 @@ fn pre_baseline_screen(found: u32, palette: &ForgePalette, density: Density) -> 
         .child(icon(Icon::AlertTriangle, FONT_LG, palette.warning))
         .child(
             div()
-                .font_family(body_family())
+                .font_family(cx.body_family())
                 .text_size(FONT_LG)
                 .text_color(palette.text_primary)
                 .child(tr!("boot_pre_baseline_title")),
         )
         .child(
             div()
-                .font_family(body_family())
+                .font_family(cx.body_family())
                 .text_size(FONT_SM)
                 .text_color(palette.text_secondary)
                 .child(tr!(
@@ -1015,7 +1020,7 @@ fn pre_baseline_screen(found: u32, palette: &ForgePalette, density: Density) -> 
         )
         .child(
             div()
-                .font_family(body_family())
+                .font_family(cx.body_family())
                 .text_size(FONT_SM)
                 .text_color(palette.text_muted)
                 .child(tr!("boot_pre_baseline_reassure")),
@@ -1029,13 +1034,14 @@ fn retry_screen(
     root: Entity<RootView>,
     palette: &ForgePalette,
     density: Density,
+    cx: &App,
 ) -> AnyElement {
     let detail = div()
         .w_full()
         .p(spacing(Spacing::Sm, density))
         .rounded(radius(Radius::Sm))
         .bg(palette.surface_overlay)
-        .font_family(mono_family())
+        .font_family(cx.mono_family())
         .text_size(FONT_SM)
         .text_color(palette.text_secondary)
         .child(reason.to_owned());
@@ -1055,14 +1061,14 @@ fn retry_screen(
         .child(icon(Icon::AlertTriangle, FONT_LG, palette.warning))
         .child(
             div()
-                .font_family(body_family())
+                .font_family(cx.body_family())
                 .text_size(FONT_LG)
                 .text_color(palette.text_primary)
                 .child(tr!("boot_failure_title")),
         )
         .child(
             div()
-                .font_family(body_family())
+                .font_family(cx.body_family())
                 .text_size(FONT_SM)
                 .text_color(palette.text_secondary)
                 .child(tr!("boot_failure_cause")),
@@ -1070,7 +1076,7 @@ fn retry_screen(
         .child(
             div()
                 .w_full()
-                .font_family(body_family())
+                .font_family(cx.body_family())
                 .text_size(FONT_XXS)
                 .text_color(palette.text_muted)
                 .child(tr!("boot_failure_details")),
@@ -1078,7 +1084,7 @@ fn retry_screen(
         .child(detail)
         .child(
             div()
-                .font_family(body_family())
+                .font_family(cx.body_family())
                 .text_size(FONT_SM)
                 .text_color(palette.text_muted)
                 .child(tr!("boot_failure_reassure")),

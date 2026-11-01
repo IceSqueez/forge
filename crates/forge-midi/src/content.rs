@@ -90,7 +90,7 @@ impl BuiltinContent for MidiClient {
                     visible_rows: None,
                     row_padding_y_px: DEFAULT_ROW_PADDING_Y_PX,
                     refreshable: false,
-                    items: input_items,
+                    items: input_items.into(),
                     footer: None,
                 }),
                 right: Box::new(ContentList {
@@ -102,7 +102,7 @@ impl BuiltinContent for MidiClient {
                     visible_rows: None,
                     row_padding_y_px: DEFAULT_ROW_PADDING_Y_PX,
                     refreshable: false,
-                    items: output_items,
+                    items: output_items.into(),
                     footer: None,
                 }),
             },

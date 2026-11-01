@@ -14,7 +14,7 @@ use crate::hub_card::{
 
 use forge_components::OverflowRevealingFocus;
 use forge_components::{
-    BreadcrumbCrumb, ForgePalette, Icon, KeyActivated, ToastKind, body_family, icon, mono_family,
+    ActivePresentation, BreadcrumbCrumb, ForgePalette, Icon, KeyActivated, ToastKind, icon,
     page_frame, scaled, toggle, tr,
 };
 use forge_platform_core::{
@@ -25,7 +25,7 @@ use forge_registry::{IntegrationReferences, SubActionRegistry, TriggerRegistry, 
 use forge_storage::{DataProvider, StorageError};
 use forge_types::{Action, IntegrationId, MessageRef, TriggerInstance};
 use gpui::{
-    AnyElement, ClickEvent, Context, ElementId, Entity, EventEmitter, FontWeight, Pixels,
+    AnyElement, App, ClickEvent, Context, ElementId, Entity, EventEmitter, FontWeight, Pixels,
     SharedString, Subscription, Window, div, prelude::*, px,
 };
 
@@ -42,7 +42,6 @@ use crate::navigation::Screen;
 use crate::platforms::PlatformConnectivity;
 use crate::start_failure::{StartRemedy, start_failure_text, start_failure_tooltip};
 use crate::user_text::resolve_message;
-use forge_components::ActivePresentation;
 use forge_components::PushToast;
 use forge_host::integration_catalog::{declaration_of, declarations};
 use forge_host::integrations::{BuiltinObject, BuiltinRegistry, ObsInstallSeed, VTubeInstallSeed};
@@ -326,7 +325,7 @@ impl IntegrationsHubView {
             .items_center()
             .gap(scaled(OPEN_GAP, density))
             .cursor_pointer()
-            .font_family(body_family())
+            .font_family(cx.body_family())
             .text_size(FOOTER_TEXT)
             .text_color(palette.brand)
             .child(icon(remedy.icon(), FOOTER_ICON, palette.brand))
@@ -384,7 +383,7 @@ impl IntegrationsHubView {
         let density = cx.density();
         if references.total() == 0 {
             return div()
-                .font_family(body_family())
+                .font_family(cx.body_family())
                 .text_size(FOOTER_TEXT)
                 .italic()
                 .text_color(palette.text_faint)
@@ -403,7 +402,7 @@ impl IntegrationsHubView {
             .items_center()
             .gap(scaled(FOOTER_GAP, density))
             .cursor_pointer()
-            .font_family(body_family())
+            .font_family(cx.body_family())
             .text_size(FOOTER_TEXT)
             .text_color(ink)
             .child(icon(glyph, FOOTER_ICON, ink))
@@ -518,8 +517,9 @@ impl IntegrationsHubView {
             !on,
             HUB_TILE_SIZE,
             palette,
+            cx,
         ))
-        .badge(card_status_badge(&id, &status, palette, density))
+        .badge(card_status_badge(&id, &status, palette, density, cx))
         .trailing(switch)
         .note(note);
         if !self.welcome {
@@ -530,7 +530,7 @@ impl IntegrationsHubView {
                 }));
         }
         card = if self.welcome {
-            card.footer_left(welcome_footer_note(&status, palette))
+            card.footer_left(welcome_footer_note(&status, palette, cx))
         } else {
             card.footer_left(self.reference_chip(&id, &references, !on, palette, cx))
         };
@@ -605,7 +605,7 @@ impl IntegrationsHubView {
             .flex()
             .items_center()
             .gap(scaled(OPEN_GAP, density))
-            .font_family(body_family())
+            .font_family(cx.body_family())
             .text_size(FOOTER_TEXT)
             .text_color(palette.text_secondary)
             .child(tr!("integration_core_open"))
@@ -622,6 +622,7 @@ impl IntegrationsHubView {
             false,
             HUB_TILE_SIZE,
             palette,
+            cx,
         ))
         .badge(lifecycle_badge(
             BadgeMarker::None,
@@ -629,10 +630,11 @@ impl IntegrationsHubView {
             palette.text_muted,
             palette,
             density,
+            cx,
         ))
         .footer_left(
             div()
-                .font_family(body_family())
+                .font_family(cx.body_family())
                 .text_size(FOOTER_TEXT)
                 .text_color(palette.text_faint)
                 .child(tr!("integration_core_always_on")),
@@ -690,6 +692,7 @@ impl IntegrationsHubView {
                     count,
                     palette,
                     density,
+                    cx,
                 ))
                 .child(card_grid(cards, density))
                 .into_any_element(),
@@ -709,7 +712,7 @@ impl IntegrationsHubView {
         div()
             .flex()
             .items_center()
-            .font_family(mono_family())
+            .font_family(cx.mono_family())
             .text_size(HEADER_COUNT)
             .text_color(palette.text_muted)
             .child(
@@ -771,6 +774,7 @@ pub(crate) fn card_status_badge(
     status: &CardStatus,
     palette: &ForgePalette,
     density: Density,
+    cx: &App,
 ) -> AnyElement {
     let spinner_id = ElementId::Name(format!("hub-badge-spin-{id}").into());
     let (marker, label, color) = match status {
@@ -810,7 +814,7 @@ pub(crate) fn card_status_badge(
             palette.warning,
         ),
     };
-    lifecycle_badge(marker, label, color, palette, density).into_any_element()
+    lifecycle_badge(marker, label, color, palette, density, cx).into_any_element()
 }
 
 async fn wired_triggers(
@@ -828,7 +832,7 @@ async fn wired_triggers(
     Ok((actions, wired))
 }
 
-fn welcome_footer_note(status: &CardStatus, palette: &ForgePalette) -> AnyElement {
+fn welcome_footer_note(status: &CardStatus, palette: &ForgePalette, cx: &App) -> AnyElement {
     let label = match status {
         CardStatus::Disabled => tr!("integration_welcome_off"),
         CardStatus::Active | CardStatus::Connected | CardStatus::NotConnected => {
@@ -839,7 +843,7 @@ fn welcome_footer_note(status: &CardStatus, palette: &ForgePalette) -> AnyElemen
         CardStatus::Failed(_) => tr!("integration_status_failed"),
     };
     div()
-        .font_family(body_family())
+        .font_family(cx.body_family())
         .text_size(FOOTER_TEXT)
         .text_color(palette.text_faint)
         .child(label)
@@ -902,7 +906,7 @@ impl Render for IntegrationsHubView {
             .child(
                 div()
                     .mb(spacing(Spacing::Xxs, density))
-                    .font_family(body_family())
+                    .font_family(cx.body_family())
                     .font_weight(FontWeight::MEDIUM)
                     .text_size(INTRO_TITLE)
                     .text_color(palette.text_primary)
@@ -910,7 +914,7 @@ impl Render for IntegrationsHubView {
             )
             .child(
                 div()
-                    .font_family(body_family())
+                    .font_family(cx.body_family())
                     .text_size(INTRO_TEXT)
                     .text_color(palette.text_muted)
                     .child(tr!("integrations_subtitle")),

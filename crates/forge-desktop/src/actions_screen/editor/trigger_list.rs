@@ -4,8 +4,8 @@ use crate::async_bridge;
 use crate::integration_switch::{category_inactive_badge, inactive_badge};
 use crate::repo_failure::RepoFailure;
 use forge_components::{
-    BORDER_THIN, Density, FONT_XS, FONT_XXS, ForgePalette, Icon, KeyActivated, PushToast, Radius,
-    Spacing, body_family, icon, mono_family, radius, row_card, spacing, status_dot, tr,
+    ActivePresentation, BORDER_THIN, Density, FONT_XS, FONT_XXS, ForgePalette, Icon, KeyActivated,
+    PushToast, Radius, Spacing, icon, radius, row_card, spacing, status_dot, tr,
 };
 use forge_registry::TriggerKindDescriptor;
 use forge_types::{TriggerInstance, TriggerInstanceId};
@@ -60,6 +60,7 @@ fn trigger_card_title(
     descriptor: Option<&dyn TriggerKindDescriptor>,
     palette: &ForgePalette,
     density: Density,
+    cx: &App,
 ) -> gpui::Div {
     let name_color = if instance.enabled {
         palette.text_primary
@@ -76,7 +77,7 @@ fn trigger_card_title(
         .gap(spacing(Spacing::Xs, density))
         .child(
             div()
-                .font_family(body_family())
+                .font_family(cx.body_family())
                 .font_weight(FontWeight::SEMIBOLD)
                 .text_size(FONT_XS)
                 .flex_none()
@@ -88,7 +89,7 @@ fn trigger_card_title(
         )
         .child(
             div()
-                .font_family(body_family())
+                .font_family(cx.body_family())
                 .text_size(FONT_XXS)
                 .flex_none()
                 .text_color(palette.text_faint)
@@ -96,7 +97,7 @@ fn trigger_card_title(
         )
         .child(
             div()
-                .font_family(mono_family())
+                .font_family(cx.mono_family())
                 .text_size(FONT_XXS)
                 .min_w_0()
                 .truncate()
@@ -180,7 +181,7 @@ impl ActionEditor {
     ) -> AnyElement {
         let density = cx.density();
         let label = div()
-            .font_family(mono_family())
+            .font_family(cx.mono_family())
             .text_size(FONT_XXS)
             .text_color(palette.text_muted)
             .child(tr!(
@@ -196,6 +197,7 @@ impl ActionEditor {
                 tr!("action_editor_no_triggers"),
                 palette,
                 density,
+                cx,
             ));
         } else {
             for instance in &detail.trigger_instances {
@@ -207,9 +209,9 @@ impl ActionEditor {
             Icon::Plus,
             tr!("action_editor_add_trigger"),
             palette.warning,
-            palette,
             cx.listener(|this, _: &ClickEvent, window, cx| this.open_trigger_picker(window, cx)),
             density,
+            cx,
         ));
 
         div()
@@ -249,15 +251,15 @@ impl ActionEditor {
             .child(status_dot(accent, TRIGGER_DOT))
             .child(icon(glyph, TRIGGER_GLYPH, accent));
 
-        let title = trigger_card_title(instance, descriptor, palette, density)
+        let title = trigger_card_title(instance, descriptor, palette, density, cx)
             .children(
                 switched_off_owner
                     .as_ref()
-                    .map(|owner| inactive_badge(owner, palette, density)),
+                    .map(|owner| inactive_badge(owner, palette, density, cx)),
             )
             .children(
                 uncovered_category
-                    .map(|category| category_inactive_badge(category, palette, density)),
+                    .map(|category| category_inactive_badge(category, palette, density, cx)),
             );
         let dimmed =
             !instance.enabled || switched_off_owner.is_some() || uncovered_category.is_some();

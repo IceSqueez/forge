@@ -8,10 +8,10 @@ use forge_components::ROW_OFF_OPACITY;
 use forge_components::SEARCH_FIELD_WIDTH;
 use forge_components::{
     BORDER_THIN, ChipGlyph, ConfirmTone, Density, FONT_XXS, ForgePalette, Icon, InlineEditEvent,
-    InputEvent, KeyActivated, OverlayPosition, Spacing, TextInput, badge, body_family, chip,
-    confirm_modal, context_menu, ghost_button_with_icon, header_stat, header_stats, icon,
-    inline_edit, menu_button, menu_divider, menu_item, mono_family, overlay,
-    primary_button_with_icon, scaled, spacing, status_dot, toggle, tr,
+    InputEvent, KeyActivated, OverlayPosition, Spacing, TextInput, badge, chip, confirm_modal,
+    context_menu, ghost_button_with_icon, header_stat, header_stats, icon, inline_edit,
+    menu_button, menu_divider, menu_item, overlay, primary_button_with_icon, scaled, spacing,
+    status_dot, toggle, tr,
 };
 use gpui::{
     AnyElement, App, ClickEvent, Context, Div, Entity, FontWeight, MouseButton, MouseDownEvent,

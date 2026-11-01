@@ -1,9 +1,10 @@
+use crate::option_choices::ChoiceOption;
 use forge_runtime::EngineVoiceRef;
 use forge_speech_types::TtsVoice;
 use forge_tts_core::engine_display_name;
 
-pub(crate) fn engine_voice_options(voices: &[TtsVoice]) -> Vec<(String, String)> {
-    let mut options: Vec<(String, String)> = voices
+pub(crate) fn engine_voice_options(voices: &[TtsVoice]) -> Vec<ChoiceOption> {
+    let mut options: Vec<ChoiceOption> = voices
         .iter()
         .map(|voice| {
             let encoded = EngineVoiceRef::new(voice.engine_id.0.clone(), voice.id.0.clone());
@@ -13,10 +14,10 @@ pub(crate) fn engine_voice_options(voices: &[TtsVoice]) -> Vec<(String, String)>
             } else {
                 format!("{engine} - {} ({})", voice.name, voice.locale)
             };
-            (encoded.to_string(), label)
+            ChoiceOption::new(encoded.to_string(), label)
         })
         .collect();
-    options.sort_by(|a, b| a.1.cmp(&b.1));
+    options.sort_by(|a, b| a.label.cmp(&b.label));
     options
 }
 
@@ -51,15 +52,9 @@ mod tests {
         assert_eq!(
             options,
             vec![
-                (
-                    "nsspeech/uk.lesya".to_owned(),
-                    "Apple AVSpeech - Lesya (uk-UA)".to_owned()
-                ),
-                ("sapi/zira".to_owned(), "Microsoft SAPI 5 - Zira".to_owned()),
-                (
-                    "piper/en_US/amy".to_owned(),
-                    "Piper - amy (en_US)".to_owned()
-                ),
+                ChoiceOption::new("nsspeech/uk.lesya", "Apple AVSpeech - Lesya (uk-UA)"),
+                ChoiceOption::new("sapi/zira", "Microsoft SAPI 5 - Zira"),
+                ChoiceOption::new("piper/en_US/amy", "Piper - amy (en_US)"),
             ]
         );
     }

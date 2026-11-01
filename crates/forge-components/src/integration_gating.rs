@@ -15,7 +15,7 @@ use gpui::{
 
 use crate::icons::{Icon, icon};
 use crate::palette::{ForgePalette, with_alpha};
-use crate::tokens::{BORDER_THIN, Radius, body_family, mono_family, radius, scaled};
+use crate::tokens::{BORDER_THIN, Radius, radius, scaled};
 
 const HEALTH_TILE: Pixels = px(18.0);
 const HEALTH_CORNER: Pixels = px(5.0);
@@ -63,6 +63,7 @@ pub fn integration_inactive_badge(
     label: impl Into<SharedString>,
     palette: &ForgePalette,
     density: Density,
+    cx: &App,
 ) -> impl IntoElement {
     div()
         .flex_none()
@@ -76,7 +77,7 @@ pub fn integration_inactive_badge(
         .bg(with_alpha(palette.warning, WARN_FILL_ALPHA))
         .border(BORDER_THIN)
         .border_color(with_alpha(palette.warning, WARN_BORDER_ALPHA))
-        .font_family(mono_family())
+        .font_family(cx.mono_family())
         .font_weight(FontWeight::MEDIUM)
         .text_size(INACTIVE_SIZE)
         .text_color(palette.warning)
@@ -88,6 +89,7 @@ pub fn integration_disabled_reason(
     label: impl Into<SharedString>,
     palette: &ForgePalette,
     density: Density,
+    cx: &App,
 ) -> impl IntoElement {
     div()
         .flex_none()
@@ -99,7 +101,7 @@ pub fn integration_disabled_reason(
         .whitespace_nowrap()
         .rounded(radius(Radius::Sm))
         .bg(with_alpha(palette.danger, REASON_FILL_ALPHA))
-        .font_family(mono_family())
+        .font_family(cx.mono_family())
         .font_weight(FontWeight::MEDIUM)
         .text_size(REASON_SIZE)
         .text_color(palette.danger)
@@ -160,7 +162,7 @@ impl RenderOnce for IntegrationDisabledNotice {
             .border_color(palette.border_regular)
             .cursor_pointer()
             .hover(move |s| s.border_color(hover_border))
-            .font_family(body_family())
+            .font_family(cx.body_family())
             .text_size(ENABLE_SIZE)
             .text_color(palette.text_primary)
             .child(icon(Icon::Power, ENABLE_GLYPH, palette.success))
@@ -194,7 +196,7 @@ impl RenderOnce for IntegrationDisabledNotice {
                     .flex_1()
                     .min_w(px(0.0))
                     .overflow_hidden()
-                    .font_family(body_family())
+                    .font_family(cx.body_family())
                     .text_size(NOTICE_TEXT)
                     .text_color(palette.text_secondary)
                     .child(self.message),

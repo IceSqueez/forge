@@ -4,9 +4,10 @@ use super::rejection::with_rejection_note;
 use super::variable_insert::InsertTarget;
 use super::*;
 use crate::config_field_label::{sender_bot_warning, sender_field_helper};
-use forge_components::{FONT_SM, FONT_XXS, Spacing, body_family, scaled, spacing};
+use crate::option_choices::ChoiceOption;
+use forge_components::{ActivePresentation, FONT_SM, FONT_XXS, Spacing, scaled, spacing};
 use forge_registry::CodeLanguage;
-use gpui::Div;
+use gpui::{App, Div};
 
 impl EditSubActionForm {
     pub(super) fn render_field_grid(
@@ -45,13 +46,13 @@ impl EditSubActionForm {
                 && let Some(message) = self.rejection.as_ref().map(|r| r.message.clone())
             {
                 rejection_shown_inline = true;
-                element = with_rejection_note(element, message, palette, density);
+                element = with_rejection_note(element, message, palette, density, cx);
             }
             grid_items.push((half, element));
         }
 
         (
-            field_grid_layout(grid_items, palette, density),
+            field_grid_layout(grid_items, palette, density, cx),
             rejection_shown_inline,
         )
     }
@@ -83,6 +84,7 @@ impl EditSubActionForm {
                     area.clone().into_any_element(),
                     palette,
                     density,
+                    cx,
                 );
                 (false, self.with_variable_popover(key, block, cx))
             }
@@ -107,6 +109,7 @@ impl EditSubActionForm {
                     editor.clone().into_any_element(),
                     palette,
                     density,
+                    cx,
                 );
                 (false, self.with_variable_popover(key, block, cx))
             }
@@ -135,7 +138,7 @@ impl EditSubActionForm {
                     self.unit_amount_control(unit_picker_key, scale, unit, input, palette, cx);
                 (false, field_wrap(label, control, palette))
             }
-            SubFormField::Hint { label } => (false, hint_block(label, palette, density)),
+            SubFormField::Hint { label } => (false, hint_block(label, palette, density, cx)),
         }
     }
 
@@ -143,7 +146,7 @@ impl EditSubActionForm {
         &self,
         key: &str,
         label: &str,
-        options: &[(String, String)],
+        options: &[ChoiceOption],
         selected: &str,
         palette: &ForgePalette,
         cx: &mut Context<Self>,
@@ -153,11 +156,11 @@ impl EditSubActionForm {
         let select =
             self.render_select_field(key, label, options, selected, open_picker, palette, cx);
         let select = match sender_field_helper(&self.kind_id, key) {
-            Some(helper) => with_field_helper(select, helper, palette, density),
+            Some(helper) => with_field_helper(select, helper, palette, density, cx),
             None => select,
         };
         match sender_bot_warning(&self.kind_id, key, selected) {
-            Some(warning) => with_field_warning(select, warning, palette, density),
+            Some(warning) => with_field_warning(select, warning, palette, density, cx),
             None => select,
         }
     }
@@ -167,12 +170,13 @@ fn field_grid_layout(
     grid_items: Vec<(bool, AnyElement)>,
     palette: &ForgePalette,
     density: Density,
+    cx: &App,
 ) -> Div {
     let mut grid = div().flex().flex_col().gap(spacing(Spacing::Sm, density));
     if grid_items.is_empty() {
         grid = grid.child(
             div()
-                .font_family(body_family())
+                .font_family(cx.body_family())
                 .text_size(FONT_SM)
                 .text_color(palette.text_muted)
                 .child(tr!("actions_sub_no_config")),
@@ -223,6 +227,7 @@ fn with_field_warning(
     warning: String,
     palette: &ForgePalette,
     density: Density,
+    cx: &App,
 ) -> AnyElement {
     div()
         .flex()
@@ -231,7 +236,7 @@ fn with_field_warning(
         .child(element)
         .child(
             div()
-                .font_family(body_family())
+                .font_family(cx.body_family())
                 .text_size(FONT_XXS)
                 .text_color(palette.warning)
                 .child(warning),
@@ -244,6 +249,7 @@ fn with_field_helper(
     helper: String,
     palette: &ForgePalette,
     density: Density,
+    cx: &App,
 ) -> AnyElement {
     div()
         .flex()
@@ -252,7 +258,7 @@ fn with_field_helper(
         .child(element)
         .child(
             div()
-                .font_family(body_family())
+                .font_family(cx.body_family())
                 .text_size(FONT_XXS)
                 .text_color(palette.text_faint)
                 .child(helper),

@@ -4,8 +4,8 @@ use std::sync::Arc;
 use forge_audio::list_output_devices;
 use forge_components::{
     ActivePresentation, BORDER_THIN, Density, FONT_XS, ForgePalette, Icon, KeyActivated, Radius,
-    Spacing, body_family, dropdown, dropdown_list, dropdown_row, icon, radius, scaled, slider,
-    spacing, toggle, tr,
+    Spacing, dropdown, dropdown_list, dropdown_row, icon, radius, scaled, slider, spacing, toggle,
+    tr,
 };
 use forge_soundboard::settings::{save_also_headphones, save_master_volume, save_output_device};
 use gpui::{AnyElement, ClickEvent, Context, Pixels, SharedString, div, prelude::*, px};
@@ -129,12 +129,13 @@ impl SoundboardView {
                 tr!("soundboard_routing_device"),
                 palette,
                 density,
+                cx,
             ))
             .child(self.render_device_select(&device_label, palette, cx));
         device_col = device_col.child(
             div()
                 .mt(scaled(DEVICE_HINT_MT, density))
-                .font_family(body_family())
+                .font_family(cx.body_family())
                 .text_size(HINT_FS)
                 .text_color(palette.text_faint)
                 .child(tr!("soundboard_routing_hint")),
@@ -149,6 +150,7 @@ impl SoundboardView {
                 tr!("soundboard_routing_volume", pct = pct),
                 palette,
                 density,
+                cx,
             ))
             .child(
                 slider(self.settings.master_volume * 100.0, 0.0, 100.0, palette)
@@ -176,7 +178,7 @@ impl SoundboardView {
                     )
                     .child(
                         div()
-                            .font_family(body_family())
+                            .font_family(cx.body_family())
                             .text_size(LABEL_FS)
                             .text_color(palette.text_secondary)
                             .child(tr!("soundboard_routing_headphones")),
@@ -193,7 +195,11 @@ impl SoundboardView {
             .border(BORDER_THIN)
             .border_color(palette.border_regular)
             .bg(palette.elevated)
-            .child(section_label(tr!("soundboard_routing_section"), palette))
+            .child(section_label(
+                tr!("soundboard_routing_section"),
+                palette,
+                cx,
+            ))
             .child(
                 div()
                     .w_full()
@@ -232,7 +238,7 @@ impl SoundboardView {
             .on_click(cx.listener(|this, _: &ClickEvent, _, cx| this.toggle_device_menu(cx)))
             .child(
                 div()
-                    .font_family(body_family())
+                    .font_family(cx.body_family())
                     .text_size(FONT_XS)
                     .text_color(palette.text_primary)
                     .child(current_label.to_owned()),

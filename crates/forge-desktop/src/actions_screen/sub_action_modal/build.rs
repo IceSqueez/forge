@@ -8,6 +8,7 @@ use crate::config_form::{
     code_field_editor, dependent_options, optional_gate_seed, optional_inner_seed,
     optional_shares_key,
 };
+use crate::option_choices::ChoiceOption;
 use crate::option_labels::option_label;
 use forge_components::int_entry_invalid;
 use forge_components::{FONT_SM, InputEvent};
@@ -34,7 +35,7 @@ pub(super) struct FieldBuildContext<'a> {
     pub(super) kind_id: &'a str,
     pub(super) output_name_keys: &'a [String],
     pub(super) palette: ForgePalette,
-    pub(super) options_map: &'a HashMap<String, Vec<(String, String)>>,
+    pub(super) options_map: &'a HashMap<String, Vec<ChoiceOption>>,
 }
 
 pub(super) fn build_form_fields(
@@ -274,7 +275,7 @@ fn select_field(
         FormField::Select { key, options, .. } | FormField::Swatch { key, options, .. } => {
             let options = options
                 .iter()
-                .map(|opt| ((*opt).to_owned(), option_label(copy.kind_id, key, opt)))
+                .map(|opt| ChoiceOption::new(*opt, option_label(copy.kind_id, key, opt)))
                 .collect();
             (*key, None, options, None)
         }

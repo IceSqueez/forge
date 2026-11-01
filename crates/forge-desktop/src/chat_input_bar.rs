@@ -6,11 +6,10 @@ use gpui::{
 };
 
 use crate::chat_row::PlatformMark;
-use forge_components::ActivePresentation;
 use forge_components::ForgePalette;
 use forge_components::{
-    BORDER_THIN, FONT_SM, FONT_XXS, KeyActivated, Radius, Spacing, body_family, mono_family,
-    radius, spacing,
+    ActivePresentation, BORDER_THIN, FONT_SM, FONT_XXS, KeyActivated, Radius, Spacing, radius,
+    spacing,
 };
 use forge_components::{Icon, icon, tr};
 use forge_components::{InputEvent, TextInput};
@@ -319,7 +318,7 @@ impl InputBar {
                 .on_click(cx.listener(move |this, _event, _window, cx| this.pick_switch(idx, cx)))
                 .child(
                     div()
-                        .font_family(body_family())
+                        .font_family(cx.body_family())
                         .font_weight(FontWeight::SEMIBOLD)
                         .text_size(FONT_XXS)
                         .text_color(if lit { p.text_primary } else { p.text_faint })
@@ -396,7 +395,7 @@ impl InputBar {
         }
         tile = tile.child(
             div()
-                .font_family(body_family())
+                .font_family(cx.body_family())
                 .font_weight(FontWeight::SEMIBOLD)
                 .text_size(TARGET_LETTER_SIZE)
                 .text_color(letter_color)
@@ -422,14 +421,14 @@ impl InputBar {
         Some(
             div()
                 .ml_auto()
-                .font_family(mono_family())
+                .font_family(cx.mono_family())
                 .text_size(FONT_XXS)
                 .text_color(color)
                 .child(format!("{count}/{limit}")),
         )
     }
 
-    fn render_hint(&self, glyph: &'static str, label: String) -> impl IntoElement {
+    fn render_hint(&self, glyph: &'static str, label: String, cx: &App) -> impl IntoElement {
         let color = self.palette.text_faint;
         div()
             .flex()
@@ -437,14 +436,14 @@ impl InputBar {
             .gap(HINT_GAP)
             .child(
                 div()
-                    .font_family(mono_family())
+                    .font_family(cx.mono_family())
                     .text_size(FONT_XXS)
                     .text_color(color)
                     .child(glyph),
             )
             .child(
                 div()
-                    .font_family(body_family())
+                    .font_family(cx.body_family())
                     .text_size(FONT_XXS)
                     .text_color(color)
                     .child(label),
@@ -467,7 +466,7 @@ impl InputBar {
                     .px(spacing(Spacing::Xs, d))
                     .cursor_pointer()
                     .text_color(p.text_primary)
-                    .font_family(body_family())
+                    .font_family(cx.body_family())
                     .text_size(FONT_SM)
                     .hover(move |style| style.bg(p.surface_overlay))
                     .key_activated(p.text_primary)
@@ -571,8 +570,8 @@ impl Render for InputBar {
                     .flex()
                     .items_center()
                     .gap(HINT_ROW_GAP)
-                    .child(self.render_hint("@", tr!("chat_composer_hint_mention")))
-                    .child(self.render_hint("!", tr!("chat_composer_hint_trigger")))
+                    .child(self.render_hint("@", tr!("chat_composer_hint_mention"), cx))
+                    .child(self.render_hint("!", tr!("chat_composer_hint_trigger"), cx))
                     .children(self.render_char_counter(cx)),
             );
 

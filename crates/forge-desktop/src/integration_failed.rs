@@ -2,8 +2,8 @@ use forge_components::OverflowRevealingFocus;
 use forge_components::Spacing;
 use forge_components::spacing;
 use forge_components::{
-    BreadcrumbCrumb, FONT_XS, ForgePalette, Icon, ToastKind, body_family, ghost_button_with_icon,
-    icon, mono_family, page_frame, primary_button_with_icon, scaled, tr,
+    ActivePresentation, BreadcrumbCrumb, FONT_XS, ForgePalette, Icon, ToastKind,
+    ghost_button_with_icon, icon, page_frame, primary_button_with_icon, scaled, tr,
 };
 use forge_platform_core::{ConnectionAffordance, IntegrationDeclaration};
 use forge_types::IntegrationId;
@@ -20,7 +20,6 @@ use crate::integrations_hub::card_status_badge;
 use crate::navigation::NavRequested;
 use crate::navigation::Screen;
 use crate::start_failure::{StartRemedy, start_failure_text};
-use forge_components::ActivePresentation;
 use forge_components::PushToast;
 use forge_host::integration_catalog::declaration_of;
 use forge_host::integrations::BuiltinObject;
@@ -162,7 +161,7 @@ impl IntegrationFailedView {
                         div()
                             .flex_1()
                             .min_w_0()
-                            .font_family(mono_family())
+                            .font_family(cx.mono_family())
                             .text_size(FONT_XS)
                             .line_height(relative(REASON_LINE_HEIGHT))
                             .text_color(palette.danger)
@@ -172,7 +171,7 @@ impl IntegrationFailedView {
             .children(detail.map(|detail| {
                 div()
                     .mt(spacing(Spacing::Xs, density))
-                    .font_family(mono_family())
+                    .font_family(cx.mono_family())
                     .text_size(FONT_XS)
                     .line_height(relative(REASON_LINE_HEIGHT))
                     .text_color(palette.text_muted)
@@ -245,6 +244,7 @@ impl IntegrationFailedView {
             actions,
             palette,
             density,
+            cx,
         )
     }
 }
@@ -255,7 +255,7 @@ impl Render for IntegrationFailedView {
         let palette = cx.palette();
         let status =
             CardStatus::resolve(&self.state(cx), ConnectionAffordance::Connectionless, false);
-        let badge = card_status_badge(&self.id, &status, &palette, density);
+        let badge = card_status_badge(&self.id, &status, &palette, density, cx);
 
         let body = div()
             .id("integration-failed-scroll")
@@ -267,9 +267,9 @@ impl Render for IntegrationFailedView {
                     .w_full()
                     .py(scaled(BODY_PAD_V, density))
                     .px(scaled(BODY_PAD_H, density))
-                    .font_family(body_family())
+                    .font_family(cx.body_family())
                     .child(self.hero(&palette, cx))
-                    .children(disclaimer_block(&self.id, &palette, density)),
+                    .children(disclaimer_block(&self.id, &palette, density, cx)),
             );
 
         let crumbs = self.crumbs(cx);

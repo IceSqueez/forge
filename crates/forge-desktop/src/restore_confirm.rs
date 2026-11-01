@@ -1,9 +1,9 @@
 use std::rc::Rc;
 
 use forge_components::{
-    DateShape, Density, FONT_XS, FONT_XXS, ForgePalette, Icon, ModalSize, Radius, Spacing,
-    body_family, destructive_button, failure_note, fmt_display, ghost_button, icon, modal,
-    modal_width, mono_family, radius, spacing, tr,
+    ActivePresentation, DateShape, Density, FONT_XS, FONT_XXS, ForgePalette, Icon, ModalSize,
+    Radius, Spacing, destructive_button, failure_note, fmt_display, ghost_button, icon, modal,
+    modal_width, radius, spacing, tr,
 };
 use forge_transfer::{BackupCategory, BundleSummary};
 use gpui::{AnyElement, App, ClickEvent, Rgba, Window, div, prelude::*, px};
@@ -70,21 +70,21 @@ pub(crate) struct ConfirmCard<'a> {
     pub problem: Option<&'a RestoreProblem>,
 }
 
-pub(crate) fn fact(label: String, value: &str, palette: &ForgePalette) -> AnyElement {
+pub(crate) fn fact(label: String, value: &str, palette: &ForgePalette, cx: &App) -> AnyElement {
     div()
         .flex()
         .items_center()
         .justify_between()
         .child(
             div()
-                .font_family(body_family())
+                .font_family(cx.body_family())
                 .text_size(FONT_XXS)
                 .text_color(palette.text_muted)
                 .child(label.to_uppercase()),
         )
         .child(
             div()
-                .font_family(mono_family())
+                .font_family(cx.mono_family())
                 .text_size(FONT_XS)
                 .text_color(palette.text_primary)
                 .child(value.to_owned()),
@@ -98,6 +98,7 @@ pub(crate) fn statement(
     text: String,
     palette: &ForgePalette,
     density: Density,
+    cx: &App,
 ) -> AnyElement {
     div()
         .flex()
@@ -108,7 +109,7 @@ pub(crate) fn statement(
             div()
                 .flex_1()
                 .min_w(px(0.0))
-                .font_family(body_family())
+                .font_family(cx.body_family())
                 .text_size(FONT_XS)
                 .text_color(palette.text_secondary)
                 .child(text),
@@ -123,6 +124,7 @@ impl ConfirmCard<'_> {
         density: Density,
         on_cancel: impl Fn(&ClickEvent, &mut Window, &mut App) + 'static,
         on_confirm: impl Fn(&ClickEvent, &mut Window, &mut App) + 'static,
+        cx: &App,
     ) -> AnyElement {
         let on_cancel = Rc::new(on_cancel);
         let cancel_from_footer = Rc::clone(&on_cancel);
@@ -138,16 +140,19 @@ impl ConfirmCard<'_> {
                 tr!("restore_confirm_created"),
                 &self.facts.created,
                 palette,
+                cx,
             ))
             .child(fact(
                 tr!("restore_confirm_forge_version"),
                 &self.facts.forge_version,
                 palette,
+                cx,
             ))
             .child(fact(
                 tr!("restore_confirm_schema"),
                 &self.facts.schema,
                 palette,
+                cx,
             ));
 
         let mut statements = div()
@@ -166,6 +171,7 @@ impl ConfirmCard<'_> {
                     ),
                     palette,
                     density,
+                    cx,
                 ))
                 .child(statement(
                     Icon::Lock,
@@ -176,6 +182,7 @@ impl ConfirmCard<'_> {
                     ),
                     palette,
                     density,
+                    cx,
                 ));
         }
         let statements = statements
@@ -185,6 +192,7 @@ impl ConfirmCard<'_> {
                 tr!("restore_confirm_snapshot_kept"),
                 palette,
                 density,
+                cx,
             ))
             .child(statement(
                 Icon::Refresh,
@@ -192,6 +200,7 @@ impl ConfirmCard<'_> {
                 tr!("restore_confirm_closes"),
                 palette,
                 density,
+                cx,
             ))
             .child(statement(
                 Icon::Key,
@@ -199,6 +208,7 @@ impl ConfirmCard<'_> {
                 tr!("restore_confirm_relogin"),
                 palette,
                 density,
+                cx,
             ))
             .child(statement(
                 Icon::AlertTriangle,
@@ -206,6 +216,7 @@ impl ConfirmCard<'_> {
                 tr!("restore_confirm_one_machine"),
                 palette,
                 density,
+                cx,
             ));
 
         let mut body = div()
@@ -216,7 +227,7 @@ impl ConfirmCard<'_> {
             .child(facts)
             .child(statements);
         if let Some(problem) = self.problem {
-            body = body.child(failure_note(&problem.message(), palette, density));
+            body = body.child(failure_note(&problem.message(), palette, density, cx));
         }
 
         let confirm_label = if self.recording {

@@ -1,13 +1,12 @@
-use forge_components::ActivePresentation;
 use forge_components::Density;
 use forge_components::FONT_HERO;
 use forge_components::{
-    BORDER_THIN, Button, FONT_XS, FONT_XXS, ForgePalette, Icon, ModalSize, OverlayPosition, Radius,
-    Spacing, body_family, empty_state, ghost_button_with_icon, modal, mono_family, overlay,
+    ActivePresentation, BORDER_THIN, Button, FONT_XS, FONT_XXS, ForgePalette, Icon, ModalSize,
+    OverlayPosition, Radius, Spacing, empty_state, ghost_button_with_icon, modal, overlay,
     primary_button, radius, scaled, secondary_button, section_label, spacing, tr,
 };
 use forge_types::ActionId;
-use gpui::{AnyElement, ClickEvent, Context, FontWeight, Pixels, div, prelude::*, px};
+use gpui::{AnyElement, App, ClickEvent, Context, FontWeight, Pixels, div, prelude::*, px};
 
 use super::plan::WiringDraft;
 use super::{ConfirmStage, ConfirmState, EventWiringView};
@@ -55,11 +54,11 @@ impl EventWiringView {
                 action_id,
                 action_name,
             } => (
-                render_already_wired(action_name, palette, density),
+                render_already_wired(action_name, palette, density, cx),
                 self.render_footer(FooterAction::Open(*action_id), palette, cx),
             ),
             ConfirmState::Ready(draft) => (
-                render_draft(draft, palette, density),
+                render_draft(draft, palette, density, cx),
                 self.render_footer(
                     FooterAction::Create {
                         enabled: !stage.writing,
@@ -152,7 +151,12 @@ impl EventWiringView {
     }
 }
 
-fn render_draft(draft: &WiringDraft, palette: &ForgePalette, density: Density) -> AnyElement {
+fn render_draft(
+    draft: &WiringDraft,
+    palette: &ForgePalette,
+    density: Density,
+    cx: &App,
+) -> AnyElement {
     let records = div()
         .flex()
         .flex_col()
@@ -160,24 +164,28 @@ fn render_draft(draft: &WiringDraft, palette: &ForgePalette, density: Density) -
         .child(section_label(
             tr!("overlays_wire_section_creates").to_uppercase(),
             palette,
+            cx,
         ))
         .child(record_row(
             tr!("overlays_wire_record_action"),
             &draft.action_name,
             palette,
             density,
+            cx,
         ))
         .child(record_row(
             tr!("overlays_wire_record_trigger"),
             &draft.trigger_name,
             palette,
             density,
+            cx,
         ))
         .child(record_row(
             tr!("overlays_wire_record_queue"),
             &draft.queue_name,
             palette,
             density,
+            cx,
         ));
 
     div()
@@ -193,13 +201,19 @@ fn render_draft(draft: &WiringDraft, palette: &ForgePalette, density: Density) -
                 .child(section_label(
                     tr!("overlays_wire_section_wording").to_uppercase(),
                     palette,
+                    cx,
                 ))
-                .child(render_wording(&draft.wording, palette, density)),
+                .child(render_wording(&draft.wording, palette, density, cx)),
         )
         .into_any_element()
 }
 
-fn render_wording(lines: &[String], palette: &ForgePalette, density: Density) -> AnyElement {
+fn render_wording(
+    lines: &[String],
+    palette: &ForgePalette,
+    density: Density,
+    cx: &App,
+) -> AnyElement {
     let frame = div()
         .w_full()
         .p(scaled(WORDING_PAD, density))
@@ -210,7 +224,7 @@ fn render_wording(lines: &[String], palette: &ForgePalette, density: Density) ->
         .border(BORDER_THIN)
         .border_color(palette.border_regular)
         .bg(palette.shell)
-        .font_family(body_family());
+        .font_family(cx.body_family());
 
     if lines.is_empty() {
         return frame
@@ -241,14 +255,19 @@ fn render_wording(lines: &[String], palette: &ForgePalette, density: Density) ->
     column.into_any_element()
 }
 
-fn render_already_wired(action_name: &str, palette: &ForgePalette, density: Density) -> AnyElement {
+fn render_already_wired(
+    action_name: &str,
+    palette: &ForgePalette,
+    density: Density,
+    cx: &App,
+) -> AnyElement {
     div()
         .flex()
         .flex_col()
         .gap(spacing(Spacing::Xs, density))
         .child(
             div()
-                .font_family(body_family())
+                .font_family(cx.body_family())
                 .text_size(FONT_XS)
                 .text_color(palette.text_muted)
                 .child(tr!("overlays_wire_already_body")),
@@ -258,11 +277,18 @@ fn render_already_wired(action_name: &str, palette: &ForgePalette, density: Dens
             action_name,
             palette,
             density,
+            cx,
         ))
         .into_any_element()
 }
 
-fn record_row(label: String, value: &str, palette: &ForgePalette, density: Density) -> AnyElement {
+fn record_row(
+    label: String,
+    value: &str,
+    palette: &ForgePalette,
+    density: Density,
+    cx: &App,
+) -> AnyElement {
     let shown = if value.is_empty() { "-" } else { value };
     div()
         .w_full()
@@ -272,7 +298,7 @@ fn record_row(label: String, value: &str, palette: &ForgePalette, density: Densi
         .child(
             div()
                 .flex_none()
-                .font_family(mono_family())
+                .font_family(cx.mono_family())
                 .text_size(FONT_XXS)
                 .text_color(palette.text_faint)
                 .child(label),
@@ -281,7 +307,7 @@ fn record_row(label: String, value: &str, palette: &ForgePalette, density: Densi
             div()
                 .flex_1()
                 .min_w(px(0.0))
-                .font_family(body_family())
+                .font_family(cx.body_family())
                 .text_size(FONT_XS)
                 .text_color(palette.text_secondary)
                 .child(shown.to_owned()),

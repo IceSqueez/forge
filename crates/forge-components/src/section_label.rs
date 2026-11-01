@@ -5,13 +5,17 @@ use gpui::{
 };
 
 use crate::palette::ForgePalette;
-use crate::tokens::{FONT_SECTION_LABEL, FONT_XXS, Spacing, mono_family, scaled, spacing};
+use crate::tokens::{FONT_SECTION_LABEL, FONT_XXS, Spacing, scaled, spacing};
 
 const ROW_MARGIN_BOTTOM: Pixels = px(8.0);
 
-pub fn section_label(label: impl Into<SharedString>, palette: &ForgePalette) -> impl IntoElement {
+pub fn section_label(
+    label: impl Into<SharedString>,
+    palette: &ForgePalette,
+    cx: &App,
+) -> impl IntoElement {
     div()
-        .font_family(mono_family())
+        .font_family(cx.mono_family())
         .text_size(FONT_XXS)
         .text_color(palette.text_muted)
         .child(label.into())
@@ -70,7 +74,7 @@ impl RenderOnce for SectionLabel {
             FONT_XXS
         };
         let caption = div()
-            .font_family(mono_family())
+            .font_family(cx.mono_family())
             .text_size(size)
             .text_color(self.text_color)
             .child(text);

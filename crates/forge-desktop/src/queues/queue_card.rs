@@ -6,9 +6,8 @@ use super::{
 use forge_components::{
     ActivePresentation, BORDER_THIN, Density, FONT_SM, FONT_XS, FONT_XXS, ForgePalette, Icon,
     KeyActivated, MenuItem, MenuPlacement, ROW_HOVER_WASH_ALPHA, Radius, Spacing,
-    TINT_BORDER_ALPHA, TINT_STRONG_FILL_ALPHA, badge, body_family, card, icon, menu_button,
-    menu_divider, menu_item, mono_family, radius, scaled, spacing, spinner, tooltip_builder, tr,
-    with_alpha,
+    TINT_BORDER_ALPHA, TINT_STRONG_FILL_ALPHA, badge, card, icon, menu_button, menu_divider,
+    menu_item, radius, scaled, spacing, spinner, tooltip_builder, tr, with_alpha,
 };
 use forge_runtime::{MAX_PENDING_PER_QUEUE, QueueMode};
 use forge_types::DEFAULT_QUEUE_ID;
@@ -47,8 +46,8 @@ impl QueuesView {
             .flex()
             .flex_col()
             .child(self.card_header(index, q, not_live, palette, cx))
-            .child(self.card_metrics(q, palette, density))
-            .child(status_panel(q, self.now, palette, density))
+            .child(self.card_metrics(q, palette, density, cx))
+            .child(status_panel(q, self.now, palette, density, cx))
             .child(self.card_buttons(index, q, palette, density, cx));
 
         card(body, palette)
@@ -70,7 +69,7 @@ impl QueuesView {
         let density = cx.density();
         let spin_id = SharedString::from(format!("q-badge-spin-{}", q.id));
         let name = div()
-            .font_family(mono_family())
+            .font_family(cx.mono_family())
             .text_size(FONT_SM)
             .text_color(palette.text_primary)
             .child(q.name.clone());
@@ -80,7 +79,7 @@ impl QueuesView {
             .items_center()
             .gap(scaled(BAR_GAP, density))
             .child(name)
-            .child(status_badge(spin_id, q.mode, palette, density));
+            .child(status_badge(spin_id, q.mode, palette, density, cx));
         if not_live {
             let id = q.id;
             name_row = name_row.child(not_live_badge(
@@ -88,6 +87,7 @@ impl QueuesView {
                 palette,
                 cx.listener(move |this, _: &ClickEvent, _, cx| this.apply_live(id, cx)),
                 density,
+                cx,
             ));
         }
 
@@ -97,7 +97,7 @@ impl QueuesView {
             SharedString::from(q.description.clone())
         };
         let desc = div()
-            .font_family(body_family())
+            .font_family(cx.body_family())
             .text_size(DESC_FS)
             .text_color(palette.text_muted)
             .child(desc_text);
@@ -199,7 +199,13 @@ impl QueuesView {
             .into_any_element()
     }
 
-    fn card_metrics(&self, q: &QueueRow, palette: &ForgePalette, density: Density) -> AnyElement {
+    fn card_metrics(
+        &self,
+        q: &QueueRow,
+        palette: &ForgePalette,
+        density: Density,
+        cx: &App,
+    ) -> AnyElement {
         let running = q.mode == QueueMode::RUNNING;
         let pending_value_color = if running {
             palette.text_primary
@@ -228,8 +234,8 @@ impl QueuesView {
                 q.concurrency_label(),
                 palette.text_primary,
                 palette.text_faint,
-                palette,
                 density,
+                cx,
             ))
             .child(metric_col(
                 SharedString::from(tr!("queues_metric_pending")),
@@ -237,8 +243,8 @@ impl QueuesView {
                 pending_hint,
                 pending_value_color,
                 pending_hint_color,
-                palette,
                 density,
+                cx,
             ))
             .child(metric_col(
                 SharedString::from(tr!("queues_metric_actions")),
@@ -246,8 +252,8 @@ impl QueuesView {
                 SharedString::from(tr!("queues_metric_assigned")),
                 palette.text_primary,
                 palette.text_faint,
-                palette,
                 density,
+                cx,
             ));
 
         div()
@@ -300,6 +306,7 @@ impl QueuesView {
                     palette,
                     cx.listener(move |this, _: &ClickEvent, _, cx| this.toggle_mode(id, mode, cx)),
                     density,
+                    cx,
                 )
                 .tooltip(tooltip_builder(hint, palette)),
             );
@@ -314,6 +321,7 @@ impl QueuesView {
             palette,
             cx.listener(move |this, _: &ClickEvent, _, cx| this.request_free(id, cx)),
             density,
+            cx,
         )
         .tooltip(tooltip_builder(tr!("queues_free_tooltip"), palette));
 
@@ -332,6 +340,7 @@ impl QueuesView {
                 this.open_configure(id, window, cx)
             }),
             density,
+            cx,
         );
 
         div()
@@ -378,6 +387,7 @@ fn status_badge(
     mode: QueueMode,
     palette: &ForgePalette,
     density: Density,
+    cx: &App,
 ) -> AnyElement {
     let ink = mode_ink(mode, palette);
     let mark: AnyElement = if mode == QueueMode::RUNNING {
@@ -397,7 +407,7 @@ fn status_badge(
         .child(mark)
         .child(
             div()
-                .font_family(mono_family())
+                .font_family(cx.mono_family())
                 .text_size(FONT_XS)
                 .text_color(ink)
                 .child(label),
@@ -411,16 +421,17 @@ fn metric_col(
     hint: SharedString,
     value_color: Rgba,
     hint_color: Rgba,
-    palette: &ForgePalette,
     density: Density,
+    cx: &App,
 ) -> impl IntoElement {
+    let palette = &cx.palette();
     div()
         .flex_1()
         .flex()
         .flex_col()
         .child(
             div()
-                .font_family(mono_family())
+                .font_family(cx.mono_family())
                 .text_size(FONT_XXS)
                 .text_color(palette.text_muted)
                 .mb(scaled(METRIC_CAPTION_MB, density))
@@ -428,7 +439,7 @@ fn metric_col(
         )
         .child(
             div()
-                .font_family(mono_family())
+                .font_family(cx.mono_family())
                 .font_weight(FontWeight::MEDIUM)
                 .text_size(STAT_VALUE_FS)
                 .text_color(value_color)
@@ -436,7 +447,7 @@ fn metric_col(
         )
         .child(
             div()
-                .font_family(mono_family())
+                .font_family(cx.mono_family())
                 .text_size(FONT_XXS)
                 .text_color(hint_color)
                 .child(hint),
@@ -448,12 +459,13 @@ fn status_panel(
     now: Instant,
     palette: &ForgePalette,
     density: Density,
+    cx: &App,
 ) -> AnyElement {
-    let running = running_panel(q, now, palette, density);
+    let running = running_panel(q, now, palette, density, cx);
     let status = if q.mode != QueueMode::RUNNING {
-        Some(mode_panel(q, palette, density))
+        Some(mode_panel(q, palette, density, cx))
     } else if running.is_none() || q.overflowed > 0 {
-        Some(activity_panel(q, palette, density))
+        Some(activity_panel(q, palette, density, cx))
     } else {
         None
     };
@@ -471,15 +483,16 @@ fn running_panel(
     now: Instant,
     palette: &ForgePalette,
     density: Density,
+    cx: &App,
 ) -> Option<AnyElement> {
     let first = q.running.first()?;
     if !q.blocking || q.running.len() > 1 {
-        return Some(concurrent_panel(q, palette, density));
+        return Some(concurrent_panel(q, palette, density, cx));
     }
-    Some(serial_panel(q, first, now, palette, density))
+    Some(serial_panel(q, first, now, palette, density, cx))
 }
 
-fn mode_panel(q: &QueueRow, palette: &ForgePalette, density: Density) -> AnyElement {
+fn mode_panel(q: &QueueRow, palette: &ForgePalette, density: Density, cx: &App) -> AnyElement {
     let ink = mode_ink(q.mode, palette);
     status_strip(
         icon(mode_glyph(q.mode), PANEL_GLYPH, ink).into_any_element(),
@@ -487,12 +500,12 @@ fn mode_panel(q: &QueueRow, palette: &ForgePalette, density: Density) -> AnyElem
         palette.text_primary,
         Some(ink),
         q,
-        palette,
         density,
+        cx,
     )
 }
 
-fn activity_panel(q: &QueueRow, palette: &ForgePalette, density: Density) -> AnyElement {
+fn activity_panel(q: &QueueRow, palette: &ForgePalette, density: Density, cx: &App) -> AnyElement {
     if q.in_flight == 0 {
         return status_strip(
             icon(Icon::CircleDashed, PANEL_GLYPH, palette.text_faint).into_any_element(),
@@ -500,8 +513,8 @@ fn activity_panel(q: &QueueRow, palette: &ForgePalette, density: Density) -> Any
             palette.text_faint,
             None,
             q,
-            palette,
             density,
+            cx,
         );
     }
     let spin_id = SharedString::from(format!("q-strip-spin-{}", q.id));
@@ -511,8 +524,8 @@ fn activity_panel(q: &QueueRow, palette: &ForgePalette, density: Density) -> Any
         palette.text_primary,
         None,
         q,
-        palette,
         density,
+        cx,
     )
 }
 
@@ -522,11 +535,12 @@ fn status_strip(
     caption_ink: Rgba,
     tint: Option<Rgba>,
     q: &QueueRow,
-    palette: &ForgePalette,
     density: Density,
+    cx: &App,
 ) -> AnyElement {
+    let palette = &cx.palette();
     let counts = div()
-        .font_family(mono_family())
+        .font_family(cx.mono_family())
         .text_size(FONT_XXS)
         .text_color(palette.text_faint)
         .child(SharedString::from(tr!(
@@ -549,13 +563,13 @@ fn status_strip(
             div()
                 .flex_1()
                 .min_w_0()
-                .font_family(body_family())
+                .font_family(cx.body_family())
                 .text_size(FONT_XS)
                 .text_color(caption_ink)
                 .child(caption),
         );
     if q.overflowed > 0 {
-        strip = strip.child(overflow_badge(q.overflowed, palette, density));
+        strip = strip.child(overflow_badge(q.overflowed, palette, density, cx));
     }
     strip = strip.child(counts);
 
@@ -569,7 +583,12 @@ fn status_strip(
     .into_any_element()
 }
 
-fn overflow_badge(overflowed: u64, palette: &ForgePalette, density: Density) -> AnyElement {
+fn overflow_badge(
+    overflowed: u64,
+    palette: &ForgePalette,
+    density: Density,
+    cx: &App,
+) -> AnyElement {
     div()
         .flex()
         .items_center()
@@ -583,7 +602,7 @@ fn overflow_badge(overflowed: u64, palette: &ForgePalette, density: Density) -> 
         .child(icon(Icon::AlertTriangle, BADGE_GLYPH, palette.danger))
         .child(
             div()
-                .font_family(mono_family())
+                .font_family(cx.mono_family())
                 .text_size(FONT_XXS)
                 .text_color(palette.danger)
                 .child(SharedString::from(tr!(
@@ -601,6 +620,7 @@ fn serial_panel(
     now: Instant,
     palette: &ForgePalette,
     density: Density,
+    cx: &App,
 ) -> AnyElement {
     let elapsed = elapsed_text(now.saturating_duration_since(entry.started_at));
     let spin_id = SharedString::from(format!("q-serial-spin-{}", q.id));
@@ -618,14 +638,14 @@ fn serial_panel(
         .child(
             div()
                 .flex_1()
-                .font_family(mono_family())
+                .font_family(cx.mono_family())
                 .text_size(FONT_XS)
                 .text_color(palette.text_primary)
                 .child(entry.name.clone()),
         )
         .child(
             div()
-                .font_family(mono_family())
+                .font_family(cx.mono_family())
                 .text_size(FONT_XXS)
                 .text_color(palette.text_faint)
                 .child(SharedString::from(tr!(
@@ -636,7 +656,12 @@ fn serial_panel(
         .into_any_element()
 }
 
-fn concurrent_panel(q: &QueueRow, palette: &ForgePalette, density: Density) -> AnyElement {
+fn concurrent_panel(
+    q: &QueueRow,
+    palette: &ForgePalette,
+    density: Density,
+    cx: &App,
+) -> AnyElement {
     let shown = q.running.len().min(MAX_PILLS);
     let overflow = q.running.len().saturating_sub(MAX_PILLS);
 
@@ -667,7 +692,7 @@ fn concurrent_panel(q: &QueueRow, palette: &ForgePalette, density: Density) -> A
         .bg(palette.shell)
         .child(
             div()
-                .font_family(mono_family())
+                .font_family(cx.mono_family())
                 .text_size(FONT_XXS)
                 .text_color(palette.text_faint)
                 .child(SharedString::from(tr!("queues_running_now_header"))),
@@ -709,6 +734,7 @@ fn card_button(
     palette: &ForgePalette,
     handler: impl Fn(&ClickEvent, &mut Window, &mut App) + 'static,
     density: Density,
+    cx: &App,
 ) -> Stateful<Div> {
     let mut btn = div()
         .id(id.into())
@@ -726,7 +752,7 @@ fn card_button(
         .child(icon(glyph, PANEL_GLYPH, ink))
         .child(
             div()
-                .font_family(body_family())
+                .font_family(cx.body_family())
                 .text_size(FONT_XS)
                 .text_color(ink)
                 .child(label),
@@ -749,6 +775,7 @@ fn not_live_badge(
     palette: &ForgePalette,
     handler: impl Fn(&ClickEvent, &mut Window, &mut App) + 'static,
     density: Density,
+    cx: &App,
 ) -> AnyElement {
     div()
         .id(id.into())
@@ -768,7 +795,7 @@ fn not_live_badge(
         .child(icon(Icon::AlertTriangle, BADGE_GLYPH, palette.warning))
         .child(
             div()
-                .font_family(mono_family())
+                .font_family(cx.mono_family())
                 .text_size(FONT_XS)
                 .text_color(palette.warning)
                 .child(SharedString::from(tr!("queues_not_live_badge"))),

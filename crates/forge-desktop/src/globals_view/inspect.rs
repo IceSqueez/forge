@@ -2,9 +2,8 @@ use super::GlobalsView;
 use crate::globals::{Global, variant_kind_color};
 use forge_components::{
     ActivePresentation, BORDER_THIN, ConfirmTone, FONT_XS, ForgePalette, Icon, Language, ModalSize,
-    OverflowRevealingFocus, OverlayPosition, Radius, Spacing, body_family, confirm_modal,
-    highlighted_text, modal, mono_family, overlay, primary_button_with_icon, radius, scaled,
-    secondary_button, spacing, tr,
+    OverflowRevealingFocus, OverlayPosition, Radius, Spacing, confirm_modal, highlighted_text,
+    modal, overlay, primary_button_with_icon, radius, scaled, secondary_button, spacing, tr,
 };
 use forge_types::Variant;
 use gpui::prelude::*;
@@ -86,7 +85,7 @@ impl GlobalsView {
             if line.is_empty() {
                 code_line = code_line.child(
                     div()
-                        .font_family(mono_family())
+                        .font_family(cx.mono_family())
                         .text_size(FONT_XS)
                         .child("\u{00A0}"),
                 );
@@ -94,7 +93,7 @@ impl GlobalsView {
                 code_line = code_line.child(
                     div()
                         .flex_none()
-                        .font_family(mono_family())
+                        .font_family(cx.mono_family())
                         .text_size(FONT_XS)
                         .whitespace_nowrap()
                         .child(highlighted_text(Language::Json, line.clone(), palette)),
@@ -110,7 +109,7 @@ impl GlobalsView {
                             .pr(scaled(GUTTER_PAD_R, density))
                             .flex()
                             .justify_end()
-                            .font_family(mono_family())
+                            .font_family(cx.mono_family())
                             .text_size(FONT_XS)
                             .text_color(palette.text_faint)
                             .child(format!("{}", i + 1)),
@@ -136,7 +135,7 @@ impl GlobalsView {
             .child(code);
 
         let hint = div()
-            .font_family(body_family())
+            .font_family(cx.body_family())
             .text_size(FONT_XS)
             .text_color(palette.text_faint)
             .child(tr!("globals_inspect_snapshot"));

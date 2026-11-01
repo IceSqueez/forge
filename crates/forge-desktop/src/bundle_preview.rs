@@ -1,9 +1,9 @@
 use forge_components::{
-    Density, FONT_XS, ForgePalette, Icon, Spacing, body_family, icon, spacing, tr,
+    ActivePresentation, Density, FONT_XS, ForgePalette, Icon, Spacing, icon, spacing, tr,
 };
 use forge_types::LogLevel;
 use forge_types::REDACTION_STAMP;
-use gpui::{Pixels, SharedString, div, prelude::*, px};
+use gpui::{App, Pixels, SharedString, div, prelude::*, px};
 
 use crate::diagnostic_bundle::{Bundle, RUN_HISTORY_LIMIT};
 
@@ -87,6 +87,7 @@ pub(crate) fn statement_row(
     note: Statement,
     palette: &ForgePalette,
     density: Density,
+    cx: &App,
 ) -> impl IntoElement + use<> {
     let (glyph, tint, text_color) = match note.tone {
         StatementTone::Plain => (Icon::Check, palette.text_faint, palette.text_secondary),
@@ -101,7 +102,7 @@ pub(crate) fn statement_row(
             div()
                 .flex_1()
                 .min_w(px(0.0))
-                .font_family(body_family())
+                .font_family(cx.body_family())
                 .text_size(FONT_XS)
                 .text_color(text_color)
                 .child(note.text),

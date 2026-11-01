@@ -3,10 +3,10 @@ use std::time::Duration;
 
 use forge_components::RevealsFocusIn;
 use forge_components::{
-    ConfirmTone, Density, FONT_SM, FONT_XS, ForgePalette, Icon, ModalSize, OverlayPosition,
-    Spacing, ToastKind, body_family, card, confirm_modal, field_hint, ghost_button,
-    ghost_button_with_icon, icon, modal, mono_family, overlay, primary_button, segment, segmented,
-    setting_row, spacing, tr,
+    ActivePresentation, ConfirmTone, Density, FONT_SM, FONT_XS, ForgePalette, Icon, ModalSize,
+    OverlayPosition, Spacing, ToastKind, card, confirm_modal, field_hint, ghost_button,
+    ghost_button_with_icon, icon, modal, overlay, primary_button, segment, segmented, setting_row,
+    spacing, tr,
 };
 use forge_storage::{
     DEFAULT_DIAGNOSTIC_LOG_LEVEL, DataProvider, SettingsRepo, diagnostic_log_level,
@@ -14,8 +14,8 @@ use forge_storage::{
 };
 use forge_types::LogLevel;
 use gpui::{
-    AnyElement, ClickEvent, Context, FontWeight, Pixels, Rgba, ScrollHandle, SharedString, Window,
-    div, prelude::*, px,
+    AnyElement, App, ClickEvent, Context, FontWeight, Pixels, Rgba, ScrollHandle, SharedString,
+    Window, div, prelude::*, px,
 };
 use tracing::Level;
 
@@ -31,7 +31,6 @@ use crate::navigation::SettingsSection;
 use crate::repo_failure::RepoFailure;
 use crate::settings_pane_header::SettingsPaneHeader;
 use crate::window_presence::PresenceGate;
-use forge_components::ActivePresentation;
 use forge_components::PushToast;
 use forge_components::{DateShape, fmt_display};
 use forge_host::boot_warnings::BootWarnings;
@@ -407,6 +406,7 @@ impl SettingsDiagnosticsView {
         &self,
         palette: &ForgePalette,
         density: Density,
+        cx: &App,
     ) -> Option<impl IntoElement + use<>> {
         if self.boot_warnings.is_empty() {
             return None;
@@ -434,7 +434,7 @@ impl SettingsDiagnosticsView {
             .flex()
             .flex_col()
             .gap(spacing(Spacing::Xs, density))
-            .child(field_hint(tr!("boot_warnings_card_intro"), palette))
+            .child(field_hint(tr!("boot_warnings_card_intro"), palette, cx))
             .children(rows);
         Some(card(body, palette).full_width())
     }
@@ -482,6 +482,7 @@ impl SettingsDiagnosticsView {
                     }),
                     palette,
                     density,
+                    cx,
                 )
             })
             .flatten();
@@ -502,22 +503,24 @@ impl SettingsDiagnosticsView {
                 tr!("settings_diagnostics_level_env_hatch"),
                 palette,
                 density,
+                cx,
             ))
             .child(note_row(
                 tr!("settings_diagnostics_level_targets"),
                 palette,
                 density,
+                cx,
             ));
 
         card(body, palette).full_width()
     }
 
-    fn tail_body(&self, palette: &ForgePalette, density: Density) -> AnyElement {
+    fn tail_body(&self, palette: &ForgePalette, density: Density, cx: &App) -> AnyElement {
         let pad = spacing(Spacing::Sm, density);
         if self.lines.is_empty() {
             return div()
                 .p(pad)
-                .font_family(mono_family())
+                .font_family(cx.mono_family())
                 .text_size(FONT_XS)
                 .text_color(palette.text_muted)
                 .child(tr!("settings_diagnostics_tail_empty"))
@@ -531,7 +534,7 @@ impl SettingsDiagnosticsView {
             .max_h(TAIL_MAX_HEIGHT)
             .overflow_y_scroll()
             .p(pad)
-            .font_family(mono_family())
+            .font_family(cx.mono_family())
             .text_size(FONT_XS)
             .line_height(TAIL_LINE_HEIGHT);
         for line in &self.lines {
@@ -554,13 +557,13 @@ impl SettingsDiagnosticsView {
             .gap(spacing(Spacing::Sm, density))
             .child(
                 div()
-                    .font_family(body_family())
+                    .font_family(cx.body_family())
                     .text_size(FONT_SM)
                     .text_color(palette.text_primary)
                     .child(tr!("settings_diagnostics_export_preview_lead")),
             );
         for note in export_statement(bundle, &self.level) {
-            body = body.child(statement_row(note, palette, density));
+            body = body.child(statement_row(note, palette, density, cx));
         }
 
         let footer = div()
@@ -662,11 +665,11 @@ impl Render for SettingsDiagnosticsView {
             .flex()
             .flex_col()
             .gap(spacing(Spacing::Md, density))
-            .children(self.boot_warnings_card(&palette, density))
+            .children(self.boot_warnings_card(&palette, density, cx))
             .child(self.level_card(&palette, density, cx))
             .child(self.actions(&palette, density, cx))
             .child(
-                card(self.tail_body(&palette, density), &palette)
+                card(self.tail_body(&palette, density, cx), &palette)
                     .padding(px(0.0))
                     .full_width(),
             );
@@ -702,6 +705,7 @@ fn note_row(
     text: impl Into<SharedString>,
     palette: &ForgePalette,
     density: Density,
+    cx: &App,
 ) -> impl IntoElement {
     div()
         .flex()
@@ -716,7 +720,7 @@ fn note_row(
             div()
                 .flex_1()
                 .min_w(px(0.0))
-                .child(field_hint(text.into(), palette)),
+                .child(field_hint(text.into(), palette, cx)),
         )
 }
 
@@ -990,10 +994,11 @@ mod tests {
 
         let rig = mount_with_stored(LogLevel::Warn, cx);
         let card_shown = |rig: &LevelRig, cx: &mut gpui::TestAppContext| {
-            rig.view.read_with(cx, |view, _| {
+            rig.view.read_with(cx, |view, cx| {
                 view.boot_warnings_card(
                     &forge_components::FORGE_DEFAULT,
                     forge_components::Density::Cozy,
+                    cx,
                 )
                 .is_some()
             })

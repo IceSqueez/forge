@@ -316,6 +316,7 @@ impl Render for RestoreFlow {
                     density,
                     cx.listener(|this, _: &ClickEvent, _, cx| this.cancel_confirm(cx)),
                     cx.listener(|this, _: &ClickEvent, _, cx| this.confirm(cx)),
+                    cx,
                 );
                 let view = cx.entity();
                 root.child(
@@ -333,6 +334,7 @@ impl Render for RestoreFlow {
                 tr!("import_busy_restore_detail"),
                 &cx.palette(),
                 density,
+                cx,
             ),
             RestoreStep::Idle | RestoreStep::Picking => div().into_any_element(),
         }

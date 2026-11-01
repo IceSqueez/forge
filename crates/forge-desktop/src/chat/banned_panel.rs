@@ -347,12 +347,13 @@ impl Render for BannedPanel {
                 } else {
                     card.flex_none()
                 };
-                card.child(Self::render_group_header(group, &palette, density))
+                card.child(Self::render_group_header(group, &palette, density, cx))
                     .children(Self::render_group_notes(
                         group.platform,
                         group.rows.len(),
                         &palette,
                         density,
+                        cx,
                     ))
                     .child(self.render_group_body(group, &palette, density, cx))
                     .into_any_element()

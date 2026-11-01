@@ -2,7 +2,8 @@ use super::select_options::CLIP_OPTIONS_KEY;
 use super::*;
 use crate::globals::variant_kind_color;
 use crate::integration_catalog::{catalog_text, tint_color};
-use forge_components::{FONT_XS, ForgePalette, Icon, mono_family, tr};
+use crate::option_choices::ChoiceOption;
+use forge_components::{ActivePresentation, FONT_XS, ForgePalette, Icon, tr};
 use forge_host::integration_catalog::declaration_of;
 use forge_platform_core::IntegrationDeclaration;
 use forge_registry::{SubActionCategory, SubActionRegistry, SubActionRunner};
@@ -19,14 +20,11 @@ use forge_soundboard::vocabulary::config_keys::CLIP_ID;
 use forge_soundboard::vocabulary::sub_action_ids::SOUND_PLAY;
 use forge_storage::{SCRIPT_NAME_KEY, SCRIPT_RUN_NAMED_KIND};
 use forge_types::{SubActionStep, Variant, VariantKind};
-use gpui::{AnyElement, HighlightStyle, Hsla, Rgba, SharedString, StyledText, div};
+use gpui::{AnyElement, App, HighlightStyle, Hsla, Rgba, SharedString, StyledText, div};
 use std::collections::HashMap;
 use std::ops::Range;
 
-fn clip_step_detail(
-    clip_id: &str,
-    select_options: &HashMap<String, Vec<(String, String)>>,
-) -> String {
+fn clip_step_detail(clip_id: &str, select_options: &HashMap<String, Vec<ChoiceOption>>) -> String {
     let is_templated = forge_types::variable_references(clip_id).next().is_some();
     if clip_id.is_empty() || is_templated {
         return clip_id.to_owned();
@@ -36,14 +34,14 @@ fn clip_step_detail(
     };
     clips
         .iter()
-        .find(|(id, _)| id == clip_id)
-        .map(|(_, name)| name.clone())
+        .find(|option| option.value == clip_id)
+        .map(|option| option.label.clone())
         .unwrap_or_else(|| tr!("action_editor_clip_missing"))
 }
 
 pub(in crate::actions_screen) fn sub_action_summary(
     step: &SubActionStep,
-    select_options: &HashMap<String, Vec<(String, String)>>,
+    select_options: &HashMap<String, Vec<ChoiceOption>>,
 ) -> (&'static str, String, Option<String>) {
     fn as_str(v: &Variant) -> &str {
         if let Variant::String(s) = v {
@@ -366,7 +364,7 @@ fn push_highlighted(
     ));
 }
 
-pub(super) fn variable_text(s: &str, palette: &ForgePalette) -> AnyElement {
+pub(super) fn variable_text(s: &str, palette: &ForgePalette, cx: &App) -> AnyElement {
     let mut text = String::with_capacity(s.len());
     let mut highlights = Vec::new();
     for segment in variable_segments(s) {
@@ -395,7 +393,7 @@ pub(super) fn variable_text(s: &str, palette: &ForgePalette) -> AnyElement {
     div()
         .w_full()
         .min_w_0()
-        .font_family(mono_family())
+        .font_family(cx.mono_family())
         .text_size(FONT_XS)
         .text_color(palette.text_muted)
         .child(StyledText::new(SharedString::from(text)).with_highlights(highlights))
@@ -421,17 +419,17 @@ mod tests {
         step
     }
 
-    fn clip_options(clips: &[(&str, &str)]) -> HashMap<String, Vec<(String, String)>> {
+    fn clip_options(clips: &[(&str, &str)]) -> HashMap<String, Vec<ChoiceOption>> {
         HashMap::from([(
             CLIP_OPTIONS_KEY.to_owned(),
             clips
                 .iter()
-                .map(|(id, name)| ((*id).to_owned(), (*name).to_owned()))
+                .map(|(id, name)| ChoiceOption::new(*id, *name))
                 .collect(),
         )])
     }
 
-    fn card_detail(clip_id: &str, options: &HashMap<String, Vec<(String, String)>>) -> String {
+    fn card_detail(clip_id: &str, options: &HashMap<String, Vec<ChoiceOption>>) -> String {
         sub_action_summary(&play_step(clip_id), options)
             .2
             .unwrap_or_default()
@@ -564,13 +562,13 @@ mod tests {
         push_highlighted(&mut text, &mut highlights, "%", warning);
 
         assert_eq!(text, "Привіт 👋 %час:HH:mm%");
-        let ranges: Vec<Range<usize>> = highlights.iter().map(|(r, _)| r.clone()).collect();
+        let ranges: Vec<Range<usize>> = highlights.iter().map(|(range, _)| range.clone()).collect();
         assert_eq!(ranges, vec![18..25, 25..31, 31..32]);
         for range in &ranges {
             assert!(text.is_char_boundary(range.start) && text.is_char_boundary(range.end));
         }
         assert_eq!(&text[ranges[0].clone()], "%час");
-        let colors: Vec<Option<Hsla>> = highlights.iter().map(|(_, s)| s.color).collect();
+        let colors: Vec<Option<Hsla>> = highlights.iter().map(|(_, style)| style.color).collect();
         assert_eq!(
             colors,
             vec![

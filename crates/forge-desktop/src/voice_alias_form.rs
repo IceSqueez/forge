@@ -1,7 +1,7 @@
 use forge_components::{
-    Density, FONT_SM, FONT_XS, ForgePalette, InputEvent, OverlayPosition, Spacing, TextInput,
-    body_family, field_label, modal, mono_family, overlay, primary_button, secondary_button,
-    segment, segmented, spacing, toggle, tr,
+    ActivePresentation, Density, FONT_SM, FONT_XS, ForgePalette, InputEvent, OverlayPosition,
+    Spacing, TextInput, field_label, modal, overlay, primary_button, secondary_button, segment,
+    segmented, spacing, toggle, tr,
 };
 use forge_speak_queue::AliasKey;
 use forge_speech_types::{AliasId, VoiceAlias};
@@ -11,8 +11,6 @@ use gpui::{
     AnyElement, App, ClickEvent, Context, Entity, EventEmitter, Pixels, SharedString, Subscription,
     Window, div, prelude::*, px,
 };
-
-use forge_components::ActivePresentation;
 
 const MODAL_W: Pixels = px(440.0);
 
@@ -367,14 +365,14 @@ impl AliasForm {
                     .gap(spacing(Spacing::Xxs, density))
                     .child(
                         div()
-                            .font_family(body_family())
+                            .font_family(cx.body_family())
                             .text_size(FONT_SM)
                             .text_color(palette.text_primary)
                             .child(tr!("tts_aliases_form_block_label")),
                     )
                     .child(
                         div()
-                            .font_family(body_family())
+                            .font_family(cx.body_family())
                             .text_size(FONT_XS)
                             .text_color(palette.text_muted)
                             .child(tr!("tts_aliases_form_block_desc")),
@@ -395,7 +393,7 @@ impl AliasForm {
     ) -> AnyElement {
         if self.blocked {
             div()
-                .font_family(mono_family())
+                .font_family(cx.mono_family())
                 .text_size(FONT_SM)
                 .text_color(palette.text_faint)
                 .child(tr!("tts_aliases_form_blocked_note"))

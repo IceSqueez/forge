@@ -4,13 +4,14 @@ use forge_components::{
     ghost_button_with_icon, header_stat, header_stats, primary_button_with_icon, spacing, tr,
 };
 use gpui::prelude::*;
-use gpui::{ClickEvent, Context, div};
+use gpui::{App, ClickEvent, Context, div};
 
 impl QueuesView {
     pub(super) fn render_stats<'a>(
         &self,
         palette: &'a ForgePalette,
         density: Density,
+        cx: &App,
     ) -> impl IntoElement + use<'a> {
         let paused_count = self.queues.iter().filter(|q| q.frozen()).count();
         let running_count = self.queues.len().saturating_sub(paused_count);
@@ -35,6 +36,7 @@ impl QueuesView {
             ],
             palette,
             density,
+            cx,
         )
     }
 

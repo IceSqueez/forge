@@ -2,8 +2,8 @@ use super::viewer_actions::ViewerAction;
 use super::viewer_drawer::ViewerDrawer;
 use crate::chat_author::AuthorKey;
 use forge_components::{
-    BORDER_THIN, Density, FONT_XS, FONT_XXS, ForgePalette, InputEvent, KeyActivated, Radius,
-    Spacing, TextInput, ToastKind, body_family, radius, spacing, tr,
+    ActivePresentation, BORDER_THIN, Density, FONT_XS, FONT_XXS, ForgePalette, InputEvent,
+    KeyActivated, Radius, Spacing, TextInput, ToastKind, radius, spacing, tr,
 };
 use gpui::{ClickEvent, Context, Entity, FontWeight, Window, div, prelude::*};
 
@@ -78,7 +78,7 @@ impl ViewerDrawer {
         cx: &mut Context<Self>,
     ) -> impl IntoElement + use<> {
         let title = div()
-            .font_family(body_family())
+            .font_family(cx.body_family())
             .font_weight(FontWeight::MEDIUM)
             .text_size(FONT_XXS)
             .text_color(palette.text_muted)
@@ -105,7 +105,7 @@ impl ViewerDrawer {
             .on_click(cx.listener(|this, _: &ClickEvent, _, cx| this.cancel_whisper(cx)))
             .child(
                 div()
-                    .font_family(body_family())
+                    .font_family(cx.body_family())
                     .text_size(FONT_XS)
                     .text_color(text)
                     .child(tr!("chat_drawer_whisper_cancel")),
@@ -127,7 +127,7 @@ impl ViewerDrawer {
             .on_click(cx.listener(|this, _: &ClickEvent, _, cx| this.send_whisper(cx)))
             .child(
                 div()
-                    .font_family(body_family())
+                    .font_family(cx.body_family())
                     .font_weight(FontWeight::MEDIUM)
                     .text_size(FONT_XS)
                     .text_color(shell)

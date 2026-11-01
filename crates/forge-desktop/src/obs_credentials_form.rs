@@ -319,6 +319,7 @@ impl Render for ObsCredentialsForm {
             },
             &palette,
             density,
+            cx,
         );
 
         let eye_glyph = if self.password_visible {
@@ -344,6 +345,7 @@ impl Render for ObsCredentialsForm {
                 Some(tr!("obs_connect_password_note")),
                 &palette,
                 density,
+                cx,
             ))
             .child(
                 input_box(password_focused, &palette, density)
@@ -353,10 +355,15 @@ impl Render for ObsCredentialsForm {
             );
 
         let flag_rows = flag_rows(&FLAGS, self.flags, &palette, Self::on_toggle_flag, cx);
-        let banner: Option<AnyElement> = self
-            .banner
-            .as_ref()
-            .map(|status| status.strip("obs-connect-banner-spin", BANNER_LOOK, &palette, density));
+        let banner: Option<AnyElement> = self.banner.as_ref().map(|status| {
+            status.strip(
+                "obs-connect-banner-spin",
+                BANNER_LOOK,
+                &palette,
+                density,
+                cx,
+            )
+        });
         let buttons = form_buttons(
             FormButtons {
                 test_id: "obs-connect-test",

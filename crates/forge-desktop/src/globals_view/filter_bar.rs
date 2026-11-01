@@ -40,6 +40,7 @@ impl GlobalsView {
             ],
             palette,
             density,
+            cx,
         )
     }
 

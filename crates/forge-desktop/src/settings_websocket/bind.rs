@@ -3,18 +3,17 @@ use std::sync::Arc;
 
 use forge_components::focus_inside_modal;
 use forge_components::{
-    BORDER_THIN, BulletItem, BulletKind, Density, FONT_SM, FONT_XS, FONT_XXS, ForgePalette, Icon,
-    OverlayPosition, Radius, Spacing, TypeToConfirm, TypeToConfirmEvent, body_family, icon,
-    mono_family, overlay, radio_row, radius, scaled, setting_block, spacing, tr, type_to_confirm,
+    ActivePresentation, BORDER_THIN, BulletItem, BulletKind, Density, FONT_SM, FONT_XS, FONT_XXS,
+    ForgePalette, Icon, OverlayPosition, Radius, Spacing, TypeToConfirm, TypeToConfirmEvent, icon,
+    overlay, radio_row, radius, scaled, setting_block, spacing, tr, type_to_confirm,
 };
 use forge_server::{LAN_BIND_ADDRESS, LOCALHOST_BIND_ADDRESS, ServerSettings};
 use forge_storage::SettingsRepo;
 use gpui::{
-    AnyElement, ClickEvent, Context, Entity, FontWeight, Pixels, SharedString, Window, div, px,
+    AnyElement, App, ClickEvent, Context, Entity, FontWeight, Pixels, SharedString, Window, div, px,
 };
 
 use crate::repo_failure::RepoFailure;
-use forge_components::ActivePresentation;
 
 const TITLE_SUBTITLE_GAP: Pixels = px(2.0);
 const BADGE_GAP: Pixels = px(3.0);
@@ -174,6 +173,7 @@ impl SettingsWebSocketView {
                 .child(self.bind_card(BindChoice::Lan, palette, density, cx)),
             palette,
             density,
+            cx,
         )
     }
 
@@ -218,7 +218,7 @@ impl SettingsWebSocketView {
             .child(icon(badge_glyph, BADGE_GLYPH, badge_color))
             .child(
                 div()
-                    .font_family(body_family())
+                    .font_family(cx.body_family())
                     .text_size(FONT_XXS)
                     .text_color(badge_color)
                     .child(badge_label),
@@ -231,7 +231,7 @@ impl SettingsWebSocketView {
             .child(
                 div()
                     .min_w(px(0.0))
-                    .font_family(body_family())
+                    .font_family(cx.body_family())
                     .font_weight(FontWeight::MEDIUM)
                     .text_size(FONT_SM)
                     .text_color(palette.text_primary)
@@ -240,7 +240,7 @@ impl SettingsWebSocketView {
             .child(badge)
             .child(
                 div()
-                    .font_family(mono_family())
+                    .font_family(cx.mono_family())
                     .text_size(FONT_XXS)
                     .text_color(palette.text_faint)
                     .child(tech),
@@ -255,7 +255,7 @@ impl SettingsWebSocketView {
             .child(title_row)
             .child(
                 div()
-                    .font_family(body_family())
+                    .font_family(cx.body_family())
                     .text_size(FONT_XS)
                     .text_color(palette.text_muted)
                     .child(body),
@@ -285,13 +285,19 @@ impl SettingsWebSocketView {
             )
     }
 
-    pub(super) fn port_column(&self, palette: &ForgePalette, density: Density) -> impl IntoElement {
+    pub(super) fn port_column(
+        &self,
+        palette: &ForgePalette,
+        density: Density,
+        cx: &App,
+    ) -> impl IntoElement {
         setting_block(
             tr!("settings_ws_port_section_title"),
             Some(tr!("settings_ws_port_subtitle").into()),
             self.port_input.clone(),
             palette,
             density,
+            cx,
         )
     }
 

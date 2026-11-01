@@ -1,4 +1,3 @@
-use forge_components::ActivePresentation;
 use forge_components::CTA_HOVER_ALPHA;
 use forge_components::FONT_LABEL;
 use forge_components::FONT_MICRO;
@@ -8,8 +7,8 @@ use std::sync::Arc;
 use std::time::{Duration, SystemTime};
 
 use forge_components::{
-    BORDER_THIN, Density, FONT_XS, FONT_XXS, ForgePalette, Icon, KeyActivated, Radius, Spacing,
-    body_family, icon, mono_family, pulse_dot, radius, scaled, spacing, spinner, tr, with_alpha,
+    ActivePresentation, BORDER_THIN, Density, FONT_XS, FONT_XXS, ForgePalette, Icon, KeyActivated,
+    Radius, Spacing, icon, pulse_dot, radius, scaled, spacing, spinner, tr, with_alpha,
 };
 use forge_platform_core::{DeviceAuthEnd, PlatformError};
 use forge_platform_twitch::{
@@ -18,7 +17,7 @@ use forge_platform_twitch::{
 use forge_storage::CredentialsRepo;
 use forge_types::PlatformId;
 use gpui::{
-    AnyElement, ClipboardItem, Context, FontWeight, HighlightStyle, Hsla, Rgba, SharedString,
+    AnyElement, App, ClipboardItem, Context, FontWeight, HighlightStyle, Hsla, Rgba, SharedString,
     StyledText, div, prelude::*, px,
 };
 use tokio_util::sync::CancellationToken;
@@ -455,6 +454,7 @@ impl ConnectFlow {
         &self,
         palette: &ForgePalette,
         density: Density,
+        cx: &App,
     ) -> AnyElement {
         let accent = crate::platform_visuals::platform_color(PlatformId::Twitch, palette);
         let phase = self
@@ -496,7 +496,7 @@ impl ConnectFlow {
             .child(indicator)
             .child(
                 div()
-                    .font_family(body_family())
+                    .font_family(cx.body_family())
                     .text_size(FONT_XS)
                     .text_color(color)
                     .child(label),
@@ -517,13 +517,13 @@ impl ConnectFlow {
             .map_or(TwitchDevicePhase::Starting, |d| d.phase);
         let status_card = match phase {
             TwitchDevicePhase::Starting => {
-                self.twitch_progress_card(true, accent, palette, density)
+                self.twitch_progress_card(true, accent, palette, density, cx)
             }
             TwitchDevicePhase::Waiting => {
-                self.twitch_progress_card(false, accent, palette, density)
+                self.twitch_progress_card(false, accent, palette, density, cx)
             }
-            TwitchDevicePhase::Authorized => self.twitch_done_card(palette, density),
-            TwitchDevicePhase::Expired => self.twitch_expired_card(palette, density),
+            TwitchDevicePhase::Authorized => self.twitch_done_card(palette, density, cx),
+            TwitchDevicePhase::Expired => self.twitch_expired_card(palette, density, cx),
             TwitchDevicePhase::Denied => self.twitch_error_card(
                 tr!("twitch_device_denied_title"),
                 accent,
@@ -549,7 +549,7 @@ impl ConnectFlow {
             .max_w(PAGE_MAX_W)
             .flex()
             .flex_col()
-            .child(self.twitch_explainer(palette, density));
+            .child(self.twitch_explainer(palette, density, cx));
         if has_code {
             column = column
                 .child(self.twitch_url_card(accent, palette, cx))
@@ -561,7 +561,7 @@ impl ConnectFlow {
             .into_any_element()
     }
 
-    fn twitch_explainer(&self, palette: &ForgePalette, density: Density) -> AnyElement {
+    fn twitch_explainer(&self, palette: &ForgePalette, density: Density, cx: &App) -> AnyElement {
         let prefix = tr!("twitch_device_explainer_prefix");
         let emphasis = tr!("twitch_device_explainer_emphasis");
         let suffix = tr!("twitch_device_explainer_suffix");
@@ -574,7 +574,7 @@ impl ConnectFlow {
         )]);
         div()
             .w_full()
-            .font_family(body_family())
+            .font_family(cx.body_family())
             .text_size(FONT_XS)
             .text_color(palette.text_muted)
             .line_height(BODY_LINE_H)
@@ -607,7 +607,7 @@ impl ConnectFlow {
             .border(BORDER_THIN)
             .border_color(palette.border_regular)
             .bg(palette.shell)
-            .font_family(mono_family())
+            .font_family(cx.mono_family())
             .text_size(FONT_XS)
             .text_color(palette.info)
             .child(url);
@@ -629,7 +629,7 @@ impl ConnectFlow {
             .child(icon(Icon::ExternalLink, ICON_INLINE, accent))
             .child(
                 div()
-                    .font_family(body_family())
+                    .font_family(cx.body_family())
                     .text_size(FONT_XS)
                     .text_color(accent)
                     .child(tr!("twitch_device_open_btn")),
@@ -640,6 +640,7 @@ impl ConnectFlow {
             palette.text_primary,
             palette,
             density,
+            cx,
         )
         .border_color(palette.border_regular)
         .mb(spacing(Spacing::Sm, density))
@@ -651,7 +652,7 @@ impl ConnectFlow {
                 .flex_col()
                 .child(
                     div()
-                        .font_family(body_family())
+                        .font_family(cx.body_family())
                         .font_weight(FontWeight::MEDIUM)
                         .text_size(FONT_XS)
                         .text_color(palette.text_primary)
@@ -686,7 +687,7 @@ impl ConnectFlow {
             .into_iter()
             .map(|ch| {
                 div()
-                    .font_family(mono_family())
+                    .font_family(cx.mono_family())
                     .font_weight(FontWeight::SEMIBOLD)
                     .text_size(USER_CODE_FONT)
                     .text_color(accent)
@@ -736,7 +737,7 @@ impl ConnectFlow {
             ))
             .child(
                 div()
-                    .font_family(body_family())
+                    .font_family(cx.body_family())
                     .text_size(FONT_MICRO)
                     .text_color(copy_color)
                     .child(if copied {
@@ -762,14 +763,14 @@ impl ConnectFlow {
                     .child(icon(Icon::Clock, ICON_INLINE, palette.text_muted))
                     .child(
                         div()
-                            .font_family(body_family())
+                            .font_family(cx.body_family())
                             .text_size(FONT_LABEL)
                             .text_color(palette.text_muted)
                             .child(tr!("twitch_device_expires_in")),
                     )
                     .child(
                         div()
-                            .font_family(mono_family())
+                            .font_family(cx.mono_family())
                             .text_size(FONT_LABEL)
                             .text_color(palette.text_primary)
                             .child(clock),
@@ -793,14 +794,14 @@ impl ConnectFlow {
                     .child(icon(Icon::Refresh, ICON_SMALL, accent))
                     .child(
                         div()
-                            .font_family(body_family())
+                            .font_family(cx.body_family())
                             .text_size(FONT_LABEL)
                             .text_color(accent)
                             .child(tr!("twitch_device_get_new_code")),
                     ),
             );
 
-        step_card(2, accent, palette.shell, palette, density)
+        step_card(2, accent, palette.shell, palette, density, cx)
             .border_color(accent)
             .mb(scaled(CARD_STACK_MB, density))
             .child(
@@ -811,7 +812,7 @@ impl ConnectFlow {
                     .flex_col()
                     .child(
                         div()
-                            .font_family(body_family())
+                            .font_family(cx.body_family())
                             .font_weight(FontWeight::MEDIUM)
                             .text_size(FONT_XS)
                             .text_color(palette.text_primary)
@@ -837,6 +838,7 @@ impl ConnectFlow {
         accent: Rgba,
         palette: &ForgePalette,
         density: Density,
+        cx: &App,
     ) -> AnyElement {
         let name = self.display_name.clone();
         let scopes = scopes_preview();
@@ -881,7 +883,7 @@ impl ConnectFlow {
                     .gap(scaled(NOTICE_TEXT_GAP, density))
                     .child(
                         div()
-                            .font_family(body_family())
+                            .font_family(cx.body_family())
                             .font_weight(FontWeight::MEDIUM)
                             .text_size(FONT_XS)
                             .text_color(palette.text_primary)
@@ -889,7 +891,7 @@ impl ConnectFlow {
                     )
                     .children((!requesting).then(|| {
                         div()
-                            .font_family(mono_family())
+                            .font_family(cx.mono_family())
                             .text_size(FONT_XXS)
                             .text_color(palette.text_faint)
                             .child(subline)
@@ -898,7 +900,7 @@ impl ConnectFlow {
             .into_any_element()
     }
 
-    fn twitch_done_card(&self, palette: &ForgePalette, density: Density) -> AnyElement {
+    fn twitch_done_card(&self, palette: &ForgePalette, density: Density, cx: &App) -> AnyElement {
         div()
             .w_full()
             .flex()
@@ -914,7 +916,7 @@ impl ConnectFlow {
             .child(icon(Icon::CircleCheckFilled, ICON_NOTICE, palette.success))
             .child(
                 div()
-                    .font_family(body_family())
+                    .font_family(cx.body_family())
                     .font_weight(FontWeight::MEDIUM)
                     .text_size(FONT_XS)
                     .text_color(palette.text_primary)
@@ -923,7 +925,12 @@ impl ConnectFlow {
             .into_any_element()
     }
 
-    fn twitch_expired_card(&self, palette: &ForgePalette, density: Density) -> AnyElement {
+    fn twitch_expired_card(
+        &self,
+        palette: &ForgePalette,
+        density: Density,
+        cx: &App,
+    ) -> AnyElement {
         div()
             .w_full()
             .flex()
@@ -941,7 +948,7 @@ impl ConnectFlow {
                 div()
                     .flex_1()
                     .min_w(px(0.0))
-                    .font_family(body_family())
+                    .font_family(cx.body_family())
                     .font_weight(FontWeight::MEDIUM)
                     .text_size(FONT_XS)
                     .text_color(palette.text_primary)
@@ -980,7 +987,7 @@ impl ConnectFlow {
             .child(icon(Icon::Refresh, ICON_SMALL, palette.shell))
             .child(
                 div()
-                    .font_family(body_family())
+                    .font_family(cx.body_family())
                     .text_size(FONT_XS)
                     .text_color(palette.shell)
                     .child(tr!("oauth_btn_retry")),
@@ -1007,7 +1014,7 @@ impl ConnectFlow {
                         div()
                             .flex_1()
                             .min_w(px(0.0))
-                            .font_family(body_family())
+                            .font_family(cx.body_family())
                             .font_weight(FontWeight::MEDIUM)
                             .text_size(FONT_XS)
                             .text_color(palette.text_primary)
@@ -1017,7 +1024,7 @@ impl ConnectFlow {
             )
             .child(
                 div()
-                    .font_family(body_family())
+                    .font_family(cx.body_family())
                     .text_size(FONT_XS)
                     .text_color(palette.danger)
                     .child(detail),
@@ -1042,7 +1049,7 @@ impl ConnectFlow {
             .child(icon(Icon::ChevronLeft, ICON_INLINE, palette.text_muted))
             .child(
                 div()
-                    .font_family(body_family())
+                    .font_family(cx.body_family())
                     .text_size(FONT_XS)
                     .text_color(palette.text_muted)
                     .child(tr!("oauth_footer_choose_different")),
@@ -1061,7 +1068,7 @@ impl ConnectFlow {
             .on_click(cx.listener(|this, _, _, cx| this.cancel_twitch_and_leave(cx)))
             .child(
                 div()
-                    .font_family(body_family())
+                    .font_family(cx.body_family())
                     .text_size(FONT_XS)
                     .text_color(palette.text_secondary)
                     .child(tr!("twitch_device_do_later")),
@@ -1084,6 +1091,7 @@ fn step_card(
     circle_fg: Rgba,
     palette: &ForgePalette,
     density: Density,
+    cx: &App,
 ) -> gpui::Div {
     let circle = div()
         .flex_none()
@@ -1095,7 +1103,7 @@ fn step_card(
         .bg(circle_bg)
         .child(
             div()
-                .font_family(body_family())
+                .font_family(cx.body_family())
                 .font_weight(FontWeight::MEDIUM)
                 .text_size(FONT_XXS)
                 .text_color(circle_fg)

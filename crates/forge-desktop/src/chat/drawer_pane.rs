@@ -6,13 +6,13 @@ use crate::chat_author::AuthorKey;
 use crate::chat_drawer::{ViewerSummary, author_summary, current_name, selected_summary};
 use crate::navigable_list::{ListStep, NavigableList, navigable_list};
 use forge_components::{
-    BORDER_THIN, Density, FONT_XS, FONT_XXS, ForgePalette, Icon, MenuPlacement, Radius, ResizeEdge,
-    ResizeRange, Spacing, body_family, icon, install_resize, menu_button, menu_divider, menu_item,
-    mono_family, spacing, tr,
+    ActivePresentation, BORDER_THIN, Density, FONT_XS, FONT_XXS, ForgePalette, Icon, MenuPlacement,
+    Radius, ResizeEdge, ResizeRange, Spacing, icon, install_resize, menu_button, menu_divider,
+    menu_item, spacing, tr,
 };
 use gpui::{
-    AnyElement, ClickEvent, Context, FontWeight, Pixels, ScrollStrategy, SharedString, Window, div,
-    prelude::*, px, uniform_list,
+    AnyElement, App, ClickEvent, Context, FontWeight, Pixels, ScrollStrategy, SharedString, Window,
+    div, prelude::*, px, uniform_list,
 };
 
 const DRAWER_MIN: Pixels = px(260.0);
@@ -83,7 +83,7 @@ impl ViewerDrawer {
         );
         let selected_key = detail.as_ref().map(|d| d.key.clone());
 
-        let header = self.render_drawer_header(total, shown, palette, density);
+        let header = self.render_drawer_header(total, shown, palette, density, cx);
         let detail_el = self.render_selected_detail(detail, palette, density, cx);
         let list_el = self.render_viewer_list(selected_key, shown, palette, density, cx);
 
@@ -121,6 +121,7 @@ impl ViewerDrawer {
         shown: usize,
         palette: &ForgePalette,
         density: Density,
+        cx: &App,
     ) -> impl IntoElement + use<> {
         let count = tr!(
             "chat_drawer_active_count",
@@ -134,7 +135,7 @@ impl ViewerDrawer {
             .child(icon(Icon::Users, VIEWERS_ICON, palette.brand))
             .child(
                 div()
-                    .font_family(body_family())
+                    .font_family(cx.body_family())
                     .font_weight(FontWeight::MEDIUM)
                     .text_size(FONT_XS)
                     .text_color(palette.text_primary)
@@ -142,7 +143,7 @@ impl ViewerDrawer {
             )
             .child(
                 div()
-                    .font_family(body_family())
+                    .font_family(cx.body_family())
                     .text_size(FONT_XXS)
                     .text_color(palette.text_faint)
                     .child(count),
@@ -269,7 +270,7 @@ impl ViewerDrawer {
             .flex_none()
             .py(spacing(Spacing::Xs, density))
             .px(spacing(Spacing::Sm, density))
-            .font_family(mono_family())
+            .font_family(cx.mono_family())
             .text_size(FONT_XXS)
             .text_color(palette.text_faint)
             .child(tr!(
@@ -281,7 +282,7 @@ impl ViewerDrawer {
             div()
                 .py(spacing(Spacing::Xs, density))
                 .px(spacing(Spacing::Sm, density))
-                .font_family(body_family())
+                .font_family(cx.body_family())
                 .text_size(FONT_XS)
                 .text_color(palette.text_faint)
                 .child(tr!("chat_drawer_no_matches"))
@@ -364,7 +365,7 @@ impl ViewerDrawer {
             .gap(spacing(Spacing::Xxs, density))
             .child(
                 div()
-                    .font_family(body_family())
+                    .font_family(cx.body_family())
                     .font_weight(FontWeight::MEDIUM)
                     .text_size(FONT_XS)
                     .text_color(palette.text_primary)
@@ -384,7 +385,7 @@ impl ViewerDrawer {
             .child(name_row)
             .child(
                 div()
-                    .font_family(mono_family())
+                    .font_family(cx.mono_family())
                     .text_size(FONT_XXS)
                     .text_color(palette.text_muted)
                     .child(meta),
@@ -392,7 +393,7 @@ impl ViewerDrawer {
 
         let last_seen = div()
             .flex_none()
-            .font_family(mono_family())
+            .font_family(cx.mono_family())
             .text_size(FONT_XXS)
             .text_color(palette.text_faint)
             .child(SharedString::from(summary.last_seen_label()));

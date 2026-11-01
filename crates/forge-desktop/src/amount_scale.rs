@@ -1,3 +1,4 @@
+use crate::option_choices::ChoiceOption;
 use std::ops::RangeInclusive;
 
 use forge_components::tr;
@@ -46,21 +47,18 @@ impl AmountScale {
         }
     }
 
-    pub(crate) fn unit_options(&self) -> Vec<(String, String)> {
+    pub(crate) fn unit_options(&self) -> Vec<ChoiceOption> {
         match self {
             Self::StoredUnit { unit_key, bounds } => bounds
                 .units
                 .iter()
                 .map(|unit| {
-                    (
-                        unit.value.to_owned(),
-                        shared_option_label(unit_key, unit.value),
-                    )
+                    ChoiceOption::new(unit.value, shared_option_label(unit_key, unit.value))
                 })
                 .collect(),
             Self::Duration(bounds) => bounds
                 .fitting_units()
-                .map(|unit| (unit.value.to_owned(), duration_unit_label(unit.value)))
+                .map(|unit| ChoiceOption::new(unit.value, duration_unit_label(unit.value)))
                 .collect(),
         }
     }
@@ -401,9 +399,9 @@ mod tests {
         assert_eq!(
             delay.unit_options(),
             vec![
-                pair("minutes", "Хвилини"),
-                pair("hours", "Години"),
-                pair("days", "Дні"),
+                ChoiceOption::new("minutes", "Хвилини"),
+                ChoiceOption::new("hours", "Години"),
+                ChoiceOption::new("days", "Дні"),
             ]
         );
     }

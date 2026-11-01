@@ -5,7 +5,7 @@ use gpui::{
 use std::time::Duration;
 
 use crate::ActivePresentation;
-use crate::tokens::{Radius, Spacing, body_family, mono_family, radius, scaled, spacing};
+use crate::tokens::{Radius, Spacing, radius, scaled, spacing};
 
 const BADGE_PAD_V: Pixels = px(1.0);
 const BADGE_RADIUS: Pixels = px(8.0);
@@ -102,9 +102,9 @@ impl RenderOnce for Badge {
             .padding
             .unwrap_or_else(|| (scaled(BADGE_PAD_V, density), spacing(Spacing::Xs, density)));
         let family = if self.mono {
-            mono_family()
+            cx.mono_family()
         } else {
-            body_family()
+            cx.body_family()
         };
         let label = div()
             .font_family(family)

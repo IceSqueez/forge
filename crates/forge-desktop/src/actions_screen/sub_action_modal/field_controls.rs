@@ -3,9 +3,10 @@ use super::variable_insert::InsertTarget;
 use super::*;
 use crate::async_bridge;
 use forge_components::{
-    FONT_XS, FONT_XXS, Spacing, body_family, field_label, ghost_button_with_icon, mono_family,
-    spacing, toggle,
+    ActivePresentation, FONT_XS, FONT_XXS, Spacing, field_label, ghost_button_with_icon, spacing,
+    toggle,
 };
+use gpui::App;
 
 impl EditSubActionForm {
     fn toggle_sub_field(&mut self, key: String, cx: &mut Context<Self>) {
@@ -120,7 +121,7 @@ pub(super) fn bool_row(
         .gap(spacing(Spacing::Sm, density))
         .child(
             div()
-                .font_family(body_family())
+                .font_family(cx.body_family())
                 .text_size(FONT_XS)
                 .text_color(palette.text_primary)
                 .child(label.to_owned()),
@@ -134,21 +135,26 @@ pub(super) fn bool_row(
         .into_any_element()
 }
 
-pub(super) fn hint_block(label: &str, palette: &ForgePalette, density: Density) -> AnyElement {
+pub(super) fn hint_block(
+    label: &str,
+    palette: &ForgePalette,
+    density: Density,
+    cx: &App,
+) -> AnyElement {
     div()
         .flex()
         .flex_col()
         .gap(spacing(Spacing::Xxs, density))
         .child(
             div()
-                .font_family(mono_family())
+                .font_family(cx.mono_family())
                 .text_size(FONT_XXS)
                 .text_color(palette.text_muted)
                 .child(label.to_owned()),
         )
         .child(
             div()
-                .font_family(body_family())
+                .font_family(cx.body_family())
                 .text_size(FONT_XS)
                 .text_color(palette.text_faint)
                 .child(tr!("action_editor_branch_modal_hint")),
@@ -169,10 +175,11 @@ pub(super) fn multiline_field(
     control: AnyElement,
     palette: &ForgePalette,
     density: Density,
+    cx: &App,
 ) -> AnyElement {
     let caption = |text: SharedString| {
         div()
-            .font_family(mono_family())
+            .font_family(cx.mono_family())
             .text_size(FONT_XXS)
             .text_color(palette.text_muted)
             .child(text)

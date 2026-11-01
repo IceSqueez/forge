@@ -2,10 +2,10 @@ use super::*;
 use std::sync::Arc;
 
 use forge_components::{
-    BORDER_THIN, ConfirmTone, Density, FONT_XS, ForgePalette, Icon, KeyActivated, OverlayPosition,
-    Radius, Spacing, body_family, confirm_modal, field_title, ghost_button_with_icon, icon,
-    mono_family, overlay, radius, scaled, setting_block, setting_row, setting_rows, spacing,
-    toggle, tr,
+    ActivePresentation, BORDER_THIN, ConfirmTone, Density, FONT_XS, ForgePalette, Icon,
+    KeyActivated, OverlayPosition, Radius, Spacing, confirm_modal, field_title,
+    ghost_button_with_icon, icon, overlay, radius, scaled, setting_block, setting_row,
+    setting_rows, spacing, toggle, tr,
 };
 use forge_server::ServerSettings;
 use forge_storage::SettingsRepo;
@@ -224,14 +224,14 @@ impl SettingsWebSocketView {
             .items_center()
             .child(
                 div()
-                    .font_family(body_family())
+                    .font_family(cx.body_family())
                     .text_size(FONT_XS)
                     .text_color(palette.text_muted)
                     .child(tr!("settings_ws_token_clients_send")),
             )
             .child(
                 div()
-                    .font_family(mono_family())
+                    .font_family(cx.mono_family())
                     .text_size(FONT_XS)
                     .text_color(palette.text_primary)
                     .child(" Authorization: Bearer ..."),
@@ -241,7 +241,11 @@ impl SettingsWebSocketView {
             .flex()
             .flex_col()
             .gap(spacing(Spacing::Xs, density))
-            .child(field_title(tr!("settings_ws_token_section_title"), palette))
+            .child(field_title(
+                tr!("settings_ws_token_section_title"),
+                palette,
+                cx,
+            ))
             .child(desc)
             .child(self.token_field(palette, density, cx))
     }
@@ -281,7 +285,7 @@ impl SettingsWebSocketView {
                     .min_w(px(0.0))
                     .overflow_hidden()
                     .text_ellipsis()
-                    .font_family(mono_family())
+                    .font_family(cx.mono_family())
                     .text_size(FONT_XS)
                     .text_color(palette.text_primary)
                     .child(shown),
@@ -392,6 +396,7 @@ impl SettingsWebSocketView {
                 .child(self.overlay_token_block(palette, density, cx)),
             palette,
             density,
+            cx,
         )
     }
 
@@ -422,7 +427,7 @@ impl SettingsWebSocketView {
                     .min_w(px(0.0))
                     .overflow_hidden()
                     .text_ellipsis()
-                    .font_family(mono_family())
+                    .font_family(cx.mono_family())
                     .text_size(FONT_XS)
                     .text_color(palette.text_primary)
                     .child(shown),
@@ -458,10 +463,14 @@ impl SettingsWebSocketView {
             .flex()
             .flex_col()
             .gap(spacing(Spacing::Xs, density))
-            .child(field_title(tr!("settings_ws_overlay_token_title"), palette))
+            .child(field_title(
+                tr!("settings_ws_overlay_token_title"),
+                palette,
+                cx,
+            ))
             .child(
                 div()
-                    .font_family(body_family())
+                    .font_family(cx.body_family())
                     .text_size(FONT_XS)
                     .text_color(palette.text_muted)
                     .child(tr!("settings_ws_overlay_token_subtitle")),

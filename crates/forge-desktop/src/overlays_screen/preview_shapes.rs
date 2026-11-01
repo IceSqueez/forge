@@ -1,6 +1,6 @@
 use forge_components::{
-    BORDER_THIN, Density, ForgePalette, GlyphArt, Icon, Radius, Spacing, body_family, glyph_art,
-    icon, mono_family, radius, spacing, tr, with_alpha,
+    ActivePresentation, BORDER_THIN, Density, ForgePalette, GlyphArt, Icon, Radius, Spacing,
+    glyph_art, icon, radius, spacing, tr, with_alpha,
 };
 use forge_overlay::metrics::{ALERT, CHAT, FRAME, GOAL, LATEST, SURFACE_RGB, TICKER};
 use forge_overlay::{
@@ -8,7 +8,8 @@ use forge_overlay::{
     PreviewMark, PreviewPosition, PreviewShape, element_sizing,
 };
 use gpui::{
-    AnyElement, Div, FontWeight, Length, Pixels, Rgba, SharedString, div, prelude::*, px, relative,
+    AnyElement, App, Div, FontWeight, Length, Pixels, Rgba, SharedString, div, prelude::*, px,
+    relative,
 };
 
 use super::kind_visuals::accent_color;
@@ -101,11 +102,12 @@ pub(super) fn render_composition(
     glyphs: &StageGlyphs,
     palette: &ForgePalette,
     density: Density,
+    cx: &App,
 ) -> AnyElement {
     let accent = accent_color(composition.accent, palette);
     let family = match composition.font {
-        PreviewFont::Sans => body_family(),
-        PreviewFont::Mono => mono_family(),
+        PreviewFont::Sans => cx.body_family(),
+        PreviewFont::Mono => cx.mono_family(),
     };
 
     match composition.shape {

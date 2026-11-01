@@ -1,7 +1,14 @@
 use super::*;
+use forge_components::ActivePresentation;
+use gpui::App;
 
 impl DiscordScreenView {
-    pub(super) fn render_hero(&self, palette: &ForgePalette, density: Density) -> AnyElement {
+    pub(super) fn render_hero(
+        &self,
+        palette: &ForgePalette,
+        density: Density,
+        cx: &App,
+    ) -> AnyElement {
         let count = self.data.rows.len();
         let badge_slot = div()
             .flex()
@@ -26,7 +33,7 @@ impl DiscordScreenView {
                     .flex_col()
                     .child(
                         div()
-                            .font_family(body_family())
+                            .font_family(cx.body_family())
                             .text_size(COUNT_VALUE_FS)
                             .text_color(palette.text_primary)
                             .child(tr!(
@@ -36,7 +43,7 @@ impl DiscordScreenView {
                     )
                     .child(
                         div()
-                            .font_family(mono_family())
+                            .font_family(cx.mono_family())
                             .text_size(COUNT_SUB_FS)
                             .text_color(palette.text_faint)
                             .child(tr!("discord_hero_webhooks_sub")),
@@ -67,7 +74,7 @@ impl DiscordScreenView {
                     .flex_col()
                     .child(
                         div()
-                            .font_family(body_family())
+                            .font_family(cx.body_family())
                             .text_size(HERO_TITLE_FS)
                             .font_weight(gpui::FontWeight::SEMIBOLD)
                             .text_color(palette.text_primary)
@@ -76,7 +83,7 @@ impl DiscordScreenView {
                     .child(
                         div()
                             .mt(HERO_BLURB_MT)
-                            .font_family(body_family())
+                            .font_family(cx.body_family())
                             .text_size(FONT_XS)
                             .text_color(palette.text_muted)
                             .child(tr!("discord_hero_blurb")),
@@ -95,7 +102,12 @@ impl DiscordScreenView {
             .into_any_element()
     }
 
-    pub(super) fn render_stats(&self, palette: &ForgePalette, density: Density) -> AnyElement {
+    pub(super) fn render_stats(
+        &self,
+        palette: &ForgePalette,
+        density: Density,
+        cx: &App,
+    ) -> AnyElement {
         let health = self.data.health;
 
         let (latency_value, latency_hint) = match health.latency_p50_ms {
@@ -164,8 +176,8 @@ impl DiscordScreenView {
                 palette.text_primary,
                 latency_hint,
                 palette.text_faint,
-                palette,
                 density,
+                cx,
             ))
             .child(stat_card(
                 tr!("discord_stat_budget"),
@@ -173,8 +185,8 @@ impl DiscordScreenView {
                 budget_ink,
                 budget_hint,
                 palette.text_faint,
-                palette,
                 density,
+                cx,
             ))
             .child(stat_card(
                 tr!("discord_stat_send"),
@@ -182,8 +194,8 @@ impl DiscordScreenView {
                 send_ink,
                 send_hint,
                 palette.text_faint,
-                palette,
                 density,
+                cx,
             ))
             .child(stat_card(
                 tr!("discord_stat_errors"),
@@ -191,8 +203,8 @@ impl DiscordScreenView {
                 errors_ink,
                 tr!("discord_stat_errors_hint"),
                 palette.text_faint,
-                palette,
                 density,
+                cx,
             ))
             .into_any_element()
     }
@@ -204,7 +216,7 @@ impl DiscordScreenView {
     ) -> AnyElement {
         let density = cx.density();
         let hint = div()
-            .font_family(mono_family())
+            .font_family(cx.mono_family())
             .text_size(SECTION_HINT_FS)
             .text_color(palette.text_faint)
             .child(tr!(
@@ -229,9 +241,10 @@ impl DiscordScreenView {
                 cx.listener(|this, _: &ClickEvent, _, cx| this.retry_webhooks_load(cx)),
                 palette,
                 density,
+                cx,
             );
             list = list.child(notice.unwrap_or_else(|| {
-                empty_row(tr!("discord_bindings_empty"), palette, density).into_any_element()
+                empty_row(tr!("discord_bindings_empty"), palette, density, cx).into_any_element()
             }));
         }
         for (index, row) in self.data.rows.iter().enumerate() {
@@ -277,7 +290,7 @@ impl DiscordScreenView {
                 div()
                     .flex_none()
                     .min_w(ROW_NAME_MIN_W)
-                    .font_family(body_family())
+                    .font_family(cx.body_family())
                     .text_size(ROW_NAME_FS)
                     .text_color(palette.text_primary)
                     .child(row.name.clone()),
@@ -287,7 +300,7 @@ impl DiscordScreenView {
                     .flex_1()
                     .min_w_0()
                     .truncate()
-                    .font_family(body_family())
+                    .font_family(cx.body_family())
                     .text_size(ROW_SUMMARY_FS)
                     .text_color(summary_ink)
                     .child(summary),
@@ -386,13 +399,18 @@ impl DiscordScreenView {
         .into_any_element()
     }
 
-    pub(super) fn render_posts(&self, palette: &ForgePalette, density: Density) -> AnyElement {
+    pub(super) fn render_posts(
+        &self,
+        palette: &ForgePalette,
+        density: Density,
+        cx: &App,
+    ) -> AnyElement {
         let last = match self.last_send_at() {
             Some(at) => fmt_display_relative(Some(at)),
             None => tr!("discord_posts_never"),
         };
         let hint = div()
-            .font_family(mono_family())
+            .font_family(cx.mono_family())
             .text_size(SECTION_HINT_FS)
             .text_color(palette.text_faint)
             .child(last)
@@ -404,10 +422,10 @@ impl DiscordScreenView {
             .flex_col()
             .gap(spacing(Spacing::Xs, density));
         if self.data.posts.is_empty() {
-            list = list.child(empty_row(tr!("discord_posts_empty"), palette, density));
+            list = list.child(empty_row(tr!("discord_posts_empty"), palette, density, cx));
         }
         for post in &self.data.posts {
-            list = list.child(render_post(post, palette, density));
+            list = list.child(render_post(post, palette, density, cx));
         }
 
         div()
@@ -423,7 +441,12 @@ impl DiscordScreenView {
             .into_any_element()
     }
 
-    pub(super) fn render_footer(&self, palette: &ForgePalette, density: Density) -> AnyElement {
+    pub(super) fn render_footer(
+        &self,
+        palette: &ForgePalette,
+        density: Density,
+        cx: &App,
+    ) -> AnyElement {
         let (dot, right) = match self.data.health.last_send_ok {
             Some(true) => (palette.success, tr!("discord_footer_healthy")),
             Some(false) => (palette.danger, tr!("discord_footer_failing")),
@@ -452,14 +475,16 @@ impl DiscordScreenView {
                             count = i64::try_from(self.data.rows.len()).unwrap_or(i64::MAX)
                         ),
                         palette,
+                        cx,
                     ))
-                    .child(footer_text(FOOTER_SEPARATOR.to_owned(), palette))
+                    .child(footer_text(FOOTER_SEPARATOR.to_owned(), palette, cx))
                     .child(footer_text(
                         tr!(
                             "discord_footer_linked",
                             count = i64::try_from(self.linked_total()).unwrap_or(i64::MAX)
                         ),
                         palette,
+                        cx,
                     )),
             )
             .child(
@@ -468,7 +493,7 @@ impl DiscordScreenView {
                     .items_center()
                     .gap(spacing(Spacing::Xs, density))
                     .child(status_dot(dot, FOOTER_DOT))
-                    .child(footer_text(right, palette)),
+                    .child(footer_text(right, palette, cx)),
             )
             .into_any_element()
     }
@@ -524,6 +549,7 @@ pub(super) fn render_post(
     post: &WebhookPost,
     palette: &ForgePalette,
     density: Density,
+    cx: &App,
 ) -> AnyElement {
     let (dot, kind_ink) = if post.ok {
         (palette.success, palette.text_muted)
@@ -547,7 +573,7 @@ pub(super) fn render_post(
                 .flex_none()
                 .min_w(ROW_NAME_MIN_W)
                 .truncate()
-                .font_family(mono_family())
+                .font_family(cx.mono_family())
                 .text_size(ROW_NAME_FS)
                 .text_color(palette.text_primary)
                 .child(post.webhook_name.clone()),
@@ -566,7 +592,7 @@ pub(super) fn render_post(
         .child(
             div()
                 .flex_none()
-                .font_family(mono_family())
+                .font_family(cx.mono_family())
                 .text_size(POST_TIME_FS)
                 .text_color(palette.text_faint)
                 .child(fmt_display_relative(Some(post.sent_at))),
@@ -598,19 +624,20 @@ pub(super) fn empty_row(
     message: String,
     palette: &ForgePalette,
     density: Density,
+    cx: &App,
 ) -> impl IntoElement {
     div()
         .w_full()
         .py(scaled(EMPTY_PAD_V, density))
-        .font_family(body_family())
+        .font_family(cx.body_family())
         .text_size(FONT_XS)
         .text_color(palette.text_faint)
         .child(message)
 }
 
-pub(super) fn footer_text(text: String, palette: &ForgePalette) -> impl IntoElement {
+pub(super) fn footer_text(text: String, palette: &ForgePalette, cx: &App) -> impl IntoElement {
     div()
-        .font_family(mono_family())
+        .font_family(cx.mono_family())
         .text_size(FOOTER_FS)
         .text_color(palette.text_faint)
         .child(text)

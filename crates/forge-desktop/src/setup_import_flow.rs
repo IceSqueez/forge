@@ -396,6 +396,7 @@ impl Render for SetupImportFlow {
                     tr!("import_busy_setup_detail"),
                     &palette,
                     density,
+                    cx,
                 );
             }
             SetupImportStep::Idle => return div().into_any_element(),
@@ -411,6 +412,7 @@ impl Render for SetupImportFlow {
             density,
             cx.listener(|this, _: &ClickEvent, _, cx| this.cancel(cx)),
             cx.listener(|this, _: &ClickEvent, _, cx| this.confirm(cx)),
+            cx,
         );
         let view = cx.entity();
         div()

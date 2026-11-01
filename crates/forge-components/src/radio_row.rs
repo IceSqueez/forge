@@ -7,8 +7,8 @@ use crate::ActivePresentation;
 use crate::key_activation::KeyActivated;
 use crate::palette::ForgePalette;
 use crate::tokens::{
-    BORDER_THIN, DISABLED_OPACITY, Density, FONT_SM, FONT_XXS, Radius, Spacing, body_family,
-    mono_family, radius, scaled, spacing,
+    BORDER_THIN, DISABLED_OPACITY, Density, FONT_SM, FONT_XXS, Radius, Spacing, radius, scaled,
+    spacing,
 };
 
 type RowClick = Box<dyn Fn(&ClickEvent, &mut Window, &mut App) + 'static>;
@@ -81,6 +81,7 @@ pub fn radio_row_label(
     selected: bool,
     palette: &ForgePalette,
     density: Density,
+    cx: &App,
 ) -> AnyElement {
     let label_color = if selected {
         palette.text_primary
@@ -96,7 +97,7 @@ pub fn radio_row_label(
             div()
                 .flex_1()
                 .min_w(px(0.0))
-                .font_family(body_family())
+                .font_family(cx.body_family())
                 .text_size(FONT_SM)
                 .text_color(label_color)
                 .child(label.into()),
@@ -105,7 +106,7 @@ pub fn radio_row_label(
     if let Some(hint) = hint {
         row = row.child(
             div()
-                .font_family(mono_family())
+                .font_family(cx.mono_family())
                 .text_size(FONT_XXS)
                 .text_color(palette.text_faint)
                 .child(hint),

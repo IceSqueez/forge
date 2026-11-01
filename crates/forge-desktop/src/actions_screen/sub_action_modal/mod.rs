@@ -2,6 +2,7 @@ use super::step_validation::StepRejection;
 use super::*;
 use crate::actions_screen::editor::StepGroup;
 use crate::config_form::dependent_options;
+use crate::option_choices::ChoiceOption;
 use build::{FieldBuildContext, build_form_fields, build_step_meta_inputs, push_form_field};
 use datetime_picker::DateTimePickerForm;
 use field::{SubFormField, field_keys, field_values};
@@ -43,7 +44,7 @@ pub(super) struct SubFormLaunch {
     pub icon_name: String,
     pub group: Option<StepGroup>,
     pub chain_len: usize,
-    pub options_seed: HashMap<String, Vec<(String, String)>>,
+    pub options_seed: HashMap<String, Vec<ChoiceOption>>,
     pub refinement: Option<FormRefinement>,
     pub schema: Arc<dyn FormSchemaSource>,
 }
@@ -75,7 +76,7 @@ pub(super) struct EditSubActionForm {
     output_name_keys: Vec<String>,
     base_field_count: usize,
     launch_config: SubActionConfig,
-    options: HashMap<String, Vec<(String, String)>>,
+    options: HashMap<String, Vec<ChoiceOption>>,
     refinement: Option<FormRefinement>,
     schema: Arc<dyn FormSchemaSource>,
     name_input: Entity<TextInput>,
@@ -225,7 +226,7 @@ impl EditSubActionForm {
 
     pub(super) fn apply_options(
         &mut self,
-        map: &HashMap<String, Vec<(String, String)>>,
+        map: &HashMap<String, Vec<ChoiceOption>>,
         cx: &mut Context<Self>,
     ) {
         self.options = map.clone();
@@ -408,7 +409,7 @@ mod tests {
                         ..
                     } if k == key => Some((
                         selected.clone(),
-                        options.iter().map(|(value, _)| value.clone()).collect(),
+                        options.iter().map(|option| option.value.clone()).collect(),
                     )),
                     _ => None,
                 })
@@ -419,7 +420,7 @@ mod tests {
     fn deliver_rewards(form: &Entity<EditSubActionForm>, vcx: &mut VisualTestContext) {
         let map = HashMap::from([(
             OWNED_REWARDS.to_owned(),
-            vec![("r-1".to_owned(), "Hydrate".to_owned())],
+            vec![ChoiceOption::new("r-1", "Hydrate")],
         )]);
         vcx.update(|_window, cx| form.update(cx, |form, cx| form.apply_options(&map, cx)));
     }
@@ -520,7 +521,10 @@ mod tests {
     }
 
     fn override_for<'a>(overrides: &'a [(String, Variant)], key: &str) -> Option<&'a Variant> {
-        overrides.iter().find(|(k, _)| k == key).map(|(_, v)| v)
+        overrides
+            .iter()
+            .find(|(name, _)| name == key)
+            .map(|(_, value)| value)
     }
 
     #[gpui::test]

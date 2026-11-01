@@ -2,8 +2,8 @@ use super::*;
 use std::sync::Arc;
 
 use forge_components::{
-    Density, FONT_XS, ForgePalette, Icon, Spacing, body_family, error_row, ghost_button_with_icon,
-    icon, mono_family, setting_block, spacing, tr,
+    ActivePresentation, Density, FONT_XS, ForgePalette, Icon, Spacing, error_row,
+    ghost_button_with_icon, icon, setting_block, spacing, tr,
 };
 use forge_server::ServerSettings;
 use forge_storage::SettingsRepo;
@@ -116,9 +116,10 @@ impl SettingsWebSocketView {
             return setting_block(
                 tr!("settings_ws_origins_section_title"),
                 Some(tr!("settings_ws_origins_subtitle").into()),
-                error_row(tr!("settings_ws_origins_unreadable"), palette, density),
+                error_row(tr!("settings_ws_origins_unreadable"), palette, density, cx),
                 palette,
                 density,
+                cx,
             );
         }
         let apply =
@@ -145,7 +146,7 @@ impl SettingsWebSocketView {
                     .child(
                         div()
                             .flex_none()
-                            .font_family(body_family())
+                            .font_family(cx.body_family())
                             .text_size(FONT_XS)
                             .text_color(palette.danger)
                             .child(tr!("settings_ws_origins_invalid")),
@@ -155,7 +156,7 @@ impl SettingsWebSocketView {
                             .min_w(px(0.0))
                             .overflow_hidden()
                             .text_ellipsis()
-                            .font_family(mono_family())
+                            .font_family(cx.mono_family())
                             .text_size(FONT_XS)
                             .text_color(palette.danger)
                             .child(rejected.clone()),
@@ -174,6 +175,7 @@ impl SettingsWebSocketView {
                 .child(footer.child(div().flex_1().min_w(px(0.0))).child(apply)),
             palette,
             density,
+            cx,
         )
     }
 }

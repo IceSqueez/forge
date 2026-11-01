@@ -148,6 +148,7 @@ fn explain_card(
     density: Density,
     on_cancel: impl Fn(&ClickEvent, &mut Window, &mut App) + 'static,
     on_continue: impl Fn(&ClickEvent, &mut Window, &mut App) + 'static,
+    cx: &App,
 ) -> AnyElement {
     let on_cancel = Rc::new(on_cancel);
     let cancel_from_footer = Rc::clone(&on_cancel);
@@ -162,6 +163,7 @@ fn explain_card(
             tr!("setup_export_carries"),
             palette,
             density,
+            cx,
         ))
         .child(statement(
             Icon::Key,
@@ -169,6 +171,7 @@ fn explain_card(
             tr!("setup_export_never_logins"),
             palette,
             density,
+            cx,
         ))
         .child(statement(
             Icon::History,
@@ -176,6 +179,7 @@ fn explain_card(
             tr!("setup_export_never_history"),
             palette,
             density,
+            cx,
         ))
         .child(statement(
             Icon::AlertTriangle,
@@ -183,6 +187,7 @@ fn explain_card(
             tr!("setup_export_never_machine"),
             palette,
             density,
+            cx,
         ));
     let footer = div()
         .flex()
@@ -222,6 +227,7 @@ impl Render for SetupExportFlow {
             density,
             cx.listener(|this, _: &ClickEvent, _, cx| this.dismiss(cx)),
             cx.listener(|this, _: &ClickEvent, _, cx| this.choose_file(cx)),
+            cx,
         );
         let view = cx.entity();
         div()

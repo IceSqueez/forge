@@ -5,17 +5,18 @@ use gpui::{
 
 use crate::palette::ForgePalette;
 use crate::presentation::ActivePresentation;
-use crate::tokens::{BORDER_THIN, Density, FONT_XS, Radius, Spacing, body_family, radius, spacing};
+use crate::tokens::{BORDER_THIN, Density, FONT_XS, Radius, Spacing, radius, spacing};
 
 pub(crate) fn tooltip_surface(
     label: impl Into<SharedString>,
     palette: &ForgePalette,
     density: Density,
+    cx: &App,
 ) -> impl IntoElement {
-    tooltip_frame(palette, density).child(label.into())
+    tooltip_frame(palette, density, cx).child(label.into())
 }
 
-fn tooltip_frame(palette: &ForgePalette, density: Density) -> Div {
+fn tooltip_frame(palette: &ForgePalette, density: Density, cx: &App) -> Div {
     div()
         .py(spacing(Spacing::Xxs, density))
         .px(spacing(Spacing::Sm, density))
@@ -23,7 +24,7 @@ fn tooltip_frame(palette: &ForgePalette, density: Density) -> Div {
         .border(BORDER_THIN)
         .border_color(palette.border_regular)
         .rounded(radius(Radius::Sm))
-        .font_family(body_family())
+        .font_family(cx.body_family())
         .text_size(FONT_XS)
         .text_color(palette.text_primary)
 }
@@ -48,7 +49,7 @@ impl Tooltip {
 
 impl Render for Tooltip {
     fn render(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
-        tooltip_surface(self.label.clone(), &self.palette, cx.density())
+        tooltip_surface(self.label.clone(), &self.palette, cx.density(), cx)
     }
 }
 
@@ -82,7 +83,7 @@ impl TooltipLines {
 impl Render for TooltipLines {
     fn render(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         let density = cx.density();
-        let mut col = tooltip_frame(&self.palette, density)
+        let mut col = tooltip_frame(&self.palette, density, cx)
             .flex()
             .flex_col()
             .gap(spacing(Spacing::Xxs, density));

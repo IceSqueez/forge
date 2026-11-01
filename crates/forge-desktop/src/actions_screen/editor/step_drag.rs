@@ -1,8 +1,8 @@
 use super::*;
 use crate::actions::{STEP_DRAG_CONTEXT, StepDragCancel};
 use forge_components::{
-    BORDER_THIN, DRAG_SOURCE_OPACITY, FONT_XS, ForgePalette, Icon, Radius, Spacing, body_family,
-    icon, radius, scaled, spacing,
+    ActivePresentation, BORDER_THIN, DRAG_SOURCE_OPACITY, FONT_XS, ForgePalette, Icon, Radius,
+    Spacing, icon, radius, scaled, spacing,
 };
 use gpui::{
     AnyElement, Bounds, ClickEvent, Context, CursorStyle, DispatchPhase, DragMoveEvent,
@@ -47,7 +47,7 @@ impl Render for StepDragGhost {
             .child(icon(self.glyph, CARD_GLYPH, self.glyph_color))
             .child(
                 div()
-                    .font_family(body_family())
+                    .font_family(cx.body_family())
                     .font_weight(FontWeight::SEMIBOLD)
                     .text_size(FONT_XS)
                     .text_color(self.text)

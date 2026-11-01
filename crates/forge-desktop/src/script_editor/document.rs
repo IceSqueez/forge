@@ -210,7 +210,7 @@ impl Render for ScriptDocument {
             .child(self.console.clone());
 
         let right = if self.api_docs_open {
-            Some(self.right_pane(&palette, density))
+            Some(self.right_pane(&palette, density, cx))
         } else if self.open.is_some() {
             Some(self.details_pane(&palette, cx))
         } else {

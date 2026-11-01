@@ -10,8 +10,8 @@ use std::time::Instant;
 use forge_audio::DeviceInfo;
 use forge_components::OverflowRevealingFocus;
 use forge_components::{
-    BORDER_THIN, BreadcrumbCrumb, Confirm, FONT_XS, Icon, Radius, SearchState, Spacing,
-    body_family, icon, page_frame, radius, scaled, spacing, tr, with_alpha,
+    ActivePresentation, BORDER_THIN, BreadcrumbCrumb, Confirm, FONT_XS, Icon, Radius, SearchState,
+    Spacing, icon, page_frame, radius, scaled, spacing, tr, with_alpha,
 };
 use forge_events::Event;
 use forge_runtime::EventBus;
@@ -34,7 +34,6 @@ use crate::load_notice::{LoadNotice, NoticeWidth, load_notice};
 use crate::navigation::NavRequested;
 use crate::navigation::Screen;
 use crate::runtime_event::{self, ClipPlayback, RuntimeEvent};
-use forge_components::ActivePresentation;
 
 mod adoption;
 mod categories;
@@ -257,7 +256,7 @@ impl Render for SoundboardView {
         let palette = cx.palette();
         let density = cx.density();
 
-        let header_right = self.render_header_right(&palette, density);
+        let header_right = self.render_header_right(&palette, density, cx);
         let subheader_left = self.render_subheader_left(&palette, density, cx);
         let subheader_right = self.render_subheader_right(&palette, density, cx);
 
@@ -271,6 +270,7 @@ impl Render for SoundboardView {
             cx.listener(|this, _: &ClickEvent, _, cx| this.retry_list_load(cx)),
             &palette,
             density,
+            cx,
         )
         .filter(|_| self.clips.is_empty());
         let inner = if let Some(notice) = notice {
@@ -290,7 +290,7 @@ impl Render for SoundboardView {
                     .child(icon(Icon::AlertCircle, FONT_XS, palette.danger))
                     .child(
                         div()
-                            .font_family(body_family())
+                            .font_family(cx.body_family())
                             .text_size(FONT_XS)
                             .text_color(palette.text_primary)
                             .child(message),

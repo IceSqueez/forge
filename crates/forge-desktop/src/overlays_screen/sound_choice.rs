@@ -1,11 +1,12 @@
-use forge_components::{Density, FONT_XXS, ForgePalette, Spacing, body_family, spacing, tr};
+use crate::option_choices::ChoiceOption;
+use forge_components::{ActivePresentation, Density, FONT_XXS, ForgePalette, Spacing, spacing, tr};
 use forge_overlay::{
     MediaIssue, MediaSlot, MediaValue, clip_reference, media_slot, read_media_value,
 };
 use forge_soundboard::{AdoptionVerdict, SoundboardError};
 use forge_storage::StoredClip;
 use forge_types::ClipId;
-use gpui::{AnyElement, div, prelude::*};
+use gpui::{AnyElement, App, div, prelude::*};
 
 use crate::clip_messages::{failure_message, refusal_message};
 
@@ -18,19 +19,19 @@ pub(super) enum PickOutcome {
     Refused(String),
 }
 
-pub(super) fn clip_choices(clips: &[StoredClip]) -> Vec<(String, String)> {
+pub(super) fn clip_choices(clips: &[StoredClip]) -> Vec<ChoiceOption> {
     clips
         .iter()
-        .map(|clip| (clip_reference(&clip.id.to_string()), clip.name.clone()))
+        .map(|clip| ChoiceOption::new(clip_reference(&clip.id.to_string()), clip.name.clone()))
         .collect()
 }
 
-pub(super) fn sound_choices(clips: &[(String, String)], selected: &str) -> Vec<(String, String)> {
-    let mut options = vec![(NO_SOUND.to_owned(), tr!("overlays_sound_none"))];
+pub(super) fn sound_choices(clips: &[ChoiceOption], selected: &str) -> Vec<ChoiceOption> {
+    let mut options = vec![ChoiceOption::new(NO_SOUND, tr!("overlays_sound_none"))];
     options.extend(clips.iter().cloned());
     if let MediaValue::File(name) = read_media_value(selected) {
-        options.push((
-            selected.to_owned(),
+        options.push(ChoiceOption::new(
+            selected,
             tr!("overlays_sound_custom_file", name = name),
         ));
     }
@@ -122,6 +123,7 @@ pub(super) fn notes_block(
     notes: Vec<String>,
     palette: &ForgePalette,
     density: Density,
+    cx: &App,
 ) -> Option<AnyElement> {
     if notes.is_empty() {
         return None;
@@ -131,7 +133,7 @@ pub(super) fn notes_block(
         .flex()
         .flex_col()
         .gap(spacing(Spacing::Xxs, density))
-        .font_family(body_family())
+        .font_family(cx.body_family())
         .text_size(FONT_XXS)
         .text_color(palette.warning);
     for note in notes {
@@ -172,12 +174,12 @@ mod tests {
         }
     }
 
-    fn library() -> Vec<(String, String)> {
+    fn library() -> Vec<ChoiceOption> {
         clip_choices(&[clip(CLIP_ULID, "Fanfare"), clip(OTHER_ULID, "Airhorn")])
     }
 
-    fn values(options: &[(String, String)]) -> Vec<String> {
-        options.iter().map(|(value, _)| value.clone()).collect()
+    fn values(options: &[ChoiceOption]) -> Vec<String> {
+        options.iter().map(|option| option.value.clone()).collect()
     }
 
     #[test]
@@ -193,7 +195,7 @@ mod tests {
             ],
             "picking silence must stay reachable and the library order must survive"
         );
-        assert_eq!(offered[0].1, "overlays_sound_none");
+        assert_eq!(offered[0].label, "overlays_sound_none");
     }
 
     #[test]
@@ -202,10 +204,7 @@ mod tests {
 
         assert_eq!(
             offered.last().expect("the list is never empty"),
-            &(
-                LEGACY_FILE.to_owned(),
-                "overlays_sound_custom_file".to_owned()
-            ),
+            &ChoiceOption::new(LEGACY_FILE, "overlays_sound_custom_file"),
             "a value the library cannot offer must still be selectable, or opening the panel loses it"
         );
     }

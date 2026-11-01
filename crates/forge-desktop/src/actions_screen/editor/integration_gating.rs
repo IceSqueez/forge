@@ -1,6 +1,6 @@
 use super::*;
 use crate::integration_switch::{ClosedGate, IntegrationSwitch, integration_name};
-use forge_components::{integration_disabled_notice, mono_family};
+use forge_components::{ActivePresentation, integration_disabled_notice};
 use forge_types::IntegrationId;
 
 impl ActionEditor {
@@ -96,7 +96,7 @@ impl ActionEditor {
                     ))
                     .child(
                         div()
-                            .font_family(mono_family())
+                            .font_family(cx.mono_family())
                             .text_color(palette.danger)
                             .child(tr!("integration_disable_reason")),
                     ),

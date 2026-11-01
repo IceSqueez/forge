@@ -11,7 +11,7 @@ use crate::key_activation::KeyActivated;
 use crate::palette::{ForgePalette, with_alpha};
 use crate::presentation::ActivePresentation;
 use crate::tokens::{
-    BORDER_THIN, Density, FONT_MD, FONT_XS, Radius, Spacing, body_family, radius, scaled, spacing,
+    BORDER_THIN, Density, FONT_MD, FONT_XS, Radius, Spacing, radius, scaled, spacing,
 };
 
 type ButtonClick = Box<dyn Fn(&ClickEvent, &mut Window, &mut App) + 'static>;
@@ -239,7 +239,7 @@ impl RenderOnce for Button {
             .py(pad_v)
             .px(pad_h)
             .rounded(radius(Radius::Sm))
-            .font_family(body_family())
+            .font_family(cx.body_family())
             .font_weight(self.weight)
             .text_size(FONT_XS)
             .text_color(text);

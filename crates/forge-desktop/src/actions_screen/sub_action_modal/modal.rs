@@ -5,10 +5,10 @@ use crate::actions_screen::files_root_note::files_root_note;
 use forge_components::BORDER_THIN;
 use forge_components::OverflowRevealingFocus;
 use forge_components::{
-    FONT_XS, FONT_XXS, Spacing, body_family, modal, mono_family, primary_button, scaled,
+    ActivePresentation, FONT_XS, FONT_XXS, Spacing, modal, primary_button, scaled,
     secondary_button, spacing, toggle,
 };
-use gpui::FontWeight;
+use gpui::{App, FontWeight};
 
 const TITLE_GAP: Pixels = px(2.0);
 
@@ -46,12 +46,12 @@ impl EditSubActionForm {
             .overflow_y_revealing_focus()
             .when(
                 self.group.as_ref().is_some_and(StepGroup::is_files),
-                |body| body.child(files_root_note(palette, density)),
+                |body| body.child(files_root_note(palette, density, cx)),
             )
             .child(grid)
             .child(advanced);
 
-        let title_slot = self.render_title_slot(palette, density);
+        let title_slot = self.render_title_slot(palette, density, cx);
 
         let footer = self.render_footer(rejection_shown_inline, palette, cx);
 
@@ -102,14 +102,14 @@ impl EditSubActionForm {
                             .gap(spacing(Spacing::Xxs, density))
                             .child(
                                 div()
-                                    .font_family(body_family())
+                                    .font_family(cx.body_family())
                                     .text_size(FONT_XS)
                                     .text_color(palette.text_primary)
                                     .child(tr!("actions_step_continue_on_error")),
                             )
                             .child(
                                 div()
-                                    .font_family(body_family())
+                                    .font_family(cx.body_family())
                                     .text_size(FONT_XXS)
                                     .text_color(palette.text_faint)
                                     .child(tr!("actions_step_continue_on_error_hint")),
@@ -126,6 +126,7 @@ impl EditSubActionForm {
         &self,
         palette: &ForgePalette,
         density: Density,
+        cx: &App,
     ) -> impl IntoElement + use<> {
         div()
             .flex()
@@ -133,7 +134,7 @@ impl EditSubActionForm {
             .gap(spacing(Spacing::Xxs, density))
             .child(
                 div()
-                    .font_family(mono_family())
+                    .font_family(cx.mono_family())
                     .text_size(FONT_XXS)
                     .text_color(palette.text_muted)
                     .child(tr!("actions_step_condition_label")),
@@ -141,7 +142,7 @@ impl EditSubActionForm {
             .child(self.condition_input.clone())
             .child(
                 div()
-                    .font_family(body_family())
+                    .font_family(cx.body_family())
                     .text_size(FONT_XXS)
                     .text_color(palette.text_faint)
                     .child(tr!("actions_step_condition_hint")),
@@ -165,12 +166,12 @@ impl EditSubActionForm {
             .gap(spacing(Spacing::Sm, density))
             .child(
                 div()
-                    .font_family(mono_family())
+                    .font_family(cx.mono_family())
                     .text_size(FONT_XXS)
                     .text_color(palette.text_muted)
                     .child(tr!("actions_step_advanced")),
             )
-            .child(self.render_condition_field(palette, density))
+            .child(self.render_condition_field(palette, density, cx))
             .child(self.render_continue_row(palette, cx))
     }
 
@@ -178,6 +179,7 @@ impl EditSubActionForm {
         &self,
         palette: &ForgePalette,
         density: Density,
+        cx: &App,
     ) -> impl IntoElement + use<> {
         let (step_index, step_total) = match self.target {
             SubFormTarget::Edit(i) => (i + 1, self.chain_len),
@@ -196,7 +198,7 @@ impl EditSubActionForm {
             )
             .child(
                 div()
-                    .font_family(body_family())
+                    .font_family(cx.body_family())
                     .text_size(FONT_XXS)
                     .text_color(palette.text_faint)
                     .child(tr!(
@@ -226,7 +228,7 @@ impl EditSubActionForm {
             .rejection
             .as_ref()
             .filter(|_| !rejection_shown_inline)
-            .map(|rejection| rejection_note(rejection.message.clone(), palette));
+            .map(|rejection| rejection_note(rejection.message.clone(), palette, cx));
         div()
             .w_full()
             .flex()

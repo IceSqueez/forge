@@ -1,3 +1,4 @@
+use crate::option_choices::ChoiceOption;
 use forge_components::Density;
 use forge_components::Radius;
 use forge_components::radius;
@@ -7,8 +8,8 @@ use std::time::Duration;
 
 use forge_components::OverflowRevealingFocus;
 use forge_components::{
-    BORDER_THIN, FONT_XXS, ForgePalette, KeyActivated, Picker, PickerEvent, PickerItem,
-    PickerLabels, accent_swatch, body_family, field_label, scaled, section_label, tr,
+    ActivePresentation, BORDER_THIN, FONT_XXS, ForgePalette, KeyActivated, Picker, PickerEvent,
+    PickerItem, PickerLabels, accent_swatch, field_label, scaled, section_label, tr,
 };
 use forge_overlay::config::{ACCENT, SOUND_OPTIONS_KEY, SPEECH_VOICE};
 use forge_overlay::{ConfigSection, MediaIssue, MediaSlot, SectionedField, media_slot};
@@ -37,7 +38,6 @@ use crate::config_form::{
     set_picked_value, sparse_overrides, toggle_bool_field,
 };
 use crate::repo_failure::RepoFailure;
-use forge_components::ActivePresentation;
 
 const PANE_W: Pixels = px(246.0);
 const PANE_PAD: Pixels = px(14.0);
@@ -85,7 +85,7 @@ pub(super) struct PanelLaunch {
     pub(super) defaults: OverlayConfig,
     pub(super) stored: OverlayConfig,
     pub(super) effective: OverlayConfig,
-    pub(super) choices: HashMap<String, Vec<(String, String)>>,
+    pub(super) choices: HashMap<String, Vec<ChoiceOption>>,
     pub(super) icon_images: Vec<IconImage>,
     pub(super) overridden_files: Vec<String>,
     pub(super) service: OverlayServiceHandle,
@@ -106,7 +106,7 @@ pub(super) struct OverlayPropertyPanel {
     labels: HashMap<String, String>,
     sections: HashMap<String, PanelSection>,
     pub(super) fields: Vec<ConfigField>,
-    choices: HashMap<String, Vec<(String, String)>>,
+    choices: HashMap<String, Vec<ChoiceOption>>,
     icon_images: Vec<IconImage>,
     overridden_files: Vec<String>,
     picker: Option<ChoicePicker>,
@@ -177,11 +177,7 @@ impl OverlayPropertyPanel {
         panel
     }
 
-    pub(super) fn set_sound_choices(
-        &mut self,
-        clips: Vec<(String, String)>,
-        cx: &mut Context<Self>,
-    ) {
+    pub(super) fn set_sound_choices(&mut self, clips: Vec<ChoiceOption>, cx: &mut Context<Self>) {
         self.choices.insert(SOUND_OPTIONS_KEY.to_owned(), clips);
         self.refresh_media_choices();
         cx.notify();
@@ -441,7 +437,7 @@ impl OverlayPropertyPanel {
 
         let items: Vec<PickerItem> = options
             .iter()
-            .map(|(value, label)| PickerItem {
+            .map(|ChoiceOption { value, label }| PickerItem {
                 id: SharedString::from(value.clone()),
                 label: SharedString::from(label.clone()),
                 sublabel: None,
@@ -564,7 +560,7 @@ impl OverlayPropertyPanel {
             .pick_refusal
             .as_ref()
             .filter(|(refused_key, _)| refused_key == key)
-            .map(|(_, message)| message.as_str());
+            .map(|(_, reason)| reason.as_str());
         let mut notes = field_notes(&self.media_issues, key, adopting, refusal);
         notes.extend(self.motion_notices.notes_for(key));
         notes
@@ -592,6 +588,7 @@ impl OverlayPropertyPanel {
         palette: &ForgePalette,
         view: &Entity<Self>,
         density: Density,
+        cx: &App,
     ) -> Option<AnyElement> {
         let ConfigField::Choice { key, selected, .. } = field else {
             return None;
@@ -609,6 +606,7 @@ impl OverlayPropertyPanel {
                 self.accent_tint(palette),
                 palette,
                 density,
+                cx,
             )
             .id(SharedString::from(format!("overlays-panel-{key}")))
             .cursor_pointer()
@@ -640,15 +638,17 @@ impl OverlayPropertyPanel {
         }
 
         let mut column = div().flex().flex_col().pt(SECTION_TOP_GAP).child(
-            div()
-                .pb(SECTION_GAP)
-                .child(section_label(section.heading().to_uppercase(), palette)),
+            div().pb(SECTION_GAP).child(section_label(
+                section.heading().to_uppercase(),
+                palette,
+                cx,
+            )),
         );
 
         let view = cx.entity();
         let handlers = self.handlers();
         for field in members {
-            let control = match self.icon_control(field, palette, &view, density) {
+            let control = match self.icon_control(field, palette, &view, density, cx) {
                 Some(icon_control) => icon_control,
                 None => render_config_control(
                     field,
@@ -657,9 +657,10 @@ impl OverlayPropertyPanel {
                     &view,
                     &handlers,
                     density,
+                    cx,
                 ),
             };
-            let body = match notes_block(self.notes_for(field.key()), palette, density) {
+            let body = match notes_block(self.notes_for(field.key()), palette, density, cx) {
                 Some(notes) => div()
                     .flex()
                     .flex_col()
@@ -669,7 +670,7 @@ impl OverlayPropertyPanel {
                 None => control,
             };
             let body = match base_hint(field.key()).or_else(|| motion_hint(field.key())) {
-                Some(hint) => hinted(body, hint, palette, density),
+                Some(hint) => hinted(body, hint, palette, density, cx),
                 None => body,
             };
             column = column.child(
@@ -691,6 +692,7 @@ pub(super) fn override_notice(
     files: &[String],
     palette: &ForgePalette,
     density: Density,
+    cx: &App,
 ) -> Option<AnyElement> {
     if files.is_empty() {
         return None;
@@ -704,7 +706,7 @@ pub(super) fn override_notice(
             .border(BORDER_THIN)
             .border_color(palette.border_regular)
             .bg(palette.base)
-            .font_family(body_family())
+            .font_family(cx.body_family())
             .text_size(FONT_XXS)
             .line_height(NOTICE_LINE_H)
             .text_color(palette.text_muted)
@@ -779,7 +781,12 @@ impl Render for OverlayPropertyPanel {
             .flex_col();
 
         body = body
-            .children(override_notice(&self.overridden_files, &palette, density))
+            .children(override_notice(
+                &self.overridden_files,
+                &palette,
+                density,
+                cx,
+            ))
             .child(self.render_look_section(&palette, cx))
             .children(self.render_latest_section(&palette, cx));
 
@@ -994,7 +1001,7 @@ pub(crate) mod tests {
         stored: OverlayConfig,
         specs: Vec<SectionedField>,
         defaults: OverlayConfig,
-        choices: HashMap<String, Vec<(String, String)>>,
+        choices: HashMap<String, Vec<ChoiceOption>>,
     ) -> (PanelLaunch, Arc<RecordingOverlays>, tokio::runtime::Runtime) {
         cx.update(|cx| {
             cx.set_global(Presentation::new(ThemeId::ForgeDefault, Density::Cozy));
@@ -1051,7 +1058,7 @@ pub(crate) mod tests {
         fn with_sound_library(
             cx: &mut gpui::TestAppContext,
             stored: OverlayConfig,
-            clips: Vec<(String, String)>,
+            clips: Vec<ChoiceOption>,
         ) -> Self {
             let mut sound_specs = specs();
             sound_specs.push(SectionedField {
@@ -1074,7 +1081,7 @@ pub(crate) mod tests {
             cx: &mut gpui::TestAppContext,
             stored: OverlayConfig,
             specs: Vec<SectionedField>,
-            choices: HashMap<String, Vec<(String, String)>>,
+            choices: HashMap<String, Vec<ChoiceOption>>,
         ) -> Self {
             Self::build_over(cx, stored, specs, defaults(), choices)
         }
@@ -1084,7 +1091,7 @@ pub(crate) mod tests {
             stored: OverlayConfig,
             specs: Vec<SectionedField>,
             defaults: OverlayConfig,
-            choices: HashMap<String, Vec<(String, String)>>,
+            choices: HashMap<String, Vec<ChoiceOption>>,
         ) -> Self {
             let (launch, repo, rt) = launch(cx, stored, specs, defaults, choices);
             let panel = cx.update(|cx| cx.new(|cx| OverlayPropertyPanel::new(launch, cx)));
@@ -1282,7 +1289,7 @@ pub(crate) mod tests {
                     .iter()
                     .find_map(|field| match field {
                         ConfigField::Choice { key, options, .. } if key == SOUND => {
-                            Some(options.iter().map(|(value, _)| value.clone()).collect())
+                            Some(options.iter().map(|option| option.value.clone()).collect())
                         }
                         _ => None,
                     })
@@ -1334,7 +1341,7 @@ pub(crate) mod tests {
         let fixture = Fixture::with_sound_library(
             cx,
             OverlayConfig::new(),
-            vec![(CLIP_A.to_owned(), "Fanfare".to_owned())],
+            vec![ChoiceOption::new(CLIP_A, "Fanfare")],
         );
 
         assert_eq!(
@@ -1350,7 +1357,7 @@ pub(crate) mod tests {
         let fixture = Fixture::with_sound_library(cx, OverlayConfig::new(), Vec::new());
 
         fixture.panel().update(cx, |panel, cx| {
-            panel.set_sound_choices(vec![(CLIP_B.to_owned(), "Airhorn".to_owned())], cx);
+            panel.set_sound_choices(vec![ChoiceOption::new(CLIP_B, "Airhorn")], cx);
         });
 
         assert_eq!(
@@ -1368,8 +1375,8 @@ pub(crate) mod tests {
             cx,
             OverlayConfig::new(),
             vec![
-                (CLIP_A.to_owned(), "Fanfare".to_owned()),
-                (CLIP_B.to_owned(), "Airhorn".to_owned()),
+                ChoiceOption::new(CLIP_A, "Fanfare"),
+                ChoiceOption::new(CLIP_B, "Airhorn"),
             ],
         );
         fixture.expect_pick(cx, CLIP_B);
@@ -1389,7 +1396,7 @@ pub(crate) mod tests {
         let fixture = Fixture::with_sound_library(
             cx,
             OverlayConfig::new(),
-            vec![(CLIP_A.to_owned(), "Fanfare".to_owned())],
+            vec![ChoiceOption::new(CLIP_A, "Fanfare")],
         );
 
         fixture.settle(cx, CLIP_A, PickOutcome::Accepted);
@@ -1403,7 +1410,7 @@ pub(crate) mod tests {
         let fixture = Fixture::with_sound_library(
             cx,
             OverlayConfig::new(),
-            vec![(CLIP_A.to_owned(), "Fanfare".to_owned())],
+            vec![ChoiceOption::new(CLIP_A, "Fanfare")],
         );
         fixture.expect_pick(cx, CLIP_A);
 
@@ -1424,7 +1431,7 @@ pub(crate) mod tests {
         let fixture = Fixture::with_sound_library(
             cx,
             OverlayConfig::new(),
-            vec![(CLIP_A.to_owned(), "Fanfare".to_owned())],
+            vec![ChoiceOption::new(CLIP_A, "Fanfare")],
         );
         fixture.expect_pick(cx, CLIP_A);
 
@@ -1914,7 +1921,7 @@ pub(crate) mod tests {
             shown
                 .looks()
                 .into_iter()
-                .map(|(kind, _)| kind)
+                .map(|(look, _)| look)
                 .collect::<Vec<_>>(),
             vec![GoalOverlayKind.id().to_owned()]
         );

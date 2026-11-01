@@ -211,7 +211,7 @@ mod window_presence;
 use std::cell::Cell;
 use std::rc::Rc;
 
-use forge_components::{FOOTER_HEIGHT, IconAssets};
+use forge_components::{ActivePresentation, FOOTER_HEIGHT, IconAssets};
 use gpui::{
     AnyWindowHandle, App, AppContext, Bounds, Pixels, Point, QuitMode, SharedString, Size,
     TitlebarOptions, WindowBounds, WindowOptions, point, px, size,
@@ -225,7 +225,7 @@ use crate::settings::{NAV_WIDTH, PANE_MIN_WIDTH};
 use crate::shutdown::{RUNTIME_SHUTDOWN_BUDGET, RuntimeSlot, silence_logging};
 use crate::sidebar::SIDEBAR_MAX;
 use crate::titlebar::TITLEBAR_HEIGHT;
-use forge_components::{AccentColor, Density, Presentation, ThemeId};
+use forge_components::{AccentColor, Density, FontFamilies, Presentation, ThemeId};
 
 const SHELL_MIN_CONTENT_HEIGHT: Pixels = px(480.0);
 const TRAFFIC_LIGHT_OFFSET: Point<Pixels> = point(px(14.0), px(10.0));
@@ -379,18 +379,15 @@ fn prewarm_kit_fonts(cx: &mut App) {
         FontWeight::SEMIBOLD,
         FontWeight::BOLD,
     ];
-    let fonts: Vec<Font> = [
-        forge_components::body_family(),
-        forge_components::mono_family(),
-    ]
-    .into_iter()
-    .flat_map(|family| {
-        weights.map(|weight| Font {
-            weight,
-            ..font(family.clone())
+    let fonts: Vec<Font> = [cx.body_family(), cx.mono_family()]
+        .into_iter()
+        .flat_map(|family| {
+            weights.map(|weight| Font {
+                weight,
+                ..font(family.clone())
+            })
         })
-    })
-    .collect();
+        .collect();
     let text_system = cx.text_system().clone();
     cx.background_spawn(async move { text_system.prewarm_fonts(&fonts) })
         .detach();
@@ -565,13 +562,14 @@ fn open_main_window(
         splash,
     } = launch;
     let appearance = &presentation.appearance;
-    cx.set_global(Presentation::accented(
-        appearance.theme,
-        appearance.accent,
-        appearance.density,
-    ));
-    forge_components::set_body_family(appearance.body_font.clone().map(Into::into));
-    forge_components::set_mono_family(appearance.mono_font.clone().map(Into::into));
+    cx.set_global(
+        Presentation::accented(appearance.theme, appearance.accent, appearance.density).with_fonts(
+            FontFamilies::with_overrides(
+                appearance.body_font.clone().map(Into::into),
+                appearance.mono_font.clone().map(Into::into),
+            ),
+        ),
+    );
     #[cfg(target_os = "linux")]
     prewarm_kit_fonts(cx);
 

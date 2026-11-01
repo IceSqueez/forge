@@ -5,16 +5,16 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use forge_components::{
-    BORDER_THIN, Density, FONT_SM, FONT_XS, FONT_XXS, ForgePalette, Icon, KeyActivated, Radius,
-    Spacing, ToastKind, body_family, card, ghost_button_with_icon, icon, mono_family, radius,
-    scaled, section_label, spacing, tr, with_alpha,
+    ActivePresentation, BORDER_THIN, Density, FONT_SM, FONT_XS, FONT_XXS, ForgePalette, Icon,
+    KeyActivated, Radius, Spacing, ToastKind, card, ghost_button_with_icon, icon, radius, scaled,
+    section_label, spacing, tr, with_alpha,
 };
 use forge_runtime::{HandOff, ScheduledRunsHandle, WaitingForQueueWatch, WaitingRuns};
 use forge_storage::{ActionRepo, CatalogChanges, ScheduledRun, ScheduledRunId, ScheduledRunRepo};
 use forge_types::ActionId;
 use gpui::{
-    AnyElement, ClickEvent, Context, EventEmitter, Pixels, Rgba, SharedString, Task, Window, div,
-    prelude::*, px,
+    AnyElement, App, ClickEvent, Context, EventEmitter, Pixels, Rgba, SharedString, Task, Window,
+    div, prelude::*, px,
 };
 use time::OffsetDateTime;
 
@@ -30,7 +30,6 @@ use crate::scheduled_run_labels::{
     reason_label,
 };
 use crate::window_presence::PresenceGate;
-use forge_components::ActivePresentation;
 use forge_components::PushToast;
 use forge_components::{DateShape, fmt_display};
 
@@ -324,7 +323,7 @@ impl ScheduledRunsView {
                     div()
                         .id(("sched-target", index))
                         .cursor_pointer()
-                        .font_family(mono_family())
+                        .font_family(cx.mono_family())
                         .text_size(FONT_SM)
                         .text_color(palette.text_primary)
                         .hover(|s| s.underline())
@@ -367,7 +366,7 @@ impl ScheduledRunsView {
             .gap(scaled(LINE_GAP, density))
             .child(
                 div()
-                    .font_family(mono_family())
+                    .font_family(cx.mono_family())
                     .text_size(FONT_XS)
                     .text_color(countdown_ink)
                     .text_right()
@@ -375,7 +374,7 @@ impl ScheduledRunsView {
             )
             .child(
                 div()
-                    .font_family(mono_family())
+                    .font_family(cx.mono_family())
                     .text_size(FONT_XXS)
                     .text_color(palette.text_faint)
                     .child(fmt_display(DateShape::DateTime, spec.due_at)),
@@ -425,7 +424,7 @@ impl ScheduledRunsView {
     ) -> AnyElement {
         let density = cx.density();
         let caption = div()
-            .font_family(body_family())
+            .font_family(cx.body_family())
             .text_size(FONT_XXS)
             .text_color(palette.text_faint);
         match (row.run.spec.scheduled_by_action, &row.scheduled_by_name) {
@@ -438,7 +437,7 @@ impl ScheduledRunsView {
                     div()
                         .id(("sched-origin", index))
                         .cursor_pointer()
-                        .font_family(mono_family())
+                        .font_family(cx.mono_family())
                         .text_size(FONT_XXS)
                         .text_color(palette.text_secondary)
                         .hover(|s| s.underline())
@@ -464,6 +463,7 @@ impl ScheduledRunsView {
         row: &ScheduledRow,
         palette: &ForgePalette,
         density: Density,
+        cx: &App,
     ) -> AnyElement {
         let run = &row.run;
         let tone = outcome_tone(run.state);
@@ -486,7 +486,7 @@ impl ScheduledRunsView {
             .bg(with_alpha(ink, TINT_STRONG_FILL_ALPHA))
             .border(BORDER_THIN)
             .border_color(with_alpha(ink, TINT_BORDER_ALPHA))
-            .font_family(mono_family())
+            .font_family(cx.mono_family())
             .text_size(FONT_XXS)
             .text_color(ink)
             .child(tr!(outcome_badge_key(tone)));
@@ -500,7 +500,7 @@ impl ScheduledRunsView {
             .child(
                 div()
                     .flex_none()
-                    .font_family(mono_family())
+                    .font_family(cx.mono_family())
                     .text_size(FONT_XS)
                     .text_color(palette.text_secondary)
                     .child(row.title()),
@@ -516,7 +516,7 @@ impl ScheduledRunsView {
                 div()
                     .min_w_0()
                     .truncate()
-                    .font_family(body_family())
+                    .font_family(cx.body_family())
                     .text_size(FONT_XXS)
                     .text_color(palette.text_muted)
                     .child(reason),
@@ -528,7 +528,7 @@ impl ScheduledRunsView {
             .child(
                 div()
                     .flex_none()
-                    .font_family(mono_family())
+                    .font_family(cx.mono_family())
                     .text_size(FONT_XXS)
                     .text_color(palette.text_faint)
                     .child(resolved),
@@ -565,6 +565,7 @@ impl ScheduledRunsView {
                     count = i64::try_from(recent.len()).unwrap_or(i64::MAX)
                 ),
                 palette,
+                cx,
             ));
 
         let mut group = div()
@@ -578,7 +579,7 @@ impl ScheduledRunsView {
             .child(header);
         if self.recent_open {
             for (index, row) in recent.iter().enumerate() {
-                group = group.child(self.render_recent_row(index, row, palette, density));
+                group = group.child(self.render_recent_row(index, row, palette, density, cx));
             }
         }
         group.into_any_element()
@@ -600,7 +601,9 @@ impl Render for ScheduledRunsView {
             Some(count),
             &palette,
             density,
-        );
+            cx,
+        )
+        .into_any_element();
 
         let mut list = div().w_full().flex().flex_col();
         let notice = load_notice(
@@ -617,6 +620,7 @@ impl Render for ScheduledRunsView {
             }),
             &palette,
             density,
+            cx,
         );
         list = list.children(notice);
         match self.state.loaded() {
@@ -627,6 +631,7 @@ impl Render for ScheduledRunsView {
                         tr!("queues_scheduled_empty"),
                         &palette,
                         density,
+                        cx,
                     ));
                 }
                 for (index, row) in snapshot.pending.iter().enumerate() {
@@ -668,7 +673,7 @@ fn row_frame(index: usize, palette: &ForgePalette, density: Density) -> gpui::Di
     }
 }
 
-fn empty_strip(caption: String, palette: &ForgePalette, density: Density) -> AnyElement {
+fn empty_strip(caption: String, palette: &ForgePalette, density: Density, cx: &App) -> AnyElement {
     div()
         .w_full()
         .flex()
@@ -683,7 +688,7 @@ fn empty_strip(caption: String, palette: &ForgePalette, density: Density) -> Any
             div()
                 .flex_1()
                 .min_w_0()
-                .font_family(body_family())
+                .font_family(cx.body_family())
                 .text_size(FONT_XS)
                 .text_color(palette.text_faint)
                 .child(caption),

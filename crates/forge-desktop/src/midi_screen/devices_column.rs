@@ -4,10 +4,9 @@ use crate::midi_signal::{kind_color, short_kind_label};
 use forge_components::{
     ActivePresentation, BORDER_THIN, Density, FONT_HERO, FONT_LABEL, FONT_ROW, FONT_SECTION_LABEL,
     FONT_XS, FONT_XXS, ForgePalette, Icon, KeyActivated, Radius, SectionLabel, Spacing, badge,
-    body_family, card, error_row_with_retry, ghost_button_with_icon, icon, mono_family, radius,
-    scaled, spacing, toggle, tr,
+    card, error_row_with_retry, ghost_button_with_icon, icon, radius, scaled, spacing, toggle, tr,
 };
-use gpui::{AnyElement, ClickEvent, Context, Pixels, div, prelude::*, px};
+use gpui::{AnyElement, App, ClickEvent, Context, Pixels, div, prelude::*, px};
 
 const UNKNOWN_VALUE: &str = "-";
 const HERO_PAD_V: Pixels = px(14.0);
@@ -66,7 +65,7 @@ impl MidiScreenView {
                     .flex_col()
                     .child(
                         div()
-                            .font_family(body_family())
+                            .font_family(cx.body_family())
                             .text_size(HERO_TITLE_FS)
                             .font_weight(gpui::FontWeight::SEMIBOLD)
                             .text_color(palette.text_primary)
@@ -75,7 +74,7 @@ impl MidiScreenView {
                     .child(
                         div()
                             .mt(HERO_BLURB_MT)
-                            .font_family(body_family())
+                            .font_family(cx.body_family())
                             .text_size(FONT_XS)
                             .text_color(palette.text_muted)
                             .child(tr!("midi_hero_blurb")),
@@ -88,7 +87,7 @@ impl MidiScreenView {
                     .gap(scaled(HERO_TOGGLE_GAP, density))
                     .child(
                         div()
-                            .font_family(body_family())
+                            .font_family(cx.body_family())
                             .text_size(LABEL_FS)
                             .text_color(label_color)
                             .child(if self.enabled {
@@ -139,6 +138,7 @@ impl MidiScreenView {
                 palette,
                 cx.listener(|this, _: &ClickEvent, _, cx| this.load_known_devices(cx)),
                 density,
+                cx,
             ));
         } else if cards.is_empty() {
             let note = if self.known_devices.is_loaded() {
@@ -148,7 +148,7 @@ impl MidiScreenView {
             };
             list = list.child(
                 div()
-                    .font_family(body_family())
+                    .font_family(cx.body_family())
                     .text_size(FONT_XS)
                     .text_color(palette.text_faint)
                     .child(note),
@@ -225,7 +225,7 @@ impl MidiScreenView {
                         div()
                             .w_full()
                             .truncate()
-                            .font_family(body_family())
+                            .font_family(cx.body_family())
                             .text_size(DEVICE_NAME_FS)
                             .font_weight(gpui::FontWeight::MEDIUM)
                             .text_color(palette.text_primary)
@@ -233,7 +233,7 @@ impl MidiScreenView {
                     )
                     .child(
                         div()
-                            .font_family(mono_family())
+                            .font_family(cx.mono_family())
                             .text_size(MONITOR_FS)
                             .text_color(palette.text_faint)
                             .child(port_line),
@@ -285,10 +285,15 @@ impl MidiScreenView {
         wrapper.into_any_element()
     }
 
-    pub(super) fn render_monitor(&self, palette: &ForgePalette, density: Density) -> AnyElement {
+    pub(super) fn render_monitor(
+        &self,
+        palette: &ForgePalette,
+        density: Density,
+        cx: &App,
+    ) -> AnyElement {
         let mut lines = div()
             .w_full()
-            .font_family(mono_family())
+            .font_family(cx.mono_family())
             .text_size(MONITOR_FS)
             .line_height(MONITOR_LINE_H)
             .text_color(palette.text_secondary);

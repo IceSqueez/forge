@@ -1,12 +1,12 @@
 use super::ScriptDocument;
 use forge_components::OverflowRevealingFocus;
 use forge_components::{
-    BORDER_THIN, Density, FONT_XS, FONT_XXS, ForgePalette, Icon, Spacing, badge, body_family, icon,
-    mono_family, spacing, tr,
+    ActivePresentation, BORDER_THIN, Density, FONT_XS, FONT_XXS, ForgePalette, Icon, Spacing,
+    badge, icon, spacing, tr,
 };
 use forge_script::MethodDescriptor;
 use gpui::prelude::*;
-use gpui::{AnyElement, Context, FontWeight, Pixels, div, px};
+use gpui::{AnyElement, App, Context, FontWeight, Pixels, div, px};
 
 const GLYPH_PIN: Pixels = px(12.0);
 const RIGHT_PANE_W: Pixels = px(220.0);
@@ -18,7 +18,12 @@ impl ScriptDocument {
         cx.notify();
     }
 
-    pub(super) fn right_pane(&self, palette: &ForgePalette, density: Density) -> AnyElement {
+    pub(super) fn right_pane(
+        &self,
+        palette: &ForgePalette,
+        density: Density,
+        cx: &App,
+    ) -> AnyElement {
         let header = div()
             .w_full()
             .flex()
@@ -27,7 +32,7 @@ impl ScriptDocument {
             .pb(spacing(Spacing::Xs, density))
             .child(
                 div()
-                    .font_family(body_family())
+                    .font_family(cx.body_family())
                     .font_weight(FontWeight::MEDIUM)
                     .text_size(FONT_XS)
                     .text_color(palette.text_primary)
@@ -70,20 +75,20 @@ impl ScriptDocument {
                     div()
                         .pt(spacing(Spacing::Sm, density))
                         .pb(spacing(Spacing::Xxs, density))
-                        .font_family(mono_family())
+                        .font_family(cx.mono_family())
                         .text_size(FONT_XXS)
                         .text_color(palette.text_muted)
                         .child(entry.namespace.unwrap_or("core").to_uppercase()),
                 );
             }
-            pane = pane.child(api_fn_row(entry, palette, density));
+            pane = pane.child(api_fn_row(entry, palette, density, cx));
         }
 
         if matches.is_empty() {
             pane = pane.child(
                 div()
                     .pt(spacing(Spacing::Sm, density))
-                    .font_family(body_family())
+                    .font_family(cx.body_family())
                     .text_size(FONT_XS)
                     .text_color(palette.text_muted)
                     .child(tr!("script_editor_api_no_matches")),
@@ -98,6 +103,7 @@ fn api_fn_row(
     entry: &MethodDescriptor,
     palette: &ForgePalette,
     density: Density,
+    cx: &App,
 ) -> impl IntoElement {
     let params = entry
         .params
@@ -120,7 +126,7 @@ fn api_fn_row(
                 .child(badge(palette.brand, palette.shell, "fn", true, FONT_XXS))
                 .child(
                     div()
-                        .font_family(mono_family())
+                        .font_family(cx.mono_family())
                         .text_size(FONT_XXS)
                         .text_color(palette.text_primary)
                         .child(sig),
@@ -131,7 +137,7 @@ fn api_fn_row(
         row = row.child(
             div()
                 .pl(spacing(Spacing::Lg, density))
-                .font_family(body_family())
+                .font_family(cx.body_family())
                 .text_size(FONT_XXS)
                 .text_color(palette.text_muted)
                 .child(doc),

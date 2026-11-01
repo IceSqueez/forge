@@ -2,14 +2,13 @@ use super::super::permission_help::{gated_platforms, rung_meanings};
 use super::*;
 use crate::config_field_label::row_label;
 use crate::config_form::{config_label_cell, render_config_control};
-use forge_components::ActivePresentation;
 use forge_components::FONT_META;
 use forge_components::FONT_XS;
 use forge_components::{
-    Density, FONT_XXS, Icon, KeyActivated, Radius, Spacing, body_family, icon, mono_family, radius,
+    ActivePresentation, Density, FONT_XXS, Icon, KeyActivated, Radius, Spacing, icon, radius,
     row_card, scaled, segment, segmented, spacing, toggle, tr,
 };
-use gpui::{AnyElement, ClickEvent, SharedString};
+use gpui::{AnyElement, App, ClickEvent, SharedString};
 use std::collections::HashSet;
 
 const ROW_GLYPH: Pixels = px(12.0);
@@ -32,6 +31,7 @@ impl TriggerDetailPane {
         right: Option<AnyElement>,
         palette: &ForgePalette,
         density: Density,
+        cx: &App,
     ) -> AnyElement {
         let label = label.into();
         div()
@@ -42,7 +42,7 @@ impl TriggerDetailPane {
             .child(
                 div()
                     .flex_1()
-                    .font_family(mono_family())
+                    .font_family(cx.mono_family())
                     .text_size(FONT_XXS)
                     .text_color(palette.text_muted)
                     .child(label),
@@ -61,7 +61,7 @@ impl TriggerDetailPane {
         let override_count = detail.instance.overrides.len();
         let right = if override_count > 0 {
             div()
-                .font_family(mono_family())
+                .font_family(cx.mono_family())
                 .text_size(FONT_XXS)
                 .text_color(palette.accent_peach)
                 .child(tr!(
@@ -71,7 +71,7 @@ impl TriggerDetailPane {
                 .into_any_element()
         } else {
             div()
-                .font_family(mono_family())
+                .font_family(cx.mono_family())
                 .text_size(FONT_XXS)
                 .text_color(palette.text_faint)
                 .child(tr!("triggers_sheet_config_all_defaults"))
@@ -83,7 +83,7 @@ impl TriggerDetailPane {
                 .py(scaled(PLACEHOLDER_PAD_V, density))
                 .px(scaled(PLACEHOLDER_PAD_H, density))
                 .italic()
-                .font_family(body_family())
+                .font_family(cx.body_family())
                 .text_size(CFG_VAL_FS)
                 .text_color(palette.text_faint)
                 .child(tr!("triggers_sheet_no_config"))
@@ -128,6 +128,7 @@ impl TriggerDetailPane {
                 Some(right),
                 palette,
                 density,
+                cx,
             ))
             .child(framed)
             .children(
@@ -135,6 +136,7 @@ impl TriggerDetailPane {
                     self.deps.registry.get(&detail.instance.kind_id),
                     palette,
                     density,
+                    cx,
                 )
                 .map(|hints| div().pt(spacing(Spacing::Xs, density)).child(hints)),
             )
@@ -159,7 +161,7 @@ impl TriggerDetailPane {
             palette.text_muted
         };
 
-        let label = config_label_cell(label, CFG_KEY_W, CFG_KEY_FS, key_color);
+        let label = config_label_cell(label, CFG_KEY_W, CFG_KEY_FS, key_color, cx);
 
         let value = render_config_control(
             field,
@@ -168,6 +170,7 @@ impl TriggerDetailPane {
             &cx.entity(),
             &self.detail_config_handlers(),
             density,
+            cx,
         );
 
         let revert: AnyElement = if is_overridden && !matches!(field, ConfigField::Hint { .. }) {
@@ -218,7 +221,7 @@ impl TriggerDetailPane {
     ) -> AnyElement {
         let density = cx.density();
         let caption = div()
-            .font_family(mono_family())
+            .font_family(cx.mono_family())
             .text_size(FONT_XXS)
             .text_color(palette.text_faint)
             .child(tr!("triggers_sheet_cooldown_caption"))
@@ -229,7 +232,7 @@ impl TriggerDetailPane {
                 .w(CFG_KEY_W)
                 .flex_none()
                 .overflow_hidden()
-                .font_family(mono_family())
+                .font_family(cx.mono_family())
                 .text_size(CFG_KEY_FS)
                 .text_color(palette.text_muted)
                 .child(label)
@@ -285,6 +288,7 @@ impl TriggerDetailPane {
                 Some(caption),
                 palette,
                 density,
+                cx,
             ))
             .child(framed)
             .into_any_element()
@@ -334,7 +338,7 @@ impl TriggerDetailPane {
                     .w(CFG_KEY_W)
                     .flex_none()
                     .overflow_hidden()
-                    .font_family(mono_family())
+                    .font_family(cx.mono_family())
                     .text_size(CFG_KEY_FS)
                     .text_color(palette.text_muted)
                     .child(tr!("triggers_sheet_permission_value")),
@@ -348,7 +352,7 @@ impl TriggerDetailPane {
             .gap(spacing(Spacing::Xxs, density))
             .py(scaled(CFG_ROW_PAD_V, density))
             .px(scaled(CFG_ROW_PAD_H, density))
-            .font_family(body_family())
+            .font_family(cx.body_family())
             .text_size(CFG_VAL_FS)
             .text_color(palette.text_faint)
             .child(tr!("triggers_sheet_permission_helper"))
@@ -372,6 +376,7 @@ impl TriggerDetailPane {
                     None,
                     palette,
                     density,
+                    cx,
                 ))
                 .child(framed)
                 .into_any_element(),
@@ -408,7 +413,7 @@ impl TriggerDetailPane {
                 .border(BORDER_THIN)
                 .border_color(palette.border_input)
                 .text_center()
-                .font_family(body_family())
+                .font_family(cx.body_family())
                 .text_size(CFG_VAL_FS)
                 .text_color(palette.text_faint)
                 .child(tr!("triggers_sheet_used_in_empty_title"))
@@ -421,7 +426,7 @@ impl TriggerDetailPane {
                 let title = div()
                     .min_w(px(0.0))
                     .overflow_hidden()
-                    .font_family(mono_family())
+                    .font_family(cx.mono_family())
                     .text_size(USED_FS)
                     .text_color(palette.text_primary)
                     .child(name.clone());
@@ -446,7 +451,7 @@ impl TriggerDetailPane {
         div()
             .flex()
             .flex_col()
-            .child(self.section_label(label, None, palette, density))
+            .child(self.section_label(label, None, palette, density, cx))
             .child(inner)
             .into_any_element()
     }

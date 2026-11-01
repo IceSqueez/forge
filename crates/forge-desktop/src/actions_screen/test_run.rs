@@ -5,14 +5,14 @@ use crate::runtime_event::{self, RuntimeEvent};
 use crate::user_text::resolve_user_text;
 use forge_components::ROW_OFF_OPACITY;
 use forge_components::{
-    BORDER_THIN, Density, FONT_SM, FONT_XS, FONT_XXS, KeyActivated, MenuItem, Radius, Spacing,
-    body_family, context_menu, ghost_button_with_icon, menu_header, menu_item, modal, mono_family,
+    ActivePresentation, BORDER_THIN, Density, FONT_SM, FONT_XS, FONT_XXS, KeyActivated, MenuItem,
+    Radius, Spacing, context_menu, ghost_button_with_icon, menu_header, menu_item, modal,
     primary_button, radius, scaled, spacing,
 };
 use forge_events::{Event, RunOutcome, SubActionDone};
 use forge_runtime::QueueAdmission;
 use forge_types::{ArgStack, EventId};
-use gpui::{Rgba, Task, relative};
+use gpui::{App, Rgba, Task, relative};
 use std::time::Duration;
 
 const MODAL_W: Pixels = px(560.0);
@@ -502,7 +502,7 @@ impl TestRunModal {
                     .flex_1()
                     .min_w(px(0.0))
                     .overflow_hidden()
-                    .font_family(body_family())
+                    .font_family(cx.body_family())
                     .text_size(FONT_XS)
                     .text_color(palette.text_primary)
                     .child(label),
@@ -575,7 +575,7 @@ impl TestRunModal {
                 .items_center()
                 .justify_center()
                 .p(scaled(EMPTY_PAD, density))
-                .font_family(body_family())
+                .font_family(cx.body_family())
                 .text_size(FONT_SM)
                 .text_color(palette.text_muted)
                 .child(tr!("action_editor_test_run_empty"))
@@ -583,7 +583,7 @@ impl TestRunModal {
         } else {
             let mut col = div().flex().flex_col().gap(spacing(Spacing::Xs, density));
             for row in &self.rows {
-                col = col.child(self.render_test_run_row(row, palette, density));
+                col = col.child(self.render_test_run_row(row, palette, density, cx));
             }
             col.into_any_element()
         };
@@ -601,13 +601,13 @@ impl TestRunModal {
             body = body.child(
                 div()
                     .w_full()
-                    .font_family(body_family())
+                    .font_family(cx.body_family())
                     .text_size(FONT_XXS)
                     .text_color(palette.text_muted)
                     .child(text),
             );
         }
-        if let Some(banner) = self.render_test_run_banner(palette, density) {
+        if let Some(banner) = self.render_test_run_banner(palette, density, cx) {
             body = body.child(banner);
         }
         body.into_any_element()
@@ -618,6 +618,7 @@ impl TestRunModal {
         row: &TestRunRow,
         palette: &ForgePalette,
         density: Density,
+        cx: &App,
     ) -> AnyElement {
         let look = TestRowLook::of(row, palette);
 
@@ -631,7 +632,7 @@ impl TestRunModal {
             .bg(look.mark_bg)
             .child(
                 div()
-                    .font_family(mono_family())
+                    .font_family(cx.mono_family())
                     .text_size(FONT_XXS)
                     .text_color(look.mark_fg)
                     .child(look.mark_glyph),
@@ -656,7 +657,7 @@ impl TestRunModal {
                     .flex_1()
                     .min_w(px(0.0))
                     .overflow_hidden()
-                    .font_family(body_family())
+                    .font_family(cx.body_family())
                     .text_size(FONT_XS)
                     .text_color(palette.text_primary)
                     .child(row.name.clone()),
@@ -664,7 +665,7 @@ impl TestRunModal {
             .child(
                 div()
                     .flex_none()
-                    .font_family(mono_family())
+                    .font_family(cx.mono_family())
                     .text_size(FONT_XXS)
                     .text_color(look.label_color)
                     .child(look.label),
@@ -676,6 +677,7 @@ impl TestRunModal {
         &self,
         palette: &ForgePalette,
         density: Density,
+        cx: &App,
     ) -> Option<AnyElement> {
         match &self.phase {
             TestRunPhase::Halted { step } => {
@@ -700,6 +702,7 @@ impl TestRunModal {
                     Some(message),
                     palette,
                     density,
+                    cx,
                 ))
             }
             TestRunPhase::Done { errors } if *errors > 0 => Some(Self::test_run_banner(
@@ -713,6 +716,7 @@ impl TestRunModal {
                 None,
                 palette,
                 density,
+                cx,
             )),
             TestRunPhase::Done { .. } if !self.rows.is_empty() => Some(Self::test_run_banner(
                 Icon::CircleCheck,
@@ -725,6 +729,7 @@ impl TestRunModal {
                 None,
                 palette,
                 density,
+                cx,
             )),
             TestRunPhase::NotStarted => Some(Self::test_run_banner(
                 Icon::InfoCircle,
@@ -733,6 +738,7 @@ impl TestRunModal {
                 None,
                 palette,
                 density,
+                cx,
             )),
             _ => None,
         }
@@ -745,6 +751,7 @@ impl TestRunModal {
         message: Option<SharedString>,
         palette: &ForgePalette,
         density: Density,
+        cx: &App,
     ) -> AnyElement {
         let heading = div()
             .flex()
@@ -753,7 +760,7 @@ impl TestRunModal {
             .child(icon(glyph, BANNER_ICON, tint))
             .child(
                 div()
-                    .font_family(body_family())
+                    .font_family(cx.body_family())
                     .text_size(FONT_XS)
                     .text_color(tint)
                     .child(title),
@@ -777,7 +784,7 @@ impl TestRunModal {
         if let Some(message) = message {
             banner = banner.child(
                 div()
-                    .font_family(mono_family())
+                    .font_family(cx.mono_family())
                     .text_size(FONT_XXS)
                     .text_color(palette.text_secondary)
                     .child(message),
@@ -825,7 +832,7 @@ impl TestRunModal {
                 div()
                     .flex_1()
                     .min_w(px(0.0))
-                    .font_family(body_family())
+                    .font_family(cx.body_family())
                     .text_size(FONT_XS)
                     .text_color(palette.text_muted)
                     .child(status),

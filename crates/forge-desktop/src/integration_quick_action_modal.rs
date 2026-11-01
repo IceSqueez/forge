@@ -5,9 +5,9 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use forge_components::{
-    FONT_XS, ForgePalette, Icon, InputEvent, OverlayPosition, Picker, PickerEvent, PickerItem,
-    PickerLabels, TextArea, TextInput, body_family, destructive_button_with_icon, dropdown, modal,
-    overlay, primary_button_with_icon, scaled, secondary_button, spinner, tr,
+    ActivePresentation, FONT_XS, ForgePalette, Icon, InputEvent, OverlayPosition, Picker,
+    PickerEvent, PickerItem, PickerLabels, TextArea, TextInput, destructive_button_with_icon,
+    dropdown, modal, overlay, primary_button_with_icon, scaled, secondary_button, spinner, tr,
 };
 use forge_platform_core::{
     BuiltinOptionSource, CollectionOutcome, OptionEntry, OptionListId, QuickAction,
@@ -25,7 +25,6 @@ use crate::async_bridge::{self, Generation};
 use crate::integration_quick_actions::accent_color;
 use crate::option_list_text::{option_failure_message, option_hint_text};
 use crate::user_text::user_text_string;
-use forge_components::ActivePresentation;
 use forge_components::{
     FONT_FIELD, choice_trigger, failure_with_retry, field_column, field_frame, int_entry_invalid,
     int_range_hint, parse_int_in_range, toggle_row,
@@ -678,6 +677,7 @@ impl QuickActionModal {
             None,
             control,
             density,
+            cx,
         )
     }
 
@@ -695,6 +695,7 @@ impl QuickActionModal {
             palette,
             cx.listener(move |this, _: &ClickEvent, _, cx| this.toggle_field(index, cx)),
             density,
+            cx,
         )
     }
 
@@ -727,7 +728,7 @@ impl QuickActionModal {
                 ))
                 .child(
                     div()
-                        .font_family(body_family())
+                        .font_family(cx.body_family())
                         .text_size(FONT_FIELD)
                         .text_color(palette.text_muted)
                         .child(tr!("integration_qa_field_loading")),
@@ -739,6 +740,7 @@ impl QuickActionModal {
                 palette,
                 cx.listener(move |this, _: &ClickEvent, _, cx| this.retry_option_list(index, cx)),
                 density,
+                cx,
             ),
             ChoiceState::Ready(items) if items.is_empty() => {
                 let note = if self.awaits_parent_choice(choice) {
@@ -749,7 +751,7 @@ impl QuickActionModal {
                 field_frame(palette, density)
                     .child(
                         div()
-                            .font_family(body_family())
+                            .font_family(cx.body_family())
                             .text_size(FONT_FIELD)
                             .text_color(palette.text_muted)
                             .child(note),
@@ -777,6 +779,7 @@ impl QuickActionModal {
                         this.open_choice(index, window, cx)
                     }),
                     density,
+                    cx,
                 );
                 div()
                     .relative()
@@ -802,7 +805,7 @@ impl Render for QuickActionModal {
         if self.fields.is_empty() {
             body = body.child(
                 div()
-                    .font_family(body_family())
+                    .font_family(cx.body_family())
                     .text_size(FONT_ROW)
                     .text_color(palette.text_muted)
                     .child(tr!(
@@ -851,7 +854,7 @@ impl Render for QuickActionModal {
             .gap(scaled(BODY_GAP, density))
             .child(
                 div()
-                    .font_family(body_family())
+                    .font_family(cx.body_family())
                     .text_size(FONT_META)
                     .text_color(palette.text_faint)
                     .child(hint),

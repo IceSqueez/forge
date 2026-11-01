@@ -4,8 +4,7 @@ use super::details_pane::details_heading;
 use crate::globals::variant_kind_color;
 use forge_components::{
     ActivePresentation, BORDER_THIN, FONT_XS, FONT_XXS, ForgePalette, Icon, KeyActivated, MenuItem,
-    Radius, Spacing, body_family, context_menu, icon, menu_divider, menu_item, mono_family, radius,
-    spacing, tr, with_alpha,
+    Radius, Spacing, context_menu, icon, menu_divider, menu_item, radius, spacing, tr, with_alpha,
 };
 use forge_types::{ScriptInput, VariantKind};
 use gpui::prelude::*;
@@ -35,13 +34,14 @@ impl ScriptDocument {
             true,
             palette,
             density,
+            cx,
         ));
 
         if contract.inputs.is_empty() {
             section = section.child(
                 div()
                     .py(spacing(Spacing::Xxs, density))
-                    .font_family(body_family())
+                    .font_family(cx.body_family())
                     .text_size(FONT_XXS)
                     .text_color(palette.text_faint)
                     .child(tr!("script_editor_signature_no_inputs")),
@@ -63,7 +63,7 @@ impl ScriptDocument {
             section = section.child(
                 div()
                     .pt(spacing(Spacing::Xxs, density))
-                    .font_family(body_family())
+                    .font_family(cx.body_family())
                     .text_size(FONT_XXS)
                     .text_color(palette.danger)
                     .child(error.clone()),
@@ -90,7 +90,7 @@ impl ScriptDocument {
                     .child(icon(Icon::Plus, GLYPH_SIGNATURE_ACTION, palette.brand))
                     .child(
                         div()
-                            .font_family(body_family())
+                            .font_family(cx.body_family())
                             .text_size(FONT_XXS)
                             .text_color(palette.brand)
                             .child(tr!("script_editor_signature_add_input")),
@@ -190,7 +190,7 @@ impl ScriptDocument {
             .items_center()
             .gap(spacing(Spacing::Xxs, density))
             .py(spacing(Spacing::Xxs, density))
-            .font_family(mono_family())
+            .font_family(cx.mono_family())
             .text_size(FONT_XS)
             .child(name_cell)
             .child(kind_cell)
@@ -235,7 +235,7 @@ impl ScriptDocument {
             .pt(spacing(Spacing::Xs, density))
             .border_t(BORDER_THIN)
             .border_color(palette.surface_overlay)
-            .font_family(mono_family())
+            .font_family(cx.mono_family())
             .text_size(FONT_XS)
             .child(icon(Icon::ArrowBackUp, GLYPH_RETURNS, palette.text_faint))
             .child(

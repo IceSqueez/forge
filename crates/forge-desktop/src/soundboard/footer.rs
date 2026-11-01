@@ -2,7 +2,7 @@ use forge_components::FONT_XXS;
 use forge_components::Spacing;
 use forge_components::spacing;
 use forge_components::{
-    BORDER_THIN, Density, ForgePalette, fmt_bytes, mono_family, scaled, status_dot, tr,
+    ActivePresentation, BORDER_THIN, Density, ForgePalette, fmt_bytes, scaled, status_dot, tr,
 };
 use gpui::{AnyElement, Context, Pixels, div, prelude::*, px};
 
@@ -40,7 +40,7 @@ impl SoundboardView {
             .px(scaled(FOOTER_PAD_X, density))
             .child(
                 div()
-                    .font_family(mono_family())
+                    .font_family(cx.mono_family())
                     .text_size(FOOTER_FS)
                     .text_color(palette.text_faint)
                     .child(tr!(
@@ -58,7 +58,7 @@ impl SoundboardView {
                     .child(status_dot(dot, FOOTER_DOT))
                     .child(
                         div()
-                            .font_family(mono_family())
+                            .font_family(cx.mono_family())
                             .text_size(FOOTER_FS)
                             .text_color(palette.text_faint)
                             .child(status_text),

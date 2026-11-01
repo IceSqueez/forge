@@ -6,9 +6,9 @@ use forge_audio::{
     pick_default_input_device, refresh_input_devices,
 };
 use forge_components::{
-    BORDER_THIN, Density, FONT_SM, FONT_XS, FONT_XXS, ForgePalette, Icon, InputEvent, KeyActivated,
-    Radius, SettingRow, Spacing, TextInput, body_family, drive_overlay_focus, dropdown,
-    dropdown_list, dropdown_row, ghost_button, icon, icon_button, mono_family, radius, scaled,
+    ActivePresentation, BORDER_THIN, Density, FONT_SM, FONT_XS, FONT_XXS, ForgePalette, Icon,
+    InputEvent, KeyActivated, Radius, SettingRow, Spacing, TextInput, drive_overlay_focus,
+    dropdown, dropdown_list, dropdown_row, ghost_button, icon, icon_button, radius, scaled,
     setting_block, setting_row, setting_rows, spacing, toggle, tr,
 };
 use forge_storage::{DataProvider, SettingsRepo, VoiceGateSettings};
@@ -22,7 +22,6 @@ use crate::load_notice::{LoadNotice, NoticeWidth, load_notice};
 use crate::repo_failure::RepoFailure;
 use crate::settings_audio::DeviceRow;
 use crate::window_presence::PresenceGate;
-use forge_components::ActivePresentation;
 use forge_host::voice_gate::VoiceGateOwner;
 
 const DEVICE_TRIGGER_PAD_V: Pixels = px(7.0);
@@ -364,6 +363,7 @@ impl SettingsVoiceGateView {
             cx.listener(|this, _: &ClickEvent, _, cx| this.load(true, cx)),
             palette,
             density,
+            cx,
         );
         if let Some(notice) = notice {
             return notice;
@@ -400,7 +400,7 @@ impl SettingsVoiceGateView {
             .on_click(cx.listener(|this, _: &ClickEvent, _, cx| this.toggle_picker(cx)))
             .child(
                 div()
-                    .font_family(body_family())
+                    .font_family(cx.body_family())
                     .text_size(FONT_SM)
                     .text_color(palette.text_primary)
                     .child(selected_name),
@@ -473,7 +473,7 @@ impl SettingsVoiceGateView {
             .child(
                 div()
                     .w(READOUT_WIDTH)
-                    .font_family(mono_family())
+                    .font_family(cx.mono_family())
                     .text_size(FONT_XXS)
                     .text_color(palette.text_muted)
                     .child(format!("{}%", (self.threshold * 100.0).round() as u32)),
@@ -558,7 +558,7 @@ impl SettingsVoiceGateView {
             .flex()
             .items_center()
             .gap(spacing(Spacing::Sm, density))
-            .font_family(body_family())
+            .font_family(cx.body_family())
             .text_size(FONT_XS)
             .text_color(color)
             .child(text);
@@ -622,7 +622,7 @@ impl Render for SettingsVoiceGateView {
         if let Some(message) = &self.persist_error {
             content = content.child(
                 div()
-                    .font_family(body_family())
+                    .font_family(cx.body_family())
                     .text_size(FONT_SM)
                     .text_color(palette.danger)
                     .child(tr!("settings_voice_gate_persist_error", error = message)),
@@ -635,6 +635,7 @@ impl Render for SettingsVoiceGateView {
             content,
             &palette,
             density,
+            cx,
         )
     }
 }

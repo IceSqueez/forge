@@ -3,8 +3,8 @@ use std::path::PathBuf;
 use std::sync::Arc;
 
 use forge_components::{
-    BORDER_THIN, Density, FONT_XS, ForgePalette, Icon, Radius, SaveState, Spacing, body_family,
-    field_title, ghost_button_with_icon, mono_family, radius, scaled, spacing, tr,
+    ActivePresentation, BORDER_THIN, Density, FONT_XS, ForgePalette, Icon, Radius, SaveState,
+    Spacing, field_title, ghost_button_with_icon, radius, scaled, spacing, tr,
 };
 use forge_server::ServerSettings;
 use forge_storage::SettingsRepo;
@@ -94,14 +94,14 @@ impl SettingsWebSocketView {
             .items_center()
             .child(
                 div()
-                    .font_family(body_family())
+                    .font_family(cx.body_family())
                     .text_size(FONT_XS)
                     .text_color(palette.text_muted)
                     .child(tr!("settings_ws_overlay_folder_prefix")),
             )
             .child(
                 div()
-                    .font_family(mono_family())
+                    .font_family(cx.mono_family())
                     .text_size(FONT_XS)
                     .text_color(palette.text_primary)
                     .child(" http://<bind>/"),
@@ -122,7 +122,7 @@ impl SettingsWebSocketView {
             .border(BORDER_THIN)
             .border_color(palette.border_regular)
             .bg(palette.shell)
-            .font_family(mono_family())
+            .font_family(cx.mono_family())
             .text_size(FONT_XS)
             .text_color(palette.text_primary)
             .child(path_label);
@@ -141,6 +141,7 @@ impl SettingsWebSocketView {
             .child(field_title(
                 tr!("settings_ws_overlay_section_title"),
                 palette,
+                cx,
             ))
             .child(desc)
             .child(

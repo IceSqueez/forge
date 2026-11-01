@@ -10,12 +10,12 @@ use std::future::Future;
 use std::sync::Arc;
 
 use forge_components::{
-    BORDER_THIN, ColumnWidth, Confirm, ConfirmTone, DataRow, Density, FONT_XS, FONT_XXS,
-    ForgePalette, Icon, KeyActivated, OverlayPosition, Picker, PickerEvent, PickerItem,
-    PickerLabels, Radius, SearchState, Spacing, ToastKind, avatar_tile, badge, body_family, card,
-    column, confirm_modal, data_table, dropdown, empty_state, error_row, error_row_with_retry,
-    hash_accent, icon, mono_family, overlay, primary_button_with_icon, radius, scaled, segment,
-    segmented, spacing, status_dot, toolbar_row, tr, virtual_table, with_alpha,
+    ActivePresentation, BORDER_THIN, ColumnWidth, Confirm, ConfirmTone, DataRow, Density, FONT_XS,
+    FONT_XXS, ForgePalette, Icon, KeyActivated, OverlayPosition, Picker, PickerEvent, PickerItem,
+    PickerLabels, Radius, SearchState, Spacing, ToastKind, avatar_tile, badge, card, column,
+    confirm_modal, data_table, dropdown, empty_state, error_row, error_row_with_retry, hash_accent,
+    icon, overlay, primary_button_with_icon, radius, scaled, segment, segmented, spacing,
+    status_dot, toolbar_row, tr, virtual_table, with_alpha,
 };
 use forge_speak_queue::{
     AliasKey, EmoteTokenSet, Priority, RequestId, SpeakCommand, SpeakQueueHandle, SpeakRequest,
@@ -25,8 +25,8 @@ use forge_speech_types::{AliasId, AssignmentStrategy, EngineId, TtsVoice, VoiceA
 use forge_storage::{StorageError, ViewerRepo, VoiceAliasRepo};
 use forge_tts_core::engine_display_name;
 use gpui::{
-    AnyElement, ClickEvent, Context, Entity, FontWeight, Pixels, Rgba, SharedString, Subscription,
-    UniformListScrollHandle, Window, div, prelude::*, px,
+    AnyElement, App, ClickEvent, Context, Entity, FontWeight, Pixels, Rgba, SharedString,
+    Subscription, UniformListScrollHandle, Window, div, prelude::*, px,
 };
 
 use crate::async_bridge::{self, Loadable, SnapshotWriter, WriteOutcome};
@@ -36,7 +36,6 @@ use crate::voice_alias_form::{
     format_optional_number,
 };
 use crate::voice_alias_store::save_alias;
-use forge_components::ActivePresentation;
 use forge_components::PushToast;
 
 const ACTIONS_W: Pixels = px(90.0);
@@ -659,7 +658,7 @@ impl VoiceAliasesView {
             .flex_col()
             .child(
                 div()
-                    .font_family(body_family())
+                    .font_family(cx.body_family())
                     .font_weight(FontWeight::MEDIUM)
                     .text_size(BANNER_TITLE_FS)
                     .mb(BANNER_TITLE_MB)
@@ -668,7 +667,7 @@ impl VoiceAliasesView {
             )
             .child(
                 div()
-                    .font_family(body_family())
+                    .font_family(cx.body_family())
                     .text_size(META_FS)
                     .text_color(palette.text_muted)
                     .child(sublabel),
@@ -690,6 +689,7 @@ impl VoiceAliasesView {
                     palette,
                     cx.listener(|this, _: &ClickEvent, _, cx| this.retry_strategy(cx)),
                     density,
+                    cx,
                 )
                 .into_any_element(),
             )
@@ -699,6 +699,7 @@ impl VoiceAliasesView {
                     tr!("tts_aliases_strategy_save_failed", reason = reason.as_str()),
                     palette,
                     density,
+                    cx,
                 )
                 .into_any_element()
             })
@@ -730,7 +731,7 @@ impl VoiceAliasesView {
         cx: &mut Context<Self>,
     ) -> AnyElement {
         let count = div()
-            .font_family(body_family())
+            .font_family(cx.body_family())
             .text_size(META_FS)
             .text_color(palette.text_muted)
             .child(tr!(
@@ -808,6 +809,7 @@ impl VoiceAliasesView {
                 cx.listener(|this, _: &ClickEvent, _, cx| this.retry_load(cx)),
                 palette,
                 density,
+                cx,
             )
             .filter(|_| self.aliases.is_empty());
             let state = notice.unwrap_or_else(|| {
@@ -853,7 +855,7 @@ impl VoiceAliasesView {
         let footer = div()
             .w_full()
             .pt(scaled(FOOTER_PAD_TOP, density))
-            .font_family(mono_family())
+            .font_family(cx.mono_family())
             .text_size(FONT_XXS)
             .text_color(palette.text_faint)
             .child(tr!(
@@ -917,7 +919,7 @@ impl VoiceAliasesView {
                 div()
                     .min_w(px(0.0))
                     .truncate()
-                    .font_family(body_family())
+                    .font_family(cx.body_family())
                     .font_weight(FontWeight::MEDIUM)
                     .text_size(FONT_XS)
                     .text_color(name_color)
@@ -929,6 +931,7 @@ impl VoiceAliasesView {
                 platform_color(kind, palette),
                 palette,
                 density,
+                cx,
             ));
         }
         if muted {
@@ -947,7 +950,7 @@ impl VoiceAliasesView {
                 .child(icon(Icon::VolumeOff, ENGINE_GLYPH, palette.danger))
                 .child(
                     div()
-                        .font_family(mono_family())
+                        .font_family(cx.mono_family())
                         .text_size(VOICE_FS)
                         .text_color(palette.text_faint)
                         .child(tr!("tts_aliases_never_speak")),
@@ -964,7 +967,7 @@ impl VoiceAliasesView {
                     div()
                         .min_w(px(0.0))
                         .truncate()
-                        .font_family(mono_family())
+                        .font_family(cx.mono_family())
                         .text_size(VOICE_FS)
                         .text_color(palette.text_primary)
                         .child(format!("{} · {}", row.engine_label, row.voice_id)),
@@ -977,8 +980,8 @@ impl VoiceAliasesView {
         } else {
             (palette.text_muted, palette.text_muted)
         };
-        let pitch_cell = mono_cell(fmt_pitch(row.pitch_semitones, muted), pitch_color);
-        let speed_cell = mono_cell(fmt_rate(row.rate_multiplier, muted), speed_color);
+        let pitch_cell = mono_cell(fmt_pitch(row.pitch_semitones, muted), pitch_color, cx);
+        let speed_cell = mono_cell(fmt_rate(row.rate_multiplier, muted), speed_color, cx);
 
         let preview_color = if muted {
             palette.text_extreme_faint
@@ -1110,9 +1113,9 @@ impl Render for VoiceAliasesView {
     }
 }
 
-fn mono_cell(value: String, color: Rgba) -> impl IntoElement {
+fn mono_cell(value: String, color: Rgba, cx: &App) -> impl IntoElement {
     div()
-        .font_family(mono_family())
+        .font_family(cx.mono_family())
         .text_size(META_FS)
         .text_color(color)
         .child(value)
@@ -1131,6 +1134,7 @@ fn platform_badge(
     dot: Rgba,
     palette: &ForgePalette,
     density: Density,
+    cx: &App,
 ) -> impl IntoElement {
     div()
         .flex_none()
@@ -1144,7 +1148,7 @@ fn platform_badge(
         .child(status_dot(dot, PLATFORM_DOT))
         .child(
             div()
-                .font_family(mono_family())
+                .font_family(cx.mono_family())
                 .text_size(ROLE_BADGE_FS)
                 .text_color(palette.text_muted)
                 .child(label),

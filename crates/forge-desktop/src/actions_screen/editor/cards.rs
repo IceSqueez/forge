@@ -1,7 +1,7 @@
 use super::*;
 use forge_components::{
-    BORDER_THIN, Density, FONT_XS, FONT_XXS, ForgePalette, Icon, KeyActivated, Radius, Spacing,
-    body_family, icon, radius, scaled, spacing, with_alpha,
+    ActivePresentation, BORDER_THIN, Density, FONT_XS, FONT_XXS, ForgePalette, Icon, KeyActivated,
+    Radius, Spacing, icon, radius, scaled, spacing, with_alpha,
 };
 use gpui::{AnyElement, App, ClickEvent, ElementId, Rgba, SharedString, Window, div};
 
@@ -10,10 +10,11 @@ pub(super) fn add_row_button(
     glyph: Icon,
     label: impl Into<SharedString>,
     accent: Rgba,
-    palette: &ForgePalette,
     handler: impl Fn(&ClickEvent, &mut Window, &mut App) + 'static,
     density: Density,
+    cx: &App,
 ) -> AnyElement {
+    let palette = &cx.palette();
     let label = label.into();
     let hover = palette.surface_overlay;
     div()
@@ -36,7 +37,7 @@ pub(super) fn add_row_button(
         .child(icon(glyph, CARD_GLYPH, accent))
         .child(
             div()
-                .font_family(body_family())
+                .font_family(cx.body_family())
                 .text_size(FONT_XS)
                 .text_color(accent)
                 .child(label),
@@ -50,6 +51,7 @@ pub(super) fn empty_placeholder_card(
     label: impl Into<SharedString>,
     palette: &ForgePalette,
     density: Density,
+    cx: &App,
 ) -> AnyElement {
     let label = label.into();
     div()
@@ -66,7 +68,7 @@ pub(super) fn empty_placeholder_card(
         .child(icon(glyph, EMPTY_CARD_GLYPH, glyph_color))
         .child(
             div()
-                .font_family(body_family())
+                .font_family(cx.body_family())
                 .text_size(FONT_XS)
                 .text_color(palette.text_muted)
                 .child(label),
@@ -79,6 +81,7 @@ pub(super) fn inline_warning_card(
     hint: impl Into<SharedString>,
     palette: &ForgePalette,
     density: Density,
+    cx: &App,
 ) -> AnyElement {
     let title = title.into();
     let hint = hint.into();
@@ -101,14 +104,14 @@ pub(super) fn inline_warning_card(
                 .gap(spacing(Spacing::Xxs, density))
                 .child(
                     div()
-                        .font_family(body_family())
+                        .font_family(cx.body_family())
                         .text_size(FONT_XS)
                         .text_color(palette.text_primary)
                         .child(title),
                 )
                 .child(
                     div()
-                        .font_family(body_family())
+                        .font_family(cx.body_family())
                         .text_size(FONT_XXS)
                         .text_color(palette.text_faint)
                         .child(hint),

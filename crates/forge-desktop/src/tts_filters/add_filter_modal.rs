@@ -2,12 +2,11 @@ use super::filter_options::{
     MAX_DURATION_MAX, MAX_DURATION_MIN, ModalStage, OUTPUT_PRESETS, OutputPreset, SKIP_PRESETS,
     SkipPreset, parse_max_duration,
 };
-use forge_components::ActivePresentation;
 use forge_components::{
-    BORDER_THIN, Density, FONT_XS, FONT_XXS, ForgePalette, Icon, InputEvent, KeyActivated,
-    ModalSize, OverlayPosition, Radius, Spacing, TextArea, TextInput, body_family, field_label,
-    ghost_button, modal, mono_family, overlay, primary_button_with_icon, radio_row,
-    radio_row_label, radius, scaled, spacing, toggle, tr,
+    ActivePresentation, BORDER_THIN, Density, FONT_XS, FONT_XXS, ForgePalette, Icon, InputEvent,
+    KeyActivated, ModalSize, OverlayPosition, Radius, Spacing, TextArea, TextInput, field_label,
+    ghost_button, modal, overlay, primary_button_with_icon, radio_row, radio_row_label, radius,
+    scaled, spacing, toggle, tr,
 };
 use forge_storage::BlocklistMode;
 use gpui::prelude::*;
@@ -278,7 +277,7 @@ impl AddFilterModal {
                         id,
                         selected,
                         color,
-                        radio_row_label(preset.label(), None, selected, palette, density),
+                        radio_row_label(preset.label(), None, selected, palette, density, cx),
                         palette,
                     )
                     .on_click(cx.listener(
@@ -326,6 +325,7 @@ impl AddFilterModal {
                         selected,
                         palette,
                         density,
+                        cx,
                     ),
                     palette,
                 )
@@ -350,7 +350,7 @@ impl AddFilterModal {
                 .child(field_label(palette, param_label, self.param.clone()))
                 .child(
                     div()
-                        .font_family(body_family())
+                        .font_family(cx.body_family())
                         .text_size(FONT_XXS)
                         .text_color(palette.text_faint)
                         .child(tr!(
@@ -371,7 +371,7 @@ impl AddFilterModal {
         cx: &mut Context<Self>,
     ) -> AnyElement {
         let note = div()
-            .font_family(body_family())
+            .font_family(cx.body_family())
             .text_size(FONT_XXS)
             .text_color(palette.text_faint)
             .child(tr!("tts_filters_modal_blocklist_note"));
@@ -393,6 +393,7 @@ impl AddFilterModal {
                         censor_selected,
                         palette,
                         density,
+                        cx,
                     ),
                     palette,
                 )
@@ -411,6 +412,7 @@ impl AddFilterModal {
                         skip_selected,
                         palette,
                         density,
+                        cx,
                     ),
                     palette,
                 )
@@ -472,7 +474,7 @@ impl AddFilterModal {
                 .px(scaled(REPLACE_TAB_PAD_H, density))
                 .rounded(radius(Radius::Sm))
                 .cursor_pointer()
-                .font_family(mono_family())
+                .font_family(cx.mono_family())
                 .text_size(FONT_XXS)
                 .text_color(fg)
                 .key_activated(palette.text_primary)
@@ -490,7 +492,7 @@ impl AddFilterModal {
             tr!("tts_filters_modal_replace_find_label")
         };
         let note = div()
-            .font_family(body_family())
+            .font_family(cx.body_family())
             .text_size(FONT_XXS)
             .text_color(palette.text_faint)
             .child(tr!("tts_filters_modal_replace_note"));
@@ -540,14 +542,14 @@ impl AddFilterModal {
                     .flex_col()
                     .child(
                         div()
-                            .font_family(body_family())
+                            .font_family(cx.body_family())
                             .text_size(FONT_XS)
                             .text_color(palette.text_primary)
                             .child(tr!("tts_filters_modal_replace_inside_words_label")),
                     )
                     .child(
                         div()
-                            .font_family(body_family())
+                            .font_family(cx.body_family())
                             .text_size(FONT_XXS)
                             .text_color(palette.text_faint)
                             .child(tr!("tts_filters_modal_replace_inside_words_hint")),
@@ -590,7 +592,7 @@ impl Render for AddFilterModal {
             .justify_between()
             .child(
                 div()
-                    .font_family(body_family())
+                    .font_family(cx.body_family())
                     .text_size(FONT_XS)
                     .text_color(palette.text_faint)
                     .child(status_text),

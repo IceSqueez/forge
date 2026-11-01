@@ -399,6 +399,14 @@ mod tests {
     }
 
     #[test]
+    fn masked_token_is_exactly_the_prefix_the_body_and_four_tail_characters() {
+        assert_eq!(
+            super::mask_with_prefix("pre_", "abcdefgh"),
+            format!("pre_{}efgh", super::MASKED_BODY)
+        );
+    }
+
+    #[test]
     fn masked_token_keeps_tokens_not_longer_than_the_tail_whole() {
         for token in ["a", "abc", "abcd"] {
             let masked = masked_token(token);

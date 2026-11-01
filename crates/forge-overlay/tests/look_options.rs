@@ -46,9 +46,13 @@ fn accepts(kind_id: &str, config: &OverlayConfig) -> bool {
 }
 
 fn page_config(stored: OverlayConfig, media: OverlayMedia) -> Value {
+    kind_page_config(ALERT_KIND, stored, media)
+}
+
+fn kind_page_config(kind_id: &str, stored: OverlayConfig, media: OverlayMedia) -> Value {
     let reg = registry();
-    let descriptor = reg.get(ALERT_KIND).expect("the alert kind ships");
-    let mut instance = sub_alert_instance(ALERT_KIND);
+    let descriptor = reg.get(kind_id).expect("the kind ships in this build");
+    let mut instance = sub_alert_instance(kind_id);
     instance.config = stored;
     instance.media = media;
     let document = config_document(&instance, descriptor).expect("the config document builds");
@@ -81,6 +85,28 @@ fn the_alert_defaults_paint_the_surface_the_stylesheet_always_drew() {
         "a cleared color field would paint something other than the default"
     );
     assert!(assets.style.contains("background: rgba(20, 20, 28, 0.86);"));
+}
+
+#[test]
+fn an_untouched_alert_hands_its_page_the_exact_color_the_stylesheet_draws() {
+    let reg = registry();
+    let assets = reg
+        .get(ALERT_KIND)
+        .expect("the alert kind ships")
+        .page_assets();
+
+    let config = page_config(OverlayConfig::new(), OverlayMedia::default());
+    let color = config[BACKGROUND_COLOR].as_str().expect("a color text");
+    let percent = config[BACKGROUND_OPACITY].as_i64().expect("a percent");
+    let [red, green, blue] = hex_color_channels(color).expect("a hex color");
+    let painted = format!("background: rgba({red}, {green}, {blue}, 0.{percent});");
+
+    assert!(assets.style.contains(&painted), "{painted}");
+    let paint = common::js_function(assets.behavior, "paintSurface");
+    assert!(assets.behavior.contains("var PERCENT = 100;"));
+    assert!(paint.contains("opacity / PERCENT"));
+    assert!(paint.contains("config.background_color"));
+    assert!(paint.contains("config.background_opacity"));
 }
 
 #[test]
@@ -117,6 +143,8 @@ fn a_color_is_exactly_a_hash_and_six_hex_digits() {
         ("123456", None),
         ("#12345g", None),
         ("#+12345", None),
+        ("#ééé", None),
+        (" #123456", None),
         ("", None),
     ] {
         assert_eq!(hex_color_channels(value), expected, "{value:?}");
@@ -151,6 +179,17 @@ fn the_image_field_takes_only_a_library_reference_never_a_path_or_a_glyph() {
         ("image:", false),
         ("image:../../etc/passwd", false),
         ("image:/abs/file.gif", false),
+        ("image:a/b", false),
+        ("image:a\\b", false),
+        ("image:%2e%2e", false),
+        ("image:wave.gif", false),
+        ("image:a b", false),
+        ("image:abc\n", false),
+        ("image:ABC", false),
+        ("image:a_b", false),
+        ("image:рисунок", false),
+        ("IMAGE:abc", false),
+        (" image:abc", false),
         ("clip:01j9p4s2m7q8v3x5y6z7a8b9c0", false),
     ] {
         let verdict = validate_overlay_config(
@@ -164,6 +203,13 @@ fn the_image_field_takes_only_a_library_reference_never_a_path_or_a_glyph() {
                 "{value:?} produced {verdict:?}"
             );
         }
+    }
+}
+
+#[test]
+fn the_image_and_color_fields_refuse_a_value_that_is_not_text() {
+    for key in [IMAGE, BACKGROUND_COLOR] {
+        assert!(!accepts(ALERT_KIND, &number(key, 7)), "{key}");
     }
 }
 
@@ -280,6 +326,41 @@ fn the_editor_preview_follows_the_surface_choices() {
 }
 
 #[test]
+fn the_editor_preview_stays_in_range_on_a_stored_value_validation_would_refuse() {
+    for (stored, expected_alpha) in [
+        (number(BACKGROUND_OPACITY, 150), 1.0),
+        (number(BACKGROUND_OPACITY, -5), 0.0),
+        (text(BACKGROUND_OPACITY, "half"), ALERT.surface_alpha),
+    ] {
+        let surface = composition(ALERT_KIND, stored)
+            .surface
+            .expect("an alert has a surface");
+        assert_eq!(surface.alpha, expected_alpha);
+    }
+
+    let mut unknown_position = text(IMAGE, &image_reference(BLOB_IDENTITY));
+    unknown_position.extend(text(IMAGE_POSITION, "right"));
+    assert_eq!(
+        composition(ALERT_KIND, unknown_position)
+            .image
+            .map(|image| image.side),
+        Some(PreviewImageSide::Above)
+    );
+
+    let mut wild = text(LABEL_SIDE, "diagonal");
+    wild.extend(number(LABEL_OFFSET_X, LABEL_OFFSET_MAX_PX + 1));
+    wild.extend(number(LABEL_OFFSET_Y, LABEL_OFFSET_MIN_PX - 1));
+    assert_eq!(
+        composition(FRAME_KIND, wild).label,
+        Some(PreviewLabel {
+            side: PreviewLabelSide::Left,
+            offset_x: 4000,
+            offset_y: -4000,
+        })
+    );
+}
+
+#[test]
 fn the_editor_preview_places_a_chosen_image_and_reserves_nothing_without_one() {
     let reference = image_reference(BLOB_IDENTITY);
     assert_eq!(composition(ALERT_KIND, OverlayConfig::new()).image, None);
@@ -350,6 +431,44 @@ fn the_frame_label_defaults_to_its_old_place_and_draws_above_the_frame() {
     assert!(assets.style.contains("z-index: 1;\n  left: 22px;"));
     assert!(assets.style.contains("var(--label-x, 0px)"));
     assert!(assets.behavior.contains("label.dataset.side"));
+}
+
+#[test]
+fn the_frame_page_receives_each_label_placement_key() {
+    let untouched = kind_page_config(FRAME_KIND, OverlayConfig::new(), OverlayMedia::default());
+    assert_eq!(untouched[LABEL_SIDE], LABEL_SIDE_LEFT);
+    assert_eq!(untouched[LABEL_OFFSET_X], 0);
+    assert_eq!(untouched[LABEL_OFFSET_Y], 0);
+
+    let mut stored = text(LABEL_SIDE, LABEL_SIDE_RIGHT);
+    stored.extend(number(LABEL_OFFSET_X, -30));
+    stored.extend(number(LABEL_OFFSET_Y, 45));
+    let moved = kind_page_config(FRAME_KIND, stored, OverlayMedia::default());
+    assert_eq!(moved[LABEL_SIDE], LABEL_SIDE_RIGHT);
+    assert_eq!(moved[LABEL_OFFSET_X], -30);
+    assert_eq!(moved[LABEL_OFFSET_Y], 45);
+}
+
+#[test]
+fn the_frame_page_reads_the_placement_keys_the_config_writes() {
+    let reg = registry();
+    let assets = reg
+        .get(FRAME_KIND)
+        .expect("the frame kind ships")
+        .page_assets();
+    let place = common::js_function(assets.behavior, "placeLabel");
+
+    for key in [LABEL_SIDE, LABEL_OFFSET_X, LABEL_OFFSET_Y] {
+        assert!(place.contains(&format!("config.{key}")), "{key}");
+    }
+    for side in [LABEL_SIDE_CENTER, LABEL_SIDE_RIGHT] {
+        assert!(
+            assets
+                .style
+                .contains(&format!(".corner[data-side=\"{side}\"]")),
+            "{side} has no rule to move it"
+        );
+    }
 }
 
 #[test]

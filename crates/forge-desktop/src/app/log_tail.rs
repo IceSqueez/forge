@@ -247,6 +247,58 @@ mod tests {
     }
 
     #[test]
+    fn a_bridged_line_shows_the_crate_that_logged_it_and_none_of_the_bridge_fields() {
+        let captured = capture(|| {
+            tracing::event!(target: "log", Level::WARN, {
+                log.target = "hyper::client",
+                log.module_path = "hyper::client::pool",
+                log.file = "/home/bob/.cargo/registry/src/pool.rs",
+                log.line = 12_u32,
+                retried = true,
+                message = "connection closed",
+            });
+        });
+
+        let seen: Vec<(String, String)> = captured
+            .into_iter()
+            .map(|l| (l.target.into_owned(), l.message))
+            .collect();
+        assert_eq!(
+            seen,
+            vec![(
+                "hyper::client".to_owned(),
+                "connection closed retried=true".to_owned()
+            )],
+        );
+    }
+
+    #[test]
+    fn a_field_that_only_starts_like_the_bridge_prefix_stays_on_the_line() {
+        let captured = capture(|| {
+            tracing::info!(target: "qa_probe", logger = "main", "started");
+        });
+
+        let seen: Vec<(String, String)> = captured
+            .into_iter()
+            .map(|l| (l.target.into_owned(), l.message))
+            .collect();
+        assert_eq!(
+            seen,
+            vec![("qa_probe".to_owned(), "started logger=main".to_owned())],
+        );
+    }
+
+    #[test]
+    fn a_secret_in_a_field_is_scrubbed_before_the_line_reaches_the_tail() {
+        let captured = capture(|| {
+            tracing::info!(target: "qa_probe", token = "abcdef123456", "refreshed");
+        });
+
+        let seen: Vec<String> = captured.into_iter().map(|l| l.message).collect();
+        assert_eq!(seen, vec!["refreshed token=<redacted:token>".to_owned()]);
+    }
+
+    #[test]
     fn the_revision_moves_on_every_change_even_at_capacity_and_on_every_clone() {
         let tail = LogTail::new();
         let clone = tail.clone();

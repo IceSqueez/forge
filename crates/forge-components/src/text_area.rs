@@ -771,6 +771,7 @@ impl Render for TextArea {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::palette::FORGE_DEFAULT;
     use crate::test_support::install_presentation;
 
     fn with_area<R>(
@@ -1006,5 +1007,232 @@ mod tests {
             scrolled > px(0.0) && after == px(0.0),
             "{scrolled:?} -> {after:?}"
         );
+    }
+
+    const RUN_TEXT_BYTES: usize = 10;
+
+    fn base_run() -> TextRun {
+        TextRun {
+            len: RUN_TEXT_BYTES,
+            font: gpui::font("Test"),
+            color: gpui::black(),
+            background_color: None,
+            underline: None,
+            strikethrough: None,
+        }
+    }
+
+    fn danger(range: Range<usize>, weight: Option<FontWeight>) -> TextTint {
+        TextTint {
+            range,
+            color: |palette: &ForgePalette| palette.danger,
+            weight,
+        }
+    }
+
+    fn success(range: Range<usize>) -> TextTint {
+        TextTint {
+            range,
+            color: |palette: &ForgePalette| palette.success,
+            weight: None,
+        }
+    }
+
+    fn tinted(tints: &[TextTint]) -> Vec<(Range<usize>, Hsla, FontWeight)> {
+        let runs = tinted_runs(&base_run(), tints, &FORGE_DEFAULT);
+        let mut pos = 0;
+        runs.iter()
+            .filter(|run| run.len > 0)
+            .map(|run| {
+                let start = pos;
+                pos += run.len;
+                (start..pos, run.color, run.font.weight)
+            })
+            .collect()
+    }
+
+    #[test]
+    fn untinted_text_is_one_run_in_the_base_style() {
+        let base = base_run();
+
+        assert_eq!(tinted(&[]), vec![(0..10, base.color, base.font.weight)]);
+    }
+
+    #[test]
+    fn each_tint_paints_only_its_range_and_keeps_the_base_font_unless_it_names_a_weight() {
+        let base = base_run();
+        let red = Hsla::from(FORGE_DEFAULT.danger);
+        let green = Hsla::from(FORGE_DEFAULT.success);
+
+        assert_eq!(
+            tinted(&[danger(2..4, Some(FontWeight::MEDIUM)), success(6..8)]),
+            vec![
+                (0..2, base.color, base.font.weight),
+                (2..4, red, FontWeight::MEDIUM),
+                (4..6, base.color, base.font.weight),
+                (6..8, green, base.font.weight),
+                (8..10, base.color, base.font.weight),
+            ],
+        );
+    }
+
+    #[test]
+    fn tints_touching_both_ends_and_each_other_cover_the_text_with_no_base_gap() {
+        let base = base_run();
+        let red = Hsla::from(FORGE_DEFAULT.danger);
+        let green = Hsla::from(FORGE_DEFAULT.success);
+
+        assert_eq!(
+            tinted(&[danger(0..4, None), success(4..10)]),
+            vec![
+                (0..4, red, base.font.weight),
+                (4..10, green, base.font.weight),
+            ],
+        );
+    }
+
+    #[test]
+    fn a_tint_overlapping_the_previous_one_or_past_the_text_is_skipped_and_the_text_stays_covered()
+    {
+        let base = base_run();
+        let red = Hsla::from(FORGE_DEFAULT.danger);
+        let expected = vec![
+            (0..2, base.color, base.font.weight),
+            (2..4, red, base.font.weight),
+            (4..10, base.color, base.font.weight),
+        ];
+
+        for skipped in [3..5, 8..11, 0..1] {
+            assert_eq!(
+                tinted(&[danger(2..4, None), success(skipped.clone())]),
+                expected,
+                "{skipped:?}",
+            );
+        }
+    }
+
+    #[test]
+    fn a_selection_over_a_tint_splits_it_without_losing_bytes_or_the_tint_color() {
+        let text = SharedString::from("0123456789");
+        let tints = [danger(2..6, None)];
+        let base = base_run();
+        let selection_bg = Hsla::from(FORGE_DEFAULT.brand);
+
+        let runs = build_runs(
+            &text,
+            RunStyle {
+                base_color: base.color,
+                font: base.font.clone(),
+                tints: &tints,
+                palette: &FORGE_DEFAULT,
+            },
+            &(4..8),
+            selection_bg,
+            None,
+        );
+
+        let selected: Vec<(usize, Hsla)> = runs
+            .iter()
+            .filter(|run| run.len > 0 && run.background_color == Some(selection_bg))
+            .map(|run| (run.len, run.color))
+            .collect();
+        assert_eq!(runs.iter().map(|run| run.len).sum::<usize>(), text.len());
+        assert_eq!(
+            selected,
+            vec![(2, Hsla::from(FORGE_DEFAULT.danger)), (2, base.color)],
+        );
+    }
+
+    #[gpui::test]
+    fn scrolling_to_the_end_settles_on_the_last_row_after_paint(cx: &mut gpui::TestAppContext) {
+        let content = tall_content();
+        install_presentation(cx);
+        let window = cx.add_window(|_window, cx| TextArea::new("placeholder", cx));
+        window
+            .update(cx, |area, _, cx| area.set_content(content.clone(), cx))
+            .unwrap();
+        cx.run_until_parked();
+        let (top_is_near_end, max_scroll) = window
+            .update(cx, |area, _, _| {
+                (area.is_near_end(px(24.0)), area.max_scroll())
+            })
+            .unwrap();
+
+        window
+            .update(cx, |area, _, cx| area.scroll_to_end(cx))
+            .unwrap();
+        cx.run_until_parked();
+        let scroll = window.update(cx, |area, _, _| area.scroll_offset).unwrap();
+
+        assert!(!top_is_near_end);
+        assert!(max_scroll > px(0.0));
+        assert_eq!(scroll, max_scroll);
+    }
+
+    #[gpui::test]
+    fn near_the_end_means_within_the_slack_inclusive(cx: &mut gpui::TestAppContext) {
+        let content = tall_content();
+        let verdicts = with_painted_area(cx, &content, |area, _window, _cx| {
+            let distance = px(40.0);
+            area.scroll_offset = area.max_scroll() - distance;
+            [
+                area.is_near_end(distance),
+                area.is_near_end(distance - px(1.0)),
+            ]
+        });
+
+        assert_eq!(verdicts, [true, false]);
+    }
+
+    #[gpui::test]
+    fn new_tinted_content_keeps_the_scroll_position_the_reader_left(cx: &mut gpui::TestAppContext) {
+        let content = tall_content();
+        install_presentation(cx);
+        let window = cx.add_window(|_window, cx| TextArea::new("placeholder", cx));
+        window
+            .update(cx, |area, _, cx| area.set_content(content.clone(), cx))
+            .unwrap();
+        cx.run_until_parked();
+        let reading = px(30.0);
+
+        window
+            .update(cx, |area, _, cx| {
+                area.scroll_offset = reading;
+                area.set_tinted_content(content.clone(), vec![success(0..4)], cx);
+            })
+            .unwrap();
+        cx.run_until_parked();
+
+        let scroll = window.update(cx, |area, _, _| area.scroll_offset).unwrap();
+        assert_eq!(scroll, reading);
+    }
+
+    #[gpui::test]
+    fn plain_content_drops_the_tints_of_the_text_it_replaces(cx: &mut gpui::TestAppContext) {
+        let tints = with_area(cx, "abcd", |area, _window, cx| {
+            area.set_tinted_content("abcd", vec![success(0..4)], cx);
+            area.set_content("abcd", cx);
+            area.tints.len()
+        });
+
+        assert_eq!(tints, 0);
+    }
+
+    #[gpui::test]
+    fn a_selection_counts_as_in_progress_while_dragging_and_while_it_stays_on_screen(
+        cx: &mut gpui::TestAppContext,
+    ) {
+        let phases = with_area(cx, "abcd", |area, _window, cx| {
+            area.move_to(0, cx);
+            let idle = area.selection_in_progress();
+            area.motion.drag_selecting = true;
+            let dragging = area.selection_in_progress();
+            area.motion.drag_selecting = false;
+            area.buffer.select_to(2);
+            let kept = area.selection_in_progress();
+            (idle, dragging, kept)
+        });
+
+        assert_eq!(phases, (false, true, true));
     }
 }

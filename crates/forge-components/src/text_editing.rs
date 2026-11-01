@@ -646,8 +646,9 @@ mod tests {
     use super::*;
     use crate::highlight::Language;
     use crate::test_support::install_presentation;
+    use crate::text_drag::ScrollAxis;
     use crate::{CodeEditor, TextArea, TextInput};
-    use gpui::{Render, TestAppContext};
+    use gpui::{Render, TestAppContext, point};
 
     trait Harness: TextEditor + EntityInputHandler + Render + Sized + 'static {
         const NAME: &'static str;
@@ -655,6 +656,13 @@ mod tests {
         fn fresh(cx: &mut Context<Self>) -> Self;
 
         fn load(&mut self, content: &str, cx: &mut Context<Self>);
+
+        fn overflowing() -> String {
+            (0..300)
+                .map(|row| format!("row {row}"))
+                .collect::<Vec<_>>()
+                .join("\n")
+        }
     }
 
     impl Harness for TextInput {
@@ -666,6 +674,10 @@ mod tests {
 
         fn load(&mut self, content: &str, cx: &mut Context<Self>) {
             self.set_content(content.to_owned(), cx);
+        }
+
+        fn overflowing() -> String {
+            "long field ".repeat(300)
         }
     }
 
@@ -706,6 +718,179 @@ mod tests {
                 act(editor, window, cx)
             })
             .unwrap()
+    }
+
+    const POINTER_OUTSIDE: Pixels = px(50.0);
+    const TICK_HANG_GUARD: usize = 100_000;
+
+    fn on_painted<T: Harness, R>(
+        cx: &mut TestAppContext,
+        content: &str,
+        act: impl FnOnce(&mut T, &mut Context<T>) -> R,
+    ) -> R {
+        install_presentation(cx);
+        let window = cx.add_window(|_window, cx| T::fresh(cx));
+        window
+            .update(cx, |editor, _window, cx| editor.load(content, cx))
+            .unwrap();
+        cx.run_until_parked();
+        window
+            .update(cx, |editor, _window, cx| act(editor, cx))
+            .unwrap()
+    }
+
+    fn start_drag_at<T: Harness>(editor: &mut T, offset: usize, cx: &mut Context<T>) {
+        editor.move_to(offset, cx);
+        editor.motion().drag_selecting = true;
+    }
+
+    fn past_start(viewport: DragViewport) -> Point<Pixels> {
+        let center = viewport.bounds.center();
+        match viewport.axis {
+            ScrollAxis::Horizontal => point(viewport.bounds.left() - POINTER_OUTSIDE, center.y),
+            ScrollAxis::Vertical => point(center.x, viewport.bounds.top() - POINTER_OUTSIDE),
+        }
+    }
+
+    fn past_end(viewport: DragViewport) -> Point<Pixels> {
+        let center = viewport.bounds.center();
+        match viewport.axis {
+            ScrollAxis::Horizontal => point(viewport.bounds.right() + POINTER_OUTSIDE, center.y),
+            ScrollAxis::Vertical => point(center.x, viewport.bounds.bottom() + POINTER_OUTSIDE),
+        }
+    }
+
+    fn pointer_past_a_fitting_document<T: Harness>(cx: &mut TestAppContext) {
+        let selections = on_painted::<T, _>(cx, "abc def", |editor, cx| {
+            let viewport = editor.drag_viewport().expect("the field was painted");
+            start_drag_at(editor, 3, cx);
+            editor.drag_pointer_moved(past_end(viewport), Some(MouseButton::Left), cx);
+            let to_end = editor.buffer().selected_range().clone();
+            editor.drag_pointer_moved(past_start(viewport), Some(MouseButton::Left), cx);
+            let to_start = editor.buffer().selected_range().clone();
+            (to_end, to_start)
+        });
+
+        assert_eq!(selections, (3..7, 0..3), "{}", T::NAME);
+    }
+
+    #[gpui::test]
+    fn a_pointer_past_a_fitting_document_selects_up_to_that_edge(cx: &mut TestAppContext) {
+        pointer_past_a_fitting_document::<TextInput>(cx);
+        pointer_past_a_fitting_document::<TextArea>(cx);
+        pointer_past_a_fitting_document::<CodeEditor>(cx);
+    }
+
+    fn drag_outside_scrolls_to_the_end<T: Harness>(cx: &mut TestAppContext) {
+        let content = T::overflowing();
+        let (armed, ticks, settled, selected, ticker_left) =
+            on_painted::<T, _>(cx, &content, |editor, cx| {
+                start_drag_at(editor, 0, cx);
+                editor.set_drag_scroll(px(0.0));
+                let viewport = editor.drag_viewport().expect("the field was painted");
+                editor.drag_pointer_moved(past_end(viewport), Some(MouseButton::Left), cx);
+                let armed = editor.motion().drag_ticker.is_some();
+                let mut ticks = 0;
+                while editor.tick_drag_scroll(cx) && ticks < TICK_HANG_GUARD {
+                    ticks += 1;
+                }
+                (
+                    armed,
+                    ticks,
+                    editor.drag_viewport().expect("the field was painted"),
+                    editor.buffer().selected_range().clone(),
+                    editor.motion().drag_ticker.is_some(),
+                )
+            });
+
+        assert!(armed, "{}: no ticker", T::NAME);
+        assert!(ticks > 1, "{}: scrolled in {ticks} ticks", T::NAME);
+        assert_eq!(settled.scroll, settled.max_scroll, "{}", T::NAME);
+        assert_eq!(selected, 0..content.len(), "{}", T::NAME);
+        assert!(!ticker_left, "{}: ticker outlived the scroll", T::NAME);
+    }
+
+    #[gpui::test]
+    fn a_held_pointer_past_the_field_scrolls_to_the_end_and_selects_everything(
+        cx: &mut TestAppContext,
+    ) {
+        drag_outside_scrolls_to_the_end::<TextInput>(cx);
+        drag_outside_scrolls_to_the_end::<TextArea>(cx);
+        drag_outside_scrolls_to_the_end::<CodeEditor>(cx);
+    }
+
+    fn pointer_inside_arms_no_ticker<T: Harness>(cx: &mut TestAppContext) {
+        let content = T::overflowing();
+        let armed = on_painted::<T, _>(cx, &content, |editor, cx| {
+            let viewport = editor.drag_viewport().expect("the field was painted");
+            start_drag_at(editor, 0, cx);
+            editor.drag_pointer_moved(viewport.bounds.center(), Some(MouseButton::Left), cx);
+            editor.motion().drag_ticker.is_some()
+        });
+
+        assert!(!armed, "{}", T::NAME);
+    }
+
+    #[gpui::test]
+    fn a_pointer_in_the_middle_of_the_field_starts_no_scrolling(cx: &mut TestAppContext) {
+        pointer_inside_arms_no_ticker::<TextInput>(cx);
+        pointer_inside_arms_no_ticker::<TextArea>(cx);
+        pointer_inside_arms_no_ticker::<CodeEditor>(cx);
+    }
+
+    fn released_button_ends_the_drag<T: Harness>(cx: &mut TestAppContext) {
+        let content = T::overflowing();
+        let (selecting, pointer, ticker, selection_kept) =
+            on_painted::<T, _>(cx, &content, |editor, cx| {
+                let viewport = editor.drag_viewport().expect("the field was painted");
+                start_drag_at(editor, 0, cx);
+                editor.drag_pointer_moved(past_end(viewport), Some(MouseButton::Left), cx);
+                let held = editor.buffer().selected_range().clone();
+                editor.drag_pointer_moved(viewport.bounds.center(), None, cx);
+                let selection_kept = editor.buffer().selected_range() == &held;
+                let motion = editor.motion();
+                (
+                    motion.drag_selecting,
+                    motion.drag_pointer,
+                    motion.drag_ticker.is_some(),
+                    selection_kept,
+                )
+            });
+
+        assert!(!selecting, "{}", T::NAME);
+        assert_eq!(pointer, None, "{}", T::NAME);
+        assert!(!ticker, "{}", T::NAME);
+        assert!(selection_kept, "{}", T::NAME);
+    }
+
+    #[gpui::test]
+    fn a_button_released_outside_the_window_ends_the_drag_on_the_next_move(
+        cx: &mut TestAppContext,
+    ) {
+        released_button_ends_the_drag::<TextInput>(cx);
+        released_button_ends_the_drag::<TextArea>(cx);
+        released_button_ends_the_drag::<CodeEditor>(cx);
+    }
+
+    fn move_without_drag_is_ignored<T: Harness>(cx: &mut TestAppContext) {
+        let (selected, pointer) = on_painted::<T, _>(cx, "abc def", |editor, cx| {
+            let viewport = editor.drag_viewport().expect("the field was painted");
+            editor.move_to(3, cx);
+            editor.drag_pointer_moved(past_end(viewport), Some(MouseButton::Left), cx);
+            (
+                editor.buffer().selected_range().clone(),
+                editor.motion().drag_pointer,
+            )
+        });
+
+        assert_eq!((selected, pointer), (3..3, None), "{}", T::NAME);
+    }
+
+    #[gpui::test]
+    fn a_move_with_no_drag_started_leaves_the_selection_alone(cx: &mut TestAppContext) {
+        move_without_drag_is_ignored::<TextInput>(cx);
+        move_without_drag_is_ignored::<TextArea>(cx);
+        move_without_drag_is_ignored::<CodeEditor>(cx);
     }
 
     #[derive(Debug, PartialEq)]

@@ -202,7 +202,15 @@ mod tests {
 
     use super::*;
 
-    const ONE_SAMPLE_PER_RULE: [(&str, &str); 9] = [
+    const ONE_SAMPLE_PER_RULE: [(&str, &str); VOCABULARY.len()] = [
+        (
+            "pool checkout log.target=\"sqlx::pool\" log.line=12 done",
+            "pool checkout done",
+        ),
+        (
+            "at /home/bob/.cargo/registry/src/index.crates.io-6f17d22bba15001f/hyper-1.6.0/src/proto/h1/conn.rs:122:9",
+            "at <dependency>",
+        ),
         (
             "refresh rejected eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiJmb3JnZSJ9.dBjftJeZ4CVP-mB92K27uhbUJU1p1r_wW1gFWFOEjXk end",
             "refresh rejected <redacted:token> end",
@@ -248,7 +256,7 @@ mod tests {
         "AKIAIOSFODNN7EXAMPLE",
     ];
 
-    const DIAGNOSTICS_THAT_MUST_SURVIVE: [&str; 10] = [
+    const DIAGNOSTICS_THAT_MUST_SURVIVE: [&str; 17] = [
         "digest e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
         "sha256=e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
         "event 01ARZ3NDEKTSV4RRFFQ69G5FAV replayed",
@@ -259,6 +267,13 @@ mod tests {
         "opening /tmp/forge-smoke/data.db",
         "hey chat, thanks for the raid @viewer",
         "connected target=twitch user_id=1234567 latency_ms=42",
+        "panicked at crates/forge-runtime/src/engine.rs:42:7",
+        "wrote /tmp/.cargo-note.txt",
+        "catalog.file=overlay.css",
+        "logger=hyper",
+        "log.level=debug",
+        "/rustc/abc123/library/core/src/panic.rs",
+        "/rustc/nothexes/library/core/src/panic.rs",
     ];
 
     #[derive(Clone, Default)]
@@ -292,6 +307,67 @@ mod tests {
     #[test]
     fn every_rule_redacts_its_secret_with_a_placeholder_naming_the_class_it_removed() {
         for (raw, expected) in ONE_SAMPLE_PER_RULE {
+            assert_eq!(scrub(raw), expected, "input {raw:?}");
+        }
+    }
+
+    #[test]
+    fn every_rule_in_the_vocabulary_is_the_one_its_sample_exercises() {
+        for ((pattern, _), (raw, _)) in VOCABULARY.iter().zip(ONE_SAMPLE_PER_RULE) {
+            let rule = Regex::new(pattern).unwrap();
+            assert!(rule.is_match(raw), "{pattern:?} does not match {raw:?}");
+        }
+    }
+
+    #[test]
+    fn a_third_party_source_path_collapses_to_one_marker_wherever_it_sits() {
+        for (raw, expected) in [
+            (
+                "panicked at /Users/amy/.cargo/git/checkouts/gpui-abc/src/app.rs:10:5: boom",
+                "panicked at <dependency> boom",
+            ),
+            (
+                "C:\\Users\\amy\\.rustup\\toolchains\\stable\\lib\\rustlib\\src\\panic.rs:1",
+                "<dependency>",
+            ),
+            (
+                "C:\\Users\\Jane Doe\\.cargo\\registry\\src\\a.rs:3",
+                "~ <dependency>",
+            ),
+            (
+                "/rustc/05f9846f893b09a1be1fc8560e33fc3c815cfecb/library/core/src/panic.rs:70",
+                "<dependency>",
+            ),
+            (
+                "file=\"/home/bob/.cargo/registry/src/a/b.rs\" line=3",
+                "file=\"<dependency>\" line=3",
+            ),
+            ("src=/home/bob/.cargo/a.rs", "src=<dependency>"),
+            ("(/home/bob/.cargo/a.rs)", "(<dependency>)"),
+        ] {
+            assert_eq!(scrub(raw), expected, "input {raw:?}");
+        }
+    }
+
+    #[test]
+    fn a_path_in_the_users_own_checkout_keeps_everything_after_the_home_directory() {
+        assert_eq!(
+            scrub("panicked at /home/bob/Source/forge/crates/app/src/main.rs:1:2"),
+            "panicked at ~/Source/forge/crates/app/src/main.rs:1:2",
+        );
+    }
+
+    #[test]
+    fn every_field_of_the_log_bridge_leaves_no_trace_or_stray_space() {
+        for (raw, expected) in [
+            ("a log.file=\"C:\\a b\\c.rs\" b", "a b"),
+            ("a log.file=src/lib.rs b", "a b"),
+            ("a log.line=12 b", "a b"),
+            ("a log.module_path=hyper::client b", "a b"),
+            ("a log.target=hyper b", "a b"),
+            ("a\tlog.target=hyper", "a"),
+            ("a log.target=hyper\nb log.line=1\n", "a\nb\n"),
+        ] {
             assert_eq!(scrub(raw), expected, "input {raw:?}");
         }
     }

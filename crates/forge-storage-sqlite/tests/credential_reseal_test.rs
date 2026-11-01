@@ -161,3 +161,46 @@ async fn a_bound_copy_under_another_id_is_still_refused() {
     assert!(matches!(copied, Err(StorageError::Decryption)));
     assert_eq!(fixture.raw_row("youtube:b").await, before);
 }
+
+#[tokio::test]
+async fn one_unusable_row_does_not_stop_the_rows_after_it_from_resealing() {
+    let fixture = Fixture::new().await;
+    fixture
+        .insert_raw("a:foreign", &[9; 32], "", "foreign")
+        .await;
+    fixture
+        .insert_raw("b:bound", &fixture.key, "b:bound", "bound")
+        .await;
+    fixture
+        .insert_raw("c:unbound", &fixture.key, "", "third")
+        .await;
+    fixture
+        .insert_raw("d:unbound", &fixture.key, "", "fourth")
+        .await;
+    let foreign = fixture.raw_row("a:foreign").await;
+    let bound = fixture.raw_row("b:bound").await;
+
+    let backend = fixture.open().await;
+    let repo = backend.credentials_repo();
+    let third = repo.load(&CredentialId::new("c:unbound")).await;
+    let fourth = repo.load(&CredentialId::new("d:unbound")).await;
+    drop(backend);
+
+    assert_eq!(third.expect("third").as_deref(), Some("third"));
+    assert_eq!(fourth.expect("fourth").as_deref(), Some("fourth"));
+    assert_eq!(fixture.raw_row("a:foreign").await, foreign);
+    assert_eq!(fixture.raw_row("b:bound").await, bound);
+}
+
+#[tokio::test]
+async fn resealing_draws_a_new_nonce_for_the_new_ciphertext() {
+    let fixture = Fixture::new().await;
+    fixture
+        .insert_raw("twitch:broadcaster", &fixture.key, "", "old-token")
+        .await;
+
+    drop(fixture.open().await);
+
+    let (_, nonce) = fixture.raw_row("twitch:broadcaster").await;
+    assert_ne!(nonce, NONCE.to_vec());
+}

@@ -123,10 +123,130 @@ impl CustomAccents {
 
 #[cfg(test)]
 mod tests {
+    use forge_components::Toasts;
+    use gpui::{AppContext, Entity, TestAppContext};
+    use tokio::runtime::Runtime;
+
     use super::*;
+    use crate::test_support::{error_toasts, pump, runtime, test_backend};
+
+    const FIRST: &str = "#000001";
+    const SECOND: &str = "#000002";
 
     fn list(colors: &[&str]) -> Vec<String> {
         colors.iter().map(|color| (*color).to_owned()).collect()
+    }
+
+    fn full_list() -> Vec<String> {
+        (0..MAX_CUSTOM_ACCENTS)
+            .map(|at| format!("#0000{at:02x}"))
+            .collect()
+    }
+
+    fn open(
+        repo: Arc<dyn SettingsRepo>,
+        rt: &Runtime,
+        cx: &mut TestAppContext,
+    ) -> Entity<CustomAccents> {
+        let handle = rt.handle().clone();
+        cx.new(|cx| CustomAccents::new(repo, handle, cx))
+    }
+
+    fn settle(rt: &Runtime, cx: &mut TestAppContext) {
+        for _ in 0..3 {
+            pump(rt);
+            cx.run_until_parked();
+        }
+    }
+
+    fn shown(store: &Entity<CustomAccents>, cx: &mut TestAppContext) -> Vec<String> {
+        store.read_with(cx, |store, _| store.colors().to_vec())
+    }
+
+    fn stored(repo: &Arc<dyn SettingsRepo>, rt: &Runtime) -> Option<Vec<String>> {
+        rt.block_on(read_stored_setting(repo.as_ref(), &OVERLAY_CUSTOM_ACCENTS))
+            .unwrap()
+    }
+
+    #[gpui::test]
+    fn an_added_color_is_stored_and_the_next_session_lists_it(cx: &mut TestAppContext) {
+        let rt = runtime();
+        let (settings, _writes) = test_backend();
+        let repo = settings.settings_repo();
+        let store = open(Arc::clone(&repo), &rt, cx);
+        settle(&rt, cx);
+
+        store.update(cx, |store, cx| {
+            store.add(FIRST, cx);
+            store.add(SECOND, cx);
+        });
+        settle(&rt, cx);
+
+        let next_session = open(Arc::clone(&repo), &rt, cx);
+        settle(&rt, cx);
+        assert_eq!(stored(&repo, &rt), Some(list(&[FIRST, SECOND])));
+        assert_eq!(shown(&next_session, cx), list(&[FIRST, SECOND]));
+    }
+
+    #[gpui::test]
+    fn a_removed_color_leaves_the_list_and_the_store(cx: &mut TestAppContext) {
+        let rt = runtime();
+        let (settings, _writes) = test_backend();
+        let repo = settings.settings_repo();
+        let store = open(Arc::clone(&repo), &rt, cx);
+        settle(&rt, cx);
+        store.update(cx, |store, cx| {
+            store.add(FIRST, cx);
+            store.add(SECOND, cx);
+        });
+        settle(&rt, cx);
+
+        store.update(cx, |store, cx| store.remove(FIRST, cx));
+        settle(&rt, cx);
+
+        assert_eq!(shown(&store, cx), list(&[SECOND]));
+        assert_eq!(stored(&repo, &rt), Some(list(&[SECOND])));
+    }
+
+    #[gpui::test]
+    fn a_failed_save_reports_an_error_and_returns_to_what_is_stored(cx: &mut TestAppContext) {
+        cx.update(|cx| cx.set_global(Toasts::new()));
+        let rt = runtime();
+        let (settings, _writes) = test_backend();
+        let repo = settings.settings_repo();
+        let store = open(Arc::clone(&repo), &rt, cx);
+        settle(&rt, cx);
+        store.update(cx, |store, cx| store.add(FIRST, cx));
+        settle(&rt, cx);
+        settings.fail_writes(OVERLAY_CUSTOM_ACCENTS.name());
+
+        store.update(cx, |store, cx| store.add(SECOND, cx));
+        let optimistic = shown(&store, cx);
+        settle(&rt, cx);
+
+        assert_eq!(optimistic, list(&[FIRST, SECOND]));
+        assert_eq!(shown(&store, cx), list(&[FIRST]));
+        assert_eq!(cx.update(|cx| error_toasts(cx)), 1);
+    }
+
+    #[gpui::test]
+    fn a_color_added_before_the_list_loads_writes_nothing_over_the_stored_one(
+        cx: &mut TestAppContext,
+    ) {
+        let rt = runtime();
+        let (settings, _writes) = test_backend();
+        let repo = settings.settings_repo();
+        let first = open(Arc::clone(&repo), &rt, cx);
+        settle(&rt, cx);
+        first.update(cx, |store, cx| store.add(FIRST, cx));
+        settle(&rt, cx);
+
+        let loading = open(Arc::clone(&repo), &rt, cx);
+        loading.update(cx, |store, cx| store.add(SECOND, cx));
+        settle(&rt, cx);
+
+        assert_eq!(stored(&repo, &rt), Some(list(&[FIRST])));
+        assert_eq!(shown(&loading, cx), list(&[FIRST]));
     }
 
     #[test]
@@ -167,10 +287,46 @@ mod tests {
     }
 
     #[test]
+    fn the_last_free_place_takes_a_color_without_dropping_any() {
+        let mut one_short = full_list();
+        one_short.pop();
+
+        let next = with_accent(&one_short, "#ffffff");
+
+        assert_eq!(next.len(), MAX_CUSTOM_ACCENTS);
+        assert_eq!(next[..one_short.len()], one_short[..]);
+    }
+
+    #[test]
+    fn moving_a_known_color_in_a_full_list_drops_nothing() {
+        let full = full_list();
+
+        let next = with_accent(&full, &full[3]);
+
+        assert_eq!(next.len(), MAX_CUSTOM_ACCENTS);
+        assert_eq!(next[0], full[0]);
+        assert_eq!(next.last(), Some(&full[3]));
+    }
+
+    #[test]
+    fn a_stored_list_over_the_cap_keeps_its_newest_colors() {
+        let mut stored = full_list();
+        stored.push("#ffffff".to_owned());
+
+        let known = known_accents(stored.clone());
+
+        assert_eq!(known[..], stored[1..]);
+    }
+
+    #[test]
     fn removal_takes_only_the_named_color() {
         assert_eq!(
             without_accent(&list(&["#000001", "#000002"]), "#000001"),
             list(&["#000002"])
+        );
+        assert_eq!(
+            without_accent(&list(&["#000001"]), "#000009"),
+            list(&["#000001"])
         );
     }
 

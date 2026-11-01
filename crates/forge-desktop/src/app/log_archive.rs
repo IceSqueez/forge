@@ -323,6 +323,36 @@ mod tests {
         assert_eq!(out.elided_bytes, old.len() as u64);
     }
 
+    const OLD_LINES: &str = "WARN hyper at /home/bob/.cargo/registry/src/a/conn.rs:1 log.line=3\nINFO forge token=abcdef123456 ok\n";
+    const SCRUBBED_LINES: &str =
+        "WARN hyper at <dependency>\nINFO forge token=<redacted:token> ok\n";
+
+    #[test]
+    fn corpus_scrubs_a_file_written_before_the_current_rules_line_by_line() {
+        let dir = ScratchDir::new("scrubbed");
+        dir.write("forge.log.2026-01-05", OLD_LINES.as_bytes());
+
+        let out = corpus(dir.path(), usize::MAX).expect("corpus");
+
+        assert!(
+            out.text.ends_with(SCRUBBED_LINES),
+            "unscrubbed body:\n{}",
+            out.text,
+        );
+    }
+
+    #[test]
+    fn corpus_measures_the_budget_on_the_scrubbed_text() {
+        let dir = ScratchDir::new("scrubbed_budget");
+        dir.write("forge.log.2026-01-05", OLD_LINES.as_bytes());
+        let budget = framing_len(&dir, SCRUBBED_LINES.len()) + SCRUBBED_LINES.len();
+
+        let out = corpus(dir.path(), budget).expect("corpus");
+
+        assert_eq!(out.elided_bytes, 0, "{out:?}");
+        assert!(out.text.ends_with(SCRUBBED_LINES), "{out:?}");
+    }
+
     #[test]
     fn corpus_cuts_a_partial_file_on_a_line_start_past_a_multibyte_character() {
         let dir = ScratchDir::new("budget_multibyte");

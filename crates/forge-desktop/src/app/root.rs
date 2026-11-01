@@ -894,8 +894,11 @@ mod tests {
                 (PlatformId::Twitch.integration_id(), false),
                 (PlatformId::YouTube.integration_id(), false),
                 (PlatformId::Kick.integration_id(), false),
+                (forge_donatello::DONATELLO_INTEGRATION.id, false),
+                (forge_monobank::MONOBANK_INTEGRATION.id, false),
                 (forge_obs::OBS_INTEGRATION.id, true),
                 (forge_vtube::VTUBE_INTEGRATION.id, false),
+                (forge_discord::DISCORD_INTEGRATION.id, false),
             ]
         );
     }

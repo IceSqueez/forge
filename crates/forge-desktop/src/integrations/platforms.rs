@@ -161,8 +161,82 @@ mod tests {
         }
     }
 
-    fn donatello() -> IntegrationId {
-        IntegrationId::new("donatello")
+    fn off_roster() -> IntegrationId {
+        IntegrationId::new("not-on-the-roster")
+    }
+
+    #[test]
+    fn the_tally_counts_every_enabled_external_integration() {
+        let twitch = PlatformId::Twitch.integration_id();
+        let youtube = PlatformId::YouTube.integration_id();
+        let kick = PlatformId::Kick.integration_id();
+        let obs = forge_obs::OBS_INTEGRATION.id;
+        let vtube = forge_vtube::VTUBE_INTEGRATION.id;
+        let donatello = forge_donatello::DONATELLO_INTEGRATION.id;
+        let monobank = forge_monobank::MONOBANK_INTEGRATION.id;
+        let discord = forge_discord::DISCORD_INTEGRATION.id;
+        let midi = forge_midi::MIDI_INTEGRATION.id;
+        let hotkey = forge_hotkey::HOTKEY_INTEGRATION.id;
+        let everything = vec![
+            twitch.clone(),
+            youtube.clone(),
+            kick,
+            donatello.clone(),
+            monobank.clone(),
+            obs.clone(),
+            vtube,
+            discord.clone(),
+            midi,
+            hotkey,
+        ];
+        let usual_six = vec![
+            twitch.clone(),
+            youtube.clone(),
+            obs.clone(),
+            donatello.clone(),
+            monobank.clone(),
+            discord.clone(),
+        ];
+        let first_four = vec![twitch.clone(), youtube, obs, donatello];
+
+        for (enabled, connected, expected, case) in [
+            (
+                usual_six.clone(),
+                first_four.clone(),
+                (4, 6),
+                "six enabled, four connected",
+            ),
+            (
+                usual_six.clone(),
+                vec![twitch.clone(), monobank, discord],
+                (3, 6),
+                "donations and discord count as connected",
+            ),
+            (
+                vec![twitch],
+                first_four,
+                (1, 1),
+                "a connected integration that is switched off stays out",
+            ),
+            (
+                everything.clone(),
+                everything,
+                (8, 8),
+                "midi and hotkeys never join the roster",
+            ),
+            (usual_six, Vec::new(), (0, 6), "nothing connected yet"),
+        ] {
+            let mut connectivity = PlatformConnectivity::new();
+            for id in &connected {
+                connectivity.set_connected(id, true);
+            }
+
+            assert_eq!(
+                connectivity.tally_enabled(|id| enabled.contains(id)),
+                expected,
+                "{case}"
+            );
+        }
     }
 
     #[test]
@@ -183,11 +257,15 @@ mod tests {
 
         for (connected, changed, case) in steps {
             assert_eq!(
-                connectivity.set_connected(&donatello(), connected),
+                connectivity.set_connected(&off_roster(), connected),
                 changed,
                 "{case}"
             );
-            assert_eq!(connectivity.is_connected(&donatello()), connected, "{case}");
+            assert_eq!(
+                connectivity.is_connected(&off_roster()),
+                connected,
+                "{case}"
+            );
         }
     }
 
@@ -195,15 +273,15 @@ mod tests {
     fn a_first_sighting_while_online_is_reported_as_a_change() {
         let mut connectivity = PlatformConnectivity::new();
 
-        assert!(connectivity.set_connected(&donatello(), true));
+        assert!(connectivity.set_connected(&off_roster(), true));
     }
 
     #[test]
     fn a_service_never_reported_counts_as_offline() {
         let mut connectivity = PlatformConnectivity::new();
-        connectivity.set_connected(&IntegrationId::new("monobank"), true);
+        connectivity.set_connected(&IntegrationId::new("also-not-on-the-roster"), true);
 
-        assert!(!connectivity.is_connected(&donatello()));
+        assert!(!connectivity.is_connected(&off_roster()));
     }
 
     #[test]
@@ -215,7 +293,7 @@ mod tests {
             .map(|(id, _)| id.clone())
             .collect();
 
-        connectivity.set_connected(&donatello(), true);
+        connectivity.set_connected(&off_roster(), true);
 
         let shown: Vec<IntegrationId> = connectivity
             .connections()
@@ -223,7 +301,7 @@ mod tests {
             .map(|(id, _)| id.clone())
             .collect();
         assert_eq!(shown, roster);
-        assert!(connectivity.is_connected(&donatello()));
+        assert!(connectivity.is_connected(&off_roster()));
     }
 
     fn connection_event(platform_id: &str, state: ConnectionState) -> RuntimeEvent {
@@ -259,10 +337,12 @@ mod tests {
     fn a_connection_event_for_a_platform_outside_the_roster_changes_nothing() {
         let mut connectivity = PlatformConnectivity::new();
 
-        let changed = connectivity
-            .apply_runtime_event(&connection_event("donatello", ConnectionState::Connected));
+        let changed = connectivity.apply_runtime_event(&connection_event(
+            off_roster().as_str(),
+            ConnectionState::Connected,
+        ));
 
         assert!(!changed);
-        assert!(!connectivity.is_connected(&donatello()));
+        assert!(!connectivity.is_connected(&off_roster()));
     }
 }

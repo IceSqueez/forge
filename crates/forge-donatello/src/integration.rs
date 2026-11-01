@@ -1,6 +1,7 @@
 use forge_platform_core::{
-    CatalogLabel, ConnectionAffordance, IntegrationCatalogGroup, IntegrationCategory,
-    IntegrationDeclaration, IntegrationIdentity, IntegrationTint, SignInRoute, TileMark,
+    CatalogLabel, ConnectionAffordance, ConnectionStripMark, IntegrationCatalogGroup,
+    IntegrationCategory, IntegrationDeclaration, IntegrationIdentity, IntegrationTint, SignInRoute,
+    TileMark,
 };
 use forge_types::IntegrationId;
 
@@ -24,6 +25,9 @@ pub const DONATELLO_INTEGRATION: IntegrationDeclaration = IntegrationDeclaration
         step_tint: IntegrationTint::AccentPinkLight,
         trigger_tint: IntegrationTint::AccentPinkLight,
     },
-    connection_strip: None,
+    connection_strip: Some(ConnectionStripMark {
+        label: "Donatello",
+        dot_tint: IntegrationTint::AccentPinkLight,
+    }),
     disclaimer: None,
 };

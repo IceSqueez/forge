@@ -390,6 +390,9 @@ fn seed_shell_globals(
         platforms,
         cx,
     );
+    if let Some(discord) = handles.integrations.discord_client.clone() {
+        crate::integrations::platforms::mirror_status_connectivity(discord, platforms, cx);
+    }
 }
 
 fn register_quit_teardown(handles: &Arc<RuntimeHandles>, cx: &mut App) {

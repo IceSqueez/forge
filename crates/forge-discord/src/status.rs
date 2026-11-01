@@ -57,7 +57,7 @@ impl BuiltinStatus for DiscordClient {
     }
 
     fn status_revisions(&self) -> Option<forge_platform_core::CollectionRevisions> {
-        None
+        Some(self.status_signal().subscribe())
     }
 }
 

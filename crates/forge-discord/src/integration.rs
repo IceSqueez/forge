@@ -1,6 +1,7 @@
 use forge_platform_core::{
-    CatalogLabel, ConnectionAffordance, IntegrationCatalogGroup, IntegrationCategory,
-    IntegrationDeclaration, IntegrationIdentity, IntegrationTint, SignInRoute, TileMark,
+    CatalogLabel, ConnectionAffordance, ConnectionStripMark, IntegrationCatalogGroup,
+    IntegrationCategory, IntegrationDeclaration, IntegrationIdentity, IntegrationTint, SignInRoute,
+    TileMark,
 };
 use forge_types::IntegrationId;
 
@@ -26,6 +27,9 @@ pub const DISCORD_INTEGRATION: IntegrationDeclaration = IntegrationDeclaration {
         step_tint: IntegrationTint::Info,
         trigger_tint: IntegrationTint::Info,
     },
-    connection_strip: None,
+    connection_strip: Some(ConnectionStripMark {
+        label: "Discord",
+        dot_tint: IntegrationTint::ThemeBrand,
+    }),
     disclaimer: None,
 };

@@ -8,6 +8,7 @@ use forge_net::{
     GatewayTimings, HeaderLookup, Method, MultipartBody, RequestBody, ThrottleHintFamily,
     ThrottleScope,
 };
+use forge_platform_core::CollectionRevisionSignal;
 use forge_storage::CredentialsRepo;
 use tokio::sync::broadcast;
 
@@ -65,6 +66,7 @@ pub struct DiscordClient {
     content_state: Arc<Mutex<DiscordContentSnapshot>>,
     rate_limiter: SharedDiscordRateLimiter,
     webhook_registry_serial: tokio::sync::Mutex<()>,
+    status_signal: CollectionRevisionSignal,
 }
 
 impl DiscordClient {
@@ -90,6 +92,10 @@ impl DiscordClient {
 
     pub(crate) fn webhook_registry_serial(&self) -> &tokio::sync::Mutex<()> {
         &self.webhook_registry_serial
+    }
+
+    pub(crate) fn status_signal(&self) -> &CollectionRevisionSignal {
+        &self.status_signal
     }
 
     pub fn new(
@@ -128,6 +134,7 @@ impl DiscordClient {
             content_state: Arc::clone(&content_state),
             rate_limiter,
             webhook_registry_serial: tokio::sync::Mutex::new(()),
+            status_signal: CollectionRevisionSignal::new(),
         }))
     }
 
@@ -722,6 +729,7 @@ pub(crate) mod tests {
                 content_state: make_content_state(),
                 rate_limiter,
                 webhook_registry_serial: tokio::sync::Mutex::new(()),
+                status_signal: CollectionRevisionSignal::new(),
             })
         }
     }

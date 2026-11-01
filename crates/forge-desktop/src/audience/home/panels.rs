@@ -334,7 +334,12 @@ impl HomeView {
             .padding_xy(CONN_HEADER_PAD_V, scaled(CONN_HEADER_PAD_H, density))
             .split_radius(radius(Radius::Md), px(0.0));
 
-        let mut cells = div().w_full().flex().gap(CELL_GAP);
+        let columns = connections.len().clamp(1, CONN_GRID_COLUMNS);
+        let mut cells = div()
+            .w_full()
+            .grid()
+            .grid_cols(columns as u16)
+            .gap(CELL_GAP);
         for (integ, ok) in connections {
             cells = cells.child(self.connection_cell(integ, ok, palette, density, cx));
         }

@@ -1,5 +1,8 @@
-use forge_platform_core::ConnectionState;
+use std::sync::Arc;
+
+use forge_platform_core::{BuiltinStatus, ConnectionState, RevisionWait};
 use forge_types::IntegrationId;
+use gpui::{App, Entity};
 
 use crate::app::runtime_event::RuntimeEvent;
 use crate::integrations::integration_catalog::connection_roster;
@@ -87,6 +90,39 @@ impl PlatformConnectivity {
                 .unwrap_or(false);
         }
     }
+}
+
+pub(crate) fn apply_connection(
+    connectivity: &Entity<PlatformConnectivity>,
+    id: &IntegrationId,
+    status: &dyn BuiltinStatus,
+    cx: &mut App,
+) {
+    let connected = status.connection() == ConnectionState::Connected;
+    connectivity.update(cx, |connectivity, cx| {
+        if connectivity.set_connected(id, connected) {
+            cx.notify();
+        }
+    });
+}
+
+pub(crate) fn mirror_status_connectivity(
+    status: Arc<dyn BuiltinStatus>,
+    connectivity: &Entity<PlatformConnectivity>,
+    cx: &mut App,
+) {
+    let Some(mut revisions) = status.status_revisions() else {
+        return;
+    };
+    let id = status.id().clone();
+    let connectivity = connectivity.clone();
+    apply_connection(&connectivity, &id, status.as_ref(), cx);
+    cx.spawn(async move |cx| {
+        while revisions.changed().await == RevisionWait::Changed {
+            cx.update(|cx| apply_connection(&connectivity, &id, status.as_ref(), cx));
+        }
+    })
+    .detach();
 }
 
 #[cfg(test)]

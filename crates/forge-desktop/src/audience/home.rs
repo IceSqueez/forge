@@ -95,6 +95,7 @@ const CONN_BRAND_DOT: Pixels = px(10.0);
 const CONN_BRAND_DOT_RADIUS: Pixels = px(3.0);
 const CONN_STATUS_DOT: Pixels = px(8.0);
 const CELL_GAP: Pixels = px(1.0);
+const CONN_GRID_COLUMNS: usize = 5;
 
 const HEALTH_ICON: Pixels = px(14.0);
 const HEALTH_LIVE_DOT: Pixels = px(6.0);

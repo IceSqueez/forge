@@ -1,11 +1,10 @@
 use crate::shared::option_choices::ChoiceOption;
 use forge_host::donation_services::DonationServices;
-use forge_platform_core::{BuiltinStatus, ConnectionState, IntegrationCategory};
-use forge_types::IntegrationId;
+use forge_platform_core::IntegrationCategory;
 use futures_util::StreamExt as _;
 use gpui::{App, Entity};
 
-use crate::integrations::platforms::PlatformConnectivity;
+use crate::integrations::platforms::{PlatformConnectivity, apply_connection};
 use forge_host::integration_catalog::declarations;
 
 pub(crate) fn donation_provider_options() -> Vec<ChoiceOption> {
@@ -34,18 +33,4 @@ pub(crate) fn mirror_donation_connectivity(
         })
         .detach();
     }
-}
-
-fn apply_connection(
-    connectivity: &Entity<PlatformConnectivity>,
-    id: &IntegrationId,
-    status: &dyn BuiltinStatus,
-    cx: &mut App,
-) {
-    let connected = status.connection() == ConnectionState::Connected;
-    connectivity.update(cx, |connectivity, cx| {
-        if connectivity.set_connected(id, connected) {
-            cx.notify();
-        }
-    });
 }

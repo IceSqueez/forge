@@ -34,6 +34,7 @@ impl DiscordClient {
         let mut snap = self.content_state().lock_recover();
         snap.registry.replace(&names);
         drop(snap);
+        self.status_signal().bump();
 
         Ok(names)
     }
@@ -56,8 +57,8 @@ impl DiscordClient {
             .await
             .map_err(|e| DiscordError::Credential(e.to_string()))?;
 
-        let mut snap = self.content_state().lock_recover();
-        snap.registry.insert(name);
+        self.content_state().lock_recover().registry.insert(name);
+        self.status_signal().bump();
 
         Ok(())
     }
@@ -70,8 +71,8 @@ impl DiscordClient {
             .await
             .map_err(|e| DiscordError::Credential(e.to_string()))?;
 
-        let mut snap = self.content_state().lock_recover();
-        snap.registry.remove(name);
+        self.content_state().lock_recover().registry.remove(name);
+        self.status_signal().bump();
 
         Ok(removed)
     }

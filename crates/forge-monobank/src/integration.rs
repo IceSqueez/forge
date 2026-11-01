@@ -1,6 +1,7 @@
 use forge_platform_core::{
-    CatalogLabel, ConnectionAffordance, IntegrationCatalogGroup, IntegrationCategory,
-    IntegrationDeclaration, IntegrationIdentity, IntegrationTint, SignInRoute, TileMark,
+    CatalogLabel, ConnectionAffordance, ConnectionStripMark, IntegrationCatalogGroup,
+    IntegrationCategory, IntegrationDeclaration, IntegrationIdentity, IntegrationTint, SignInRoute,
+    TileMark,
 };
 use forge_types::IntegrationId;
 
@@ -24,6 +25,9 @@ pub const MONOBANK_INTEGRATION: IntegrationDeclaration = IntegrationDeclaration 
         step_tint: IntegrationTint::TextSecondary,
         trigger_tint: IntegrationTint::TextSecondary,
     },
-    connection_strip: None,
+    connection_strip: Some(ConnectionStripMark {
+        label: "monobank",
+        dot_tint: IntegrationTint::TextSecondary,
+    }),
     disclaimer: None,
 };

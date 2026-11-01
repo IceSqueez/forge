@@ -4,8 +4,8 @@ use forge_speech_types::LanguageCode;
 
 use crate::{
     LiteralScope, PipelineConfig, PipelineContext, ReplacementRule, StageName, StageOut, Unspoken,
-    censor_blocked_words, is_spoken_as_entry, literal_replace_logged, output_transforms_logged,
-    run_stage, spoken_words, stage_output_logged,
+    censor_blocked_words, is_spoken_as_entry, literal_replace_logged, name_prefix,
+    output_transforms_logged, spoken_words, stage_output_logged, stage_skip_rules,
 };
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -74,12 +74,14 @@ pub(crate) fn run_stage_traced(
     text: &str,
     config: &PipelineConfig,
     context: &PipelineContext,
-    prepend_display_name: bool,
     marks: &[AppliedReplacement],
 ) -> (StageOut, Vec<AppliedReplacement>) {
     match stage {
         StageName::SkipRules => (
-            run_stage(stage, text, config, context, prepend_display_name),
+            match stage_skip_rules(text, config, context) {
+                Some(reason) => Err(reason),
+                None => Ok(text.to_owned()),
+            },
             marks.to_vec(),
         ),
         StageName::WordBlocklist => blocklist_traced(text, config),
@@ -94,8 +96,8 @@ pub(crate) fn run_stage_traced(
         }
         StageName::Output => {
             let mut sub_passes = SubPassEdits::default();
-            let output =
-                stage_output_logged(text, config, context, prepend_display_name, &mut sub_passes);
+            let prefix = name_prefix(config, context);
+            let output = stage_output_logged(text, config, prefix.as_deref(), &mut sub_passes);
             sub_passes.end_pass();
             let carried = sub_passes
                 .finished
@@ -165,43 +167,43 @@ fn replacements_traced(
     let mut carried = marks.to_vec();
     for (index, rule) in rules.iter().enumerate() {
         let mut edits = PassEdits::default();
-        current = match rule {
-            ReplacementRule::Text {
-                pattern,
-                replacement,
-            } => literal_replace_logged(
-                &current,
-                pattern,
-                replacement,
-                LiteralScope::AnywhereInText,
-                &mut edits,
-            ),
-            ReplacementRule::WholeWord {
-                pattern,
-                replacement,
-            } => literal_replace_logged(
-                &current,
-                pattern,
-                replacement,
-                LiteralScope::WholeWords,
-                &mut edits,
-            ),
-            ReplacementRule::Regex {
-                compiled,
-                replacement,
-            } => regex_replace_logged(&current, compiled.regex(), replacement, &mut edits),
-            ReplacementRule::LinkWord { compiled } => regex_replace_logged(
-                &current,
-                compiled.regex(),
-                spoken_words(language).link,
-                &mut edits,
-            ),
-        };
+        current = apply_rule_logged(&current, rule, language, &mut edits);
         carried = carry_through_pass(carried, edits.0, |_| {
             Some(ReplacementOrigin::ReplacementRuleIndex(index))
         });
     }
     (current, carried)
+}
+
+pub(crate) fn apply_rule_logged(
+    current: &str,
+    rule: &ReplacementRule,
+    language: Option<LanguageCode>,
+    log: &mut impl EditLog,
+) -> String {
+    match rule {
+        ReplacementRule::Text {
+            pattern,
+            replacement,
+        } => literal_replace_logged(
+            current,
+            pattern,
+            replacement,
+            LiteralScope::AnywhereInText,
+            log,
+        ),
+        ReplacementRule::WholeWord {
+            pattern,
+            replacement,
+        } => literal_replace_logged(current, pattern, replacement, LiteralScope::WholeWords, log),
+        ReplacementRule::Regex {
+            compiled,
+            replacement,
+        } => regex_replace_logged(current, compiled.regex(), replacement, log),
+        ReplacementRule::LinkWord { compiled } => {
+            regex_replace_logged(current, compiled.regex(), spoken_words(language).link, log)
+        }
+    }
 }
 
 fn regex_replace_logged(

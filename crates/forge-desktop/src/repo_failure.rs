@@ -273,6 +273,16 @@ impl From<SpeakError> for RepoFailure {
     }
 }
 
+impl From<FilterMappingError> for RepoFailure {
+    fn from(error: FilterMappingError) -> Self {
+        Self::shown(
+            MessageRef::new(VALUE_REJECTED)
+                .with_detail(UpstreamDetail::from_redacted(error.to_string())),
+            error,
+        )
+    }
+}
+
 impl From<IntegrationStartError> for RepoFailure {
     fn from(error: IntegrationStartError) -> Self {
         Self::shown(error.message().clone(), &error)
@@ -301,16 +311,6 @@ impl From<ServerError> for RepoFailure {
             _ => MessageRef::new(OPERATION_FAILED),
         };
         Self::shown(message, error)
-    }
-}
-
-impl From<FilterMappingError> for RepoFailure {
-    fn from(error: FilterMappingError) -> Self {
-        Self::shown(
-            MessageRef::new(VALUE_REJECTED)
-                .with_detail(UpstreamDetail::from_redacted(error.to_string())),
-            error,
-        )
     }
 }
 

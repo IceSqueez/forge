@@ -1,4 +1,4 @@
-use forge_types::{ClipId, RecoverMutex, Shared};
+use forge_types::{ClipId, RecoverMutex};
 use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
@@ -151,22 +151,22 @@ pub struct ClipLibrary {
     media: Arc<dyn MediaRepo>,
     adopting: Mutex<HashSet<ClipId>>,
     refused: Mutex<HashMap<ClipId, MediaRefusal>>,
-    publisher: Shared<Option<Arc<dyn EventPublisher>>>,
+    publisher: Arc<dyn EventPublisher>,
 }
 
 impl ClipLibrary {
-    pub fn new(clips: Arc<dyn SoundboardClipsRepo>, media: Arc<dyn MediaRepo>) -> Self {
+    pub fn new(
+        clips: Arc<dyn SoundboardClipsRepo>,
+        media: Arc<dyn MediaRepo>,
+        publisher: Arc<dyn EventPublisher>,
+    ) -> Self {
         Self {
             clips,
             media,
             adopting: Mutex::new(HashSet::new()),
             refused: Mutex::new(HashMap::new()),
-            publisher: Shared::new(None),
+            publisher,
         }
-    }
-
-    pub fn install_event_publisher(&self, publisher: Arc<dyn EventPublisher>) {
-        self.publisher.store(Some(publisher));
     }
 
     pub async fn list(&self) -> Result<Vec<StoredClip>, SoundboardError> {
@@ -268,10 +268,8 @@ impl ClipLibrary {
     }
 
     pub async fn availability_of(&self, clips: &[StoredClip]) -> Vec<(ClipId, ClipAvailability)> {
-        let mut managed = Vec::with_capacity(clips.len());
-        for clip in clips {
-            managed.push(self.managed_path(clip.id).await);
-        }
+        let managed =
+            futures::future::join_all(clips.iter().map(|clip| self.managed_path(clip.id))).await;
         let legacy = readable_all(clips.iter().map(|clip| clip.file_path.clone()).collect()).await;
 
         clips
@@ -365,14 +363,11 @@ impl ClipLibrary {
                 reason: refusal.to_string(),
             },
         };
-        let snapshot = self.publisher.load();
-        if let Some(publisher) = snapshot.as_ref() {
-            ClipAdoptionSettled { clip_id, verdict }.publish(
-                publisher.as_ref(),
-                EventSource::Audio,
-                None,
-            );
-        }
+        ClipAdoptionSettled { clip_id, verdict }.publish(
+            self.publisher.as_ref(),
+            EventSource::Audio,
+            None,
+        );
     }
 
     async fn managed_path(&self, clip_id: ClipId) -> Option<PathBuf> {

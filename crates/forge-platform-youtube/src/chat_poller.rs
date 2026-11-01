@@ -7,7 +7,8 @@ use forge_platform_core::PlatformError;
 use forge_storage::BanLedgerRepo;
 use forge_types::Secret;
 use forge_types::{
-    ChatEventDetail, ChatPayload, ChatSegment, ChatViewer, ModerationMarks, UserBadge,
+    ChatEventDetail, ChatPayload, ChatSegment, ChatViewer, CurrencyCode, ModerationMarks,
+    MoneyAmount, UserBadge,
 };
 use futures::future::BoxFuture;
 use time::OffsetDateTime;

@@ -173,7 +173,6 @@ impl TriggerKindDescriptor for TimerTickDescriptor {
                     DeclaredVariable {
                         name: "timer.interval_minutes".to_owned(),
                         kind: VariantKind::Int,
-                        label: "Interval (minutes)".to_owned(),
                         synthesis: Some(SynthesisHint::BoundedInt {
                             min: MIN_INTERVAL_MINUTES,
                             max: MAX_INTERVAL_MINUTES,
@@ -185,7 +184,6 @@ impl TriggerKindDescriptor for TimerTickDescriptor {
                     DeclaredVariable {
                         name: "timer.message_count".to_owned(),
                         kind: VariantKind::Int,
-                        label: "Chat messages since last fire".to_owned(),
                         synthesis: Some(SynthesisHint::BoundedInt {
                             min: 0,
                             max: SYNTHESIZED_MESSAGE_COUNT_CEILING,

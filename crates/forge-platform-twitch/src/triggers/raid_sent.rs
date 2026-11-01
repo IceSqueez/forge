@@ -29,12 +29,10 @@ fn variables() -> Option<TriggerVariables> {
             })
             .legacy(
                 "to_broadcaster_login",
-                "Target channel login",
                 CanonicalVariable::actor(ActorRole::Principal, ActorSlot::Login),
             )
             .legacy(
                 "to_broadcaster_id",
-                "Target channel ID",
                 CanonicalVariable::actor(ActorRole::Principal, ActorSlot::Id),
             ),
     )

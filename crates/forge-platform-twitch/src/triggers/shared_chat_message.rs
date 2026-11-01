@@ -23,7 +23,6 @@ fn variables() -> Option<TriggerVariables> {
                 DeclaredVariable {
                     name: "chat.from_channel.login".to_owned(),
                     kind: VariantKind::String,
-                    label: "Source channel login".to_owned(),
                     synthesis: Some(SynthesisHint::Username),
                 },
                 |event| Variant::String(from_channel_field(event, chat_fields::FROM_CHANNEL_LOGIN)),
@@ -32,7 +31,6 @@ fn variables() -> Option<TriggerVariables> {
                 DeclaredVariable {
                     name: "chat.from_channel.display_name".to_owned(),
                     kind: VariantKind::String,
-                    label: "Source channel display name".to_owned(),
                     synthesis: Some(SynthesisHint::DisplayName),
                 },
                 |event| {

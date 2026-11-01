@@ -20,7 +20,6 @@ const EVENT_SPECIFIC_CLASS: u8 = 1;
 const LEGACY_CLASS: u8 = 2;
 
 const LEGACY_CHAT_MESSAGE_ID: &str = "chat.message_id";
-const LEGACY_CHAT_MESSAGE_ID_LABEL: &str = "Message ID";
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum LoginSlot {
@@ -217,11 +216,7 @@ impl TriggerVariables {
         self.canonical(CanonicalVariable::MessageId, move |event| {
             Variant::String(read(event))
         })
-        .legacy(
-            LEGACY_CHAT_MESSAGE_ID,
-            LEGACY_CHAT_MESSAGE_ID_LABEL,
-            CanonicalVariable::MessageId,
-        )
+        .legacy(LEGACY_CHAT_MESSAGE_ID, CanonicalVariable::MessageId)
     }
 
     pub fn first_chat_message(self) -> Self {
@@ -314,11 +309,10 @@ impl TriggerVariables {
         self
     }
 
-    pub fn legacy(mut self, name: &str, label: &str, superseded_by: CanonicalVariable) -> Self {
+    pub fn legacy(mut self, name: &str, superseded_by: CanonicalVariable) -> Self {
         self.legacy.push(LegacyEntry {
             declared: DeclaredVariable {
                 name: name.to_owned(),
-                label: label.to_owned(),
                 ..canonical_declaration(superseded_by)
             },
             superseded_by,
@@ -405,7 +399,6 @@ fn canonical_declaration(canonical: CanonicalVariable) -> DeclaredVariable {
     DeclaredVariable {
         name: canonical.name().to_owned(),
         kind: canonical.kind(),
-        label: canonical.label(),
         synthesis: canonical.synthesis(),
     }
 }

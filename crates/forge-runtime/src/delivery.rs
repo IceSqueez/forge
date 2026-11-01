@@ -673,7 +673,7 @@ mod tests {
     }
 
     fn child(parent: &Event, kind: &str) -> Arc<Event> {
-        Arc::new(Event::caused_by(
+        Arc::new(Event::child_of(
             EventSource::Core,
             kind,
             serde_json::Value::Null,

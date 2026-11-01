@@ -51,6 +51,10 @@ struct StuckFactory {
 }
 
 impl TtsEngineFactory for StuckFactory {
+    fn engine_id(&self) -> EngineId {
+        EngineId("stuck".into())
+    }
+
     fn class(&self) -> forge_tts_core::EngineClass {
         forge_tts_core::EngineClass::Local
     }
@@ -74,13 +78,10 @@ async fn with_synthesis_in_flight() -> Harness {
     let entered = Arc::new(Notify::new());
     let dropped = Arc::new(Notify::new());
     let mut registry = TtsRegistry::new();
-    registry.register(
-        EngineId("stuck".into()),
-        Arc::new(StuckFactory {
-            entered: Arc::clone(&entered),
-            dropped: Arc::clone(&dropped),
-        }),
-    );
+    registry.register(Arc::new(StuckFactory {
+        entered: Arc::clone(&entered),
+        dropped: Arc::clone(&dropped),
+    }));
     let (sink, _plays) = recording_sink();
     let deps = make_deps(
         registry,

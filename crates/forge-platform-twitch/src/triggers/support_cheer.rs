@@ -58,16 +58,11 @@ fn variables() -> Option<TriggerVariables> {
                 DeclaredVariable {
                     name: "cheer_is_anonymous".to_owned(),
                     kind: VariantKind::Bool,
-                    label: "Anonymous cheer".to_owned(),
                     synthesis: None,
                 },
                 |event| Variant::Bool(payload_read::flag(event, fields::IS_ANONYMOUS)),
             )
-            .legacy(
-                "cheer_message",
-                "Cheer message",
-                CanonicalVariable::MessageText,
-            ),
+            .legacy("cheer_message", CanonicalVariable::MessageText),
     )
 }
 

@@ -484,70 +484,10 @@ fn stage_skip_rules(
     None
 }
 
-fn stage_text_replacements(
-    text: &str,
-    rules: &[ReplacementRule],
-    language: Option<LanguageCode>,
-) -> String {
-    let mut current = text.to_owned();
-    for rule in rules {
-        match rule {
-            ReplacementRule::Text {
-                pattern,
-                replacement,
-            } => {
-                current = case_insensitive_replace(&current, pattern, replacement);
-            }
-            ReplacementRule::WholeWord {
-                pattern,
-                replacement,
-            } => {
-                current = whole_word_replace(&current, pattern, replacement);
-            }
-            ReplacementRule::Regex {
-                compiled,
-                replacement,
-            } => {
-                current = compiled
-                    .regex()
-                    .replace_all(&current, replacement.as_str())
-                    .into_owned();
-            }
-            ReplacementRule::LinkWord { compiled } => {
-                current = compiled
-                    .regex()
-                    .replace_all(&current, spoken_words(language).link)
-                    .into_owned();
-            }
-        }
-    }
-    current
-}
-
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum LiteralScope {
     AnywhereInText,
     WholeWords,
-}
-
-fn case_insensitive_replace(text: &str, pattern: &str, replacement: &str) -> String {
-    literal_replace_logged(
-        text,
-        pattern,
-        replacement,
-        LiteralScope::AnywhereInText,
-        &mut Unlogged,
-    )
-}
-
-fn whole_word_replace(text: &str, pattern: &str, replacement: &str) -> String {
-    literal_replace_logged(
-        text,
-        pattern,
-        replacement,
-        LiteralScope::WholeWords,
-        &mut Unlogged,
-    )
 }
 
 fn literal_replace_logged(
@@ -830,20 +770,19 @@ fn spoken_name_prefix(viewer_name: &str, says: &str) -> String {
     format!("{viewer_name} {says}: ")
 }
 
-fn stage_output(
-    text: &str,
-    config: &PipelineConfig,
-    context: &PipelineContext,
-    prepend_display_name: bool,
-) -> String {
-    stage_output_logged(text, config, context, prepend_display_name, &mut Unlogged)
+fn name_prefix(config: &PipelineConfig, context: &PipelineContext) -> Option<String> {
+    config.output.read_display_name_first.then(|| {
+        spoken_name_prefix(
+            context.viewer_name,
+            spoken_words(context.speech_language).says,
+        )
+    })
 }
 
 fn stage_output_logged(
     text: &str,
     config: &PipelineConfig,
-    context: &PipelineContext,
-    prepend_display_name: bool,
+    name_prefix: Option<&str>,
     log: &mut impl EditLog,
 ) -> String {
     let emote_pass = transform_emotes_logged(text, config, log);
@@ -854,11 +793,8 @@ fn stage_output_logged(
         emote_pass
     };
     log.end_pass();
-    let named = if prepend_display_name {
-        let mut named = spoken_name_prefix(
-            context.viewer_name,
-            spoken_words(context.speech_language).says,
-        );
+    let named = if let Some(prefix) = name_prefix {
+        let mut named = prefix.to_owned();
         log.record(0..named.len(), "", &named);
         named.push_str(&emoji_pass);
         named
@@ -877,28 +813,6 @@ fn stage_output_logged(
 
 type StageOut = Result<String, SkipReason>;
 
-fn run_stage(
-    stage: StageName,
-    text: &str,
-    config: &PipelineConfig,
-    context: &PipelineContext,
-    prepend_display_name: bool,
-) -> StageOut {
-    match stage {
-        StageName::SkipRules => match stage_skip_rules(text, config, context) {
-            Some(reason) => Err(reason),
-            None => Ok(text.to_owned()),
-        },
-        StageName::WordBlocklist => trace::blocklist_traced(text, config).0,
-        StageName::TextReplacements => Ok(stage_text_replacements(
-            text,
-            &config.replacement_rules,
-            context.speech_language,
-        )),
-        StageName::Output => Ok(stage_output(text, config, context, prepend_display_name)),
-    }
-}
-
 const STAGES: [StageName; 4] = [
     StageName::SkipRules,
     StageName::WordBlocklist,
@@ -906,40 +820,46 @@ const STAGES: [StageName; 4] = [
     StageName::Output,
 ];
 
-pub fn process(text: &str, config: &PipelineConfig, context: &PipelineContext) -> PipelineResult {
-    run_stages(text, config, context, config.output.read_display_name_first)
+pub struct ProcessedSpeech {
+    pub spoken: String,
+    unprefixed: Option<String>,
 }
 
-pub fn process_for_language(
-    text: &str,
-    config: &PipelineConfig,
-    context: &PipelineContext,
-) -> Option<String> {
-    match run_stages(text, config, context, false) {
-        PipelineResult::Speak(spoken) => Some(spoken),
-        PipelineResult::Skip { .. } => None,
+impl ProcessedSpeech {
+    pub fn language_sample(&self) -> &str {
+        self.unprefixed.as_deref().unwrap_or(&self.spoken)
     }
 }
 
-fn run_stages(
+pub fn process(text: &str, config: &PipelineConfig, context: &PipelineContext) -> PipelineResult {
+    match process_speech(text, config, context) {
+        Ok(processed) => PipelineResult::Speak(processed.spoken),
+        Err(reason) => PipelineResult::Skip { reason },
+    }
+}
+
+pub fn process_speech(
     text: &str,
     config: &PipelineConfig,
     context: &PipelineContext,
-    prepend_display_name: bool,
-) -> PipelineResult {
+) -> Result<ProcessedSpeech, SkipReason> {
     let mut current = text.to_owned();
     for stage in STAGES {
-        if stage == StageName::Output && has_nothing_to_speak(&current, config) {
-            return PipelineResult::Skip {
-                reason: SkipReason::EmptyAfterProcessing,
-            };
+        if stage == StageName::Output {
+            break;
         }
-        match run_stage(stage, &current, config, context, prepend_display_name) {
-            Ok(s) => current = s,
-            Err(r) => return PipelineResult::Skip { reason: r },
-        }
+        let (staged, _) = trace::run_stage_traced(stage, &current, config, context, &[]);
+        current = staged?;
     }
-    PipelineResult::Speak(current)
+    if has_nothing_to_speak(&current, config) {
+        return Err(SkipReason::EmptyAfterProcessing);
+    }
+    let prefix = name_prefix(config, context);
+    let spoken = stage_output_logged(&current, config, prefix.as_deref(), &mut Unlogged);
+    let unprefixed = prefix
+        .is_some()
+        .then(|| stage_output_logged(&current, config, None, &mut Unlogged));
+    Ok(ProcessedSpeech { spoken, unprefixed })
 }
 
 pub fn preview(
@@ -962,14 +882,8 @@ pub fn preview(
                 },
             )
         } else {
-            let (stage_out, stage_marks) = trace::run_stage_traced(
-                name,
-                &input,
-                config,
-                context,
-                config.output.read_display_name_first,
-                &marks,
-            );
+            let (stage_out, stage_marks) =
+                trace::run_stage_traced(name, &input, config, context, &marks);
             match stage_out {
                 Ok(out) => {
                     marks = stage_marks;
@@ -1017,6 +931,26 @@ pub use spoken_words::SpokenWords;
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn case_insensitive_replace(text: &str, pattern: &str, replacement: &str) -> String {
+        literal_replace_logged(
+            text,
+            pattern,
+            replacement,
+            LiteralScope::AnywhereInText,
+            &mut Unlogged,
+        )
+    }
+
+    fn whole_word_replace(text: &str, pattern: &str, replacement: &str) -> String {
+        literal_replace_logged(
+            text,
+            pattern,
+            replacement,
+            LiteralScope::WholeWords,
+            &mut Unlogged,
+        )
+    }
 
     #[test]
     fn a_message_is_emote_only_when_every_word_is_a_known_token_or_a_whole_colon_emote() {
@@ -1905,7 +1839,7 @@ mod tests {
     }
 
     #[test]
-    fn process_for_language_drops_the_display_name_prefix_that_process_prepends() {
+    fn language_sample_drops_the_display_name_prefix_that_process_prepends() {
         let config = PipelineConfig {
             output: OutputConfig {
                 read_display_name_first: true,
@@ -1923,13 +1857,14 @@ mod tests {
             PipelineResult::Speak("koval_dev says: hi chat".into())
         );
         assert_eq!(
-            process_for_language("hi chat", &config, &context),
-            Some("hi chat".to_owned())
+            process_speech("hi chat", &config, &context)
+                .map(|processed| processed.language_sample().to_owned()),
+            Ok("hi chat".to_owned())
         );
     }
 
     #[test]
-    fn process_for_language_returns_none_when_the_message_is_skipped() {
+    fn process_speech_reports_the_skip_reason_of_a_skipped_message() {
         let config = PipelineConfig {
             skip_rules: SkipRulesConfig {
                 contains_url: true,
@@ -1937,6 +1872,9 @@ mod tests {
             },
             ..neutral_config()
         };
-        assert!(process_for_language("see https://example.com", &config, &ctx()).is_none());
+        assert_eq!(
+            process_speech("see https://example.com", &config, &ctx()).err(),
+            Some(SkipReason::MatchedSkipRule(SkipRule::ContainsUrl))
+        );
     }
 }

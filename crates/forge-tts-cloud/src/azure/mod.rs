@@ -7,7 +7,8 @@ use forge_speech_types::{EngineId, TtsVoice};
 use forge_tts_core::{ENGINE_ID_AZURE, SynthesisRequest, TtsEngine, TtsError};
 
 use crate::credentials::AzureCredentials;
-use crate::network::{CloudGateways, ProviderGateway, ProviderLink, is_dns_label};
+use crate::factory::{CloudEngine, CloudEngineFactory};
+use crate::network::{ProviderGateway, ProviderLink, is_dns_label};
 use crate::policy::{RetryConfig, retry_synthesize};
 
 pub(crate) const SAMPLE_RATE_HZ: u32 = 24_000;
@@ -55,30 +56,18 @@ impl AzureEngine {
     }
 }
 
-pub struct AzureEngineFactory {
-    credentials: AzureCredentials,
-    provider: ProviderGateway,
-}
+pub type AzureEngineFactory = CloudEngineFactory<AzureEngine>;
 
-impl AzureEngineFactory {
-    pub fn new(credentials: AzureCredentials, gateways: &CloudGateways) -> Self {
-        Self {
-            credentials,
-            provider: gateways.provider(ENGINE_ID_AZURE),
-        }
-    }
-}
+impl CloudEngine for AzureEngine {
+    type Credentials = AzureCredentials;
 
-impl forge_tts_core::TtsEngineFactory for AzureEngineFactory {
-    fn class(&self) -> forge_tts_core::EngineClass {
-        forge_tts_core::EngineClass::Cloud
-    }
+    const ENGINE_ID: &'static str = ENGINE_ID_AZURE;
 
-    fn create(&self) -> Result<Box<dyn TtsEngine>, TtsError> {
-        Ok(Box::new(AzureEngine::new(
-            self.credentials.clone(),
-            &self.provider,
-        )?))
+    fn connect(
+        credentials: Self::Credentials,
+        provider: &ProviderGateway,
+    ) -> Result<Self, TtsError> {
+        Self::new(credentials, provider)
     }
 }
 
@@ -122,11 +111,13 @@ impl TtsEngine for AzureEngine {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::CloudGateways;
     use crate::network::test_support::{
         API_KEY, OTHER_API_KEY, PAST_WAIT_THRESHOLD_SECS, is_the_provider_cool_down, request_count,
         serving, throttled,
     };
     use forge_speech_types::VoiceId;
+    use forge_tts_core::SpeechText;
     use forge_tts_core::TtsEngineFactory;
     use forge_types::Secret;
     use wiremock::ResponseTemplate;
@@ -149,11 +140,10 @@ mod tests {
 
     fn request() -> SynthesisRequest {
         SynthesisRequest {
-            text: "hello".into(),
+            text: SpeechText::plain("hello".into()),
             voice_id: VoiceId("en-US-AriaNeural".into()),
             pitch_semitones: 0.0,
             rate_multiplier: 1.0,
-            ssml: false,
         }
     }
 

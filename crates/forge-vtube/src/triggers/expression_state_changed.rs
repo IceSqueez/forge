@@ -10,16 +10,8 @@ use crate::vocabulary::messages;
 use crate::vocabulary::{event_kinds, trigger_ids, variables};
 
 const VARIABLES: &[EventVariable] = &[
-    EventVariable::text(
-        variables::expression::FILE,
-        "Expression file",
-        fields::EXPRESSION_FILE,
-    ),
-    EventVariable::flag(
-        variables::expression::IS_ACTIVE,
-        "Expression active",
-        fields::IS_ACTIVE,
-    ),
+    EventVariable::text(variables::expression::FILE, fields::EXPRESSION_FILE),
+    EventVariable::flag(variables::expression::IS_ACTIVE, fields::IS_ACTIVE),
 ];
 
 fn variables() -> Option<TriggerVariables> {

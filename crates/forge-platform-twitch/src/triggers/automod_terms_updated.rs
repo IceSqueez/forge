@@ -19,7 +19,6 @@ fn variables() -> Option<TriggerVariables> {
                 DeclaredVariable {
                     name: "automod.action".to_owned(),
                     kind: VariantKind::String,
-                    label: "Automod terms action".to_owned(),
                     synthesis: None,
                 },
                 |event| Variant::String(payload_read::text(event, automod_fields::ACTION)),

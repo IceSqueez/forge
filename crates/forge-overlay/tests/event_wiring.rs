@@ -108,7 +108,6 @@ fn declared(name: &str, kind: VariantKind, synthesis: Option<SynthesisHint>) -> 
     DeclaredVariable {
         name: name.to_owned(),
         kind,
-        label: name.to_owned(),
         synthesis,
     }
 }

@@ -7,30 +7,14 @@ use forge_registry::{ActorDeclaration, TriggerCategory};
 use crate::vocabulary::fields::channel_update as fields;
 
 const VARIABLES: &[Variable] = &[
-    Variable::nested_text(
-        "channel.title",
-        "Channel title",
-        fields::CHANNEL,
-        fields::TITLE,
-    ),
-    Variable::nested_text(
-        "channel.category_id",
-        "Category ID",
-        fields::CHANNEL,
-        fields::CATEGORY_ID,
-    ),
+    Variable::nested_text("channel.title", fields::CHANNEL, fields::TITLE),
+    Variable::nested_text("channel.category_id", fields::CHANNEL, fields::CATEGORY_ID),
     Variable::nested_text(
         "channel.category_name",
-        "Category name",
         fields::CHANNEL,
         fields::CATEGORY_NAME,
     ),
-    Variable::nested_text(
-        "channel.language",
-        "Broadcast language",
-        fields::CHANNEL,
-        fields::LANGUAGE,
-    ),
+    Variable::nested_text("channel.language", fields::CHANNEL, fields::LANGUAGE),
 ];
 
 fn variables() -> Option<TriggerVariables> {

@@ -87,7 +87,6 @@ fn declared(name: &str, kind: VariantKind) -> DeclaredVariable {
     DeclaredVariable {
         name: name.to_owned(),
         kind,
-        label: name.to_owned(),
         synthesis: None,
     }
 }
@@ -96,7 +95,6 @@ fn ordered_variables() -> TriggerVariables {
     TriggerVariables::new()
         .event_specific(declared("zeta", VariantKind::String), |_| Variant::Int(0))
         .legacy(
-            "user",
             "user",
             CanonicalVariable::actor(ActorRole::Principal, ActorSlot::Login),
         )

@@ -57,7 +57,6 @@ impl TriggerKindDescriptor for ChannelBroadcastEndedDescriptor {
             DeclaredVariable {
                 name: variables::stream::BROADCAST_ID.to_owned(),
                 kind: VariantKind::String,
-                label: "Broadcast ID".to_owned(),
                 synthesis: None,
             },
             |event| Variant::String(payload_read::text(event, fields::BROADCAST_ID)),

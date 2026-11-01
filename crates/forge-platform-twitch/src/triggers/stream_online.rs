@@ -8,34 +8,25 @@ use forge_types::SynthesisHint;
 use crate::vocabulary::fields::stream as stream_fields;
 
 const VARIABLES: &[Variable] = &[
-    Variable::nested_text(
-        "stream_id",
-        "Stream ID",
-        stream_fields::STREAM,
-        stream_fields::STREAM_ID,
-    ),
+    Variable::nested_text("stream_id", stream_fields::STREAM, stream_fields::STREAM_ID),
     Variable::nested_text(
         "stream_type",
-        "Stream type",
         stream_fields::STREAM,
         stream_fields::STREAM_TYPE,
     ),
     Variable::nested_timestamp(
         "started_at",
-        "Started at",
         stream_fields::STREAM,
         stream_fields::STARTED_AT,
     ),
     Variable::nested_text(
         "broadcaster_login",
-        "Broadcaster login",
         stream_fields::BROADCASTER,
         stream_fields::BROADCASTER_LOGIN,
     )
     .synthesis(SynthesisHint::Username),
     Variable::nested_text(
         "broadcaster_id",
-        "Broadcaster ID",
         stream_fields::BROADCASTER,
         stream_fields::BROADCASTER_ID,
     ),

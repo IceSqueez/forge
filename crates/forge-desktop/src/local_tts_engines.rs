@@ -1,7 +1,6 @@
 use std::sync::Arc;
 use std::time::Duration;
 
-use forge_speech_types::EngineId;
 use forge_tts_core::TtsEngineFactory;
 use forge_tts_espeak::EspeakEngineFactory;
 use forge_tts_nsspeech::NsSpeechEngineFactory;
@@ -21,7 +20,6 @@ pub(crate) async fn discover_local_tts_engines() -> Vec<LocalTtsEngine> {
         }
         tracing::info!(path = %piper_binary.display(), "registered the Piper TTS engine");
         engines.push(LocalTtsEngine {
-            id: EngineId(forge_tts_core::ENGINE_ID_PIPER.into()),
             factory: Arc::new(PiperEngineFactory {
                 piper_binary,
                 voices_dir,
@@ -34,24 +32,14 @@ pub(crate) async fn discover_local_tts_engines() -> Vec<LocalTtsEngine> {
             "Piper binary not found next to the executable or on PATH; Piper TTS disabled"
         );
     }
-    engines.push(probed(
-        forge_tts_core::ENGINE_ID_ESPEAK_NG,
-        Arc::new(EspeakEngineFactory::default()),
-    ));
-    engines.push(probed(
-        forge_tts_core::ENGINE_ID_SAPI,
-        Arc::new(SapiEngineFactory),
-    ));
-    engines.push(probed(
-        forge_tts_core::ENGINE_ID_NSSPEECH,
-        Arc::new(NsSpeechEngineFactory),
-    ));
+    engines.push(probed(Arc::new(EspeakEngineFactory::default())));
+    engines.push(probed(Arc::new(SapiEngineFactory)));
+    engines.push(probed(Arc::new(NsSpeechEngineFactory)));
     engines
 }
 
-fn probed(engine_id: &str, factory: Arc<dyn TtsEngineFactory>) -> LocalTtsEngine {
+fn probed(factory: Arc<dyn TtsEngineFactory>) -> LocalTtsEngine {
     LocalTtsEngine {
-        id: EngineId(engine_id.into()),
         factory,
         admission: TtsEngineAdmission::Probed,
     }

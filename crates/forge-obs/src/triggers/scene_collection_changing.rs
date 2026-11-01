@@ -11,7 +11,6 @@ use crate::vocabulary::{event_kinds, trigger_ids, variables};
 
 const VARIABLES: &[EventVariable] = &[EventVariable::text(
     variables::collection::NAME,
-    "Scene collection name",
     fields::COLLECTION_NAME,
 )];
 

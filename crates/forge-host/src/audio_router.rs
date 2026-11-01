@@ -335,8 +335,10 @@ mod tests {
                 Arc::new(ClipLibrary::new(
                     Arc::new(MockSoundboardClipsRepo::new()),
                     Arc::new(MockMediaRepo::new()),
+                    Arc::new(forge_events::test_support::NullPublisher),
                 )),
                 SoundboardSettingsHandle::new(Default::default()),
+                Arc::new(forge_storage::test_support::MemorySettings::new()),
             );
             let router = Arc::new(AudioRouter::new(AudioRouterParts {
                 backend: Arc::clone(&backend) as Arc<dyn DataProvider>,

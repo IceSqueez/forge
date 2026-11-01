@@ -257,7 +257,7 @@ mod tests {
 
         let announced: Vec<(bool, u64)> = announced(&recorder)
             .iter()
-            .map(|received| (received.test, received.amount_micros))
+            .map(|received| (received.is_test, received.amount_micros))
             .collect();
         assert!(matches!(outcome, SubActionOutcome::Success));
         assert_eq!(announced, [(true, 12_500_000)]);

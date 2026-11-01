@@ -38,6 +38,10 @@ struct GatedFactory {
     gate: Arc<Notify>,
 }
 impl TtsEngineFactory for GatedFactory {
+    fn engine_id(&self) -> EngineId {
+        EngineId("gate".into())
+    }
+
     fn class(&self) -> forge_tts_core::EngineClass {
         forge_tts_core::EngineClass::Local
     }
@@ -51,7 +55,7 @@ impl TtsEngineFactory for GatedFactory {
 
 fn gated_registry(gate: Arc<Notify>) -> TtsRegistry {
     let mut reg = TtsRegistry::new();
-    reg.register(EngineId("gate".into()), Arc::new(GatedFactory { gate }));
+    reg.register(Arc::new(GatedFactory { gate }));
     reg
 }
 

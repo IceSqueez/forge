@@ -77,7 +77,7 @@ impl TtsEngine for EspeakEngine {
                 text: &request.text,
                 rate_wpm,
                 pitch_0_99,
-                ssml: request.ssml,
+                ssml: request.text.is_ssml(),
             },
         )
         .await
@@ -104,6 +104,10 @@ impl Default for EspeakEngineFactory {
 }
 
 impl TtsEngineFactory for EspeakEngineFactory {
+    fn engine_id(&self) -> forge_speech_types::EngineId {
+        forge_speech_types::EngineId(forge_tts_core::ENGINE_ID_ESPEAK_NG.into())
+    }
+
     fn class(&self) -> forge_tts_core::EngineClass {
         forge_tts_core::EngineClass::Local
     }

@@ -524,7 +524,11 @@ pub(in crate::actions_screen) mod tests {
                         actions_service: service,
                         trigger_instance_repo: trigger_repo,
                         script_repo: Arc::new(scripts),
-                        clip_library: Arc::new(ClipLibrary::new(clip_repo, backend.media_repo())),
+                        clip_library: Arc::new(ClipLibrary::new(
+                            clip_repo,
+                            backend.media_repo(),
+                            Arc::new(forge_events::test_support::NullPublisher),
+                        )),
                         globals_repo: Arc::new(globals),
                         overlay_repo: Arc::new(StubOverlays),
                         speak: None,

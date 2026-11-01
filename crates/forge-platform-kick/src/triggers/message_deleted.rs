@@ -59,7 +59,6 @@ impl TriggerKindDescriptor for MessageDeletedDescriptor {
                 .chat_message_id(|event| payload_read::text(event, fields::MESSAGE_ID))
                 .legacy(
                     variables::legacy::DELETED_BY_ID,
-                    "Moderator user ID",
                     CanonicalVariable::actor(ActorRole::Principal, ActorSlot::Id),
                 ),
         )

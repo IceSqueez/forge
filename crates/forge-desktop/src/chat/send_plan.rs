@@ -287,7 +287,7 @@ mod tests {
     }
 
     fn answer(kind: &str, payload: serde_json::Value, request: EventId) -> Event {
-        Event::caused_by(EventSource::Twitch, kind, payload, request)
+        Event::child_of(EventSource::Twitch, kind, payload, request)
     }
 
     #[test]

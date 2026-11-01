@@ -19,7 +19,6 @@ fn variables() -> Option<TriggerVariables> {
                 DeclaredVariable {
                     name: "sub_is_gift".to_owned(),
                     kind: VariantKind::Bool,
-                    label: "Gifted subscription".to_owned(),
                     synthesis: None,
                 },
                 |event| Variant::Bool(payload_read::flag(event, fields::IS_GIFT)),

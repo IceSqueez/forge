@@ -103,7 +103,6 @@ fn declared(name: &str, kind: VariantKind) -> DeclaredVariable {
     DeclaredVariable {
         name: name.to_owned(),
         kind,
-        label: name.to_owned(),
         synthesis: None,
     }
 }
@@ -119,7 +118,6 @@ fn listed(descriptor: &dyn TriggerKindDescriptor) -> Vec<(String, VariableStandi
 fn one_of_each_standing() -> TriggerVariables {
     TriggerVariables::new()
         .legacy(
-            "months",
             "months",
             CanonicalVariable::Count(CanonicalCount::SubCumulativeMonths),
         )

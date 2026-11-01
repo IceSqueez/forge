@@ -13,16 +13,13 @@ const SYNC_OFFSET_MIN_MS: i64 = -950;
 const SYNC_OFFSET_MAX_MS: i64 = 20_000;
 
 const VARIABLES: &[EventVariable] = &[
-    EventVariable::text(variables::source::NAME, "Source name", fields::SOURCE_NAME),
-    EventVariable::int(
-        variables::source::SYNC_OFFSET_MS,
-        "Sync offset (ms)",
-        fields::SYNC_OFFSET_MS,
-    )
-    .synthesis(SynthesisHint::BoundedInt {
-        min: SYNC_OFFSET_MIN_MS,
-        max: SYNC_OFFSET_MAX_MS,
-    }),
+    EventVariable::text(variables::source::NAME, fields::SOURCE_NAME),
+    EventVariable::int(variables::source::SYNC_OFFSET_MS, fields::SYNC_OFFSET_MS).synthesis(
+        SynthesisHint::BoundedInt {
+            min: SYNC_OFFSET_MIN_MS,
+            max: SYNC_OFFSET_MAX_MS,
+        },
+    ),
 ];
 
 fn variables() -> Option<TriggerVariables> {

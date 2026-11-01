@@ -22,7 +22,8 @@ pub struct DonationReceived {
     pub currency: CurrencyCode,
     #[serde(with = "time::serde::rfc3339")]
     pub occurred_at: OffsetDateTime,
-    pub test: bool,
+    #[serde(rename = "test")]
+    pub is_test: bool,
 }
 
 impl DonationReceived {
@@ -43,7 +44,7 @@ impl DonationReceived {
             amount_micros: donation.amount.micros(),
             currency: donation.amount.currency().clone(),
             occurred_at: donation.occurred_at,
-            test: donation.origin.is_test(),
+            is_test: donation.origin.is_test(),
         })
     }
 
@@ -67,7 +68,7 @@ impl fmt::Debug for DonationReceived {
             .field("amount_micros", &self.amount_micros)
             .field("currency", &self.currency)
             .field("occurred_at", &self.occurred_at)
-            .field("test", &self.test)
+            .field("is_test", &self.is_test)
             .finish()
     }
 }
@@ -107,7 +108,7 @@ mod tests {
                 PLACEHOLDER,
             );
             assert_eq!(
-                announced.map(|payload| payload.test),
+                announced.map(|payload| payload.is_test),
                 announced_test_flag,
                 "origin {origin:?}"
             );

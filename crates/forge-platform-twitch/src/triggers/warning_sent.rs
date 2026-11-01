@@ -23,7 +23,6 @@ fn variables() -> Option<TriggerVariables> {
                 DeclaredVariable {
                     name: "warning.reason".to_owned(),
                     kind: VariantKind::String,
-                    label: "Warning reason".to_owned(),
                     synthesis: None,
                 },
                 |event| Variant::String(payload_read::text(event, warning_fields::REASON)),
@@ -32,34 +31,28 @@ fn variables() -> Option<TriggerVariables> {
                 DeclaredVariable {
                     name: "warning.chat_rules_cited".to_owned(),
                     kind: VariantKind::Array,
-                    label: "Cited chat rules".to_owned(),
                     synthesis: None,
                 },
                 |event| payload_read::text_list(event, warning_fields::CHAT_RULES_CITED),
             )
             .legacy(
                 "warning.target.login",
-                "Warned user login",
                 CanonicalVariable::actor(ActorRole::Principal, ActorSlot::Login),
             )
             .legacy(
                 "warning.target.id",
-                "Warned user ID",
                 CanonicalVariable::actor(ActorRole::Principal, ActorSlot::Id),
             )
             .legacy(
                 "warning.target.display_name",
-                "Warned user display name",
                 CanonicalVariable::actor(ActorRole::Principal, ActorSlot::Name),
             )
             .legacy(
                 "warning.moderator.id",
-                "Moderator ID",
                 CanonicalVariable::actor(ActorRole::Moderator, ActorSlot::Id),
             )
             .legacy(
                 "warning.moderator.login",
-                "Moderator login",
                 CanonicalVariable::actor(ActorRole::Moderator, ActorSlot::Login),
             ),
     )

@@ -350,17 +350,44 @@ async fn super_chat_event_emits_with_event_detail_super_chat() {
     assert_eq!(chat.author, "SuperFan");
 
     match chat.event_detail.unwrap() {
-        ChatEventDetail::SuperChat {
-            amount_micros,
-            currency,
-            message,
-        } => {
-            assert_eq!(amount_micros, 5_000_000);
-            assert_eq!(currency, "USD");
+        ChatEventDetail::SuperChat { amount, message } => {
+            assert_eq!(amount.micros(), 5_000_000);
+            assert_eq!(amount.currency().as_str(), "USD");
             assert_eq!(message, Some("great stream!".to_owned()));
         }
         other => panic!("expected SuperChat, got {other:?}"),
     }
+}
+
+#[tokio::test]
+async fn a_super_chat_with_an_unusable_currency_is_still_delivered_as_a_chat_line() {
+    let server = MockServer::start().await;
+    mount_broadcast_mock(&server, broadcast_response("chat-sc")).await;
+
+    let item = json!({
+        "id": "sc-bad",
+        "snippet": {
+            "type": "superChatEvent",
+            "displayMessage": "thanks for the stream",
+            "superChatDetails": {
+                "amountMicros": "5000000",
+                "currency": "??",
+                "userComment": "thanks for the stream"
+            }
+        },
+        "authorDetails": {
+            "displayName": "SuperFan",
+            "isChatOwner": false,
+            "isChatModerator": false,
+            "isChatSponsor": false
+        }
+    });
+    mount_chat_mock(&server, chat_response(json!([item]), 3000)).await;
+
+    let event = first_event_from(&server).await;
+
+    assert_eq!(event.kind, "youtube.chat.message");
+    assert_eq!(event.payload["message_text"], "thanks for the stream");
 }
 
 fn banned_item(

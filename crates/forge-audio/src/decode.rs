@@ -229,4 +229,30 @@ mod tests {
             "got {result:?}"
         );
     }
+    #[test]
+    fn probing_a_wave_file_reports_its_duration_without_decoding_the_samples() {
+        const EXPECTED_SECS: f32 = 0.5;
+        const TOLERANCE_SECS: f32 = 0.01;
+        let source = ramp(22_050, 1, 500);
+        let file = tempfile::Builder::new().suffix(".wav").tempfile().unwrap();
+        std::fs::write(file.path(), encode_wave(&source)).unwrap();
+
+        let secs = probe_duration_secs(file.path()).unwrap();
+
+        assert!(
+            (secs - EXPECTED_SECS).abs() < TOLERANCE_SECS,
+            "probed {secs}s for a {EXPECTED_SECS}s clip"
+        );
+    }
+
+    #[test]
+    fn probing_a_file_that_is_not_audio_reports_a_decode_error() {
+        let file = tempfile::Builder::new().suffix(".wav").tempfile().unwrap();
+        std::fs::write(file.path(), b"not a wav file at all").unwrap();
+
+        assert!(matches!(
+            probe_duration_secs(file.path()),
+            Err(AudioError::Decode(_))
+        ));
+    }
 }

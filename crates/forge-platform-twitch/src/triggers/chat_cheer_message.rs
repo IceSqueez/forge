@@ -83,7 +83,6 @@ fn variables() -> Option<TriggerVariables> {
             .count(CanonicalCount::BitsAmount, cheered_bits)
             .legacy(
                 "cheer.bits",
-                "Bits cheered",
                 CanonicalVariable::Count(CanonicalCount::BitsAmount),
             ),
     )

@@ -11,39 +11,33 @@ use crate::vocabulary::fields::reward as reward_fields;
 const CHARITY: &[Variable] = &[
     Variable::nested_text(
         "charity.id",
-        "Charity campaign ID",
         charity_fields::CHARITY,
         charity_fields::CHARITY_ID,
     ),
     Variable::nested_text(
         "charity.name",
-        "Charity name",
         charity_fields::CHARITY,
         charity_fields::CHARITY_NAME,
     ),
     Variable::nested_int(
         "charity.current_amount_cents",
-        "Current amount (cents)",
         charity_fields::CHARITY,
         charity_fields::CURRENT_AMOUNT_CENTS,
     )
     .bounded(0, super::MAX_SYNTHESIZED_COUNT),
     Variable::nested_int(
         "charity.target_amount_cents",
-        "Target amount (cents)",
         charity_fields::CHARITY,
         charity_fields::TARGET_AMOUNT_CENTS,
     )
     .bounded(0, super::MAX_SYNTHESIZED_COUNT),
     Variable::nested_text(
         "charity.currency_code",
-        "Currency code",
         charity_fields::CHARITY,
         charity_fields::CURRENCY_CODE,
     ),
     Variable::nested_int(
         "charity.decimal_places",
-        "Amount decimal places",
         charity_fields::CHARITY,
         charity_fields::DECIMAL_PLACES,
     )
@@ -170,34 +164,25 @@ pub(super) fn build_outcomes_variant(event: &Event) -> Variant {
 }
 
 const REWARD: &[Variable] = &[
-    Variable::nested_text(
-        "reward.id",
-        "Reward ID",
-        reward_fields::REWARD,
-        reward_fields::REWARD_ID,
-    ),
+    Variable::nested_text("reward.id", reward_fields::REWARD, reward_fields::REWARD_ID),
     Variable::nested_text(
         "reward.title",
-        "Reward title",
         reward_fields::REWARD,
         reward_fields::REWARD_TITLE,
     ),
     Variable::nested_int(
         "reward.cost",
-        "Reward cost",
         reward_fields::REWARD,
         reward_fields::REWARD_COST,
     )
     .bounded(0, super::MAX_SYNTHESIZED_COUNT),
     Variable::nested_text(
         "reward.prompt",
-        "Reward prompt",
         reward_fields::REWARD,
         reward_fields::REWARD_PROMPT,
     ),
     Variable::nested_flag(
         "reward.is_enabled",
-        "Reward enabled",
         reward_fields::REWARD,
         reward_fields::REWARD_IS_ENABLED,
     ),

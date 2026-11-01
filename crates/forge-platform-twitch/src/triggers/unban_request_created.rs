@@ -20,7 +20,6 @@ fn variables() -> Option<TriggerVariables> {
                 DeclaredVariable {
                     name: "unban.request_id".to_owned(),
                     kind: VariantKind::String,
-                    label: "Unban request ID".to_owned(),
                     synthesis: None,
                 },
                 |event| {
@@ -29,14 +28,9 @@ fn variables() -> Option<TriggerVariables> {
             )
             .legacy(
                 "unban.target.login",
-                "Target user login",
                 CanonicalVariable::actor(ActorRole::Principal, ActorSlot::Login),
             )
-            .legacy(
-                "unban.reason_text",
-                "Requester reason",
-                CanonicalVariable::MessageText,
-            ),
+            .legacy("unban.reason_text", CanonicalVariable::MessageText),
     )
 }
 

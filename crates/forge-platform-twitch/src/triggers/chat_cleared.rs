@@ -10,14 +10,12 @@ use crate::vocabulary::fields::chat_mod as chat_mod_fields;
 const VARIABLES: &[Variable] = &[
     Variable::nested_text(
         "broadcaster_login",
-        "Broadcaster login",
         chat_mod_fields::BROADCASTER,
         chat_mod_fields::BROADCASTER_LOGIN,
     )
     .synthesis(SynthesisHint::Username),
     Variable::nested_text(
         "broadcaster_id",
-        "Broadcaster ID",
         chat_mod_fields::BROADCASTER,
         chat_mod_fields::BROADCASTER_ID,
     ),

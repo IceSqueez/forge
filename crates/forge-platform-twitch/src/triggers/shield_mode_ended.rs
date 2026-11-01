@@ -25,7 +25,6 @@ fn variables() -> Option<TriggerVariables> {
                 DeclaredVariable {
                     name: "ended_at".to_owned(),
                     kind: VariantKind::Datetime,
-                    label: "Ended at".to_owned(),
                     synthesis: None,
                 },
                 |event| payload_read::timestamp(event, shield_fields::ENDED_AT),

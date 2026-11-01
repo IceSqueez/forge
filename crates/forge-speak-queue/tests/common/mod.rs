@@ -59,6 +59,10 @@ pub(crate) struct FakeFactory {
 }
 
 impl TtsEngineFactory for FakeFactory {
+    fn engine_id(&self) -> EngineId {
+        EngineId(self.id.clone())
+    }
+
     fn class(&self) -> forge_tts_core::EngineClass {
         forge_tts_core::EngineClass::Local
     }
@@ -73,20 +77,14 @@ impl TtsEngineFactory for FakeFactory {
 
 pub(crate) fn standard_registry() -> TtsRegistry {
     let mut reg = TtsRegistry::new();
-    reg.register(
-        EngineId("alpha".into()),
-        Arc::new(FakeFactory {
-            id: "alpha".into(),
-            voices: vec![voice("alpha-1", "alpha"), voice("alpha-2", "alpha")],
-        }),
-    );
-    reg.register(
-        EngineId("beta".into()),
-        Arc::new(FakeFactory {
-            id: "beta".into(),
-            voices: vec![voice("beta-1", "beta")],
-        }),
-    );
+    reg.register(Arc::new(FakeFactory {
+        id: "alpha".into(),
+        voices: vec![voice("alpha-1", "alpha"), voice("alpha-2", "alpha")],
+    }));
+    reg.register(Arc::new(FakeFactory {
+        id: "beta".into(),
+        voices: vec![voice("beta-1", "beta")],
+    }));
     reg
 }
 

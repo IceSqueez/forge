@@ -156,40 +156,38 @@ impl Read {
 pub struct EventVariable {
     name: &'static str,
     kind: VariantKind,
-    label: &'static str,
     synthesis: Option<SynthesisHint>,
     read: Read,
 }
 
 impl EventVariable {
-    const fn new(name: &'static str, kind: VariantKind, label: &'static str, read: Read) -> Self {
+    const fn new(name: &'static str, kind: VariantKind, read: Read) -> Self {
         Self {
             name,
             kind,
-            label,
             synthesis: None,
             read,
         }
     }
 
-    pub const fn text(name: &'static str, label: &'static str, key: &'static str) -> Self {
-        Self::new(name, VariantKind::String, label, Read::Text(key))
+    pub const fn text(name: &'static str, key: &'static str) -> Self {
+        Self::new(name, VariantKind::String, Read::Text(key))
     }
 
-    pub const fn flag(name: &'static str, label: &'static str, key: &'static str) -> Self {
-        Self::new(name, VariantKind::Bool, label, Read::Flag(key))
+    pub const fn flag(name: &'static str, key: &'static str) -> Self {
+        Self::new(name, VariantKind::Bool, Read::Flag(key))
     }
 
-    pub const fn int(name: &'static str, label: &'static str, key: &'static str) -> Self {
-        Self::new(name, VariantKind::Int, label, Read::Int(key))
+    pub const fn int(name: &'static str, key: &'static str) -> Self {
+        Self::new(name, VariantKind::Int, Read::Int(key))
     }
 
-    pub const fn float(name: &'static str, label: &'static str, key: &'static str) -> Self {
-        Self::new(name, VariantKind::Float, label, Read::Float(key))
+    pub const fn float(name: &'static str, key: &'static str) -> Self {
+        Self::new(name, VariantKind::Float, Read::Float(key))
     }
 
-    pub const fn text_list(name: &'static str, label: &'static str, key: &'static str) -> Self {
-        Self::new(name, VariantKind::Array, label, Read::TextList(key))
+    pub const fn text_list(name: &'static str, key: &'static str) -> Self {
+        Self::new(name, VariantKind::Array, Read::TextList(key))
     }
 
     pub const fn synthesis(mut self, hint: SynthesisHint) -> Self {
@@ -200,10 +198,9 @@ impl EventVariable {
     pub const fn custom(
         name: &'static str,
         kind: VariantKind,
-        label: &'static str,
         read: fn(&Event) -> Option<Variant>,
     ) -> Self {
-        Self::new(name, kind, label, Read::Custom(read))
+        Self::new(name, kind, Read::Custom(read))
     }
 }
 
@@ -217,7 +214,6 @@ pub fn event_variables(table: &'static [EventVariable]) -> Option<TriggerVariabl
                     DeclaredVariable {
                         name: variable.name.to_owned(),
                         kind: variable.kind,
-                        label: variable.label.to_owned(),
                         synthesis: variable.synthesis.clone(),
                     },
                     move |event| read.variant(event),

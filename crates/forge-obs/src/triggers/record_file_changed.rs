@@ -11,7 +11,6 @@ use crate::vocabulary::{event_kinds, trigger_ids, variables};
 
 const VARIABLES: &[EventVariable] = &[EventVariable::text(
     variables::recording::OUTPUT_PATH,
-    "New recording file path",
     fields::OUTPUT_PATH,
 )];
 

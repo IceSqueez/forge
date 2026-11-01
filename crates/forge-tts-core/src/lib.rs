@@ -39,13 +39,98 @@ pub fn engine_display_name(id: &str) -> &str {
     }
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum SpeechText {
+    Plain(String),
+    Ssml(String),
+}
+
+impl SpeechText {
+    pub fn plain(text: String) -> Self {
+        Self::Plain(text)
+    }
+
+    pub fn ssml(markup: String) -> Self {
+        Self::Ssml(markup)
+    }
+
+    pub fn new(text: String, is_ssml: bool) -> Self {
+        if is_ssml {
+            Self::ssml(text)
+        } else {
+            Self::plain(text)
+        }
+    }
+
+    pub fn is_ssml(&self) -> bool {
+        matches!(self, Self::Ssml(_))
+    }
+
+    pub fn as_str(&self) -> &str {
+        match self {
+            Self::Plain(text) | Self::Ssml(text) => text,
+        }
+    }
+
+    pub fn into_string(self) -> String {
+        match self {
+            Self::Plain(text) | Self::Ssml(text) => text,
+        }
+    }
+}
+
+impl std::ops::Deref for SpeechText {
+    type Target = str;
+
+    fn deref(&self) -> &str {
+        self.as_str()
+    }
+}
+
+pub const MIN_RATE_MULTIPLIER: f32 = 0.25;
+pub const MAX_RATE_MULTIPLIER: f32 = 4.0;
+pub const MAX_PITCH_SEMITONES: f32 = 12.0;
+
 #[derive(Debug, Clone)]
 pub struct SynthesisRequest {
-    pub text: String,
+    pub text: SpeechText,
     pub voice_id: VoiceId,
     pub pitch_semitones: f32,
     pub rate_multiplier: f32,
-    pub ssml: bool,
+}
+
+impl SynthesisRequest {
+    pub fn new(
+        text: SpeechText,
+        voice_id: VoiceId,
+        pitch_semitones: f32,
+        rate_multiplier: f32,
+    ) -> Self {
+        Self {
+            text,
+            voice_id,
+            pitch_semitones: bounded(
+                pitch_semitones,
+                0.0,
+                -MAX_PITCH_SEMITONES,
+                MAX_PITCH_SEMITONES,
+            ),
+            rate_multiplier: bounded(
+                rate_multiplier,
+                1.0,
+                MIN_RATE_MULTIPLIER,
+                MAX_RATE_MULTIPLIER,
+            ),
+        }
+    }
+}
+
+fn bounded(value: f32, neutral: f32, min: f32, max: f32) -> f32 {
+    if value.is_finite() {
+        value.clamp(min, max)
+    } else {
+        neutral
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
@@ -106,6 +191,8 @@ pub trait TtsEngine: Send + Sync {
 }
 
 pub trait TtsEngineFactory: Send + Sync {
+    fn engine_id(&self) -> EngineId;
+
     fn class(&self) -> EngineClass;
 
     fn create(&self) -> Result<Box<dyn TtsEngine>, TtsError>;
@@ -167,17 +254,18 @@ impl TtsRegistry {
         }
     }
 
-    pub fn register(&mut self, id: EngineId, factory: Arc<dyn TtsEngineFactory>) {
+    pub fn register(&mut self, factory: Arc<dyn TtsEngineFactory>) {
+        let id = factory.engine_id();
         let slot = EngineSlot::unbuilt(id.clone(), factory);
         self.slots.insert(id, Arc::new(slot));
     }
 
     pub fn register_built(
         &mut self,
-        id: EngineId,
         factory: Arc<dyn TtsEngineFactory>,
         engine: Arc<dyn TtsEngine>,
     ) {
+        let id = factory.engine_id();
         let slot = EngineSlot::built(id.clone(), factory, engine);
         self.slots.insert(id, Arc::new(slot));
     }
@@ -296,6 +384,10 @@ mod tests {
     }
 
     impl TtsEngineFactory for CountingFactory {
+        fn engine_id(&self) -> EngineId {
+            self.id.clone()
+        }
+
         fn class(&self) -> EngineClass {
             self.class
         }
@@ -323,6 +415,10 @@ mod tests {
     struct PanickingFactory;
 
     impl TtsEngineFactory for PanickingFactory {
+        fn engine_id(&self) -> EngineId {
+            id("alpha")
+        }
+
         fn class(&self) -> EngineClass {
             EngineClass::Local
         }
@@ -366,9 +462,9 @@ mod tests {
     #[test]
     fn engine_ids_lists_every_registered_engine_sorted_by_id() {
         let mut reg = TtsRegistry::new();
-        reg.register(id("zzz"), CountingFactory::new("zzz"));
-        reg.register(id("aaa"), CountingFactory::new("aaa"));
-        reg.register_built(id("mmm"), CountingFactory::new("mmm"), null_engine("mmm"));
+        reg.register(CountingFactory::new("zzz"));
+        reg.register(CountingFactory::new("aaa"));
+        reg.register_built(CountingFactory::new("mmm"), null_engine("mmm"));
 
         assert_eq!(reg.engine_ids(), vec![id("aaa"), id("mmm"), id("zzz")]);
     }
@@ -382,13 +478,9 @@ mod tests {
             })
         };
         let mut reg = TtsRegistry::new();
-        reg.register(id("zzz"), factory_of("zzz", EngineClass::Cloud));
-        reg.register(id("aaa"), factory_of("aaa", EngineClass::System));
-        reg.register_built(
-            id("mmm"),
-            factory_of("mmm", EngineClass::Local),
-            null_engine("mmm"),
-        );
+        reg.register(factory_of("zzz", EngineClass::Cloud));
+        reg.register(factory_of("aaa", EngineClass::System));
+        reg.register_built(factory_of("mmm", EngineClass::Local), null_engine("mmm"));
 
         assert_eq!(
             reg.roster(),
@@ -413,7 +505,7 @@ mod tests {
     async fn every_use_of_a_registered_engine_shares_one_built_instance() {
         let factory = CountingFactory::new("alpha");
         let mut reg = TtsRegistry::new();
-        reg.register(id("alpha"), factory.clone());
+        reg.register(factory.clone());
 
         let first = engine_of(&reg, "alpha").await;
         for _ in 0..4 {
@@ -429,7 +521,7 @@ mod tests {
             ..CountingFactory::plain("alpha")
         });
         let mut reg = TtsRegistry::new();
-        reg.register(id("alpha"), factory.clone());
+        reg.register(factory.clone());
         let slot = reg.slot(&id("alpha")).expect("registered");
 
         let failed = slot.engine().await;
@@ -451,7 +543,7 @@ mod tests {
             ..CountingFactory::plain("alpha")
         });
         let mut reg = TtsRegistry::new();
-        reg.register(id("alpha"), factory.clone());
+        reg.register(factory.clone());
         let slot = reg.slot(&id("alpha")).expect("registered");
 
         let users: Vec<_> = (0..USERS)
@@ -481,7 +573,7 @@ mod tests {
         let factory = CountingFactory::new("alpha");
         let prebuilt = null_engine("alpha");
         let mut reg = TtsRegistry::new();
-        reg.register_built(id("alpha"), factory.clone(), prebuilt.clone());
+        reg.register_built(factory.clone(), prebuilt.clone());
 
         let served = engine_of(&reg, "alpha").await;
 
@@ -495,8 +587,8 @@ mod tests {
         let beta = CountingFactory::new("beta");
         let alpha_prebuilt = null_engine("alpha");
         let mut reg = TtsRegistry::new();
-        reg.register_built(id("alpha"), alpha.clone(), alpha_prebuilt.clone());
-        reg.register(id("beta"), beta.clone());
+        reg.register_built(alpha.clone(), alpha_prebuilt.clone());
+        reg.register(beta.clone());
         let beta_before = engine_of(&reg, "beta").await;
 
         reg.invalidate(&id("alpha"));
@@ -514,7 +606,7 @@ mod tests {
         let factories = [CountingFactory::new("alpha"), CountingFactory::new("beta")];
         let mut reg = TtsRegistry::new();
         for (name, factory) in ["alpha", "beta"].into_iter().zip(&factories) {
-            reg.register(id(name), factory.clone());
+            reg.register(factory.clone());
             engine_of(&reg, name).await;
         }
 
@@ -531,7 +623,7 @@ mod tests {
     async fn a_slot_taken_before_invalidation_keeps_serving_its_engine() {
         let factory = CountingFactory::new("alpha");
         let mut reg = TtsRegistry::new();
-        reg.register(id("alpha"), factory.clone());
+        reg.register(factory.clone());
         let in_flight = reg.slot(&id("alpha")).expect("registered");
         let old = in_flight.engine().await.expect("engine");
 

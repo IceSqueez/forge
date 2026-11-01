@@ -5,7 +5,7 @@ use common::neutral_config;
 use forge_tts_pipeline::{
     AppliedReplacement, BlocklistMode, EmoteTokenSet, EmoteTreatment, PipelineConfig,
     PipelineContext, PipelineResult, ReplacementOrigin, ReplacementRule, SkipReason, StageAction,
-    StageName, StageOutcome, preview, process, process_for_language,
+    StageName, StageOutcome, preview, process, process_speech,
 };
 
 const BOTH_MODES: [BlocklistMode; 2] = [BlocklistMode::Censor, BlocklistMode::SkipMessage];
@@ -598,7 +598,9 @@ fn process_preview_and_language_processing_agree() {
                             PipelineResult::Skip { .. } => None,
                         };
                         assert_eq!(
-                            process_for_language(input, &config, &ctx()),
+                            process_speech(input, &config, &ctx())
+                                .ok()
+                                .map(|processed| processed.language_sample().to_owned()),
                             spoken,
                             "input {input:?}, {config:?}"
                         );

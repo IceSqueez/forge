@@ -97,7 +97,7 @@ impl Event {
         }
     }
 
-    pub fn caused_by(
+    pub fn child_of(
         source: EventSource,
         kind: impl Into<String>,
         payload: serde_json::Value,
@@ -132,7 +132,7 @@ mod tests {
     fn caused_by_links_parent_event() {
         let parent = Event::new(EventSource::Twitch, "chat.message", serde_json::Value::Null);
         let parent_id = parent.id;
-        let child = Event::caused_by(
+        let child = Event::child_of(
             EventSource::Core,
             "command.matched",
             serde_json::Value::Null,

@@ -65,7 +65,6 @@ impl TriggerKindDescriptor for SupportSuperChatDescriptor {
                     DeclaredVariable {
                         name: variables::support::AMOUNT_MICROS.to_owned(),
                         kind: VariantKind::Int,
-                        label: "Amount in micros".to_owned(),
                         synthesis: Some(SynthesisHint::BoundedInt {
                             min: 2_000_000,
                             max: 500_000_000,
@@ -77,19 +76,16 @@ impl TriggerKindDescriptor for SupportSuperChatDescriptor {
                     DeclaredVariable {
                         name: variables::support::CURRENCY.to_owned(),
                         kind: VariantKind::String,
-                        label: "Currency code".to_owned(),
                         synthesis: None,
                     },
                     |event| Variant::String(payload_read::text(event, fields::CURRENCY)),
                 )
                 .legacy(
                     variables::sender::DISPLAY_NAME,
-                    "Sender display name",
                     CanonicalVariable::actor(ActorRole::Principal, ActorSlot::Name),
                 )
                 .legacy(
                     variables::sender::CHANNEL_ID,
-                    "Sender channel ID",
                     CanonicalVariable::actor(ActorRole::Principal, ActorSlot::Id),
                 ),
         )

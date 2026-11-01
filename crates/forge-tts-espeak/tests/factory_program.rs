@@ -9,7 +9,7 @@ use std::path::{Path, PathBuf};
 use std::sync::OnceLock;
 
 use forge_speech_types::VoiceId;
-use forge_tts_core::{SynthesisRequest, TtsEngine, TtsEngineFactory, TtsError};
+use forge_tts_core::{SpeechText, SynthesisRequest, TtsEngine, TtsEngineFactory, TtsError};
 use forge_tts_espeak::EspeakEngineFactory;
 
 const SAMPLE_RATE: u32 = 22_050;
@@ -89,11 +89,10 @@ fn engine_at(program: &Path) -> Box<dyn TtsEngine> {
 
 fn request(voice: &str) -> SynthesisRequest {
     SynthesisRequest {
-        text: "hello".to_owned(),
+        text: SpeechText::plain("hello".to_owned()),
         voice_id: VoiceId(voice.to_owned()),
         pitch_semitones: 0.0,
         rate_multiplier: 1.0,
-        ssml: false,
     }
 }
 

@@ -17,11 +17,9 @@ pub(crate) const CONTROL_CHANGE_TRIGGER: MidiInputTrigger = MidiInputTrigger {
         filter_condition: messages::CONDITION_CONTROLLER,
         any_condition: messages::CONDITION_ANY_CONTROLLER,
         variable: variables::CONTROLLER,
-        variable_label: "Controller number",
     }),
     value: Some(SignalValue {
         variable: variables::VALUE,
-        label: "Controller value",
         max: DATA_BYTE_MAX,
     }),
 };

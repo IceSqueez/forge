@@ -7,21 +7,14 @@ use forge_registry::{ActorDeclaration, TriggerCategory};
 use crate::vocabulary::fields::prediction as fields;
 
 const VARIABLES: &[Variable] = &[
-    Variable::nested_text(
-        "prediction.id",
-        "Prediction ID",
-        fields::PREDICTION,
-        fields::PREDICTION_ID,
-    ),
+    Variable::nested_text("prediction.id", fields::PREDICTION, fields::PREDICTION_ID),
     Variable::nested_text(
         "prediction.title",
-        "Prediction title",
         fields::PREDICTION,
         fields::PREDICTION_TITLE,
     ),
     Variable::nested_timestamp(
         "prediction.locked_at",
-        "Locked at",
         fields::PREDICTION,
         fields::LOCKED_AT,
     ),

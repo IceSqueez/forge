@@ -100,15 +100,6 @@ impl ActorRole {
         ActorRole::Gifter,
         ActorRole::Recipient,
     ];
-
-    const fn label(self) -> &'static str {
-        match self {
-            ActorRole::Principal => "User",
-            ActorRole::Moderator => "Moderator",
-            ActorRole::Gifter => "Gifter",
-            ActorRole::Recipient => "Recipient",
-        }
-    }
 }
 
 impl ActorSlot {
@@ -123,15 +114,6 @@ impl ActorSlot {
         match self {
             ActorSlot::Login => SlotPresence::WhereThePlatformHasOne,
             ActorSlot::Id | ActorSlot::Name | ActorSlot::Platform => SlotPresence::Always,
-        }
-    }
-
-    const fn label(self) -> &'static str {
-        match self {
-            ActorSlot::Id => "ID",
-            ActorSlot::Name => "display name",
-            ActorSlot::Login => "login",
-            ActorSlot::Platform => "platform",
         }
     }
 }
@@ -152,16 +134,6 @@ impl CanonicalCount {
         CanonicalCount::SubCumulativeMonths,
         CanonicalCount::SubStreakMonths,
     ];
-
-    const fn label(self) -> &'static str {
-        match self {
-            CanonicalCount::ViewerCount => "Viewer count",
-            CanonicalCount::BitsAmount => "Bits amount",
-            CanonicalCount::GiftCount => "Gift count",
-            CanonicalCount::SubCumulativeMonths => "Cumulative subscription months",
-            CanonicalCount::SubStreakMonths => "Subscription streak months",
-        }
-    }
 
     pub const fn floor(self) -> i64 {
         match self {
@@ -201,15 +173,6 @@ impl MoneySlot {
         MoneySlot::Currency,
         MoneySlot::AmountFormatted,
     ];
-
-    const fn label(self) -> &'static str {
-        match self {
-            MoneySlot::AmountMicros => "Amount in micros",
-            MoneySlot::Amount => "Amount",
-            MoneySlot::Currency => "Currency code",
-            MoneySlot::AmountFormatted => "Formatted amount",
-        }
-    }
 }
 
 impl CanonicalVariable {
@@ -305,19 +268,6 @@ impl CanonicalVariable {
             CanonicalVariable::MessageId
             | CanonicalVariable::SubTier
             | CanonicalVariable::Money(_) => None,
-        }
-    }
-
-    pub fn label(self) -> String {
-        match self {
-            CanonicalVariable::Actor { role, slot } => {
-                format!("{} {}", role.label(), slot.label())
-            }
-            CanonicalVariable::MessageText => "Message text".to_owned(),
-            CanonicalVariable::MessageId => "Message ID".to_owned(),
-            CanonicalVariable::Count(count) => count.label().to_owned(),
-            CanonicalVariable::SubTier => "Subscription tier".to_owned(),
-            CanonicalVariable::Money(slot) => slot.label().to_owned(),
         }
     }
 

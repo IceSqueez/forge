@@ -19,7 +19,6 @@ fn variables() -> Option<TriggerVariables> {
                 DeclaredVariable {
                     name: "shared_chat.session_id".to_owned(),
                     kind: VariantKind::String,
-                    label: "Shared chat session ID".to_owned(),
                     synthesis: None,
                 },
                 |event| {
@@ -32,12 +31,10 @@ fn variables() -> Option<TriggerVariables> {
             )
             .legacy(
                 "host_login",
-                "Host channel login",
                 CanonicalVariable::actor(ActorRole::Principal, ActorSlot::Login),
             )
             .legacy(
                 "host_id",
-                "Host channel ID",
                 CanonicalVariable::actor(ActorRole::Principal, ActorSlot::Id),
             ),
     )

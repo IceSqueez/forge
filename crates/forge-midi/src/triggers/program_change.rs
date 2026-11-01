@@ -16,7 +16,6 @@ pub(crate) const PROGRAM_CHANGE_TRIGGER: MidiInputTrigger = MidiInputTrigger {
         filter_condition: messages::CONDITION_PROGRAM,
         any_condition: messages::CONDITION_ANY_PROGRAM,
         variable: variables::PROGRAM,
-        variable_label: "Program number",
     }),
     value: None,
 };

@@ -130,7 +130,7 @@ fn publish_release(
     )
     .unwrap_or(u64::MAX);
 
-    client.publisher.publish(Event::caused_by(
+    client.publisher.publish(Event::child_of(
         EventSource::Hotkey,
         event_kinds::GLOBAL_RELEASED,
         serde_json::json!({

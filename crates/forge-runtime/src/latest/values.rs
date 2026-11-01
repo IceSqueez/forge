@@ -438,7 +438,7 @@ mod tests {
             amount_micros: 12_500_000,
             currency: CurrencyCode::parse("UAH").unwrap(),
             occurred_at,
-            test,
+            is_test: test,
         }
         .into_event(EventSource::Donation, None)
     }

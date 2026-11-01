@@ -249,7 +249,7 @@ pub struct SoundboardPlayer {
     active: ActiveRegistry,
     next_play_id: AtomicU64,
     settings: SoundboardSettingsHandle,
-    settings_store: Shared<Option<Arc<dyn SettingsRepo>>>,
+    settings_store: Arc<dyn SettingsRepo>,
     clip_route: Shared<ClipRoute>,
 }
 
@@ -259,6 +259,7 @@ impl SoundboardPlayer {
         event_sink: Arc<dyn AudioEventSink>,
         library: Arc<ClipLibrary>,
         settings: SoundboardSettingsHandle,
+        settings_store: Arc<dyn SettingsRepo>,
     ) -> Self {
         Self {
             sink_factory,
@@ -267,17 +268,13 @@ impl SoundboardPlayer {
             active: Arc::new(Mutex::new(HashMap::new())),
             next_play_id: AtomicU64::new(0),
             settings,
-            settings_store: Shared::new(None),
+            settings_store,
             clip_route: Shared::new(ClipRoute::default()),
         }
     }
 
     pub fn install_route(&self, route: ClipRoute) {
         self.clip_route.store(route);
-    }
-
-    pub fn install_settings_store(&self, store: Arc<dyn SettingsRepo>) {
-        self.settings_store.store(Some(store));
     }
 
     pub fn library(&self) -> &Arc<ClipLibrary> {
@@ -316,31 +313,33 @@ impl SoundboardPlayer {
         }
     }
 
+    fn take_active_plays(&self, clip_id: ClipId) -> Option<Vec<ActivePlay>> {
+        lock(&self.active)
+            .remove(&clip_id)
+            .filter(|plays| !plays.is_empty())
+    }
+
     pub async fn toggle(
         &self,
         clip_id: ClipId,
         override_device: Option<OutputDevice>,
     ) -> Result<ClipToggle, SoundboardError> {
         let settings = self.settings.load();
-        let lookup = if settings.enabled {
-            Some(self.library.get(clip_id).await)
-        } else {
-            None
-        };
-
-        let decision = {
-            let mut guard = lock(&self.active);
-            match guard.remove(&clip_id).filter(|plays| !plays.is_empty()) {
-                Some(plays) => ToggleDecision::Stop(plays),
-                None => match lookup {
-                    None => ToggleDecision::Ignore,
-                    Some(lookup) => {
+        let decision = match self.take_active_plays(clip_id) {
+            Some(plays) => ToggleDecision::Stop(plays),
+            None if !settings.enabled => ToggleDecision::Ignore,
+            None => {
+                let lookup = self.library.get(clip_id).await;
+                let mut guard = lock(&self.active);
+                match guard.remove(&clip_id).filter(|plays| !plays.is_empty()) {
+                    Some(plays) => ToggleDecision::Stop(plays),
+                    None => {
                         let clip = lookup?
                             .ok_or_else(|| SoundboardError::ClipNotFound(clip_id.to_string()))?;
                         let play = self.reserve_in(&mut guard, clip_id, clip.name.clone());
                         ToggleDecision::Start(Box::new(clip), play)
                     }
-                },
+                }
             }
         };
 
@@ -793,10 +792,7 @@ impl SoundboardControl for SoundboardPlayer {
 
     async fn set_master_volume(&self, gain: f32) -> Result<(), SoundboardError> {
         let volume = SoundboardPlayer::set_master_volume(self, gain);
-        let Some(store) = self.settings_store.load().as_ref().clone() else {
-            return Ok(());
-        };
-        crate::settings::save_master_volume(store.as_ref(), volume)
+        crate::settings::save_master_volume(self.settings_store.as_ref(), volume)
             .await
             .map_err(SoundboardError::MasterVolumeNotSaved)
     }
@@ -853,6 +849,7 @@ mod tests {
         let library = Arc::new(ClipLibrary::new(
             Arc::new(MockClipsRepo { clip }),
             Arc::new(no_managed_media(Arc::clone(&imports))),
+            Arc::new(forge_events::test_support::NullPublisher),
         ));
         (library, imports)
     }
@@ -1032,6 +1029,7 @@ mod tests {
             Arc::new(event_sink),
             unadopted_library(Some(clip)),
             SoundboardSettingsHandle::default(),
+            Arc::new(forge_storage::test_support::MemorySettings::new()),
         );
 
         if let Some(gain) = master_gain {
@@ -1072,6 +1070,7 @@ mod tests {
             Arc::new(event_sink),
             unadopted_library(Some(clip)),
             SoundboardSettingsHandle::default(),
+            Arc::new(forge_storage::test_support::MemorySettings::new()),
         );
 
         player.play(clip_id, None).await.unwrap();
@@ -1167,6 +1166,7 @@ mod tests {
             Arc::new(event_sink),
             unadopted_library(None),
             SoundboardSettingsHandle::default(),
+            Arc::new(forge_storage::test_support::MemorySettings::new()),
         );
 
         let err = player.play(clip_id, None).await.unwrap_err();
@@ -1211,6 +1211,7 @@ mod tests {
             Arc::new(event_sink),
             unadopted_library(Some(clip)),
             SoundboardSettingsHandle::default(),
+            Arc::new(forge_storage::test_support::MemorySettings::new()),
         );
 
         let override_dev = OutputDevice::ByName {
@@ -1237,6 +1238,7 @@ mod tests {
             Arc::new(event_sink),
             unadopted_library(Some(clip)),
             SoundboardSettingsHandle::default(),
+            Arc::new(forge_storage::test_support::MemorySettings::new()),
         );
 
         let error = player.play(clip_id, None).await.unwrap_err();
@@ -1259,6 +1261,7 @@ mod tests {
             Arc::new(event_sink),
             unadopted_library(Some(clip)),
             SoundboardSettingsHandle::default(),
+            Arc::new(forge_storage::test_support::MemorySettings::new()),
         );
 
         assert!(player.play(clip_id, None).await.is_err());
@@ -1286,6 +1289,7 @@ mod tests {
             Arc::new(event_sink),
             library,
             SoundboardSettingsHandle::default(),
+            Arc::new(forge_storage::test_support::MemorySettings::new()),
         );
 
         player.play(clip_id, None).await.unwrap();
@@ -1324,6 +1328,7 @@ mod tests {
             Arc::new(event_sink),
             unadopted_library(Some(clip)),
             SoundboardSettingsHandle::default(),
+            Arc::new(forge_storage::test_support::MemorySettings::new()),
         );
 
         let error = player.play(clip_id, None).await.unwrap_err();
@@ -1439,6 +1444,7 @@ mod tests {
             Arc::new(event_sink),
             unadopted_library(Some(clip)),
             fan_out_settings(),
+            Arc::new(forge_storage::test_support::MemorySettings::new()),
         )
     }
 
@@ -1705,6 +1711,7 @@ mod tests {
             Arc::new(event_sink),
             unadopted_library(Some(clip)),
             SoundboardSettingsHandle::default(),
+            Arc::new(forge_storage::test_support::MemorySettings::new()),
         );
         (player, events)
     }
@@ -1754,6 +1761,7 @@ mod tests {
         let library = Arc::new(ClipLibrary::new(
             Arc::clone(&repo) as Arc<dyn SoundboardClipsRepo>,
             Arc::new(no_managed_media(Arc::default())),
+            Arc::new(forge_events::test_support::NullPublisher),
         ));
         let (factory, _, _) = CountingFactory::new();
         let (event_sink, _) = RecordingEventSink::new();
@@ -1762,6 +1770,7 @@ mod tests {
             Arc::new(event_sink),
             library,
             SoundboardSettingsHandle::default(),
+            Arc::new(forge_storage::test_support::MemorySettings::new()),
         );
 
         let probed = player.ensure_clip_duration(clip_id).await.unwrap();
@@ -2150,6 +2159,7 @@ mod tests {
             }),
             unadopted_library(Some(make_stored_clip(clip_id, tmp.path().to_path_buf()))),
             SoundboardSettingsHandle::default(),
+            Arc::new(forge_storage::test_support::MemorySettings::new()),
         ));
         slot.set(Arc::downgrade(&player)).unwrap();
 
@@ -2270,19 +2280,23 @@ mod tests {
     const SUB_ACTION_VOLUME: f32 = 0.25;
 
     fn idle_player() -> SoundboardPlayer {
+        idle_player_storing_in(Arc::new(MemorySettings::new()))
+    }
+
+    fn idle_player_storing_in(store: Arc<dyn SettingsRepo>) -> SoundboardPlayer {
         SoundboardPlayer::with_settings(
             Arc::new(CountingFactory::new().0),
             Arc::new(RecordingEventSink::new().0),
             unadopted_library(None),
             SoundboardSettingsHandle::default(),
+            store,
         )
     }
 
     #[tokio::test]
     async fn the_set_master_volume_sub_action_persists_through_the_installed_settings_store() {
         let store = Arc::new(MemorySettings::new());
-        let player = idle_player();
-        player.install_settings_store(Arc::clone(&store) as Arc<dyn SettingsRepo>);
+        let player = idle_player_storing_in(Arc::clone(&store) as Arc<dyn SettingsRepo>);
 
         SoundboardControl::set_master_volume(&player, SUB_ACTION_VOLUME)
             .await
@@ -2301,8 +2315,7 @@ mod tests {
     #[tokio::test]
     async fn a_master_volume_above_ceiling_persists_the_same_clamped_gain_the_live_setting_holds() {
         let store = Arc::new(MemorySettings::new());
-        let player = idle_player();
-        player.install_settings_store(Arc::clone(&store) as Arc<dyn SettingsRepo>);
+        let player = idle_player_storing_in(Arc::clone(&store) as Arc<dyn SettingsRepo>);
 
         SoundboardControl::set_master_volume(&player, 10.0)
             .await
@@ -2338,10 +2351,9 @@ mod tests {
 
     #[tokio::test]
     async fn an_unsaved_master_volume_reports_the_storage_reason_verbatim() {
-        let player = idle_player();
         let store = MemorySettings::new();
         store.fail_writes(true);
-        player.install_settings_store(Arc::new(store) as Arc<dyn SettingsRepo>);
+        let player = idle_player_storing_in(Arc::new(store) as Arc<dyn SettingsRepo>);
 
         let error = SoundboardControl::set_master_volume(&player, SUB_ACTION_VOLUME)
             .await
@@ -2588,12 +2600,14 @@ mod tests {
         let library = Arc::new(ClipLibrary::new(
             Arc::new(ClipShelf(clips.iter().map(|c| c.clip.clone()).collect())),
             Arc::new(no_managed_media(Arc::default())),
+            Arc::new(forge_events::test_support::NullPublisher),
         ));
         let player = SoundboardPlayer::with_settings(
             factory,
             Arc::new(event_sink),
             library,
             SoundboardSettingsHandle::default(),
+            Arc::new(forge_storage::test_support::MemorySettings::new()),
         );
         (player, events)
     }

@@ -180,17 +180,15 @@ impl Read {
 pub(super) struct Variable {
     name: &'static str,
     kind: VariantKind,
-    label: &'static str,
     synthesis: Option<SynthesisHint>,
     read: Read,
 }
 
 impl Variable {
-    const fn new(name: &'static str, kind: VariantKind, label: &'static str, read: Read) -> Self {
+    const fn new(name: &'static str, kind: VariantKind, read: Read) -> Self {
         Self {
             name,
             kind,
-            label,
             synthesis: None,
             read,
         }
@@ -198,51 +196,36 @@ impl Variable {
 
     pub(super) const fn nested_text(
         name: &'static str,
-        label: &'static str,
         object: &'static str,
         key: &'static str,
     ) -> Self {
-        Self::new(
-            name,
-            VariantKind::String,
-            label,
-            Read::NestedText(object, key),
-        )
+        Self::new(name, VariantKind::String, Read::NestedText(object, key))
     }
 
     pub(super) const fn nested_int(
         name: &'static str,
-        label: &'static str,
         object: &'static str,
         key: &'static str,
     ) -> Self {
-        Self::new(name, VariantKind::Int, label, Read::NestedInt(object, key))
+        Self::new(name, VariantKind::Int, Read::NestedInt(object, key))
     }
 
     pub(super) const fn nested_flag(
         name: &'static str,
-        label: &'static str,
         object: &'static str,
         key: &'static str,
     ) -> Self {
-        Self::new(
-            name,
-            VariantKind::Bool,
-            label,
-            Read::NestedFlag(object, key),
-        )
+        Self::new(name, VariantKind::Bool, Read::NestedFlag(object, key))
     }
 
     pub(super) const fn nested_timestamp(
         name: &'static str,
-        label: &'static str,
         object: &'static str,
         key: &'static str,
     ) -> Self {
         Self::new(
             name,
             VariantKind::Datetime,
-            label,
             Read::NestedTimestamp(object, key),
         )
     }
@@ -250,10 +233,9 @@ impl Variable {
     pub(super) const fn custom(
         name: &'static str,
         kind: VariantKind,
-        label: &'static str,
         read: fn(&Event) -> Variant,
     ) -> Self {
-        Self::new(name, kind, label, Read::Custom(read))
+        Self::new(name, kind, Read::Custom(read))
     }
 
     pub(super) const fn synthesis(mut self, hint: SynthesisHint) -> Self {
@@ -270,7 +252,6 @@ impl Variable {
         DeclaredVariable {
             name: self.name.to_owned(),
             kind: self.kind,
-            label: self.label.to_owned(),
             synthesis: self.synthesis.clone(),
         }
     }

@@ -45,34 +45,26 @@ fn matches(config: &TriggerConfig, event: &Event) -> bool {
 }
 
 const VARIABLES: &[Variable] = &[
-    Variable::nested_text("hype.id", "Hype Train ID", fields::HYPE, fields::HYPE_ID),
-    Variable::nested_int(
-        "hype.level",
-        "Hype Train level",
-        fields::HYPE,
-        fields::LEVEL,
-    )
-    .synthesis(SynthesisHint::BoundedInt {
-        min: 1,
-        max: super::HYPE_TRAIN_LEVEL_MAX,
-    }),
-    Variable::nested_int("hype.goal", "Level goal", fields::HYPE, fields::GOAL).synthesis(
+    Variable::nested_text("hype.id", fields::HYPE, fields::HYPE_ID),
+    Variable::nested_int("hype.level", fields::HYPE, fields::LEVEL).synthesis(
+        SynthesisHint::BoundedInt {
+            min: 1,
+            max: super::HYPE_TRAIN_LEVEL_MAX,
+        },
+    ),
+    Variable::nested_int("hype.goal", fields::HYPE, fields::GOAL).synthesis(
         SynthesisHint::BoundedInt {
             min: 0,
             max: super::MAX_SYNTHESIZED_COUNT,
         },
     ),
-    Variable::nested_int(
-        "hype.progress",
-        "Current progress",
-        fields::HYPE,
-        fields::PROGRESS,
-    )
-    .synthesis(SynthesisHint::BoundedInt {
-        min: 0,
-        max: super::MAX_SYNTHESIZED_COUNT,
-    }),
-    Variable::nested_int("hype.total", "Total points", fields::HYPE, fields::TOTAL).synthesis(
+    Variable::nested_int("hype.progress", fields::HYPE, fields::PROGRESS).synthesis(
+        SynthesisHint::BoundedInt {
+            min: 0,
+            max: super::MAX_SYNTHESIZED_COUNT,
+        },
+    ),
+    Variable::nested_int("hype.total", fields::HYPE, fields::TOTAL).synthesis(
         SynthesisHint::BoundedInt {
             min: 0,
             max: super::MAX_SYNTHESIZED_COUNT,

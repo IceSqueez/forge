@@ -25,7 +25,6 @@ fn variables() -> Option<TriggerVariables> {
                 DeclaredVariable {
                     name: "automod.overall_level".to_owned(),
                     kind: VariantKind::Int,
-                    label: "Automod overall level".to_owned(),
                     synthesis: Some(SynthesisHint::BoundedInt { min: 0, max: 4 }),
                 },
                 |event| Variant::Int(payload_read::number(event, automod_fields::OVERALL_LEVEL)),

@@ -216,7 +216,7 @@ fn answer(
         }),
         Some("doAction") => {
             let execution = EventId::new();
-            let started = Event::caused_by(
+            let started = Event::child_of(
                 EventSource::Core,
                 ActionStarted::KIND,
                 json!({ "action_id": request["actionId"], "action_name": "Ping" }),
@@ -250,7 +250,7 @@ fn chat_effects(notification: &Value, behaviour: Behaviour) -> Vec<Event> {
     );
     let mut effects = vec![chat.clone()];
     if behaviour.runs_commands && text.starts_with("!ping") {
-        effects.push(Event::caused_by(
+        effects.push(Event::child_of(
             EventSource::Core,
             ActionStarted::KIND,
             json!({ "action_name": "Ping" }),

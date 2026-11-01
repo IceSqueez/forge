@@ -102,15 +102,12 @@ pub enum SpeakCommand {
     VoiceGateDeactivated,
 }
 
-pub struct EngineRegistration {
-    pub id: EngineId,
-    pub factory: Arc<dyn TtsEngineFactory>,
-}
+pub struct EngineRegistration(pub Arc<dyn TtsEngineFactory>);
 
 impl std::fmt::Debug for EngineRegistration {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("EngineRegistration")
-            .field("id", &self.id)
+            .field("id", &self.0.engine_id())
             .finish_non_exhaustive()
     }
 }
@@ -325,14 +322,19 @@ impl SpeakQueueHandle {
         self.send(SpeakCommand::VoiceGateDeactivated).await
     }
 
-    pub fn subscribe(&self) -> tokio::sync::broadcast::Receiver<SpeakEvent> {
-        self.event_tx.subscribe()
+    pub fn subscribe(&self) -> SpeakEventStream {
+        SpeakEventStream(self.event_tx.subscribe())
     }
 }
 
 pub struct SpeakEventStream(tokio::sync::broadcast::Receiver<SpeakEvent>);
 
 impl SpeakEventStream {
+    #[cfg(feature = "test-support")]
+    pub fn from_broadcast(receiver: tokio::sync::broadcast::Receiver<SpeakEvent>) -> Self {
+        Self(receiver)
+    }
+
     pub async fn recv(&mut self) -> Result<SpeakEvent, SpeakError> {
         match self.0.recv().await {
             Ok(event) => Ok(event),
@@ -456,7 +458,7 @@ mod tests {
         event_tx
             .send(SpeakEvent::Cleared)
             .expect("send must succeed");
-        let received = sub.try_recv().expect("receiver must see the event");
+        let received = sub.recv().await.expect("receiver must see the event");
         assert!(matches!(received, SpeakEvent::Cleared));
     }
 

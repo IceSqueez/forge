@@ -62,7 +62,6 @@ fn text(value: &'static str) -> DeclaredVariable {
     DeclaredVariable {
         name: value.to_owned(),
         kind: VariantKind::String,
-        label: value.to_owned(),
         synthesis: None,
     }
 }
@@ -71,18 +70,13 @@ fn flag(value: &'static str) -> DeclaredVariable {
     DeclaredVariable {
         name: value.to_owned(),
         kind: VariantKind::Bool,
-        label: value.to_owned(),
         synthesis: None,
     }
 }
 
 fn one_of_every_entry_kind() -> TriggerVariables {
     TriggerVariables::new()
-        .legacy(
-            "sub_message",
-            "Resub message",
-            CanonicalVariable::MessageText,
-        )
+        .legacy("sub_message", CanonicalVariable::MessageText)
         .event_specific(flag("share_streak"), |_| Variant::Bool(true))
         .sub_tier(|_| "1000".to_owned())
         .message_text(|_| "thanks for the stream".to_owned())
@@ -270,14 +264,9 @@ fn legacy_aliases_of_a_twitch_chatter() -> TriggerVariables {
     TriggerVariables::new()
         .legacy(
             "display_name",
-            "Sender display name",
             CanonicalVariable::actor(ActorRole::Principal, ActorSlot::Name),
         )
-        .legacy(
-            "count",
-            "Gifted subscription count",
-            CanonicalVariable::Count(CanonicalCount::GiftCount),
-        )
+        .legacy("count", CanonicalVariable::Count(CanonicalCount::GiftCount))
         .actor(twitch_block(ActorRole::Principal), |_| {
             identity("222", "", Some("loyalfan"))
         })
@@ -285,7 +274,7 @@ fn legacy_aliases_of_a_twitch_chatter() -> TriggerVariables {
 }
 
 #[test]
-fn a_legacy_entry_declares_its_twins_kind_and_synthesis_hint_under_its_own_name_and_label() {
+fn a_legacy_entry_declares_its_twins_kind_and_synthesis_hint_under_its_own_name() {
     let declarations = legacy_aliases_of_a_twitch_chatter().declarations();
     let twin_of = |canonical: CanonicalVariable| {
         declarations
@@ -303,19 +292,13 @@ fn a_legacy_entry_declares_its_twins_kind_and_synthesis_hint_under_its_own_name_
     let expected: Vec<DeclaredVariable> = [
         (
             "display_name",
-            "Sender display name",
             CanonicalVariable::actor(ActorRole::Principal, ActorSlot::Name),
         ),
-        (
-            "count",
-            "Gifted subscription count",
-            CanonicalVariable::Count(CanonicalCount::GiftCount),
-        ),
+        ("count", CanonicalVariable::Count(CanonicalCount::GiftCount)),
     ]
     .into_iter()
-    .map(|(name, label, canonical)| DeclaredVariable {
+    .map(|(name, canonical)| DeclaredVariable {
         name: name.to_owned(),
-        label: label.to_owned(),
         ..twin_of(canonical)
     })
     .collect();
@@ -339,7 +322,6 @@ fn a_legacy_entry_without_a_canonical_twin_is_declared_but_left_out_of_the_arg_s
     let variables = TriggerVariables::new()
         .legacy(
             "months",
-            "Subscribed months",
             CanonicalVariable::Count(CanonicalCount::SubCumulativeMonths),
         )
         .message_text(|_| "hi".to_owned());

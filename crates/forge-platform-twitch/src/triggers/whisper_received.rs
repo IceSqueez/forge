@@ -157,7 +157,6 @@ fn variables() -> Option<TriggerVariables> {
                 DeclaredVariable {
                     name: "whisper.thread_id".to_owned(),
                     kind: VariantKind::String,
-                    label: "Whisper thread ID".to_owned(),
                     synthesis: None,
                 },
                 |event| {
@@ -168,7 +167,6 @@ fn variables() -> Option<TriggerVariables> {
                 DeclaredVariable {
                     name: "user.color".to_owned(),
                     kind: VariantKind::String,
-                    label: "Sender name color".to_owned(),
                     synthesis: None,
                 },
                 |event| {
@@ -179,24 +177,17 @@ fn variables() -> Option<TriggerVariables> {
                     ))
                 },
             )
-            .legacy(
-                "whisper.text",
-                "Whisper text",
-                CanonicalVariable::MessageText,
-            )
+            .legacy("whisper.text", CanonicalVariable::MessageText)
             .legacy(
                 "user.id",
-                "Sender ID",
                 CanonicalVariable::actor(ActorRole::Principal, ActorSlot::Id),
             )
             .legacy(
                 "user.login",
-                "Sender login",
                 CanonicalVariable::actor(ActorRole::Principal, ActorSlot::Login),
             )
             .legacy(
                 "user.display_name",
-                "Sender display name",
                 CanonicalVariable::actor(ActorRole::Principal, ActorSlot::Name),
             ),
     )

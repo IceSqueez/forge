@@ -31,7 +31,6 @@ pub enum TtsEngineAdmission {
 }
 
 pub struct LocalTtsEngine {
-    pub id: EngineId,
     pub factory: Arc<dyn TtsEngineFactory>,
     pub admission: TtsEngineAdmission,
 }
@@ -39,24 +38,21 @@ pub struct LocalTtsEngine {
 async fn register_local_engines(registry: &mut TtsRegistry, engines: Vec<LocalTtsEngine>) {
     for engine in engines {
         match engine.admission {
-            TtsEngineAdmission::Unprobed => registry.register(engine.id, engine.factory),
+            TtsEngineAdmission::Unprobed => registry.register(engine.factory),
             TtsEngineAdmission::Probed => {
-                register_probed(registry, engine.id, engine.factory).await;
+                register_probed(registry, engine.factory).await;
             }
         }
     }
 }
 
-async fn register_probed(
-    registry: &mut TtsRegistry,
-    id: EngineId,
-    factory: Arc<dyn TtsEngineFactory>,
-) {
+async fn register_probed(registry: &mut TtsRegistry, factory: Arc<dyn TtsEngineFactory>) {
+    let id = factory.engine_id();
     let name = forge_tts_core::engine_display_name(&id.0);
     match build_engine(&id, Arc::clone(&factory)).await {
         Ok(engine) => {
             tracing::info!(engine = name, "registered a TTS engine");
-            registry.register_built(id, factory, engine);
+            registry.register_built(factory, engine);
         }
         Err(e) => tracing::info!(engine = name, error = %e, "TTS engine unavailable"),
     }

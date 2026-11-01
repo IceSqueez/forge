@@ -8,27 +8,22 @@ use forge_types::SynthesisHint;
 use crate::vocabulary::fields::hype_train as fields;
 
 const VARIABLES: &[Variable] = &[
-    Variable::nested_text("hype.id", "Hype Train ID", fields::HYPE, fields::HYPE_ID),
-    Variable::nested_int(
-        "hype.level",
-        "Hype Train level",
-        fields::HYPE,
-        fields::LEVEL,
-    )
-    .synthesis(SynthesisHint::BoundedInt {
-        min: 1,
-        max: super::HYPE_TRAIN_LEVEL_MAX,
-    }),
-    Variable::nested_int("hype.total", "Total points", fields::HYPE, fields::TOTAL).synthesis(
+    Variable::nested_text("hype.id", fields::HYPE, fields::HYPE_ID),
+    Variable::nested_int("hype.level", fields::HYPE, fields::LEVEL).synthesis(
+        SynthesisHint::BoundedInt {
+            min: 1,
+            max: super::HYPE_TRAIN_LEVEL_MAX,
+        },
+    ),
+    Variable::nested_int("hype.total", fields::HYPE, fields::TOTAL).synthesis(
         SynthesisHint::BoundedInt {
             min: 0,
             max: super::MAX_SYNTHESIZED_COUNT,
         },
     ),
-    Variable::nested_timestamp("hype.ended_at", "Ended at", fields::HYPE, fields::ENDED_AT),
+    Variable::nested_timestamp("hype.ended_at", fields::HYPE, fields::ENDED_AT),
     Variable::nested_timestamp(
         "hype.cooldown_ends_at",
-        "Cooldown ends at",
         fields::HYPE,
         fields::COOLDOWN_ENDS_AT,
     ),

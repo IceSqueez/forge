@@ -162,7 +162,11 @@ impl Fixture {
                         trigger_instance_repo: trigger_repo,
                         script_repo: Arc::new(crate::test_support::MemoryScripts::default())
                             as Arc<dyn ScriptRepo>,
-                        clip_library: Arc::new(ClipLibrary::new(clips, backend.media_repo())),
+                        clip_library: Arc::new(ClipLibrary::new(
+                            clips,
+                            backend.media_repo(),
+                            Arc::new(forge_events::test_support::NullPublisher),
+                        )),
                         globals_repo: Arc::new(globals) as Arc<dyn GlobalsRepo>,
                         overlay_repo: Arc::new(StubOverlays),
                         speak: None,

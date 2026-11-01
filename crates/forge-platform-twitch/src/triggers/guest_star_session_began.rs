@@ -9,13 +9,11 @@ use crate::vocabulary::fields::guest_star as guest_star_fields;
 const VARIABLES: &[Variable] = &[
     Variable::nested_text(
         "guest_star.session_id",
-        "Guest Star session ID",
         guest_star_fields::SESSION,
         guest_star_fields::SESSION_ID,
     ),
     Variable::nested_timestamp(
         "guest_star.started_at",
-        "Session started at",
         guest_star_fields::SESSION,
         guest_star_fields::SESSION_STARTED_AT,
     ),

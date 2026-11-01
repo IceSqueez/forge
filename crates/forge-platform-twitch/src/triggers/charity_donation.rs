@@ -56,7 +56,6 @@ fn variables() -> Option<TriggerVariables> {
                 DeclaredVariable {
                     name: "charity.id".to_owned(),
                     kind: VariantKind::String,
-                    label: "Charity campaign ID".to_owned(),
                     synthesis: None,
                 },
                 |event| {
@@ -71,7 +70,6 @@ fn variables() -> Option<TriggerVariables> {
                 DeclaredVariable {
                     name: "charity.name".to_owned(),
                     kind: VariantKind::String,
-                    label: "Charity name".to_owned(),
                     synthesis: None,
                 },
                 |event| {
@@ -86,7 +84,6 @@ fn variables() -> Option<TriggerVariables> {
                 DeclaredVariable {
                     name: "charity.amount_cents".to_owned(),
                     kind: VariantKind::Int,
-                    label: "Donation amount (cents)".to_owned(),
                     synthesis: Some(SynthesisHint::BoundedInt {
                         min: 0,
                         max: super::MAX_SYNTHESIZED_COUNT,
@@ -104,7 +101,6 @@ fn variables() -> Option<TriggerVariables> {
                 DeclaredVariable {
                     name: "charity.currency_code".to_owned(),
                     kind: VariantKind::String,
-                    label: "Currency code".to_owned(),
                     synthesis: None,
                 },
                 |event| {
@@ -119,7 +115,6 @@ fn variables() -> Option<TriggerVariables> {
                 DeclaredVariable {
                     name: "charity.decimal_places".to_owned(),
                     kind: VariantKind::Int,
-                    label: "Amount decimal places".to_owned(),
                     synthesis: Some(SynthesisHint::BoundedInt { min: 0, max: 3 }),
                 },
                 |event| {
@@ -132,12 +127,10 @@ fn variables() -> Option<TriggerVariables> {
             )
             .legacy(
                 "charity.user.login",
-                "Donor login",
                 CanonicalVariable::actor(ActorRole::Principal, ActorSlot::Login),
             )
             .legacy(
                 "charity.user.display_name",
-                "Donor display name",
                 CanonicalVariable::actor(ActorRole::Principal, ActorSlot::Name),
             ),
     )

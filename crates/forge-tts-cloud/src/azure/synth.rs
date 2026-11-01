@@ -32,7 +32,7 @@ fn format_signed_percent(val: i32) -> String {
 }
 
 fn build_ssml(req: &SynthesisRequest) -> String {
-    if req.ssml {
+    if req.text.is_ssml() {
         if req.rate_multiplier != 1.0 || req.pitch_semitones.abs() > f32::EPSILON {
             tracing::debug!(
                 rate_multiplier = req.rate_multiplier,
@@ -41,7 +41,7 @@ fn build_ssml(req: &SynthesisRequest) -> String {
             );
         }
         if req.text.contains(SPEAK_ELEMENT_OPEN) {
-            return req.text.clone();
+            return req.text.to_string();
         }
         return speak_document(&req.voice_id.0, &req.text);
     }
@@ -162,16 +162,16 @@ mod tests {
         API_KEY, NO_HINT_WAIT_SECS, assert_reveals_nothing, catalog_cap_text, link_to,
         over_catalog_cap, serving, throttled,
     };
+    use forge_tts_core::SpeechText;
     use wiremock::matchers::{body_string, header, method, path};
     use wiremock::{Mock, MockServer, ResponseTemplate};
 
     fn plain_req(text: &str) -> SynthesisRequest {
         SynthesisRequest {
-            text: text.into(),
+            text: SpeechText::plain(text.into()),
             voice_id: VoiceId("en-US-AriaNeural".into()),
             pitch_semitones: 0.0,
             rate_multiplier: 1.0,
-            ssml: false,
         }
     }
 
@@ -191,11 +191,10 @@ mod tests {
     fn synthesize_passes_ssml_input_through_unchanged() {
         let input = r#"<speak version="1.0"><voice name="Aria">test</voice></speak>"#;
         let req = SynthesisRequest {
-            text: input.into(),
+            text: SpeechText::ssml(input.into()),
             voice_id: VoiceId("en-US-AriaNeural".into()),
             pitch_semitones: 0.0,
             rate_multiplier: 1.0,
-            ssml: true,
         };
         assert_eq!(build_ssml(&req), input);
     }
@@ -203,11 +202,10 @@ mod tests {
     #[test]
     fn synthesize_wraps_prosody_when_rate_differs() {
         let req = SynthesisRequest {
-            text: "hello".into(),
+            text: SpeechText::plain("hello".into()),
             voice_id: VoiceId("en-US-AriaNeural".into()),
             pitch_semitones: 0.0,
             rate_multiplier: 1.5,
-            ssml: false,
         };
         let ssml = build_ssml(&req);
         assert!(ssml.contains("<prosody rate="));
@@ -251,8 +249,7 @@ mod tests {
     #[test]
     fn ssml_input_without_a_speak_element_is_wrapped_in_the_voice_document() {
         let req = SynthesisRequest {
-            text: "hello <break time=\"1s\"/> world".into(),
-            ssml: true,
+            text: SpeechText::ssml("hello <break time=\"1s\"/> world".into()),
             ..plain_req("")
         };
         assert_eq!(
@@ -265,8 +262,7 @@ mod tests {
     fn ssml_input_ignores_rate_and_pitch() {
         let input = r#"<speak version="1.0"><voice name="Aria">test</voice></speak>"#;
         let req = SynthesisRequest {
-            text: input.into(),
-            ssml: true,
+            text: SpeechText::ssml(input.into()),
             rate_multiplier: 2.0,
             pitch_semitones: 5.0,
             ..plain_req("")

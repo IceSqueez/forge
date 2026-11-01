@@ -22,12 +22,10 @@ pub(crate) struct SignalNumber {
     pub(crate) filter_condition: MessageCode,
     pub(crate) any_condition: MessageCode,
     pub(crate) variable: &'static str,
-    pub(crate) variable_label: &'static str,
 }
 
 pub(crate) struct SignalValue {
     pub(crate) variable: &'static str,
-    pub(crate) label: &'static str,
     pub(crate) max: i64,
 }
 
@@ -204,7 +202,6 @@ impl TriggerKindDescriptor for MidiInputTrigger {
             declared.push(DeclaredVariable {
                 name: number.variable.to_owned(),
                 kind: VariantKind::Int,
-                label: number.variable_label.to_owned(),
                 synthesis: Some(SynthesisHint::BoundedInt {
                     min: 0,
                     max: DATA_BYTE_MAX,
@@ -215,7 +212,6 @@ impl TriggerKindDescriptor for MidiInputTrigger {
             declared.push(DeclaredVariable {
                 name: value.variable.to_owned(),
                 kind: VariantKind::Int,
-                label: value.label.to_owned(),
                 synthesis: Some(SynthesisHint::BoundedInt {
                     min: 0,
                     max: value.max,
@@ -225,7 +221,6 @@ impl TriggerKindDescriptor for MidiInputTrigger {
         declared.push(DeclaredVariable {
             name: variables::CHANNEL.to_owned(),
             kind: VariantKind::Int,
-            label: "Channel".to_owned(),
             synthesis: Some(SynthesisHint::BoundedInt {
                 min: 0,
                 max: CHANNEL_MAX,
@@ -234,7 +229,6 @@ impl TriggerKindDescriptor for MidiInputTrigger {
         declared.push(DeclaredVariable {
             name: variables::PORT.to_owned(),
             kind: VariantKind::String,
-            label: "Port name".to_owned(),
             synthesis: None,
         });
         Some(VariableSchema {

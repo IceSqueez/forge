@@ -30,11 +30,10 @@ fn integer_variable(stack: ArgStack, event: &Event, field: &str, name: &str) -> 
     }
 }
 
-fn declared(name: &str, kind: VariantKind, label: &str) -> DeclaredVariable {
+fn declared(name: &str, kind: VariantKind) -> DeclaredVariable {
     DeclaredVariable {
         name: name.to_owned(),
         kind,
-        label: label.to_owned(),
         synthesis: None,
     }
 }
@@ -129,20 +128,12 @@ impl TriggerKindDescriptor for HotkeyEdgeDescriptor {
 
     fn output_schema(&self) -> Option<VariableSchema> {
         let mut variables = vec![
-            declared(variables::COMBO, VariantKind::String, "Hotkey combo"),
-            declared(variables::ID, VariantKind::Int, "Hotkey ID"),
-            declared(
-                variables::TIMESTAMP_US,
-                VariantKind::Int,
-                "Timestamp (microseconds)",
-            ),
+            declared(variables::COMBO, VariantKind::String),
+            declared(variables::ID, VariantKind::Int),
+            declared(variables::TIMESTAMP_US, VariantKind::Int),
         ];
         if self.edge == HotkeyEdge::Release {
-            variables.push(declared(
-                variables::HOLD_MS,
-                VariantKind::Int,
-                "Held for (milliseconds)",
-            ));
+            variables.push(declared(variables::HOLD_MS, VariantKind::Int));
         }
         Some(VariableSchema { variables })
     }

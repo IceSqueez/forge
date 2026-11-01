@@ -64,7 +64,6 @@ impl TriggerKindDescriptor for BanDescriptor {
                     DeclaredVariable {
                         name: variables::ban::DURATION_SECONDS.to_owned(),
                         kind: VariantKind::Int,
-                        label: "Ban duration (seconds)".to_owned(),
                         synthesis: Some(SynthesisHint::BoundedInt {
                             min: 0,
                             max: MAX_BAN_SECONDS,
@@ -76,7 +75,6 @@ impl TriggerKindDescriptor for BanDescriptor {
                     DeclaredVariable {
                         name: variables::ban::IS_PERMANENT.to_owned(),
                         kind: VariantKind::Bool,
-                        label: "Permanent ban".to_owned(),
                         synthesis: None,
                     },
                     |event| Variant::Bool(payload_read::flag(event, fields::IS_PERMANENT)),
@@ -85,19 +83,16 @@ impl TriggerKindDescriptor for BanDescriptor {
                     DeclaredVariable {
                         name: variables::ban::REASON.to_owned(),
                         kind: VariantKind::String,
-                        label: "Ban reason".to_owned(),
                         synthesis: None,
                     },
                     |event| Variant::String(payload_read::text(event, fields::REASON)),
                 )
                 .legacy(
                     variables::legacy::BANNED_USER_ID,
-                    "Banned user ID",
                     CanonicalVariable::actor(ActorRole::Principal, ActorSlot::Id),
                 )
                 .legacy(
                     variables::legacy::BANNED_USERNAME,
-                    "Banned username",
                     CanonicalVariable::actor(ActorRole::Principal, ActorSlot::Login),
                 ),
         )

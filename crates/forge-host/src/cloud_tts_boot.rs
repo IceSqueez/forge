@@ -1,7 +1,6 @@
 use std::sync::Arc;
 
 use forge_speak_queue::EngineRegistration;
-use forge_speech_types::EngineId;
 use forge_storage::{CredentialId, CredentialsRepo};
 use forge_tts_cloud::CloudGateways;
 use forge_tts_cloud::azure::AzureEngineFactory;
@@ -41,37 +40,25 @@ pub async fn register_cloud_engines(
 }
 
 pub fn azure_registration(creds: AzureCredentials, gateways: &CloudGateways) -> EngineRegistration {
-    EngineRegistration {
-        id: EngineId(forge_tts_core::ENGINE_ID_AZURE.into()),
-        factory: Arc::new(AzureEngineFactory::new(creds, gateways)),
-    }
+    EngineRegistration(Arc::new(AzureEngineFactory::new(creds, gateways)))
 }
 
 pub fn elevenlabs_registration(
     creds: ElevenLabsCredentials,
     gateways: &CloudGateways,
 ) -> EngineRegistration {
-    EngineRegistration {
-        id: EngineId(forge_tts_core::ENGINE_ID_ELEVENLABS.into()),
-        factory: Arc::new(ElevenLabsEngineFactory::new(creds, gateways)),
-    }
+    EngineRegistration(Arc::new(ElevenLabsEngineFactory::new(creds, gateways)))
 }
 
 pub fn openai_registration(
     creds: OpenAiCredentials,
     gateways: &CloudGateways,
 ) -> EngineRegistration {
-    EngineRegistration {
-        id: EngineId(forge_tts_core::ENGINE_ID_OPENAI.into()),
-        factory: Arc::new(OpenAiEngineFactory::new(creds, gateways)),
-    }
+    EngineRegistration(Arc::new(OpenAiEngineFactory::new(creds, gateways)))
 }
 
 pub fn polly_registration(creds: PollyCredentials, gateways: &CloudGateways) -> EngineRegistration {
-    EngineRegistration {
-        id: EngineId(forge_tts_core::ENGINE_ID_POLLY.into()),
-        factory: Arc::new(PollyEngineFactory::new(creds, gateways)),
-    }
+    EngineRegistration(Arc::new(PollyEngineFactory::new(creds, gateways)))
 }
 
 async fn load_engine_credentials<T: DeserializeOwned>(
@@ -92,6 +79,6 @@ async fn load_engine_credentials<T: DeserializeOwned>(
 }
 
 fn install(registry: &mut TtsRegistry, registration: EngineRegistration, engine: &str) {
-    registry.register(registration.id, registration.factory);
+    registry.register(registration.0);
     tracing::info!(engine, "registered cloud TTS engine");
 }

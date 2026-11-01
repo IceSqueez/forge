@@ -92,7 +92,6 @@ fn canonical_actor_only() -> TriggerVariables {
 fn canonical_actor_plus_legacy_username() -> TriggerVariables {
     canonical_actor_only().legacy(
         LEGACY_NAME,
-        "Username",
         CanonicalVariable::actor(ActorRole::Principal, ActorSlot::Login),
     )
 }
@@ -653,7 +652,6 @@ fn stamp_as(kind: VariantKind) -> TriggerVariables {
         DeclaredVariable {
             name: STAMP.to_owned(),
             kind,
-            label: "Stamp".to_owned(),
             synthesis: None,
         },
         |_| Variant::Int(0),

@@ -59,7 +59,6 @@ impl TriggerKindDescriptor for LivestreamMetadataDescriptor {
                     DeclaredVariable {
                         name: variables::livestream::STREAM_TITLE.to_owned(),
                         kind: VariantKind::String,
-                        label: "Stream title".to_owned(),
                         synthesis: None,
                     },
                     |event| Variant::String(payload_read::text(event, fields::STREAM_TITLE)),
@@ -68,7 +67,6 @@ impl TriggerKindDescriptor for LivestreamMetadataDescriptor {
                     DeclaredVariable {
                         name: variables::livestream::CATEGORY_ID.to_owned(),
                         kind: VariantKind::String,
-                        label: "Category ID".to_owned(),
                         synthesis: None,
                     },
                     |event| {
@@ -82,7 +80,6 @@ impl TriggerKindDescriptor for LivestreamMetadataDescriptor {
                     DeclaredVariable {
                         name: variables::livestream::CATEGORY_NAME.to_owned(),
                         kind: VariantKind::String,
-                        label: "Category name".to_owned(),
                         synthesis: None,
                     },
                     |event| {

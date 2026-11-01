@@ -37,8 +37,8 @@ pub(crate) async fn build_soundboard(
     let library = Arc::new(ClipLibrary::new(
         HotkeySyncedClipsRepo::wrap(backend.soundboard_clips_repo(), hotkey_reconciler),
         backend.media_repo(),
+        Arc::clone(bus) as Arc<dyn EventPublisher>,
     ));
-    library.install_event_publisher(Arc::clone(bus) as Arc<dyn EventPublisher>);
     let player = Arc::new(SoundboardPlayer::with_settings(
         audio_sinks,
         Arc::new(BusAudioEventSink::new(
@@ -46,8 +46,8 @@ pub(crate) async fn build_soundboard(
         )),
         library,
         settings,
+        settings_repo,
     ));
-    player.install_settings_store(settings_repo);
     if let Err(e) = register_soundboard_sub_actions(
         sub_actions,
         Arc::clone(&player) as Arc<dyn SoundboardControl>,

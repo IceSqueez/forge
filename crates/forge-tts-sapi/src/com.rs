@@ -269,7 +269,7 @@ fn synthesize_on_sta(
     let speak_text = synth::prepare_speak_text(
         &req.text,
         req.pitch_semitones,
-        req.ssml,
+        req.text.is_ssml(),
         entry.ssml_language,
     );
 

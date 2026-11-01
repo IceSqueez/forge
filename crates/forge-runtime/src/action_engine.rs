@@ -1385,7 +1385,7 @@ mod tests {
                 ctx.cancel.cancel();
             }
             if self.emits {
-                ctx.publisher.publish(Event::caused_by(
+                ctx.publisher.publish(Event::child_of(
                     EventSource::Core,
                     LOOP_EVENT_KIND,
                     serde_json::Value::Null,

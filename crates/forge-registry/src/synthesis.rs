@@ -180,15 +180,10 @@ fn login_of(display_name: &str) -> String {
 }
 
 fn event_specific_value(declared: &DeclaredVariable, sample: &SynthesisSample) -> Variant {
-    let token_base = if declared.label.is_empty() {
-        &declared.name
-    } else {
-        &declared.label
-    };
     hinted_value(
         declared.synthesis.as_ref(),
         declared.kind,
-        token_base,
+        &declared.name,
         sample,
     )
 }
@@ -291,7 +286,6 @@ mod tests {
             declared: DeclaredVariable {
                 name: name.to_owned(),
                 kind,
-                label: name.to_owned(),
                 synthesis,
             },
             standing: VariableStanding::Legacy(superseded_by),
@@ -300,7 +294,6 @@ mod tests {
 
     fn event_specific_entry(
         name: &str,
-        label: &str,
         kind: VariantKind,
         synthesis: Option<SynthesisHint>,
     ) -> TriggerVariable {
@@ -308,7 +301,6 @@ mod tests {
             declared: DeclaredVariable {
                 name: name.to_owned(),
                 kind,
-                label: label.to_owned(),
                 synthesis,
             },
             standing: VariableStanding::EventSpecific,
@@ -489,25 +481,21 @@ mod tests {
             &[
                 event_specific_entry(
                     "reward_cost",
-                    "Reward cost",
                     VariantKind::Int,
                     Some(SynthesisHint::BoundedInt { min: 10, max: 20 }),
                 ),
                 event_specific_entry(
                     "raider_name",
-                    "Raider",
                     VariantKind::String,
                     Some(SynthesisHint::DisplayName),
                 ),
                 event_specific_entry(
                     "reply_body",
-                    "Reply",
                     VariantKind::String,
                     Some(SynthesisHint::Message),
                 ),
                 event_specific_entry(
                     "raider_login",
-                    "Raider login",
                     VariantKind::String,
                     Some(SynthesisHint::Username),
                 ),
@@ -526,7 +514,7 @@ mod tests {
         for (kind, expected) in [
             (
                 VariantKind::String,
-                Variant::String("reward_sample".to_owned()),
+                Variant::String("payload_sample".to_owned()),
             ),
             (VariantKind::Int, Variant::Int(26)),
             (VariantKind::Bool, Variant::Bool(true)),
@@ -538,15 +526,12 @@ mod tests {
             (
                 VariantKind::Array,
                 Variant::Array(vec![
-                    Variant::String("reward_sample".to_owned()),
+                    Variant::String("payload_sample".to_owned()),
                     Variant::String(PRINCIPAL_LOGIN.to_owned()),
                 ]),
             ),
         ] {
-            let stack = synthesize_args(
-                &[event_specific_entry("payload", "Reward title", kind, None)],
-                &sample(),
-            );
+            let stack = synthesize_args(&[event_specific_entry("payload", kind, None)], &sample());
 
             assert_eq!(stack.get("payload"), Some(&expected), "{kind:?}");
         }
@@ -555,12 +540,7 @@ mod tests {
     #[test]
     fn an_unhinted_float_variable_lands_inside_the_generic_float_span() {
         let stack = synthesize_args(
-            &[event_specific_entry(
-                "payload",
-                "Reward title",
-                VariantKind::Float,
-                None,
-            )],
+            &[event_specific_entry("payload", VariantKind::Float, None)],
             &sample(),
         );
 
@@ -571,18 +551,18 @@ mod tests {
     }
 
     #[test]
-    fn a_string_sample_is_named_after_the_label_and_falls_back_to_the_variable_name() {
-        for (label, name, expected) in [
-            ("Reward title", "reward_id", "reward_sample"),
-            ("", "gift_id", "giftid_sample"),
-            ("!!! ???", "mystery", "sample"),
+    fn a_string_sample_is_named_after_the_variable() {
+        for (name, expected) in [
+            ("reward_id", "rewardid_sample"),
+            ("gift_id", "giftid_sample"),
+            ("???", "sample"),
         ] {
             let stack = synthesize_args(
-                &[event_specific_entry(name, label, VariantKind::String, None)],
+                &[event_specific_entry(name, VariantKind::String, None)],
                 &sample(),
             );
 
-            assert_eq!(stack.get(name), text(expected).as_ref(), "{label:?}");
+            assert_eq!(stack.get(name), text(expected).as_ref(), "{name:?}");
         }
     }
 

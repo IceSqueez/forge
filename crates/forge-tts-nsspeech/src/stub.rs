@@ -4,6 +4,10 @@ use forge_tts_core::{ENGINE_ID_NSSPEECH, TtsEngine, TtsEngineFactory, TtsError};
 pub struct NsSpeechEngineFactory;
 
 impl TtsEngineFactory for NsSpeechEngineFactory {
+    fn engine_id(&self) -> forge_speech_types::EngineId {
+        forge_speech_types::EngineId(forge_tts_core::ENGINE_ID_NSSPEECH.into())
+    }
+
     fn class(&self) -> forge_tts_core::EngineClass {
         forge_tts_core::EngineClass::System
     }

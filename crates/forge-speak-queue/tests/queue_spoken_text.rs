@@ -39,7 +39,7 @@ impl TtsEngine for ScriptedEngine {
         if let Some(failure) = self.failure {
             return Err(failure());
         }
-        self.spoken.lock().unwrap().push(req.text);
+        self.spoken.lock().unwrap().push(req.text.into_string());
         Ok(PcmBuffer::new(vec![0i16; 8], 22_050, 1))
     }
 }
@@ -51,6 +51,10 @@ struct ScriptedFactory {
 }
 
 impl TtsEngineFactory for ScriptedFactory {
+    fn engine_id(&self) -> EngineId {
+        EngineId(ENGINE.into())
+    }
+
     fn class(&self) -> forge_tts_core::EngineClass {
         forge_tts_core::EngineClass::Local
     }
@@ -82,14 +86,11 @@ fn spawn_queue(
 ) -> (SpeakQueueHandle, SpeakEventStream, Arc<Mutex<Vec<String>>>) {
     let spoken = Arc::new(Mutex::new(Vec::new()));
     let mut registry = TtsRegistry::new();
-    registry.register(
-        EngineId(ENGINE.into()),
-        Arc::new(ScriptedFactory {
-            voices: vec![voice_in(locale)],
-            spoken: Arc::clone(&spoken),
-            failure,
-        }),
-    );
+    registry.register(Arc::new(ScriptedFactory {
+        voices: vec![voice_in(locale)],
+        spoken: Arc::clone(&spoken),
+        failure,
+    }));
     let (sink, _plays) = recording_sink();
     let mut deps = make_deps(
         registry,

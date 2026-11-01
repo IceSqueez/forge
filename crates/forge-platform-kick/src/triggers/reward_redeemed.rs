@@ -60,7 +60,6 @@ impl TriggerKindDescriptor for RewardRedeemedDescriptor {
                     DeclaredVariable {
                         name: variables::reward::REDEMPTION_ID.to_owned(),
                         kind: VariantKind::String,
-                        label: "Redemption ID".to_owned(),
                         synthesis: None,
                     },
                     |event| Variant::String(payload_read::text(event, fields::ID)),
@@ -69,7 +68,6 @@ impl TriggerKindDescriptor for RewardRedeemedDescriptor {
                     DeclaredVariable {
                         name: variables::reward::REWARD_ID.to_owned(),
                         kind: VariantKind::String,
-                        label: "Reward ID".to_owned(),
                         synthesis: None,
                     },
                     |event| {
@@ -83,7 +81,6 @@ impl TriggerKindDescriptor for RewardRedeemedDescriptor {
                     DeclaredVariable {
                         name: variables::reward::REWARD_TITLE.to_owned(),
                         kind: VariantKind::String,
-                        label: "Reward title".to_owned(),
                         synthesis: None,
                     },
                     |event| {
@@ -95,12 +92,10 @@ impl TriggerKindDescriptor for RewardRedeemedDescriptor {
                 )
                 .legacy(
                     variables::legacy::USERNAME,
-                    "Redeeming username",
                     CanonicalVariable::actor(ActorRole::Principal, ActorSlot::Login),
                 )
                 .legacy(
                     variables::legacy::USER_INPUT,
-                    "User input text",
                     CanonicalVariable::MessageText,
                 ),
         )

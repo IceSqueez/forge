@@ -28,7 +28,11 @@ async fn a_clip_imported_through_the_library_registers_its_combo() {
         provider.soundboard_clips_repo(),
     );
     let clips = HotkeySyncedClipsRepo::wrap(provider.soundboard_clips_repo(), reconciler);
-    let library = ClipLibrary::new(clips, provider.media_repo());
+    let library = ClipLibrary::new(
+        clips,
+        provider.media_repo(),
+        Arc::new(forge_events::test_support::NullPublisher),
+    );
     let source = tempfile::Builder::new().suffix(".wav").tempfile().unwrap();
     std::fs::write(source.path(), b"RIFF\x24\0\0\0WAVEfmt \x10\0\0\0").unwrap();
     let imported = StoredClip {

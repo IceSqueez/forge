@@ -528,8 +528,10 @@ mod tests {
             badges: vec![UserBadge::Moderator, UserBadge::Subscriber { months: 12 }],
             is_event: true,
             event_detail: Some(ChatEventDetail::SuperChat {
-                amount_micros: 5_000_000,
-                currency: "USD".to_string(),
+                amount: forge_types::MoneyAmount::from_micros(
+                    5_000_000,
+                    forge_types::CurrencyCode::parse("USD").unwrap(),
+                ),
                 message: Some("thx".to_string()),
             }),
             moderation: ModerationMarks {

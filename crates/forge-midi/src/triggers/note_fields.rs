@@ -10,11 +10,9 @@ pub(super) const NOTE: SignalNumber = SignalNumber {
     filter_condition: messages::CONDITION_NOTE,
     any_condition: messages::CONDITION_ANY_NOTE,
     variable: variables::NOTE,
-    variable_label: "Note number",
 };
 
 pub(super) const VELOCITY: SignalValue = SignalValue {
     variable: variables::VELOCITY,
-    label: "Velocity",
     max: DATA_BYTE_MAX,
 };

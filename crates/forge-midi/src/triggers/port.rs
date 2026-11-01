@@ -111,13 +111,11 @@ impl TriggerKindDescriptor for MidiPortTrigger {
                 DeclaredVariable {
                     name: variables::NAME.to_owned(),
                     kind: VariantKind::String,
-                    label: "Device name".to_owned(),
                     synthesis: None,
                 },
                 DeclaredVariable {
                     name: variables::DIRECTION.to_owned(),
                     kind: VariantKind::String,
-                    label: "Direction".to_owned(),
                     synthesis: None,
                 },
             ],

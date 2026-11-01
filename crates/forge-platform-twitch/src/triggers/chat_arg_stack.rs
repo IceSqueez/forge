@@ -19,7 +19,6 @@ pub(super) fn base_chat_variables() -> TriggerVariables {
             DeclaredVariable {
                 name: "channel".to_owned(),
                 kind: VariantKind::String,
-                label: "Channel login".to_owned(),
                 synthesis: None,
             },
             |event| Variant::String(text_field(event, fields::CHANNEL)),
@@ -28,7 +27,6 @@ pub(super) fn base_chat_variables() -> TriggerVariables {
             DeclaredVariable {
                 name: "user_color".to_owned(),
                 kind: VariantKind::String,
-                label: "Username color".to_owned(),
                 synthesis: None,
             },
             |event| Variant::String(text_field(event, fields::COLOR)),

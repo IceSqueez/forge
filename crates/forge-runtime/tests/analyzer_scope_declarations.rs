@@ -69,7 +69,6 @@ impl TriggerKindDescriptor for SeedTrigger {
             DeclaredVariable {
                 name: "seed".to_owned(),
                 kind: VariantKind::String,
-                label: "Seed".to_owned(),
                 synthesis: None,
             },
             |_| Variant::String(String::new()),

@@ -9,20 +9,17 @@ use crate::vocabulary::fields::guest_star as guest_star_fields;
 const VARIABLES: &[Variable] = &[
     Variable::nested_int(
         "guest_star.slot_count",
-        "Slot count",
         guest_star_fields::SETTINGS,
         guest_star_fields::SLOT_COUNT,
     )
     .bounded(0, 6),
     Variable::nested_text(
         "guest_star.group_layout",
-        "Group layout",
         guest_star_fields::SETTINGS,
         guest_star_fields::GROUP_LAYOUT,
     ),
     Variable::nested_flag(
         "guest_star.is_moderator_send_live_enabled",
-        "Moderator can send live",
         guest_star_fields::SETTINGS,
         guest_star_fields::IS_MODERATOR_SEND_LIVE_ENABLED,
     ),

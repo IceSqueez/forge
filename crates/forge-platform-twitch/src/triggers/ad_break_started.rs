@@ -19,7 +19,6 @@ fn variables() -> Option<TriggerVariables> {
                 DeclaredVariable {
                     name: "ad_break.duration_seconds".to_owned(),
                     kind: VariantKind::Int,
-                    label: "Ad break duration (seconds)".to_owned(),
                     synthesis: Some(SynthesisHint::BoundedInt { min: 0, max: 180 }),
                 },
                 |event| {
@@ -34,7 +33,6 @@ fn variables() -> Option<TriggerVariables> {
                 DeclaredVariable {
                     name: "ad_break.is_automatic".to_owned(),
                     kind: VariantKind::Bool,
-                    label: "Automatic ad break".to_owned(),
                     synthesis: None,
                 },
                 |event| {
@@ -49,7 +47,6 @@ fn variables() -> Option<TriggerVariables> {
                 DeclaredVariable {
                     name: "ad_break.started_at".to_owned(),
                     kind: VariantKind::Datetime,
-                    label: "Ad break start time".to_owned(),
                     synthesis: None,
                 },
                 |event| {
@@ -62,7 +59,6 @@ fn variables() -> Option<TriggerVariables> {
             )
             .legacy(
                 "requester_login",
-                "Requester login",
                 CanonicalVariable::actor(ActorRole::Principal, ActorSlot::Login),
             ),
     )

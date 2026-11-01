@@ -11,13 +11,12 @@ use forge_runtime::{
 };
 use forge_script::{ScriptError, SpeakRequester};
 use forge_speak_queue::{
-    PlaybackTarget, Priority, RequestId, SpeakCommand, SpeakEvent, SpeakQueueHandle, SpeakRequest,
+    PlaybackTarget, Priority, RequestId, SpeakCommand, SpeakError, SpeakEvent, SpeakEventStream,
+    SpeakQueueHandle, SpeakRequest,
 };
 use forge_speech_types::{AliasId, AliasState, VoiceAlias};
 use forge_speech_types::{EngineId, VoiceId};
 use forge_types::MessageRef;
-use tokio::sync::broadcast;
-use tokio::sync::broadcast::error::RecvError;
 
 const SPEAK_WAIT_HARD_CAP: Duration = Duration::from_secs(600);
 const SYSTEM_SPEAKER_ID: &str = "system";
@@ -120,7 +119,7 @@ impl SpeakBridge {
 
     fn withdraw_when_run_stops(
         &self,
-        mut events: broadcast::Receiver<SpeakEvent>,
+        mut events: SpeakEventStream,
         request_id: RequestId,
         run: CancelSignal,
     ) {
@@ -157,13 +156,13 @@ fn speech_left_queue_event(event: &SpeakEvent, id: &RequestId) -> bool {
     }
 }
 
-async fn speech_left_queue(events: &mut broadcast::Receiver<SpeakEvent>, id: &RequestId) {
+async fn speech_left_queue(events: &mut SpeakEventStream, id: &RequestId) {
     loop {
         match events.recv().await {
             Ok(event) if speech_left_queue_event(&event, id) => return,
             Ok(_) => {}
-            Err(RecvError::Closed) => return,
-            Err(RecvError::Lagged(_)) => {
+            Err(SpeakError::ActorGone) => return,
+            Err(SpeakError::LaggingReceiver) => {
                 let bounded = tokio::time::timeout(
                     SPEAK_WAIT_HARD_CAP,
                     speech_left_queue_after_lag(events, id),
@@ -175,18 +174,18 @@ async fn speech_left_queue(events: &mut broadcast::Receiver<SpeakEvent>, id: &Re
     }
 }
 
-async fn speech_left_queue_after_lag(events: &mut broadcast::Receiver<SpeakEvent>, id: &RequestId) {
+async fn speech_left_queue_after_lag(events: &mut SpeakEventStream, id: &RequestId) {
     loop {
         match events.recv().await {
             Ok(event) if speech_left_queue_event(&event, id) => return,
-            Err(RecvError::Closed) => return,
-            Ok(_) | Err(RecvError::Lagged(_)) => {}
+            Err(SpeakError::ActorGone) => return,
+            Ok(_) | Err(SpeakError::LaggingReceiver) => {}
         }
     }
 }
 
 async fn wait_for_terminal(
-    events: &mut broadcast::Receiver<SpeakEvent>,
+    events: &mut SpeakEventStream,
     request_id: &RequestId,
     cancel: CancelSignal,
 ) -> Result<(), MessageRef> {
@@ -194,7 +193,7 @@ async fn wait_for_terminal(
 }
 
 async fn wait_marking_start(
-    events: &mut broadcast::Receiver<SpeakEvent>,
+    events: &mut SpeakEventStream,
     request_id: &RequestId,
     cancel: CancelSignal,
     started: Option<&SpeechStartSignal>,
@@ -231,15 +230,14 @@ async fn wait_marking_start(
                             return Err(message);
                         }
                         Ok(_) => continue,
-                        Err(RecvError::Lagged(missed)) => {
+                        Err(SpeakError::LaggingReceiver) => {
                             events_lost = true;
                             tracing::warn!(
                                 request = %request_id.0,
-                                missed,
                                 "speak wait fell behind the queue's events; still waiting for this speech to end"
                             );
                         }
-                        Err(RecvError::Closed) => {
+                        Err(SpeakError::ActorGone) => {
                             return Err(messages::event_stream_closed());
                         }
                     }
@@ -485,6 +483,7 @@ mod tests {
     use forge_types::{MessageCode, VerbatimText};
 
     use super::*;
+    use tokio::sync::broadcast;
 
     const CAPACITY: usize = 2;
     const OVERFLOW: usize = 5;
@@ -511,7 +510,8 @@ mod tests {
 
     #[tokio::test(start_paused = true)]
     async fn a_lagged_wait_still_resolves_when_the_end_of_its_speech_arrives() {
-        let (events, mut rx) = broadcast::channel(CAPACITY);
+        let (events, rx) = broadcast::channel(CAPACITY);
+        let mut rx = SpeakEventStream::from_broadcast(rx);
         let request_id = RequestId::new();
         lag(&events);
         events
@@ -534,7 +534,8 @@ mod tests {
             (true, "speak.outcome_unknown"),
             (false, "speak.wait_timed_out"),
         ] {
-            let (events, mut rx) = broadcast::channel(CAPACITY);
+            let (events, rx) = broadcast::channel(CAPACITY);
+            let mut rx = SpeakEventStream::from_broadcast(rx);
             if lagged {
                 lag(&events);
             }
@@ -556,7 +557,8 @@ mod tests {
     #[tokio::test(start_paused = true)]
     async fn a_closed_event_stream_reports_closed_even_after_a_lag() {
         for lagged in [false, true] {
-            let (events, mut rx) = broadcast::channel(CAPACITY);
+            let (events, rx) = broadcast::channel(CAPACITY);
+            let mut rx = SpeakEventStream::from_broadcast(rx);
             if lagged {
                 lag(&events);
             }
@@ -571,7 +573,8 @@ mod tests {
 
     #[tokio::test(start_paused = true)]
     async fn cancelling_a_lagged_wait_ends_it_at_once() {
-        let (events, mut rx) = broadcast::channel(CAPACITY);
+        let (events, rx) = broadcast::channel(CAPACITY);
+        let mut rx = SpeakEventStream::from_broadcast(rx);
         lag(&events);
         let cancel = CancelSignal::new();
         cancel.cancel();
@@ -585,7 +588,8 @@ mod tests {
 
     #[tokio::test(start_paused = true)]
     async fn a_wait_ends_at_once_when_its_speech_is_removed_from_the_queue() {
-        let (events, mut rx) = broadcast::channel(CAPACITY);
+        let (events, rx) = broadcast::channel(CAPACITY);
+        let mut rx = SpeakEventStream::from_broadcast(rx);
         let request_id = RequestId::new();
         events
             .send(SpeakEvent::Removed {
@@ -803,7 +807,7 @@ mod tests {
             &self,
             request: forge_tts_core::SynthesisRequest,
         ) -> Result<forge_speech_types::PcmBuffer, forge_tts_core::TtsError> {
-            self.heard.lock().unwrap().push(request.text);
+            self.heard.lock().unwrap().push(request.text.into_string());
             Ok(forge_speech_types::PcmBuffer::new(vec![0i16; 4], 22_050, 1))
         }
     }
@@ -811,6 +815,10 @@ mod tests {
     struct CapturingFactory(Arc<std::sync::Mutex<Vec<String>>>);
 
     impl forge_tts_core::TtsEngineFactory for CapturingFactory {
+        fn engine_id(&self) -> EngineId {
+            EngineId("cap".to_owned())
+        }
+
         fn class(&self) -> forge_tts_core::EngineClass {
             forge_tts_core::EngineClass::Local
         }
@@ -867,10 +875,7 @@ mod tests {
 
         let heard = Arc::new(std::sync::Mutex::new(Vec::new()));
         let mut engines = forge_tts_core::TtsRegistry::new();
-        engines.register(
-            EngineId("cap".to_owned()),
-            Arc::new(CapturingFactory(Arc::clone(&heard))),
-        );
+        engines.register(Arc::new(CapturingFactory(Arc::clone(&heard))));
         let (handle, mut stream) = Harness {
             pipeline: forge_tts_pipeline::PipelineConfig {
                 strip_reward_emotes: true,
@@ -1264,6 +1269,10 @@ mod tests {
     struct ListedVoicesFactory;
 
     impl forge_tts_core::TtsEngineFactory for ListedVoicesFactory {
+        fn engine_id(&self) -> EngineId {
+            EngineId("cap".to_owned())
+        }
+
         fn class(&self) -> forge_tts_core::EngineClass {
             forge_tts_core::EngineClass::Local
         }
@@ -1284,7 +1293,7 @@ mod tests {
         sink: Arc<dyn forge_audio::AudioSink>,
     ) -> (Arc<SpeakQueueHandle>, forge_speak_queue::SpeakEventStream) {
         let mut engines = forge_tts_core::TtsRegistry::new();
-        engines.register(EngineId("cap".to_owned()), Arc::new(ListedVoicesFactory));
+        engines.register(Arc::new(ListedVoicesFactory));
         let (handle, stream) = Harness {
             engines,
             sink,
@@ -1516,7 +1525,8 @@ mod tests {
 
     #[tokio::test(start_paused = true)]
     async fn the_watch_on_a_queued_speech_ends_at_its_terminal_event_and_not_before() {
-        let (events, mut rx) = broadcast::channel(CAPACITY + 1);
+        let (events, rx) = broadcast::channel(CAPACITY + 1);
+        let mut rx = SpeakEventStream::from_broadcast(rx);
         let id = RequestId::new();
         events.send(unrelated()).unwrap();
         events.send(request_ended(RequestId::new())).unwrap();
@@ -1533,7 +1543,8 @@ mod tests {
 
     #[tokio::test(start_paused = true)]
     async fn the_watch_on_a_queued_speech_ends_once_its_events_stop() {
-        let (events, mut rx) = broadcast::channel::<SpeakEvent>(CAPACITY);
+        let (events, rx) = broadcast::channel::<SpeakEvent>(CAPACITY);
+        let mut rx = SpeakEventStream::from_broadcast(rx);
         drop(events);
 
         tokio::time::timeout(
@@ -1546,7 +1557,8 @@ mod tests {
 
     #[tokio::test(start_paused = true)]
     async fn a_lagged_watch_gives_up_at_the_hard_cap() {
-        let (events, mut rx) = broadcast::channel(CAPACITY);
+        let (events, rx) = broadcast::channel(CAPACITY);
+        let mut rx = SpeakEventStream::from_broadcast(rx);
         lag(&events);
         let started = tokio::time::Instant::now();
 
@@ -1564,7 +1576,11 @@ mod tests {
         let tasks = tokio::runtime::Handle::current().metrics();
         let before = tasks.num_alive_tasks();
 
-        bridge.withdraw_when_run_stops(rx, id.clone(), CancelSignal::new());
+        bridge.withdraw_when_run_stops(
+            SpeakEventStream::from_broadcast(rx),
+            id.clone(),
+            CancelSignal::new(),
+        );
         events.send(request_ended(id)).unwrap();
 
         tokio::time::timeout(Duration::from_secs(30), async {
@@ -1597,7 +1613,11 @@ mod tests {
         lag(&events);
         let run = CancelSignal::new();
 
-        bridge.withdraw_when_run_stops(rx, id.clone(), run.clone());
+        bridge.withdraw_when_run_stops(
+            SpeakEventStream::from_broadcast(rx),
+            id.clone(),
+            run.clone(),
+        );
         run.cancel();
 
         assert_eq!(removal_of(&mut stream, &id).await, id);

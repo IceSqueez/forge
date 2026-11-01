@@ -23,7 +23,6 @@ fn variables() -> Option<TriggerVariables> {
                 DeclaredVariable {
                     name: "user.description".to_owned(),
                     kind: VariantKind::String,
-                    label: "User bio".to_owned(),
                     synthesis: None,
                 },
                 |event| {
@@ -36,17 +35,14 @@ fn variables() -> Option<TriggerVariables> {
             )
             .legacy(
                 "user.id",
-                "User ID",
                 CanonicalVariable::actor(ActorRole::Principal, ActorSlot::Id),
             )
             .legacy(
                 "user.login",
-                "User login",
                 CanonicalVariable::actor(ActorRole::Principal, ActorSlot::Login),
             )
             .legacy(
                 "user.display_name",
-                "User display name",
                 CanonicalVariable::actor(ActorRole::Principal, ActorSlot::Name),
             ),
     )

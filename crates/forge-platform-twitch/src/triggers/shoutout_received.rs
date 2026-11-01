@@ -25,19 +25,16 @@ fn variables() -> Option<TriggerVariables> {
                 DeclaredVariable {
                     name: "started_at".to_owned(),
                     kind: VariantKind::Datetime,
-                    label: "Started at".to_owned(),
                     synthesis: None,
                 },
                 |event| payload_read::timestamp(event, shoutout_fields::STARTED_AT),
             )
             .legacy(
                 "from_broadcaster_login",
-                "Shouting-out channel login",
                 CanonicalVariable::actor(ActorRole::Principal, ActorSlot::Login),
             )
             .legacy(
                 "from_broadcaster_id",
-                "Shouting-out channel ID",
                 CanonicalVariable::actor(ActorRole::Principal, ActorSlot::Id),
             ),
     )

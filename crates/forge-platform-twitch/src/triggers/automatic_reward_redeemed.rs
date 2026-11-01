@@ -18,7 +18,6 @@ fn variables() -> Option<TriggerVariables> {
                 DeclaredVariable {
                     name: "redemption.id".to_owned(),
                     kind: VariantKind::String,
-                    label: "Redemption ID".to_owned(),
                     synthesis: None,
                 },
                 |event| {
@@ -33,7 +32,6 @@ fn variables() -> Option<TriggerVariables> {
                 DeclaredVariable {
                     name: "reward.type".to_owned(),
                     kind: VariantKind::String,
-                    label: "Reward type".to_owned(),
                     synthesis: None,
                 },
                 |event| {
@@ -48,7 +46,6 @@ fn variables() -> Option<TriggerVariables> {
                 DeclaredVariable {
                     name: "reward.cost".to_owned(),
                     kind: VariantKind::Int,
-                    label: "Reward cost".to_owned(),
                     synthesis: Some(SynthesisHint::BoundedInt {
                         min: 0,
                         max: super::MAX_SYNTHESIZED_COUNT,

@@ -1227,6 +1227,10 @@ struct ListedVoicesFactory(
 );
 
 impl forge_tts_core::TtsEngineFactory for ListedVoicesFactory {
+    fn engine_id(&self) -> forge_speech_types::EngineId {
+        self.0.clone()
+    }
+
     fn class(&self) -> forge_tts_core::EngineClass {
         forge_tts_core::EngineClass::Local
     }
@@ -1246,10 +1250,7 @@ pub(crate) fn spawn_speak_queue_listing(
 ) -> forge_speak_queue::SpeakQueueHandle {
     let expected = voices.len();
     let mut registry = forge_tts_core::TtsRegistry::new();
-    registry.register(
-        engine.clone(),
-        Arc::new(ListedVoicesFactory(engine.clone(), voices)),
-    );
+    registry.register(Arc::new(ListedVoicesFactory(engine.clone(), voices)));
     let deps = neutral_queue_deps(registry, Vec::new());
     let (handle, _events) = rt.block_on(async {
         forge_speak_queue::spawn(forge_speak_queue::QueueConfig::default(), deps)

@@ -9,34 +9,21 @@ use forge_types::VariantKind;
 use crate::vocabulary::fields::prediction as fields;
 
 const VARIABLES: &[Variable] = &[
-    Variable::nested_text(
-        "prediction.id",
-        "Prediction ID",
-        fields::PREDICTION,
-        fields::PREDICTION_ID,
-    ),
+    Variable::nested_text("prediction.id", fields::PREDICTION, fields::PREDICTION_ID),
     Variable::nested_text(
         "prediction.title",
-        "Prediction title",
         fields::PREDICTION,
         fields::PREDICTION_TITLE,
     ),
     Variable::nested_timestamp(
         "prediction.started_at",
-        "Started at",
         fields::PREDICTION,
         fields::STARTED_AT,
     ),
-    Variable::nested_timestamp(
-        "prediction.locks_at",
-        "Locks at",
-        fields::PREDICTION,
-        fields::LOCKS_AT,
-    ),
+    Variable::nested_timestamp("prediction.locks_at", fields::PREDICTION, fields::LOCKS_AT),
     Variable::custom(
         "prediction.outcomes",
         VariantKind::Array,
-        "Prediction outcomes",
         build_outcomes_variant,
     ),
 ];

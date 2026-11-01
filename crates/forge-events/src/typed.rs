@@ -17,7 +17,7 @@ pub trait TypedEvent: Serialize + DeserializeOwned {
             serde_json::Value::Null
         });
         match caused_by {
-            Some(parent) => Event::caused_by(source, Self::KIND, payload, parent),
+            Some(parent) => Event::child_of(source, Self::KIND, payload, parent),
             None => Event::new(source, Self::KIND, payload),
         }
     }

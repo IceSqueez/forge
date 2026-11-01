@@ -66,7 +66,7 @@ mod tests {
             amount_micros: 12_500_000,
             currency: CurrencyCode::parse("UAH").unwrap(),
             occurred_at: OffsetDateTime::from_unix_timestamp(1_790_000_000).unwrap(),
-            test: false,
+            is_test: false,
         }
         .into_event(EventSource::Donation, None)
     }

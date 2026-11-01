@@ -511,7 +511,7 @@ mod tests {
             .unwrap()
             .expect("a send request on the bus");
         assert_eq!(request.kind, ChatSendRequest::KIND);
-        bus.publish(Event::caused_by(
+        bus.publish(Event::child_of(
             EventSource::Twitch,
             ChatSent::KIND,
             serde_json::json!({ "channel": "twitch", "message": "hello" }),

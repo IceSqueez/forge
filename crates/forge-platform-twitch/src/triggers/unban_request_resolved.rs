@@ -23,7 +23,6 @@ fn variables() -> Option<TriggerVariables> {
                 DeclaredVariable {
                     name: "unban.request_id".to_owned(),
                     kind: VariantKind::String,
-                    label: "Unban request ID".to_owned(),
                     synthesis: None,
                 },
                 |event| {
@@ -34,26 +33,22 @@ fn variables() -> Option<TriggerVariables> {
                 DeclaredVariable {
                     name: "unban.resolution".to_owned(),
                     kind: VariantKind::String,
-                    label: "Resolution status".to_owned(),
                     synthesis: None,
                 },
                 |event| Variant::String(payload_read::text(event, unban_request_fields::STATUS)),
             )
             .legacy(
                 "unban.target.login",
-                "Target user login",
                 CanonicalVariable::actor(ActorRole::Principal, ActorSlot::Login),
             )
             .legacy(
                 "unban.moderator.login",
-                "Resolving moderator login",
                 CanonicalVariable::actor(ActorRole::Moderator, ActorSlot::Login),
             )
             .event_specific(
                 DeclaredVariable {
                     name: "unban.resolution_text".to_owned(),
                     kind: VariantKind::String,
-                    label: "Resolution note".to_owned(),
                     synthesis: Some(SynthesisHint::Message),
                 },
                 |event| {

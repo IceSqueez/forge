@@ -66,26 +66,19 @@ impl TriggerKindDescriptor for SubGiftDescriptor {
                     DeclaredVariable {
                         name: variables::gift::RECIPIENTS.to_owned(),
                         kind: VariantKind::Array,
-                        label: "Gift recipient logins".to_owned(),
                         synthesis: None,
                     },
                     recipient_logins,
                 )
                 .legacy(
                     variables::legacy::GIFTER_USERNAME,
-                    "Gifter username",
                     CanonicalVariable::actor(ActorRole::Gifter, ActorSlot::Login),
                 )
                 .legacy(
                     variables::legacy::COUNT,
-                    "Gifted subscription count",
                     CanonicalVariable::Count(CanonicalCount::GiftCount),
                 )
-                .legacy(
-                    variables::legacy::TIER,
-                    "Subscription tier",
-                    CanonicalVariable::SubTier,
-                ),
+                .legacy(variables::legacy::TIER, CanonicalVariable::SubTier),
         )
     }
 

@@ -11,7 +11,7 @@ use forge_audio::{AudioError, AudioSink};
 use forge_net::TaskOwner;
 use forge_speech_types::{EngineId, TtsVoice, VoiceId};
 use forge_speech_types::{LanguageCode, PcmBuffer};
-use forge_tts_core::{SynthesisRequest, TtsRegistry, engine_display_name};
+use forge_tts_core::{SpeechText, SynthesisRequest, TtsRegistry, engine_display_name};
 use forge_tts_pipeline::{DetectionOutcome, LanguageDetector, PipelineResult, spoken_words};
 use forge_types::{MessageRef, Shared};
 
@@ -180,23 +180,17 @@ async fn run_synthesis(
         recent_messages: &recent_messages,
         speech_language: None,
     };
-    let pipeline_result = forge_tts_pipeline::process(text_for_pipeline, &pipeline_cfg, &context);
-    let text_to_speak = match pipeline_result {
-        PipelineResult::Speak(t) => t,
-        PipelineResult::Skip { reason } => {
-            let (reason, detail) = pipeline_skip(&reason);
-            return SynthTaskResult::new(req, SynthOutcome::Skipped { reason, detail });
-        }
-    };
+    let processed =
+        match forge_tts_pipeline::process_speech(text_for_pipeline, &pipeline_cfg, &context) {
+            Ok(processed) => processed,
+            Err(reason) => {
+                let (reason, detail) = pipeline_skip(&reason);
+                return SynthTaskResult::new(req, SynthOutcome::Skipped { reason, detail });
+            }
+        };
 
-    let detected = detect_language(
-        &deps,
-        &pipeline_cfg,
-        &context,
-        text_for_pipeline,
-        &text_to_speak,
-    )
-    .await;
+    let detected = detect_language(&deps, &pipeline_cfg, processed.language_sample()).await;
+    let text_to_speak = processed.spoken;
 
     let resolve_result = {
         deps.resolver
@@ -251,13 +245,12 @@ async fn run_synthesis(
         }
     };
 
-    let synthesis_req = SynthesisRequest {
-        text: text_to_speak,
-        voice_id: voice_id.clone(),
-        pitch_semitones: pitch,
-        rate_multiplier: rate,
-        ssml: false,
-    };
+    let synthesis_req = SynthesisRequest::new(
+        SpeechText::plain(text_to_speak),
+        voice_id.clone(),
+        pitch,
+        rate,
+    );
 
     let outcome = match engine.synthesize(synthesis_req).await {
         Ok(pcm) => SynthOutcome::Speak {
@@ -330,19 +323,13 @@ async fn run_synthesis_bounded(
 async fn detect_language(
     deps: &SynthTaskDeps,
     pipeline_cfg: &forge_tts_pipeline::PipelineConfig,
-    context: &forge_tts_pipeline::PipelineContext<'_>,
-    pipeline_input: &str,
-    spoken: &str,
+    sample: &str,
 ) -> Option<DetectedLanguage> {
     if !pipeline_cfg.output.language_aware_voice {
         return None;
     }
     let detector = deps.detector.clone()?;
-    let sample = if pipeline_cfg.output.read_display_name_first {
-        forge_tts_pipeline::process_for_language(pipeline_input, pipeline_cfg, context)?
-    } else {
-        spoken.to_owned()
-    };
+    let sample = sample.to_owned();
 
     let outcome = match tokio::task::spawn_blocking(move || detector.detect(&sample)).await {
         Ok(outcome) => outcome,
@@ -906,7 +893,7 @@ impl QueueActor {
             }
             SpeakCommand::RegisterEngine(registration) => {
                 update_registry(&self.deps.registry, |registry| {
-                    registry.register(registration.id, registration.factory);
+                    registry.register(registration.0);
                 });
                 let disabled = self.handles.disabled_engines.load();
                 self.rebuild_catalog(&disabled);
@@ -1429,7 +1416,7 @@ mod tests {
             &self,
             req: SynthesisRequest,
         ) -> Result<PcmBuffer, forge_tts_core::TtsError> {
-            self.seen.lock().unwrap().push(req.text);
+            self.seen.lock().unwrap().push(req.text.into_string());
             Ok(PcmBuffer::new(vec![0i16; 4], 22_050, 1))
         }
     }
@@ -1440,6 +1427,10 @@ mod tests {
     }
 
     impl forge_tts_core::TtsEngineFactory for CapturingFactory {
+        fn engine_id(&self) -> EngineId {
+            self.id.clone()
+        }
+
         fn class(&self) -> forge_tts_core::EngineClass {
             forge_tts_core::EngineClass::Local
         }
@@ -1470,13 +1461,10 @@ mod tests {
             sample_rate_hint: 22_050,
         };
         let mut registry = forge_tts_core::TtsRegistry::new();
-        registry.register(
-            engine_id.clone(),
-            Arc::new(CapturingFactory {
-                id: engine_id,
-                seen: seen.clone(),
-            }),
-        );
+        registry.register(Arc::new(CapturingFactory {
+            id: engine_id,
+            seen: seen.clone(),
+        }));
         let resolver = VoiceAliasResolver::new(
             vec![],
             AssignmentStrategy::DeterministicByName,

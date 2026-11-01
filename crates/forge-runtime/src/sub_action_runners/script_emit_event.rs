@@ -93,7 +93,7 @@ impl SubActionRunner for ScriptEmitEventRunner {
                 None,
             );
         }
-        self.publisher.publish(Event::caused_by(
+        self.publisher.publish(Event::child_of(
             EventSource::Server,
             format!("{CUSTOM_EVENT_PREFIX}{event_name}"),
             payload,

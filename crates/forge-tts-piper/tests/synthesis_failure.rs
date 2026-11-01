@@ -5,7 +5,7 @@ use std::path::{Path, PathBuf};
 use std::time::Duration;
 
 use forge_speech_types::VoiceId;
-use forge_tts_core::{SynthesisRequest, TtsEngine, TtsError};
+use forge_tts_core::{SpeechText, SynthesisRequest, TtsEngine, TtsError};
 use forge_tts_piper::PiperEngine;
 
 const VOICE_STEM: &str = "en_US-amy-medium";
@@ -30,11 +30,10 @@ fn install_piper(dir: &Path, body: &str) -> PathBuf {
 
 fn request() -> SynthesisRequest {
     SynthesisRequest {
-        text: "hello".into(),
+        text: SpeechText::plain("hello".into()),
         voice_id: VoiceId(VOICE_STEM.into()),
         pitch_semitones: 0.0,
         rate_multiplier: 1.0,
-        ssml: false,
     }
 }
 
@@ -159,7 +158,7 @@ async fn the_text_reaches_stdin_ending_in_exactly_one_newline() {
 
         rig.engine
             .synthesize(SynthesisRequest {
-                text: text.into(),
+                text: SpeechText::plain(text.to_owned()),
                 ..request()
             })
             .await
@@ -179,7 +178,7 @@ async fn ssml_is_refused_before_the_process_starts() {
     let result = rig
         .engine
         .synthesize(SynthesisRequest {
-            ssml: true,
+            text: SpeechText::ssml("hello".to_owned()),
             ..request()
         })
         .await;

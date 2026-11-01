@@ -94,7 +94,7 @@ impl SubActionRunner for ServerBroadcastRunner {
                 None,
             );
         }
-        self.publisher.publish(Event::caused_by(
+        self.publisher.publish(Event::child_of(
             EventSource::Server,
             format!("{BROADCAST_EVENT_PREFIX}{event_name}"),
             payload,

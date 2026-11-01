@@ -508,7 +508,7 @@ mod tests {
         assert_eq!(
             announced
                 .iter()
-                .map(|received| (received.donation_id.as_str(), received.test))
+                .map(|received| (received.donation_id.as_str(), received.is_test))
                 .collect::<Vec<_>>(),
             [("h1", false)]
         );
@@ -558,7 +558,7 @@ mod tests {
 
         let flags: Vec<bool> = announced(&rig.recorder)
             .iter()
-            .map(|received| received.test)
+            .map(|received| received.is_test)
             .collect();
         assert_eq!(
             (flags, rig.ledger.ids()),
@@ -630,7 +630,7 @@ mod tests {
 
         let announced: Vec<(String, bool)> = announced(&rig.recorder)
             .into_iter()
-            .map(|received| (received.donation_id, received.test))
+            .map(|received| (received.donation_id, received.is_test))
             .collect();
         assert_eq!(announced, [("fresh".to_owned(), false)]);
     }

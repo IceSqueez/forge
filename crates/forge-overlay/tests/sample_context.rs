@@ -50,7 +50,6 @@ fn stamped() -> SampleTrigger {
             declared: DeclaredVariable {
                 name: STAMP_NAME.to_owned(),
                 kind: VariantKind::Datetime,
-                label: "Stamped at".to_owned(),
                 synthesis: None,
             },
             standing: VariableStanding::EventSpecific,

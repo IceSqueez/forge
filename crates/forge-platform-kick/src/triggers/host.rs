@@ -61,7 +61,6 @@ impl TriggerKindDescriptor for HostDescriptor {
                 })
                 .legacy(
                     variables::legacy::HOST_USERNAME,
-                    "Hosting channel username",
                     CanonicalVariable::actor(ActorRole::Principal, ActorSlot::Login),
                 ),
         )

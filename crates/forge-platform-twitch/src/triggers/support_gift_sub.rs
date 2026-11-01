@@ -23,7 +23,6 @@ fn variables() -> Option<TriggerVariables> {
                 DeclaredVariable {
                     name: "gifter_is_anonymous".to_owned(),
                     kind: VariantKind::Bool,
-                    label: "Anonymous gifter".to_owned(),
                     synthesis: None,
                 },
                 |event| Variant::Bool(payload_read::flag(event, fields::IS_ANONYMOUS)),

@@ -1094,7 +1094,7 @@ mod tests {
 
     fn child_of(parent: &Event, kind: &str, own_depth: u16) -> Event {
         let mut child =
-            Event::caused_by(EventSource::Core, kind, serde_json::Value::Null, parent.id);
+            Event::child_of(EventSource::Core, kind, serde_json::Value::Null, parent.id);
         child.causation_depth = own_depth;
         child
     }

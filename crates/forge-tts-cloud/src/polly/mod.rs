@@ -8,7 +8,8 @@ use forge_speech_types::{EngineId, TtsVoice};
 use forge_tts_core::{ENGINE_ID_POLLY, SynthesisRequest, TtsEngine, TtsError};
 
 use crate::credentials::PollyCredentials;
-use crate::network::{CloudGateways, ProviderGateway, ProviderLink, is_dns_label};
+use crate::factory::{CloudEngine, CloudEngineFactory};
+use crate::network::{ProviderGateway, ProviderLink, is_dns_label};
 use crate::policy::{RetryConfig, retry_synthesize};
 use signer::PollySigner;
 
@@ -58,30 +59,18 @@ impl PollyEngine {
     }
 }
 
-pub struct PollyEngineFactory {
-    credentials: PollyCredentials,
-    provider: ProviderGateway,
-}
+pub type PollyEngineFactory = CloudEngineFactory<PollyEngine>;
 
-impl PollyEngineFactory {
-    pub fn new(credentials: PollyCredentials, gateways: &CloudGateways) -> Self {
-        Self {
-            credentials,
-            provider: gateways.provider(ENGINE_ID_POLLY),
-        }
-    }
-}
+impl CloudEngine for PollyEngine {
+    type Credentials = PollyCredentials;
 
-impl forge_tts_core::TtsEngineFactory for PollyEngineFactory {
-    fn class(&self) -> forge_tts_core::EngineClass {
-        forge_tts_core::EngineClass::Cloud
-    }
+    const ENGINE_ID: &'static str = ENGINE_ID_POLLY;
 
-    fn create(&self) -> Result<Box<dyn TtsEngine>, TtsError> {
-        Ok(Box::new(PollyEngine::new(
-            self.credentials.clone(),
-            &self.provider,
-        )?))
+    fn connect(
+        credentials: Self::Credentials,
+        provider: &ProviderGateway,
+    ) -> Result<Self, TtsError> {
+        Self::new(credentials, provider)
     }
 }
 
@@ -127,12 +116,14 @@ mod tests {
     use forge_speech_types::VoiceId;
 
     use super::*;
+    use crate::CloudGateways;
     use crate::network::test_support::{
         PAST_WAIT_THRESHOLD_SECS, is_the_provider_cool_down, request_count, serving, throttled,
     };
     use crate::polly::signer::test_support::{
         POLLY_SERVICE, REGION, SECRET_ACCESS_KEY, WireRequest, credentials,
     };
+    use forge_tts_core::SpeechText;
     use forge_tts_core::TtsEngineFactory;
     use wiremock::matchers::any;
     use wiremock::{Mock, MockServer, ResponseTemplate};
@@ -154,11 +145,10 @@ mod tests {
 
     fn request() -> SynthesisRequest {
         SynthesisRequest {
-            text: "hello".into(),
+            text: SpeechText::plain("hello".into()),
             voice_id: VoiceId("Joanna".into()),
             pitch_semitones: 0.0,
             rate_multiplier: 1.0,
-            ssml: false,
         }
     }
 

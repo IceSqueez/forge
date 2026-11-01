@@ -99,7 +99,6 @@ impl TriggerKindDescriptor for ChannelUserBannedDescriptor {
                     DeclaredVariable {
                         name: variables::ban::TYPE.to_owned(),
                         kind: VariantKind::String,
-                        label: "Ban type".to_owned(),
                         synthesis: None,
                     },
                     |event| Variant::String(ban_type(event)),
@@ -108,7 +107,6 @@ impl TriggerKindDescriptor for ChannelUserBannedDescriptor {
                     DeclaredVariable {
                         name: variables::ban::DURATION_SECONDS.to_owned(),
                         kind: VariantKind::Int,
-                        label: "Ban duration in seconds".to_owned(),
                         synthesis: Some(SynthesisHint::BoundedInt {
                             min: 0,
                             max: MAX_BAN_SECONDS,
@@ -118,22 +116,18 @@ impl TriggerKindDescriptor for ChannelUserBannedDescriptor {
                 )
                 .legacy(
                     variables::ban::TARGET_DISPLAY_NAME,
-                    "Banned user display name",
                     CanonicalVariable::actor(ActorRole::Principal, ActorSlot::Name),
                 )
                 .legacy(
                     variables::ban::TARGET_CHANNEL_ID,
-                    "Banned user channel ID",
                     CanonicalVariable::actor(ActorRole::Principal, ActorSlot::Id),
                 )
                 .legacy(
                     variables::ban::MODERATOR_CHANNEL_ID,
-                    "Moderator channel ID",
                     CanonicalVariable::actor(ActorRole::Moderator, ActorSlot::Id),
                 )
                 .legacy(
                     variables::ban::MODERATOR_DISPLAY_NAME,
-                    "Moderator display name",
                     CanonicalVariable::actor(ActorRole::Moderator, ActorSlot::Name),
                 ),
         )

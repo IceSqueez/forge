@@ -1068,8 +1068,10 @@ mod tests {
             Arc::new(forge_soundboard::ClipLibrary::new(
                 Arc::new(forge_storage::MockSoundboardClipsRepo::new()),
                 Arc::new(forge_storage::MockMediaRepo::new()),
+                Arc::new(forge_events::test_support::NullPublisher),
             )),
             forge_soundboard::SoundboardSettingsHandle::new(Default::default()),
+            Arc::new(forge_storage::test_support::MemorySettings::new()),
         );
         let router = Arc::new(AudioRouter::new(AudioRouterParts {
             backend: Arc::clone(&backend) as Arc<dyn forge_storage::DataProvider>,

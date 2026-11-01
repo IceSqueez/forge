@@ -27,22 +27,18 @@ fn variables() -> Option<TriggerVariables> {
             .count(CanonicalCount::ViewerCount, raid_viewer_count)
             .legacy(
                 "raid_viewer_count",
-                "Raid viewer count",
                 CanonicalVariable::Count(CanonicalCount::ViewerCount),
             )
             .legacy(
                 "raider_login",
-                "Raider login",
                 CanonicalVariable::actor(ActorRole::Principal, ActorSlot::Login),
             )
             .legacy(
                 "raider_id",
-                "Raider ID",
                 CanonicalVariable::actor(ActorRole::Principal, ActorSlot::Id),
             )
             .legacy(
                 "raider_display_name",
-                "Raider display name",
                 CanonicalVariable::actor(ActorRole::Principal, ActorSlot::Name),
             ),
     )

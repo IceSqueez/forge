@@ -632,9 +632,13 @@ mod tests {
         gain: 0.25,
     };
 
-    struct NeverCreated;
+    struct NeverCreated(&'static str);
 
     impl TtsEngineFactory for NeverCreated {
+        fn engine_id(&self) -> EngineId {
+            EngineId(self.0.to_owned())
+        }
+
         fn class(&self) -> forge_tts_core::EngineClass {
             forge_tts_core::EngineClass::Local
         }
@@ -649,7 +653,7 @@ mod tests {
     fn engines_registry() -> TtsRegistry {
         let mut registry = TtsRegistry::new();
         for id in [ENGINE_ID_PIPER, ENGINE_ID_ESPEAK_NG] {
-            registry.register(EngineId(id.to_owned()), Arc::new(NeverCreated));
+            registry.register(Arc::new(NeverCreated(id)));
         }
         registry
     }
@@ -853,74 +857,50 @@ mod tests {
     #[test]
     fn the_roster_shows_each_shipped_engine_under_the_class_its_factory_declares() {
         let gateways = forge_tts_cloud::CloudGateways::new();
-        let factories: [(&str, Arc<dyn TtsEngineFactory>); 8] = [
-            (
-                ENGINE_ID_PIPER,
-                Arc::new(forge_tts_piper::PiperEngineFactory {
-                    piper_binary: "piper".into(),
-                    voices_dir: "voices".into(),
-                    timeout: std::time::Duration::from_secs(1),
-                }),
-            ),
-            (
-                ENGINE_ID_ESPEAK_NG,
-                Arc::new(forge_tts_espeak::EspeakEngineFactory::default()),
-            ),
-            (
-                forge_tts_core::ENGINE_ID_SAPI,
-                Arc::new(forge_tts_sapi::SapiEngineFactory),
-            ),
-            (
-                forge_tts_core::ENGINE_ID_NSSPEECH,
-                Arc::new(forge_tts_nsspeech::NsSpeechEngineFactory),
-            ),
-            (
-                forge_tts_core::ENGINE_ID_AZURE,
-                Arc::new(forge_tts_cloud::azure::AzureEngineFactory::new(
-                    forge_tts_cloud::credentials::AzureCredentials {
-                        api_key: Secret::new("key"),
-                        region: "westeurope".into(),
-                        base_url: None,
-                    },
-                    &gateways,
-                )),
-            ),
-            (
-                forge_tts_core::ENGINE_ID_ELEVENLABS,
-                Arc::new(forge_tts_cloud::elevenlabs::ElevenLabsEngineFactory::new(
-                    forge_tts_cloud::credentials::ElevenLabsCredentials {
-                        api_key: Secret::new("key"),
-                        base_url: None,
-                    },
-                    &gateways,
-                )),
-            ),
-            (
-                forge_tts_core::ENGINE_ID_OPENAI,
-                Arc::new(forge_tts_cloud::openai::OpenAiEngineFactory::new(
-                    forge_tts_cloud::credentials::OpenAiCredentials {
-                        api_key: Secret::new("key"),
-                        base_url: None,
-                    },
-                    &gateways,
-                )),
-            ),
-            (
-                forge_tts_core::ENGINE_ID_POLLY,
-                Arc::new(forge_tts_cloud::polly::PollyEngineFactory::new(
-                    forge_tts_cloud::credentials::PollyCredentials {
-                        access_key_id: Secret::new("id"),
-                        secret_access_key: Secret::new("secret"),
-                        region: "eu-west-1".into(),
-                        base_url: None,
-                    },
-                    &gateways,
-                )),
-            ),
+        let factories: [Arc<dyn TtsEngineFactory>; 8] = [
+            Arc::new(forge_tts_piper::PiperEngineFactory {
+                piper_binary: "piper".into(),
+                voices_dir: "voices".into(),
+                timeout: std::time::Duration::from_secs(1),
+            }),
+            Arc::new(forge_tts_espeak::EspeakEngineFactory::default()),
+            Arc::new(forge_tts_sapi::SapiEngineFactory),
+            Arc::new(forge_tts_nsspeech::NsSpeechEngineFactory),
+            Arc::new(forge_tts_cloud::azure::AzureEngineFactory::new(
+                forge_tts_cloud::credentials::AzureCredentials {
+                    api_key: Secret::new("key"),
+                    region: "westeurope".into(),
+                    base_url: None,
+                },
+                &gateways,
+            )),
+            Arc::new(forge_tts_cloud::elevenlabs::ElevenLabsEngineFactory::new(
+                forge_tts_cloud::credentials::ElevenLabsCredentials {
+                    api_key: Secret::new("key"),
+                    base_url: None,
+                },
+                &gateways,
+            )),
+            Arc::new(forge_tts_cloud::openai::OpenAiEngineFactory::new(
+                forge_tts_cloud::credentials::OpenAiCredentials {
+                    api_key: Secret::new("key"),
+                    base_url: None,
+                },
+                &gateways,
+            )),
+            Arc::new(forge_tts_cloud::polly::PollyEngineFactory::new(
+                forge_tts_cloud::credentials::PollyCredentials {
+                    access_key_id: Secret::new("id"),
+                    secret_access_key: Secret::new("secret"),
+                    region: "eu-west-1".into(),
+                    base_url: None,
+                },
+                &gateways,
+            )),
         ];
         let mut registry = TtsRegistry::new();
-        for (id, factory) in factories {
-            registry.register(EngineId(id.to_owned()), factory);
+        for factory in factories {
+            registry.register(factory);
         }
         let rt = runtime();
         let speak = {

@@ -7,7 +7,6 @@ pub(crate) fn message_emotes_declaration() -> DeclaredVariable {
     DeclaredVariable {
         name: MESSAGE_EMOTES_VARIABLE.to_owned(),
         kind: VariantKind::Array,
-        label: "Emote codes in the message".to_owned(),
         synthesis: None,
     }
 }

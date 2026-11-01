@@ -224,7 +224,7 @@ impl TtsEngine for PiperEngine {
     }
 
     async fn synthesize(&self, request: SynthesisRequest) -> Result<PcmBuffer, TtsError> {
-        if request.ssml {
+        if request.text.is_ssml() {
             return Err(TtsError::SsmlUnsupported {
                 id: piper_engine_id(),
             });
@@ -256,7 +256,7 @@ impl TtsEngine for PiperEngine {
             args.push(speaker.to_string().into());
         }
 
-        let mut input = request.text.into_bytes();
+        let mut input = request.text.into_string().into_bytes();
         if input.last() != Some(&b'\n') {
             input.push(b'\n');
         }
@@ -290,6 +290,10 @@ pub struct PiperEngineFactory {
 }
 
 impl TtsEngineFactory for PiperEngineFactory {
+    fn engine_id(&self) -> forge_speech_types::EngineId {
+        forge_speech_types::EngineId(forge_tts_core::ENGINE_ID_PIPER.into())
+    }
+
     fn class(&self) -> forge_tts_core::EngineClass {
         forge_tts_core::EngineClass::Local
     }

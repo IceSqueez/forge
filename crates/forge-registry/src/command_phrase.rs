@@ -13,7 +13,6 @@ pub(crate) fn command_name_declaration() -> DeclaredVariable {
     DeclaredVariable {
         name: COMMAND_NAME_VARIABLE.to_owned(),
         kind: VariantKind::String,
-        label: "Command name".to_owned(),
         synthesis: None,
     }
 }
@@ -22,7 +21,6 @@ pub(crate) fn command_args_declaration() -> DeclaredVariable {
     DeclaredVariable {
         name: COMMAND_ARGS_VARIABLE.to_owned(),
         kind: VariantKind::Array,
-        label: "Command arguments".to_owned(),
         synthesis: None,
     }
 }
@@ -31,7 +29,6 @@ pub(crate) fn command_tail_declaration() -> DeclaredVariable {
     DeclaredVariable {
         name: COMMAND_TAIL_VARIABLE.to_owned(),
         kind: VariantKind::String,
-        label: "Command arguments as one text".to_owned(),
         synthesis: Some(SynthesisHint::Message),
     }
 }

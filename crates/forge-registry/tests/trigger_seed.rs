@@ -26,7 +26,6 @@ fn declared(name: &str, kind: VariantKind) -> DeclaredVariable {
     DeclaredVariable {
         name: name.to_owned(),
         kind,
-        label: name.to_owned(),
         synthesis: None,
     }
 }
@@ -53,7 +52,7 @@ fn narrow_variables() -> TriggerVariables {
 
 fn aliased_variables() -> TriggerVariables {
     TriggerVariables::new()
-        .legacy("msg", "msg", CanonicalVariable::MessageText)
+        .legacy("msg", CanonicalVariable::MessageText)
         .message_text(|_| String::new())
 }
 

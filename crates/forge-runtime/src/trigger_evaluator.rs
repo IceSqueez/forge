@@ -297,7 +297,7 @@ impl TriggerEvaluator {
     }
 
     fn publish_blocked(&self, instance: &TriggerInstance, cause: EventId, reason: BlockReason) {
-        self.bus.publish(Event::caused_by(
+        self.bus.publish(Event::child_of(
             EventSource::Core,
             TRIGGER_BLOCKED_KIND,
             reason.into_payload(instance),
@@ -846,7 +846,6 @@ mod tests {
         DeclaredVariable {
             name: name.to_owned(),
             kind: VariantKind::String,
-            label: String::new(),
             synthesis: Some(SynthesisHint::Message),
         }
     }
@@ -1377,7 +1376,6 @@ mod tests {
             variables: vec![DeclaredVariable {
                 name: "user".to_owned(),
                 kind: VariantKind::String,
-                label: String::new(),
                 synthesis: Some(SynthesisHint::Username),
             }],
         };

@@ -24,7 +24,7 @@ impl TtsEngine for NsSpeechEngine {
     }
 
     async fn synthesize(&self, request: SynthesisRequest) -> Result<PcmBuffer, TtsError> {
-        if request.ssml {
+        if request.text.is_ssml() {
             return Err(TtsError::SsmlUnsupported {
                 id: self.id.clone(),
             });
@@ -60,6 +60,10 @@ impl TtsEngine for NsSpeechEngine {
 pub struct NsSpeechEngineFactory;
 
 impl TtsEngineFactory for NsSpeechEngineFactory {
+    fn engine_id(&self) -> forge_speech_types::EngineId {
+        forge_speech_types::EngineId(forge_tts_core::ENGINE_ID_NSSPEECH.into())
+    }
+
     fn class(&self) -> forge_tts_core::EngineClass {
         forge_tts_core::EngineClass::System
     }

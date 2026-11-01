@@ -76,7 +76,7 @@ pub(super) async fn synthesize(
     let body = RequestBody::json(&json!({
         "model": SPEECH_MODEL,
         "voice": voice,
-        "input": req.text,
+        "input": req.text.as_str(),
         "response_format": "wav",
         "speed": speed,
     }))
@@ -118,6 +118,7 @@ mod tests {
         over_catalog_cap, request_count, serving, throttled,
     };
     use forge_net::CallClass;
+    use forge_tts_core::SpeechText;
     use wiremock::matchers::{header, method, path};
     use wiremock::{Mock, MockServer, ResponseTemplate};
 
@@ -153,11 +154,10 @@ mod tests {
 
     fn request_for(voice: &str) -> SynthesisRequest {
         SynthesisRequest {
-            text: "hello".into(),
+            text: SpeechText::plain("hello".into()),
             voice_id: VoiceId(voice.into()),
             pitch_semitones: 0.0,
             rate_multiplier: 1.0,
-            ssml: false,
         }
     }
 

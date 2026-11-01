@@ -59,7 +59,6 @@ impl TriggerKindDescriptor for ChannelBroadcastTitleChangedDescriptor {
                     DeclaredVariable {
                         name: variables::stream::TITLE_OLD.to_owned(),
                         kind: VariantKind::String,
-                        label: "Previous broadcast title".to_owned(),
                         synthesis: None,
                     },
                     |event| {
@@ -74,7 +73,6 @@ impl TriggerKindDescriptor for ChannelBroadcastTitleChangedDescriptor {
                     DeclaredVariable {
                         name: variables::stream::TITLE_NEW.to_owned(),
                         kind: VariantKind::String,
-                        label: "New broadcast title".to_owned(),
                         synthesis: None,
                     },
                     |event| {

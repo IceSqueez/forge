@@ -22,11 +22,7 @@ fn variables() -> Option<TriggerVariables> {
                 payload_read::number(event, fields::STREAK_MONTHS)
             })
             .sub_tier(|event| payload_read::text(event, fields::TIER))
-            .legacy(
-                "sub_message",
-                "Resub message",
-                CanonicalVariable::MessageText,
-            ),
+            .legacy("sub_message", CanonicalVariable::MessageText),
     )
 }
 

@@ -48,6 +48,10 @@ impl TtsEngine for SapiEngine {
 pub struct SapiEngineFactory;
 
 impl TtsEngineFactory for SapiEngineFactory {
+    fn engine_id(&self) -> forge_speech_types::EngineId {
+        forge_speech_types::EngineId(forge_tts_core::ENGINE_ID_SAPI.into())
+    }
+
     fn class(&self) -> forge_tts_core::EngineClass {
         forge_tts_core::EngineClass::System
     }

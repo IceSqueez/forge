@@ -42,6 +42,10 @@ struct FixedLengthFactory {
 }
 
 impl TtsEngineFactory for FixedLengthFactory {
+    fn engine_id(&self) -> EngineId {
+        self.id.clone()
+    }
+
     fn class(&self) -> forge_tts_core::EngineClass {
         forge_tts_core::EngineClass::Local
     }
@@ -60,13 +64,10 @@ fn spawn_with_cap(
     let engine_id = EngineId("fixed".into());
     let voices = vec![voice("fixed-1", "fixed")];
     let mut registry = TtsRegistry::new();
-    registry.register(
-        engine_id.clone(),
-        Arc::new(FixedLengthFactory {
-            id: engine_id,
-            voices,
-        }),
-    );
+    registry.register(Arc::new(FixedLengthFactory {
+        id: engine_id,
+        voices,
+    }));
 
     let (sink, _plays) = recording_sink();
     let mut deps = make_deps(

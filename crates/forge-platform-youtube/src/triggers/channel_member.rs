@@ -59,19 +59,13 @@ impl TriggerKindDescriptor for SupportNewMemberDescriptor {
                 .sub_tier(|event| payload_read::text(event, fields::MEMBER_LEVEL_NAME))
                 .legacy(
                     variables::sender::DISPLAY_NAME,
-                    "New member display name",
                     CanonicalVariable::actor(ActorRole::Principal, ActorSlot::Name),
                 )
                 .legacy(
                     variables::sender::CHANNEL_ID,
-                    "New member channel ID",
                     CanonicalVariable::actor(ActorRole::Principal, ActorSlot::Id),
                 )
-                .legacy(
-                    variables::member::LEVEL_NAME,
-                    "Membership level name",
-                    CanonicalVariable::SubTier,
-                ),
+                .legacy(variables::member::LEVEL_NAME, CanonicalVariable::SubTier),
         )
     }
 

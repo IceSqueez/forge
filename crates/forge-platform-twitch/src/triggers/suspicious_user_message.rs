@@ -19,7 +19,6 @@ fn variables() -> Option<TriggerVariables> {
                 DeclaredVariable {
                     name: "low_trust_status".to_owned(),
                     kind: VariantKind::String,
-                    label: "Low-trust status".to_owned(),
                     synthesis: None,
                 },
                 |event| {

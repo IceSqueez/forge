@@ -10,14 +10,12 @@ use crate::vocabulary::fields::stream as stream_fields;
 const VARIABLES: &[Variable] = &[
     Variable::nested_text(
         "broadcaster_login",
-        "Broadcaster login",
         stream_fields::BROADCASTER,
         stream_fields::BROADCASTER_LOGIN,
     )
     .synthesis(SynthesisHint::Username),
     Variable::nested_text(
         "broadcaster_id",
-        "Broadcaster ID",
         stream_fields::BROADCASTER,
         stream_fields::BROADCASTER_ID,
     ),

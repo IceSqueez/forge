@@ -10,8 +10,8 @@ use crate::vocabulary::messages;
 use crate::vocabulary::{event_kinds, trigger_ids, variables};
 
 const VARIABLES: &[EventVariable] = &[
-    EventVariable::text(variables::hotkey::NAME, "Hotkey name", fields::HOTKEY_NAME),
-    EventVariable::text(variables::hotkey::ID, "Hotkey ID", fields::HOTKEY_ID),
+    EventVariable::text(variables::hotkey::NAME, fields::HOTKEY_NAME),
+    EventVariable::text(variables::hotkey::ID, fields::HOTKEY_ID),
 ];
 
 fn variables() -> Option<TriggerVariables> {

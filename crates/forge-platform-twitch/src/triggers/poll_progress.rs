@@ -9,14 +9,9 @@ use super::families::build_choices_variant;
 use crate::vocabulary::fields::poll as fields;
 
 const VARIABLES: &[Variable] = &[
-    Variable::nested_text("poll.id", "Poll ID", fields::POLL, fields::POLL_ID),
-    Variable::nested_text("poll.title", "Poll title", fields::POLL, fields::POLL_TITLE),
-    Variable::custom(
-        "poll.choices",
-        VariantKind::Array,
-        "Poll choices",
-        build_choices_variant,
-    ),
+    Variable::nested_text("poll.id", fields::POLL, fields::POLL_ID),
+    Variable::nested_text("poll.title", fields::POLL, fields::POLL_TITLE),
+    Variable::custom("poll.choices", VariantKind::Array, build_choices_variant),
 ];
 
 fn variables() -> Option<TriggerVariables> {

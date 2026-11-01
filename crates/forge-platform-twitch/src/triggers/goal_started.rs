@@ -8,40 +8,22 @@ use forge_types::SynthesisHint;
 use crate::vocabulary::fields::goal as fields;
 
 const VARIABLES: &[Variable] = &[
-    Variable::nested_text("goal.id", "Goal ID", fields::GOAL, fields::GOAL_ID),
-    Variable::nested_text("goal.type", "Goal type", fields::GOAL, fields::GOAL_TYPE),
-    Variable::nested_text(
-        "goal.description",
-        "Goal description",
-        fields::GOAL,
-        fields::DESCRIPTION,
+    Variable::nested_text("goal.id", fields::GOAL, fields::GOAL_ID),
+    Variable::nested_text("goal.type", fields::GOAL, fields::GOAL_TYPE),
+    Variable::nested_text("goal.description", fields::GOAL, fields::DESCRIPTION),
+    Variable::nested_int("goal.current_amount", fields::GOAL, fields::CURRENT_AMOUNT).synthesis(
+        SynthesisHint::BoundedInt {
+            min: 0,
+            max: super::MAX_SYNTHESIZED_COUNT,
+        },
     ),
-    Variable::nested_int(
-        "goal.current_amount",
-        "Current amount",
-        fields::GOAL,
-        fields::CURRENT_AMOUNT,
-    )
-    .synthesis(SynthesisHint::BoundedInt {
-        min: 0,
-        max: super::MAX_SYNTHESIZED_COUNT,
-    }),
-    Variable::nested_int(
-        "goal.target_amount",
-        "Target amount",
-        fields::GOAL,
-        fields::TARGET_AMOUNT,
-    )
-    .synthesis(SynthesisHint::BoundedInt {
-        min: 0,
-        max: super::MAX_SYNTHESIZED_COUNT,
-    }),
-    Variable::nested_timestamp(
-        "goal.started_at",
-        "Started at",
-        fields::GOAL,
-        fields::STARTED_AT,
+    Variable::nested_int("goal.target_amount", fields::GOAL, fields::TARGET_AMOUNT).synthesis(
+        SynthesisHint::BoundedInt {
+            min: 0,
+            max: super::MAX_SYNTHESIZED_COUNT,
+        },
     ),
+    Variable::nested_timestamp("goal.started_at", fields::GOAL, fields::STARTED_AT),
 ];
 
 fn variables() -> Option<TriggerVariables> {

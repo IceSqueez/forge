@@ -31,7 +31,6 @@ fn variables() -> Option<TriggerVariables> {
                 DeclaredVariable {
                     name: "reason".to_owned(),
                     kind: VariantKind::String,
-                    label: "Timeout reason".to_owned(),
                     synthesis: None,
                 },
                 |event| Variant::String(payload_read::text(event, fields::REASON)),
@@ -40,7 +39,6 @@ fn variables() -> Option<TriggerVariables> {
                 DeclaredVariable {
                     name: "banned_at".to_owned(),
                     kind: VariantKind::Datetime,
-                    label: "Timed out at".to_owned(),
                     synthesis: None,
                 },
                 |event| payload_read::timestamp(event, fields::BANNED_AT),
@@ -49,7 +47,6 @@ fn variables() -> Option<TriggerVariables> {
                 DeclaredVariable {
                     name: "ends_at".to_owned(),
                     kind: VariantKind::Datetime,
-                    label: "Timeout ends at".to_owned(),
                     synthesis: None,
                 },
                 |event| payload_read::timestamp(event, fields::ENDS_AT),

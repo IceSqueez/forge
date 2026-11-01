@@ -62,17 +62,14 @@ impl TriggerKindDescriptor for SupportMemberMilestoneDescriptor {
                 })
                 .legacy(
                     variables::sender::DISPLAY_NAME,
-                    "Member display name",
                     CanonicalVariable::actor(ActorRole::Principal, ActorSlot::Name),
                 )
                 .legacy(
                     variables::sender::CHANNEL_ID,
-                    "Member channel ID",
                     CanonicalVariable::actor(ActorRole::Principal, ActorSlot::Id),
                 )
                 .legacy(
                     variables::member::MONTH,
-                    "Membership length in months",
                     CanonicalVariable::Count(CanonicalCount::SubCumulativeMonths),
                 ),
         )

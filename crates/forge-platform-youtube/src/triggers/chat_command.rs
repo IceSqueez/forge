@@ -108,12 +108,10 @@ impl TriggerKindDescriptor for ChatCommandDescriptor {
                 .command_line(|event| payload_read::text(event, fields::MESSAGE_TEXT))
                 .legacy(
                     variables::sender::DISPLAY_NAME,
-                    "Sender display name",
                     CanonicalVariable::actor(ActorRole::Principal, ActorSlot::Name),
                 )
                 .legacy(
                     variables::sender::CHANNEL_ID,
-                    "Sender channel ID",
                     CanonicalVariable::actor(ActorRole::Principal, ActorSlot::Id),
                 ),
         )

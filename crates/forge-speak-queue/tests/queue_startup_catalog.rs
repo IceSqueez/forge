@@ -91,6 +91,10 @@ struct ScriptedFactory {
 }
 
 impl TtsEngineFactory for ScriptedFactory {
+    fn engine_id(&self) -> EngineId {
+        self.id.clone()
+    }
+
     fn class(&self) -> forge_tts_core::EngineClass {
         forge_tts_core::EngineClass::Local
     }
@@ -131,14 +135,11 @@ fn start_with(
     for (id, listing) in engines {
         let counter = Arc::new(AtomicUsize::new(0));
         listings.push(Arc::clone(&counter));
-        registry.register(
-            EngineId((*id).into()),
-            Arc::new(ScriptedFactory {
-                id: EngineId((*id).into()),
-                listing: listing.clone(),
-                listings: counter,
-            }),
-        );
+        registry.register(Arc::new(ScriptedFactory {
+            id: EngineId((*id).into()),
+            listing: listing.clone(),
+            listings: counter,
+        }));
     }
     let (sink, plays) = recording_sink();
     let deps = make_deps(
@@ -546,14 +547,13 @@ fn calls(steps: &[Listing]) -> Listing {
 
 async fn register(q: &Started, id: &str, listing: Listing) {
     q.handle
-        .send(SpeakCommand::RegisterEngine(EngineRegistration {
-            id: EngineId(id.into()),
-            factory: Arc::new(ScriptedFactory {
+        .send(SpeakCommand::RegisterEngine(EngineRegistration(Arc::new(
+            ScriptedFactory {
                 id: EngineId(id.into()),
                 listing,
                 listings: Arc::new(AtomicUsize::new(0)),
-            }),
-        }))
+            },
+        ))))
         .await
         .unwrap();
 }

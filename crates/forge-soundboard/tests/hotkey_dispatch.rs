@@ -83,12 +83,14 @@ impl Dispatching {
         let library = Arc::new(ClipLibrary::new(
             Arc::new(LookupProbe(probe)),
             Arc::new(MockMediaRepo::new()),
+            Arc::new(forge_events::test_support::NullPublisher),
         ));
         let player = Arc::new(SoundboardPlayer::with_settings(
             Arc::new(NoDevice),
             Arc::new(NullAudioEventSink),
             library,
             SoundboardSettingsHandle::default(),
+            Arc::new(forge_storage::test_support::MemorySettings::new()),
         ));
         let bus = EventChannel::new(EVENT_CAPACITY);
         let (bindings, snapshot) = watch::channel(Arc::new(bindings));

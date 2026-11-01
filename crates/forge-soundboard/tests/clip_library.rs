@@ -302,6 +302,7 @@ struct Harness {
     clips: Arc<FakeClips>,
     media: Arc<FakeMedia>,
     calls: UnboundedReceiver<MediaCall>,
+    publisher: Arc<CapturingPublisher>,
 }
 
 fn harness() -> Harness {
@@ -311,24 +312,24 @@ fn harness() -> Harness {
 fn harness_with_gate(gate: Option<Arc<Notify>>) -> Harness {
     let clips = Arc::new(FakeClips::default());
     let (media, calls) = FakeMedia::new(gate);
+    let publisher = Arc::new(CapturingPublisher::default());
     let library = Arc::new(ClipLibrary::new(
         Arc::clone(&clips) as Arc<dyn SoundboardClipsRepo>,
         Arc::clone(&media) as Arc<dyn MediaRepo>,
+        Arc::clone(&publisher) as Arc<dyn EventPublisher>,
     ));
     Harness {
         library,
         clips,
         media,
         calls,
+        publisher,
     }
 }
 
 impl Harness {
     fn listen(&self) -> Arc<CapturingPublisher> {
-        let publisher = Arc::new(CapturingPublisher::default());
-        self.library
-            .install_event_publisher(Arc::clone(&publisher) as Arc<dyn EventPublisher>);
-        publisher
+        Arc::clone(&self.publisher)
     }
 
     fn adopt_a_later_row_in_background(&self) -> tempfile::NamedTempFile {

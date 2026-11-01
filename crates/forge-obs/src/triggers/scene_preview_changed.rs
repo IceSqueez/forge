@@ -47,16 +47,8 @@ fn config_fields() -> Vec<FormField> {
 }
 
 const VARIABLES: &[EventVariable] = &[
-    EventVariable::text(
-        variables::scene::PROGRAM,
-        "Scene name",
-        fields::SCENE_NAME_NEW,
-    ),
-    EventVariable::text(
-        variables::scene::PREVIOUS,
-        "Previous scene name",
-        fields::SCENE_NAME_OLD,
-    ),
+    EventVariable::text(variables::scene::PROGRAM, fields::SCENE_NAME_NEW),
+    EventVariable::text(variables::scene::PREVIOUS, fields::SCENE_NAME_OLD),
 ];
 
 fn variables() -> Option<TriggerVariables> {

@@ -24,8 +24,14 @@ impl YoutubeChatPoller {
             "textMessageEvent" => {
                 events::text_message_event(id, &self.channel_id, snippet, author_details)
             }
-            "superChatEvent" => events::super_chat_event(id, snippet, author_details),
-            "superStickerEvent" => events::super_sticker_event(id, snippet, author_details),
+            "superChatEvent" => events::super_chat_event(id.clone(), snippet, author_details)
+                .or_else(|| {
+                    events::text_message_event(id, &self.channel_id, snippet, author_details)
+                }),
+            "superStickerEvent" => events::super_sticker_event(id.clone(), snippet, author_details)
+                .or_else(|| {
+                    events::text_message_event(id, &self.channel_id, snippet, author_details)
+                }),
             "newSponsorEvent" => events::new_sponsor_event(id, snippet, author_details),
             "memberMilestoneChatEvent" => {
                 events::member_milestone_event(id, snippet, author_details)
@@ -99,18 +105,7 @@ pub(super) fn super_chat_event(
     author_details: Option<&serde_json::Value>,
 ) -> Option<Event> {
     let details = snippet.get("superChatDetails");
-    let amount_micros = details
-        .and_then(|d| d.get("amountMicros"))
-        .and_then(|v| {
-            v.as_u64()
-                .or_else(|| v.as_str().and_then(|s| s.parse().ok()))
-        })
-        .unwrap_or(0);
-    let currency = details
-        .and_then(|d| d.get("currency"))
-        .and_then(|v| v.as_str())
-        .unwrap_or("")
-        .to_owned();
+    let amount = support_amount(details)?;
     let message = details
         .and_then(|d| d.get("userComment"))
         .and_then(|v| v.as_str())
@@ -120,8 +115,7 @@ pub(super) fn super_chat_event(
     let author = extract_author(author_details);
     let badges = extract_badges(author_details);
     let event_detail = ChatEventDetail::SuperChat {
-        amount_micros,
-        currency: currency.clone(),
+        amount: amount.clone(),
         message: message.clone(),
     };
 
@@ -144,8 +138,8 @@ pub(super) fn super_chat_event(
 
     let mut payload = serde_json::json!({
         (chat_fields::AUTHOR): author_json(author_details),
-        (support_fields::AMOUNT_MICROS): amount_micros,
-        (support_fields::CURRENCY): currency,
+        (support_fields::AMOUNT_MICROS): amount.micros(),
+        (support_fields::CURRENCY): amount.currency().as_str(),
         (chat_fields::MESSAGE_TEXT): message,
     });
     payload[ChatPayload::KEY] = serde_json::to_value(&chat_payload).ok()?;
@@ -162,18 +156,7 @@ pub(super) fn super_sticker_event(
     author_details: Option<&serde_json::Value>,
 ) -> Option<Event> {
     let details = snippet.get("superStickerDetails");
-    let amount_micros = details
-        .and_then(|d| d.get("amountMicros"))
-        .and_then(|v| {
-            v.as_u64()
-                .or_else(|| v.as_str().and_then(|s| s.parse().ok()))
-        })
-        .unwrap_or(0);
-    let currency = details
-        .and_then(|d| d.get("currency"))
-        .and_then(|v| v.as_str())
-        .unwrap_or("")
-        .to_owned();
+    let amount = support_amount(details)?;
     let sticker_id = details
         .and_then(|d| d.get("superStickerMetadata"))
         .and_then(|m| m.get("stickerId"))
@@ -184,8 +167,7 @@ pub(super) fn super_sticker_event(
     let author = extract_author(author_details);
     let badges = extract_badges(author_details);
     let event_detail = ChatEventDetail::SuperChat {
-        amount_micros,
-        currency: currency.clone(),
+        amount: amount.clone(),
         message: None,
     };
 
@@ -203,8 +185,8 @@ pub(super) fn super_sticker_event(
     let mut payload = serde_json::json!({
         (chat_fields::AUTHOR): author_json(author_details),
         (support_fields::STICKER_ID): sticker_id,
-        (support_fields::AMOUNT_MICROS): amount_micros,
-        (support_fields::CURRENCY): currency,
+        (support_fields::AMOUNT_MICROS): amount.micros(),
+        (support_fields::CURRENCY): amount.currency().as_str(),
     });
     payload[ChatPayload::KEY] = serde_json::to_value(&chat_payload).ok()?;
     Some(Event::new(
@@ -494,4 +476,28 @@ pub(super) fn gift_membership_received_event(
         event_kinds::CHANNEL_MEMBER_GIFT_RECEIVED,
         payload,
     ))
+}
+
+fn support_amount(details: Option<&serde_json::Value>) -> Option<MoneyAmount> {
+    let micros = details
+        .and_then(|d| d.get("amountMicros"))
+        .and_then(|v| {
+            v.as_u64()
+                .or_else(|| v.as_str().and_then(|s| s.parse().ok()))
+        })
+        .unwrap_or(0);
+    let code = details
+        .and_then(|d| d.get("currency"))
+        .and_then(|v| v.as_str())
+        .unwrap_or_default();
+    match CurrencyCode::parse(code) {
+        Ok(currency) => Some(MoneyAmount::from_micros(micros, currency)),
+        Err(_) => {
+            tracing::warn!(
+                currency = code,
+                "support event has an unusable currency code; delivering it as a plain chat line"
+            );
+            None
+        }
+    }
 }

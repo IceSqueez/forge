@@ -60,6 +60,10 @@ struct CountingFactory {
 }
 
 impl TtsEngineFactory for CountingFactory {
+    fn engine_id(&self) -> EngineId {
+        self.id.clone()
+    }
+
     fn class(&self) -> forge_tts_core::EngineClass {
         forge_tts_core::EngineClass::Local
     }
@@ -123,7 +127,7 @@ impl Probe {
 fn registry_of(probes: &[&Probe]) -> TtsRegistry {
     let mut registry = TtsRegistry::new();
     for probe in probes {
-        registry.register(probe.factory.id.clone(), probe.factory.clone());
+        registry.register(probe.factory.clone());
     }
     registry
 }
@@ -295,11 +299,7 @@ async fn an_engine_disabled_at_boot_releases_its_probe_instance() {
     });
     let released = Arc::downgrade(&probe_instance);
     let mut registry = TtsRegistry::new();
-    registry.register_built(
-        EngineId("alpha".into()),
-        alpha.factory.clone(),
-        probe_instance,
-    );
+    registry.register_built(alpha.factory.clone(), probe_instance);
     let deps = QueueDeps {
         disabled_engines: HashSet::from([EngineId("alpha".into())]),
         engine_gains: HashMap::new(),

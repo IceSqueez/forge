@@ -62,29 +62,21 @@ impl TriggerKindDescriptor for ChannelMemberGiftReceivedDescriptor {
                     payload_read::gifter_identity,
                 )
                 .sub_tier(|event| payload_read::text(event, fields::LEVEL_NAME))
-                .legacy(
-                    variables::gift::LEVEL_NAME,
-                    "Membership level name",
-                    CanonicalVariable::SubTier,
-                )
+                .legacy(variables::gift::LEVEL_NAME, CanonicalVariable::SubTier)
                 .legacy(
                     variables::gift::GIFTER_CHANNEL_ID,
-                    "Gifter channel ID",
                     CanonicalVariable::actor(ActorRole::Gifter, ActorSlot::Id),
                 )
                 .legacy(
                     variables::gift::GIFTER_DISPLAY_NAME,
-                    "Gifter display name",
                     CanonicalVariable::actor(ActorRole::Gifter, ActorSlot::Name),
                 )
                 .legacy(
                     variables::gift::RECIPIENT_CHANNEL_ID,
-                    "Recipient channel ID",
                     CanonicalVariable::actor(ActorRole::Recipient, ActorSlot::Id),
                 )
                 .legacy(
                     variables::gift::RECIPIENT_DISPLAY_NAME,
-                    "Recipient display name",
                     CanonicalVariable::actor(ActorRole::Recipient, ActorSlot::Name),
                 ),
         )

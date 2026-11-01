@@ -9,12 +9,8 @@ use crate::vocabulary::fields::audio as fields;
 use crate::vocabulary::{event_kinds, trigger_ids, variables};
 
 const VARIABLES: &[EventVariable] = &[
-    EventVariable::text(variables::source::NAME, "Source name", fields::SOURCE_NAME),
-    EventVariable::float(
-        variables::source::BALANCE,
-        "Source balance",
-        fields::BALANCE,
-    ),
+    EventVariable::text(variables::source::NAME, fields::SOURCE_NAME),
+    EventVariable::float(variables::source::BALANCE, fields::BALANCE),
 ];
 
 fn variables() -> Option<TriggerVariables> {

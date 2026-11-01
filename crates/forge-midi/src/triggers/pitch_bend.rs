@@ -13,7 +13,6 @@ pub(crate) const PITCH_BEND_TRIGGER: MidiInputTrigger = MidiInputTrigger {
     number: None,
     value: Some(SignalValue {
         variable: variables::VALUE,
-        label: "Pitch bend value",
         max: PITCH_BEND_MAX,
     }),
 };

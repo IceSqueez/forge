@@ -87,7 +87,6 @@ fn variables() -> Option<TriggerVariables> {
                 DeclaredVariable {
                     name: "redemption.id".to_owned(),
                     kind: VariantKind::String,
-                    label: "Redemption ID".to_owned(),
                     synthesis: None,
                 },
                 |event| {
@@ -102,7 +101,6 @@ fn variables() -> Option<TriggerVariables> {
                 DeclaredVariable {
                     name: "redemption.status".to_owned(),
                     kind: VariantKind::String,
-                    label: "Redemption status".to_owned(),
                     synthesis: None,
                 },
                 |event| {
@@ -117,7 +115,6 @@ fn variables() -> Option<TriggerVariables> {
                 DeclaredVariable {
                     name: "redeemed_at".to_owned(),
                     kind: VariantKind::Datetime,
-                    label: "Redeemed at".to_owned(),
                     synthesis: None,
                 },
                 |event| {
@@ -128,7 +125,6 @@ fn variables() -> Option<TriggerVariables> {
                 DeclaredVariable {
                     name: "reward.id".to_owned(),
                     kind: VariantKind::String,
-                    label: "Reward ID".to_owned(),
                     synthesis: None,
                 },
                 |event| {
@@ -143,7 +139,6 @@ fn variables() -> Option<TriggerVariables> {
                 DeclaredVariable {
                     name: "reward.title".to_owned(),
                     kind: VariantKind::String,
-                    label: "Reward title".to_owned(),
                     synthesis: None,
                 },
                 |event| {
@@ -158,7 +153,6 @@ fn variables() -> Option<TriggerVariables> {
                 DeclaredVariable {
                     name: "reward.cost".to_owned(),
                     kind: VariantKind::Int,
-                    label: "Reward cost".to_owned(),
                     synthesis: Some(SynthesisHint::BoundedInt {
                         min: 0,
                         max: super::MAX_SYNTHESIZED_COUNT,
@@ -176,7 +170,6 @@ fn variables() -> Option<TriggerVariables> {
                 DeclaredVariable {
                     name: "reward.prompt".to_owned(),
                     kind: VariantKind::String,
-                    label: "Reward prompt".to_owned(),
                     synthesis: None,
                 },
                 |event| {
@@ -187,7 +180,7 @@ fn variables() -> Option<TriggerVariables> {
                     ))
                 },
             )
-            .legacy("user_input", "User input", CanonicalVariable::MessageText),
+            .legacy("user_input", CanonicalVariable::MessageText),
     )
 }
 

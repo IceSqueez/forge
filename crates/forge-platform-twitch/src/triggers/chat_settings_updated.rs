@@ -9,44 +9,37 @@ use crate::vocabulary::fields::chat_mod as chat_mod_fields;
 const VARIABLES: &[Variable] = &[
     Variable::nested_flag(
         "settings.emote_mode",
-        "Emote-only mode",
         chat_mod_fields::SETTINGS,
         chat_mod_fields::EMOTE_MODE,
     ),
     Variable::nested_flag(
         "settings.follower_mode",
-        "Follower-only mode",
         chat_mod_fields::SETTINGS,
         chat_mod_fields::FOLLOWER_MODE,
     ),
     Variable::nested_flag(
         "settings.slow_mode",
-        "Slow mode",
         chat_mod_fields::SETTINGS,
         chat_mod_fields::SLOW_MODE,
     ),
     Variable::nested_flag(
         "settings.subscriber_mode",
-        "Subscriber-only mode",
         chat_mod_fields::SETTINGS,
         chat_mod_fields::SUBSCRIBER_MODE,
     ),
     Variable::nested_flag(
         "settings.unique_chat_mode",
-        "Unique chat mode",
         chat_mod_fields::SETTINGS,
         chat_mod_fields::UNIQUE_CHAT_MODE,
     ),
     Variable::nested_int(
         "settings.slow_mode_wait_time_seconds",
-        "Slow mode wait (seconds)",
         chat_mod_fields::SETTINGS,
         chat_mod_fields::SLOW_MODE_WAIT_TIME_SECONDS,
     )
     .bounded(0, 120),
     Variable::nested_int(
         "settings.follower_mode_duration_minutes",
-        "Follower mode duration (minutes)",
         chat_mod_fields::SETTINGS,
         chat_mod_fields::FOLLOWER_MODE_DURATION_MINUTES,
     )

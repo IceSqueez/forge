@@ -65,13 +65,10 @@ fn spawn_bilingual_queue(
         localized_voice("poly-uk", "uk-UA"),
     ];
     let mut registry = TtsRegistry::new();
-    registry.register(
-        EngineId(ENGINE.into()),
-        Arc::new(FakeFactory {
-            id: ENGINE.into(),
-            voices,
-        }),
-    );
+    registry.register(Arc::new(FakeFactory {
+        id: ENGINE.into(),
+        voices,
+    }));
 
     let (sink, _plays) = recording_sink();
     let mut deps = make_deps(

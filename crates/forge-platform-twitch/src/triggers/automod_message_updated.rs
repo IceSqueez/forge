@@ -65,7 +65,6 @@ fn variables() -> Option<TriggerVariables> {
                 DeclaredVariable {
                     name: "automod.message_id".to_owned(),
                     kind: VariantKind::String,
-                    label: "Automod message ID".to_owned(),
                     synthesis: None,
                 },
                 |event| {
@@ -80,7 +79,6 @@ fn variables() -> Option<TriggerVariables> {
                 DeclaredVariable {
                     name: "automod.status".to_owned(),
                     kind: VariantKind::String,
-                    label: "Automod status".to_owned(),
                     synthesis: None,
                 },
                 |event| {
@@ -95,7 +93,6 @@ fn variables() -> Option<TriggerVariables> {
                 DeclaredVariable {
                     name: "automod.reason".to_owned(),
                     kind: VariantKind::String,
-                    label: "Hold reason".to_owned(),
                     synthesis: None,
                 },
                 |event| Variant::String(payload_read::text(event, automod_fields::REASON)),
@@ -104,7 +101,6 @@ fn variables() -> Option<TriggerVariables> {
                 DeclaredVariable {
                     name: "automod.terms_found".to_owned(),
                     kind: VariantKind::Array,
-                    label: "Blocked term IDs".to_owned(),
                     synthesis: None,
                 },
                 |event| {

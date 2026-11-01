@@ -89,7 +89,7 @@ impl TriggerKindDescriptor for DonationReceivedDescriptor {
                     DonationReceived::from_event(event).map(|donation| donation.amount())
                 })
                 .event_specific(
-                    declared("donation_provider", VariantKind::String, "Donation service"),
+                    declared("donation_provider", VariantKind::String),
                     |event| {
                         Variant::String(
                             DonationReceived::from_event(event)
@@ -98,44 +98,32 @@ impl TriggerKindDescriptor for DonationReceivedDescriptor {
                         )
                     },
                 )
-                .event_specific(
-                    declared("donation_id", VariantKind::String, "Donation ID"),
-                    |event| {
-                        Variant::String(
-                            DonationReceived::from_event(event)
-                                .map(|donation| donation.donation_id)
-                                .unwrap_or_default(),
-                        )
-                    },
-                )
-                .event_specific(
-                    declared("donor_visibility", VariantKind::String, "Donor visibility"),
-                    |event| {
-                        Variant::String(
-                            DonationReceived::from_event(event)
-                                .map(|donation| donation.donor_visibility.as_str().to_owned())
-                                .unwrap_or_default(),
-                        )
-                    },
-                )
-                .event_specific(
-                    declared("donation_is_test", VariantKind::Bool, "Test donation"),
-                    |event| {
-                        Variant::Bool(
-                            DonationReceived::from_event(event)
-                                .is_some_and(|donation| donation.test),
-                        )
-                    },
-                )
-                .event_specific(
-                    declared("donated_at", VariantKind::Datetime, "Donation time"),
-                    |event| {
-                        Variant::Datetime(
-                            DonationReceived::from_event(event)
-                                .map_or(event.timestamp, |donation| donation.occurred_at),
-                        )
-                    },
-                ),
+                .event_specific(declared("donation_id", VariantKind::String), |event| {
+                    Variant::String(
+                        DonationReceived::from_event(event)
+                            .map(|donation| donation.donation_id)
+                            .unwrap_or_default(),
+                    )
+                })
+                .event_specific(declared("donor_visibility", VariantKind::String), |event| {
+                    Variant::String(
+                        DonationReceived::from_event(event)
+                            .map(|donation| donation.donor_visibility.as_str().to_owned())
+                            .unwrap_or_default(),
+                    )
+                })
+                .event_specific(declared("donation_is_test", VariantKind::Bool), |event| {
+                    Variant::Bool(
+                        DonationReceived::from_event(event)
+                            .is_some_and(|donation| donation.is_test),
+                    )
+                })
+                .event_specific(declared("donated_at", VariantKind::Datetime), |event| {
+                    Variant::Datetime(
+                        DonationReceived::from_event(event)
+                            .map_or(event.timestamp, |donation| donation.occurred_at),
+                    )
+                }),
         )
     }
 
@@ -169,11 +157,10 @@ fn donor(event: &Event) -> SourcedActor {
     }
 }
 
-fn declared(name: &str, kind: VariantKind, label: &str) -> DeclaredVariable {
+fn declared(name: &str, kind: VariantKind) -> DeclaredVariable {
     DeclaredVariable {
         name: name.to_owned(),
         kind,
-        label: label.to_owned(),
         synthesis: None,
     }
 }

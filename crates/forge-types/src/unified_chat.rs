@@ -3,6 +3,7 @@ use std::fmt;
 use time::OffsetDateTime;
 
 use crate::EventId;
+use crate::MoneyAmount;
 use crate::PlatformId;
 use crate::redaction::{Redacted, RedactedText};
 
@@ -358,8 +359,8 @@ pub enum ChatEventDetail {
         message: Option<String>,
     },
     SuperChat {
-        amount_micros: u64,
-        currency: String,
+        #[serde(flatten)]
+        amount: MoneyAmount,
         message: Option<String>,
     },
     NewMember {
@@ -394,14 +395,10 @@ impl fmt::Debug for ChatEventDetail {
                 .field("bits", bits)
                 .field("message", &redacted(message))
                 .finish(),
-            Self::SuperChat {
-                amount_micros,
-                currency,
-                message,
-            } => f
+            Self::SuperChat { amount, message } => f
                 .debug_struct("SuperChat")
-                .field("amount_micros", amount_micros)
-                .field("currency", currency)
+                .field("amount_micros", &amount.micros())
+                .field("currency", &amount.currency().as_str())
                 .field("message", &redacted(message))
                 .finish(),
             Self::NewMember { level } => f.debug_struct("NewMember").field("level", level).finish(),
@@ -416,11 +413,19 @@ impl fmt::Debug for ChatEventDetail {
 
 #[cfg(test)]
 mod tests {
+    use crate::CurrencyCode;
     use serde_json::{from_str, to_string};
     use time::OffsetDateTime;
 
     use super::*;
     use crate::EventId;
+
+    fn dollars(whole: u64) -> MoneyAmount {
+        MoneyAmount::from_micros(
+            whole * crate::MICROS_PER_MAJOR_UNIT,
+            CurrencyCode::parse("USD").unwrap(),
+        )
+    }
 
     fn minimal_payload(msg_id: &str) -> ChatPayload {
         ChatPayload {
@@ -452,8 +457,7 @@ mod tests {
             badges: vec![UserBadge::Moderator, UserBadge::Subscriber { months: 12 }],
             is_event: true,
             event_detail: Some(ChatEventDetail::SuperChat {
-                amount_micros: 5_000_000,
-                currency: "USD".to_string(),
+                amount: dollars(5),
                 message: Some("amazing!".to_string()),
             }),
             moderation: ModerationMarks {
@@ -584,14 +588,12 @@ mod tests {
 
     #[test]
     fn event_detail_super_chat_roundtrips() {
-        let json =
-            r#"{"kind":"super_chat","amount_micros":5000000,"currency":"USD","message":"thx"}"#;
+        let json = r#"{"kind":"super_chat","micros":5000000,"currency":"USD","message":"thx"}"#;
         let detail: ChatEventDetail = from_str(json).unwrap();
         assert_eq!(
             detail,
             ChatEventDetail::SuperChat {
-                amount_micros: 5_000_000,
-                currency: "USD".to_string(),
+                amount: dollars(5),
                 message: Some("thx".to_string()),
             }
         );
@@ -729,8 +731,7 @@ mod tests {
             ),
             (
                 ChatEventDetail::SuperChat {
-                    amount_micros: 5_000_000,
-                    currency: "USD".to_string(),
+                    amount: dollars(5),
                     message: Some(BODY.to_string()),
                 },
                 "SuperChat { amount_micros: 5000000, currency: \"USD\", message: Some(<redacted len=13>) }",

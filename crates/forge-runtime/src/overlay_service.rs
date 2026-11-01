@@ -516,7 +516,7 @@ impl OverlayServiceHandle {
             SPEECH_FAILURE_MESSAGE_KEY: error,
         });
         let event = match caused_by {
-            Some(parent) => Event::caused_by(
+            Some(parent) => Event::child_of(
                 EventSource::Core,
                 OVERLAY_SPEECH_FAILED_KIND,
                 payload,

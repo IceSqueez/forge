@@ -10,13 +10,9 @@ use crate::vocabulary::messages;
 use crate::vocabulary::{event_kinds, trigger_ids, variables};
 
 const VARIABLES: &[EventVariable] = &[
-    EventVariable::text(variables::scene::NAME, "Scene name", fields::SCENE_NAME),
-    EventVariable::text(variables::source::NAME, "Source name", fields::SOURCE_NAME),
-    EventVariable::flag(
-        variables::source::IS_LOCKED,
-        "Source locked",
-        fields::IS_LOCKED,
-    ),
+    EventVariable::text(variables::scene::NAME, fields::SCENE_NAME),
+    EventVariable::text(variables::source::NAME, fields::SOURCE_NAME),
+    EventVariable::flag(variables::source::IS_LOCKED, fields::IS_LOCKED),
 ];
 
 fn variables() -> Option<TriggerVariables> {

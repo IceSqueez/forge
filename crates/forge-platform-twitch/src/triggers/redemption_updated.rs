@@ -61,7 +61,6 @@ fn variables() -> Option<TriggerVariables> {
                 DeclaredVariable {
                     name: "redemption.id".to_owned(),
                     kind: VariantKind::String,
-                    label: "Redemption ID".to_owned(),
                     synthesis: None,
                 },
                 |event| {
@@ -76,7 +75,6 @@ fn variables() -> Option<TriggerVariables> {
                 DeclaredVariable {
                     name: "redemption.status".to_owned(),
                     kind: VariantKind::String,
-                    label: "Redemption status".to_owned(),
                     synthesis: None,
                 },
                 |event| {
@@ -91,7 +89,6 @@ fn variables() -> Option<TriggerVariables> {
                 DeclaredVariable {
                     name: "reward.id".to_owned(),
                     kind: VariantKind::String,
-                    label: "Reward ID".to_owned(),
                     synthesis: None,
                 },
                 |event| {
@@ -106,7 +103,6 @@ fn variables() -> Option<TriggerVariables> {
                 DeclaredVariable {
                     name: "reward.title".to_owned(),
                     kind: VariantKind::String,
-                    label: "Reward title".to_owned(),
                     synthesis: None,
                 },
                 |event| {
@@ -117,7 +113,7 @@ fn variables() -> Option<TriggerVariables> {
                     ))
                 },
             )
-            .legacy("user_input", "User input", CanonicalVariable::MessageText),
+            .legacy("user_input", CanonicalVariable::MessageText),
     )
 }
 

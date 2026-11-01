@@ -7,7 +7,8 @@ use forge_speech_types::{EngineId, TtsVoice};
 use forge_tts_core::{ENGINE_ID_OPENAI, SynthesisRequest, TtsEngine, TtsError};
 
 use crate::credentials::OpenAiCredentials;
-use crate::network::{CloudGateways, ProviderGateway, ProviderLink};
+use crate::factory::{CloudEngine, CloudEngineFactory};
+use crate::network::{ProviderGateway, ProviderLink};
 use crate::policy::{RetryConfig, retry_synthesize};
 
 const DEFAULT_BASE_URL: &str = "https://api.openai.com";
@@ -41,30 +42,18 @@ impl OpenAiEngine {
     }
 }
 
-pub struct OpenAiEngineFactory {
-    credentials: OpenAiCredentials,
-    provider: ProviderGateway,
-}
+pub type OpenAiEngineFactory = CloudEngineFactory<OpenAiEngine>;
 
-impl OpenAiEngineFactory {
-    pub fn new(credentials: OpenAiCredentials, gateways: &CloudGateways) -> Self {
-        Self {
-            credentials,
-            provider: gateways.provider(ENGINE_ID_OPENAI),
-        }
-    }
-}
+impl CloudEngine for OpenAiEngine {
+    type Credentials = OpenAiCredentials;
 
-impl forge_tts_core::TtsEngineFactory for OpenAiEngineFactory {
-    fn class(&self) -> forge_tts_core::EngineClass {
-        forge_tts_core::EngineClass::Cloud
-    }
+    const ENGINE_ID: &'static str = ENGINE_ID_OPENAI;
 
-    fn create(&self) -> Result<Box<dyn TtsEngine>, TtsError> {
-        Ok(Box::new(OpenAiEngine::new(
-            self.credentials.clone(),
-            &self.provider,
-        )?))
+    fn connect(
+        credentials: Self::Credentials,
+        provider: &ProviderGateway,
+    ) -> Result<Self, TtsError> {
+        Self::new(credentials, provider)
     }
 }
 
@@ -79,7 +68,7 @@ impl TtsEngine for OpenAiEngine {
     }
 
     async fn synthesize(&self, request: SynthesisRequest) -> Result<PcmBuffer, TtsError> {
-        if request.ssml {
+        if request.text.is_ssml() {
             return Err(TtsError::SsmlUnsupported {
                 id: self.id.clone(),
             });
@@ -112,11 +101,13 @@ impl TtsEngine for OpenAiEngine {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::CloudGateways;
     use crate::network::test_support::{
         API_KEY, OTHER_API_KEY, PAST_WAIT_THRESHOLD_SECS, is_the_provider_cool_down, request_count,
         serving, throttled,
     };
     use forge_speech_types::VoiceId;
+    use forge_tts_core::SpeechText;
     use forge_tts_core::TtsEngineFactory;
     use forge_types::Secret;
     use wiremock::ResponseTemplate;
@@ -138,11 +129,10 @@ mod tests {
 
     fn request(ssml: bool) -> SynthesisRequest {
         SynthesisRequest {
-            text: "hello".into(),
+            text: SpeechText::new("hello".to_owned(), ssml),
             voice_id: VoiceId("alloy".into()),
             pitch_semitones: 0.0,
             rate_multiplier: 1.0,
-            ssml,
         }
     }
 

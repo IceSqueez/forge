@@ -18,7 +18,6 @@ fn variables() -> Option<TriggerVariables> {
                 DeclaredVariable {
                     name: "followed_at".to_owned(),
                     kind: VariantKind::Datetime,
-                    label: "Followed at".to_owned(),
                     synthesis: None,
                 },
                 |event| payload_read::timestamp(event, fields::FOLLOWED_AT),

@@ -10,16 +10,8 @@ use crate::vocabulary::messages;
 use crate::vocabulary::{event_kinds, trigger_ids, variables};
 
 const VARIABLES: &[EventVariable] = &[
-    EventVariable::text(
-        variables::scene::NAME_OLD,
-        "Old scene name",
-        fields::SCENE_NAME_OLD,
-    ),
-    EventVariable::text(
-        variables::scene::NAME_NEW,
-        "New scene name",
-        fields::SCENE_NAME_NEW,
-    ),
+    EventVariable::text(variables::scene::NAME_OLD, fields::SCENE_NAME_OLD),
+    EventVariable::text(variables::scene::NAME_NEW, fields::SCENE_NAME_NEW),
 ];
 
 fn variables() -> Option<TriggerVariables> {

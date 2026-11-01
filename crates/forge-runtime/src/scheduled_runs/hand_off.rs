@@ -193,7 +193,7 @@ impl HandOffPath {
         });
         let mut event = match run.spec.trigger_event_id {
             Some(cause) => {
-                Event::caused_by(EventSource::Core, SCHEDULED_RUN_DUE_KIND, payload, cause)
+                Event::child_of(EventSource::Core, SCHEDULED_RUN_DUE_KIND, payload, cause)
             }
             None => Event::new(EventSource::Core, SCHEDULED_RUN_DUE_KIND, payload),
         };

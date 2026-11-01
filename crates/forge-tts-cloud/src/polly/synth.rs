@@ -35,7 +35,7 @@ fn speech_body(text: &str, text_type: &str, voice_id: &str) -> String {
 }
 
 pub(super) fn build_polly_body(req: &SynthesisRequest) -> String {
-    if req.ssml {
+    if req.text.is_ssml() {
         if req.rate_multiplier != 1.0 || req.pitch_semitones.abs() > f32::EPSILON {
             tracing::debug!(
                 rate_multiplier = req.rate_multiplier,
@@ -146,16 +146,16 @@ mod tests {
     use crate::polly::signer::test_support::{
         assert_reveals_no_credential, credentials, echo_server, echoing, outcome,
     };
+    use forge_tts_core::SpeechText;
     use wiremock::matchers::{body_string, header, method, path};
     use wiremock::{Mock, MockServer, ResponseTemplate};
 
     fn plain_req(text: &str) -> SynthesisRequest {
         SynthesisRequest {
-            text: text.into(),
+            text: SpeechText::plain(text.into()),
             voice_id: VoiceId("Joanna".into()),
             pitch_semitones: 0.0,
             rate_multiplier: 1.0,
-            ssml: false,
         }
     }
 
@@ -180,11 +180,10 @@ mod tests {
     fn synthesize_passes_ssml_input_through() {
         let input = "<speak>hello</speak>";
         let req = SynthesisRequest {
-            text: input.into(),
+            text: SpeechText::ssml(input.into()),
             voice_id: VoiceId("Joanna".into()),
             pitch_semitones: 0.0,
             rate_multiplier: 1.0,
-            ssml: true,
         };
         let body = build_polly_body(&req);
         let parsed: serde_json::Value = serde_json::from_str(&body).unwrap();
@@ -195,11 +194,10 @@ mod tests {
     #[test]
     fn synthesize_wraps_plain_text_in_ssml_when_prosody_differs() {
         let req = SynthesisRequest {
-            text: "hello".into(),
+            text: SpeechText::plain("hello".into()),
             voice_id: VoiceId("Joanna".into()),
             pitch_semitones: 0.0,
             rate_multiplier: 1.5,
-            ssml: false,
         };
         let body = build_polly_body(&req);
         let parsed: serde_json::Value = serde_json::from_str(&body).unwrap();
@@ -290,8 +288,7 @@ mod tests {
     #[test]
     fn every_body_requests_the_neural_engine_and_ssml_input_ignores_rate_and_pitch() {
         let ssml = SynthesisRequest {
-            text: "<speak>hi</speak>".into(),
-            ssml: true,
+            text: SpeechText::ssml("<speak>hi</speak>".into()),
             rate_multiplier: 1.8,
             pitch_semitones: 3.0,
             ..plain_req("")

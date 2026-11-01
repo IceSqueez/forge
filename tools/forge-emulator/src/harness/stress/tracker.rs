@@ -322,7 +322,7 @@ mod tests {
     }
 
     fn core(kind: &str, payload: Value, cause: EventId) -> Event {
-        Event::caused_by(EventSource::Core, kind, payload, cause)
+        Event::child_of(EventSource::Core, kind, payload, cause)
     }
 
     fn start(name: &str, cause: EventId) -> Event {

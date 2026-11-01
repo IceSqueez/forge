@@ -62,19 +62,13 @@ impl TriggerKindDescriptor for SubDescriptor {
                 .sub_tier(|event| payload_read::text(event, fields::TIER))
                 .legacy(
                     variables::legacy::USERNAME,
-                    "Subscriber username",
                     CanonicalVariable::actor(ActorRole::Principal, ActorSlot::Login),
                 )
                 .legacy(
                     variables::legacy::MONTHS,
-                    "Subscribed months",
                     CanonicalVariable::Count(CanonicalCount::SubCumulativeMonths),
                 )
-                .legacy(
-                    variables::legacy::TIER,
-                    "Subscription tier",
-                    CanonicalVariable::SubTier,
-                ),
+                .legacy(variables::legacy::TIER, CanonicalVariable::SubTier),
         )
     }
 

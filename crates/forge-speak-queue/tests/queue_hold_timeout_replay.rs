@@ -40,7 +40,7 @@ impl TtsEngine for GatedEngine {
         Ok(vec![voice("gated-voice", ENGINE)])
     }
     async fn synthesize(&self, req: SynthesisRequest) -> Result<PcmBuffer, TtsError> {
-        if req.text == HANGING_TEXT {
+        if req.text.as_str() == HANGING_TEXT {
             std::future::pending::<()>().await;
         }
         if let Some(gate) = &self.gate {
@@ -56,6 +56,10 @@ struct GatedFactory {
 }
 
 impl TtsEngineFactory for GatedFactory {
+    fn engine_id(&self) -> EngineId {
+        EngineId(ENGINE.into())
+    }
+
     fn class(&self) -> forge_tts_core::EngineClass {
         forge_tts_core::EngineClass::Local
     }
@@ -100,7 +104,7 @@ impl Harness {
 fn spawn_queue(config: QueueConfig, gate: Option<Arc<Gate>>) -> Harness {
     let (sink, plays) = recording_sink();
     let mut registry = TtsRegistry::new();
-    registry.register(EngineId(ENGINE.into()), Arc::new(GatedFactory { gate }));
+    registry.register(Arc::new(GatedFactory { gate }));
     let (deps, bus) = recording_bus(make_deps(
         registry,
         sink,

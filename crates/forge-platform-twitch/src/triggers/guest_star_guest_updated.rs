@@ -69,7 +69,6 @@ fn variables() -> Option<TriggerVariables> {
                 DeclaredVariable {
                     name: "guest_star.session_id".to_owned(),
                     kind: VariantKind::String,
-                    label: "Guest Star session ID".to_owned(),
                     synthesis: None,
                 },
                 |event| {
@@ -83,7 +82,6 @@ fn variables() -> Option<TriggerVariables> {
                 DeclaredVariable {
                     name: "guest_star.slot_id".to_owned(),
                     kind: VariantKind::String,
-                    label: "Guest Star slot ID".to_owned(),
                     synthesis: None,
                 },
                 |event| {
@@ -94,7 +92,6 @@ fn variables() -> Option<TriggerVariables> {
                 DeclaredVariable {
                     name: "guest_star.state".to_owned(),
                     kind: VariantKind::String,
-                    label: "Guest state".to_owned(),
                     synthesis: None,
                 },
                 |event| Variant::String(payload_read::text(event, guest_star_fields::STATE)),
@@ -103,7 +100,6 @@ fn variables() -> Option<TriggerVariables> {
                 DeclaredVariable {
                     name: "host.video_enabled".to_owned(),
                     kind: VariantKind::Bool,
-                    label: "Host video enabled".to_owned(),
                     synthesis: None,
                 },
                 |event| {
@@ -118,7 +114,6 @@ fn variables() -> Option<TriggerVariables> {
                 DeclaredVariable {
                     name: "host.audio_enabled".to_owned(),
                     kind: VariantKind::Bool,
-                    label: "Host audio enabled".to_owned(),
                     synthesis: None,
                 },
                 |event| {
@@ -133,7 +128,6 @@ fn variables() -> Option<TriggerVariables> {
                 DeclaredVariable {
                     name: "host.volume".to_owned(),
                     kind: VariantKind::Int,
-                    label: "Host volume".to_owned(),
                     synthesis: Some(SynthesisHint::BoundedInt { min: 0, max: 100 }),
                 },
                 |event| {
@@ -146,12 +140,10 @@ fn variables() -> Option<TriggerVariables> {
             )
             .legacy(
                 "guest.login",
-                "Guest login",
                 CanonicalVariable::actor(ActorRole::Principal, ActorSlot::Login),
             )
             .legacy(
                 "guest.id",
-                "Guest ID",
                 CanonicalVariable::actor(ActorRole::Principal, ActorSlot::Id),
             ),
     )

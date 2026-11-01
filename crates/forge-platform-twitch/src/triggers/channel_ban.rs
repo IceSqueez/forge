@@ -31,7 +31,6 @@ fn variables() -> Option<TriggerVariables> {
                 DeclaredVariable {
                     name: "reason".to_owned(),
                     kind: VariantKind::String,
-                    label: "Ban reason".to_owned(),
                     synthesis: None,
                 },
                 |event| Variant::String(payload_read::text(event, fields::REASON)),
@@ -40,7 +39,6 @@ fn variables() -> Option<TriggerVariables> {
                 DeclaredVariable {
                     name: "banned_at".to_owned(),
                     kind: VariantKind::Datetime,
-                    label: "Banned at".to_owned(),
                     synthesis: None,
                 },
                 |event| payload_read::timestamp(event, fields::BANNED_AT),

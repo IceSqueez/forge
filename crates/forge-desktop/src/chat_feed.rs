@@ -5,7 +5,7 @@ use forge_components::tr;
 use forge_events::Event;
 use forge_types::{
     ChatEventDetail, ChatModerationAction, ChatModerationPayload, ChatPayload, ChatReply,
-    ChatViewer, EventId, PlatformId, UnifiedChatRow, UserBadge, format_money,
+    ChatViewer, EventId, PlatformId, UnifiedChatRow, UserBadge,
 };
 use gpui::{Rgba, SharedString};
 use time::OffsetDateTime;
@@ -499,15 +499,8 @@ fn event_body(row: &UnifiedChatRow) -> ChatBody {
             bits: *bits,
             text: message.clone().map(SharedString::from).unwrap_or_default(),
         },
-        Some(ChatEventDetail::SuperChat {
-            amount_micros,
-            currency,
-            message,
-        }) => ChatBody::Subscription {
-            descriptor: descriptor(tr!(
-                "chat_event_super_chat",
-                amount = format_money(*amount_micros, currency)
-            )),
+        Some(ChatEventDetail::SuperChat { amount, message }) => ChatBody::Subscription {
+            descriptor: descriptor(tr!("chat_event_super_chat", amount = amount.formatted())),
             months: None,
             message: message.clone().map(SharedString::from),
             triggered: None,
@@ -538,8 +531,8 @@ mod tests {
     use forge_events::{Event, EventSource};
     use forge_types::{
         ChatEventDetail, ChatModerationAction, ChatModerationPayload, ChatPayload, ChatReply,
-        ChatSegment, ChatViewer, EventId, ModerationMarks, PlatformId, UnifiedChatRow, UserBadge,
-        UserRemoval,
+        ChatSegment, ChatViewer, CurrencyCode, EventId, ModerationMarks, MoneyAmount, PlatformId,
+        UnifiedChatRow, UserBadge, UserRemoval,
     };
     use time::OffsetDateTime;
 
@@ -707,8 +700,7 @@ mod tests {
         crate::i18n::install_language(forge_storage::Language::En);
         let super_chat = row(
             Some(ChatEventDetail::SuperChat {
-                amount_micros: 5_000_000,
-                currency: "USD".to_string(),
+                amount: MoneyAmount::from_micros(5_000_000, CurrencyCode::parse("USD").unwrap()),
                 message: Some("thx".to_string()),
             }),
             vec![],
@@ -1629,7 +1621,7 @@ mod tests {
     }
 
     fn caused(kind: &str, payload: serde_json::Value, parent: EventId) -> Event {
-        Event::caused_by(EventSource::Core, kind, payload, parent)
+        Event::child_of(EventSource::Core, kind, payload, parent)
     }
 
     #[test]

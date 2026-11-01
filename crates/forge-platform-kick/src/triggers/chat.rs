@@ -92,7 +92,6 @@ pub(super) fn chat_line_variables() -> TriggerVariables {
             DeclaredVariable {
                 name: variables::chat::COLOR.to_owned(),
                 kind: VariantKind::String,
-                label: "Sender name color".to_owned(),
                 synthesis: None,
             },
             |event| Variant::String(sender_color(event)),
@@ -101,7 +100,6 @@ pub(super) fn chat_line_variables() -> TriggerVariables {
             DeclaredVariable {
                 name: variables::chat::REPLY_TO_ID.to_owned(),
                 kind: VariantKind::String,
-                label: "Replied-to message ID".to_owned(),
                 synthesis: None,
             },
             |event| Variant::String(payload_read::text(event, fields::REPLY_TO_MESSAGE_ID)),
@@ -112,24 +110,17 @@ pub(super) fn with_sender_aliases(variables: TriggerVariables) -> TriggerVariabl
     variables
         .legacy(
             variables::legacy::SENDER_ID,
-            "Sender user ID",
             CanonicalVariable::actor(ActorRole::Principal, ActorSlot::Id),
         )
         .legacy(
             variables::legacy::USERNAME,
-            "Sender username",
             CanonicalVariable::actor(ActorRole::Principal, ActorSlot::Login),
         )
         .legacy(
             variables::legacy::DISPLAY_NAME,
-            "Sender display name",
             CanonicalVariable::actor(ActorRole::Principal, ActorSlot::Name),
         )
-        .legacy(
-            variables::legacy::CONTENT,
-            "Message content",
-            CanonicalVariable::MessageText,
-        )
+        .legacy(variables::legacy::CONTENT, CanonicalVariable::MessageText)
 }
 
 pub(super) fn sender_identity(event: &Event) -> ActorIdentity {

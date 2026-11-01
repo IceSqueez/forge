@@ -7,7 +7,8 @@ use forge_speech_types::{EngineId, TtsVoice};
 use forge_tts_core::{ENGINE_ID_ELEVENLABS, SynthesisRequest, TtsEngine, TtsError};
 
 use crate::credentials::ElevenLabsCredentials;
-use crate::network::{CloudGateways, ProviderGateway, ProviderLink};
+use crate::factory::{CloudEngine, CloudEngineFactory};
+use crate::network::{ProviderGateway, ProviderLink};
 use crate::policy::{RetryConfig, retry_synthesize};
 
 const DEFAULT_BASE_URL: &str = "https://api.elevenlabs.io";
@@ -42,30 +43,18 @@ impl ElevenLabsEngine {
     }
 }
 
-pub struct ElevenLabsEngineFactory {
-    credentials: ElevenLabsCredentials,
-    provider: ProviderGateway,
-}
+pub type ElevenLabsEngineFactory = CloudEngineFactory<ElevenLabsEngine>;
 
-impl ElevenLabsEngineFactory {
-    pub fn new(credentials: ElevenLabsCredentials, gateways: &CloudGateways) -> Self {
-        Self {
-            credentials,
-            provider: gateways.provider(ENGINE_ID_ELEVENLABS),
-        }
-    }
-}
+impl CloudEngine for ElevenLabsEngine {
+    type Credentials = ElevenLabsCredentials;
 
-impl forge_tts_core::TtsEngineFactory for ElevenLabsEngineFactory {
-    fn class(&self) -> forge_tts_core::EngineClass {
-        forge_tts_core::EngineClass::Cloud
-    }
+    const ENGINE_ID: &'static str = ENGINE_ID_ELEVENLABS;
 
-    fn create(&self) -> Result<Box<dyn TtsEngine>, TtsError> {
-        Ok(Box::new(ElevenLabsEngine::new(
-            self.credentials.clone(),
-            &self.provider,
-        )?))
+    fn connect(
+        credentials: Self::Credentials,
+        provider: &ProviderGateway,
+    ) -> Result<Self, TtsError> {
+        Self::new(credentials, provider)
     }
 }
 
@@ -82,7 +71,7 @@ impl TtsEngine for ElevenLabsEngine {
     }
 
     async fn synthesize(&self, request: SynthesisRequest) -> Result<PcmBuffer, TtsError> {
-        if request.ssml {
+        if request.text.is_ssml() {
             return Err(TtsError::SsmlUnsupported {
                 id: self.id.clone(),
             });
@@ -115,11 +104,13 @@ impl TtsEngine for ElevenLabsEngine {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::CloudGateways;
     use crate::network::test_support::{
         API_KEY, OTHER_API_KEY, PAST_WAIT_THRESHOLD_SECS, is_the_provider_cool_down, request_count,
         serving, throttled,
     };
     use forge_speech_types::VoiceId;
+    use forge_tts_core::SpeechText;
     use forge_tts_core::TtsEngineFactory;
     use forge_types::Secret;
     use wiremock::ResponseTemplate;
@@ -141,11 +132,10 @@ mod tests {
 
     fn request(ssml: bool) -> SynthesisRequest {
         SynthesisRequest {
-            text: "hello".into(),
+            text: SpeechText::new("hello".to_owned(), ssml),
             voice_id: VoiceId("voice-123".into()),
             pitch_semitones: 0.0,
             rate_multiplier: 1.0,
-            ssml,
         }
     }
 

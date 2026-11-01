@@ -17,12 +17,10 @@ fn variables() -> Option<TriggerVariables> {
             .chat_message_id(|event| payload_read::text(event, chat_mod_fields::MESSAGE_ID))
             .legacy(
                 "chat.target_user.login",
-                "Message author login",
                 CanonicalVariable::actor(ActorRole::Principal, ActorSlot::Login),
             )
             .legacy(
                 "chat.target_user.id",
-                "Message author ID",
                 CanonicalVariable::actor(ActorRole::Principal, ActorSlot::Id),
             ),
     )

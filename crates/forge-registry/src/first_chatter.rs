@@ -18,7 +18,6 @@ pub(crate) fn first_message_declaration() -> DeclaredVariable {
     DeclaredVariable {
         name: FIRST_MESSAGE_VARIABLE.to_owned(),
         kind: VariantKind::Bool,
-        label: "First message forge has seen from this viewer".to_owned(),
         synthesis: None,
     }
 }

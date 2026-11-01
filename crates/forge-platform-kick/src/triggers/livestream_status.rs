@@ -59,7 +59,6 @@ impl TriggerKindDescriptor for LivestreamStatusDescriptor {
                     DeclaredVariable {
                         name: variables::livestream::IS_LIVE.to_owned(),
                         kind: VariantKind::Bool,
-                        label: "Is live".to_owned(),
                         synthesis: None,
                     },
                     |event| Variant::Bool(payload_read::flag(event, fields::IS_LIVE)),
@@ -68,7 +67,6 @@ impl TriggerKindDescriptor for LivestreamStatusDescriptor {
                     DeclaredVariable {
                         name: variables::livestream::STREAM_TITLE.to_owned(),
                         kind: VariantKind::String,
-                        label: "Stream title".to_owned(),
                         synthesis: None,
                     },
                     |event| Variant::String(payload_read::text(event, fields::STREAM_TITLE)),
@@ -77,7 +75,6 @@ impl TriggerKindDescriptor for LivestreamStatusDescriptor {
                     DeclaredVariable {
                         name: variables::livestream::CATEGORY_ID.to_owned(),
                         kind: VariantKind::String,
-                        label: "Category ID".to_owned(),
                         synthesis: None,
                     },
                     |event| {
@@ -91,7 +88,6 @@ impl TriggerKindDescriptor for LivestreamStatusDescriptor {
                     DeclaredVariable {
                         name: variables::livestream::CATEGORY_NAME.to_owned(),
                         kind: VariantKind::String,
-                        label: "Category name".to_owned(),
                         synthesis: None,
                     },
                     |event| {

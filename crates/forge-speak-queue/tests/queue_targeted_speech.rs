@@ -226,6 +226,10 @@ struct GatedFactory {
 }
 
 impl TtsEngineFactory for GatedFactory {
+    fn engine_id(&self) -> EngineId {
+        EngineId("gate".into())
+    }
+
     fn class(&self) -> forge_tts_core::EngineClass {
         forge_tts_core::EngineClass::Local
     }
@@ -240,10 +244,7 @@ impl TtsEngineFactory for GatedFactory {
 async fn held_queue() -> (SpeakQueueHandle, SpeakEventStream, Arc<Notify>, RequestId) {
     let gate = Arc::new(Notify::new());
     let mut registry = TtsRegistry::new();
-    registry.register(
-        EngineId("gate".into()),
-        Arc::new(GatedFactory { gate: gate.clone() }),
-    );
+    registry.register(Arc::new(GatedFactory { gate: gate.clone() }));
     let (sink, _plays) = recording_sink();
     let deps = make_deps(
         registry,

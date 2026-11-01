@@ -468,7 +468,7 @@ mod tests {
             "timer.tick",
             serde_json::json!({}),
         ));
-        bus.publish(Event::caused_by(
+        bus.publish(Event::child_of(
             EventSource::Core,
             "command.matched",
             serde_json::json!({ "command": "!lurk" }),

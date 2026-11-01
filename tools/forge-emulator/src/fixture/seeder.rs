@@ -13,8 +13,8 @@ use forge_storage::{
 };
 use forge_storage_sqlite::SqliteBackend;
 use forge_types::{
-    Action, ActionId, ExecutionMode, OAuthToken, Queue, QueueId,
-    SubActionStep, TriggerConfig, TriggerInstance, TriggerInstanceId, Variant,
+    Action, ActionId, ExecutionMode, OAuthToken, Queue, QueueId, SubActionStep, TriggerConfig,
+    TriggerInstance, TriggerInstanceId, Variant,
 };
 
 use super::data_dir::{DATA_DIR_VARIABLE, ForgeDataDir, KEY_FILE_VARIABLE};

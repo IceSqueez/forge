@@ -10,7 +10,6 @@ use forge_platform_core::{
     BuiltinHealth, HealthDelta, HealthMetric, HealthMetricId, HealthStream, HealthText, HealthValue,
 };
 
-#[cfg(target_os = "linux")]
 use crate::backend::BackendTier;
 use crate::client::HotkeyClient;
 use crate::vocabulary::messages;
@@ -170,12 +169,9 @@ pub(crate) fn backend_health_value(tier: BackendTier, session_lost: Option<&str>
 }
 
 #[cfg(not(target_os = "linux"))]
-pub(crate) fn backend_health_value(
-    backend_available: Option<bool>,
-    _session_lost: Option<&str>,
-) -> HealthValue {
-    match backend_available {
-        Some(true) => HealthValue::Status {
+pub(crate) fn backend_health_value(tier: BackendTier, _session_lost: Option<&str>) -> HealthValue {
+    match tier {
+        BackendTier::Native => HealthValue::Status {
             label: messages::health_backend_active().into(),
             active: true,
             detail: None,
@@ -417,9 +413,17 @@ mod tests {
     #[test]
     fn the_backend_metric_is_active_only_for_a_started_backend() {
         for (available, label, active) in [
-            (Some(true), messages::health_backend_active(), true),
-            (Some(false), messages::health_backend_unavailable(), false),
-            (None, messages::health_backend_unavailable(), false),
+            (BackendTier::Native, messages::health_backend_active(), true),
+            (
+                BackendTier::Fallback,
+                messages::health_backend_unavailable(),
+                false,
+            ),
+            (
+                BackendTier::Unavailable,
+                messages::health_backend_unavailable(),
+                false,
+            ),
         ] {
             assert_eq!(
                 backend_health_value(available, None),

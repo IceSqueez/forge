@@ -211,7 +211,9 @@ mod window_presence;
 use std::cell::Cell;
 use std::rc::Rc;
 
-use forge_components::{ActivePresentation, FOOTER_HEIGHT, IconAssets};
+#[cfg(target_os = "linux")]
+use forge_components::ActivePresentation;
+use forge_components::{FOOTER_HEIGHT, IconAssets};
 use gpui::{
     AnyWindowHandle, App, AppContext, Bounds, Pixels, Point, QuitMode, SharedString, Size,
     TitlebarOptions, WindowBounds, WindowOptions, point, px, size,

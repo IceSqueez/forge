@@ -16,9 +16,11 @@ use gpui::{
 
 use crate::integrations::integration_switch::integration_name;
 
-const ITEM_LIST_H: Pixels = px(360.0);
+const PREVIEW_H: Pixels = px(440.0);
 const NOTICE_TINT_ALPHA: f32 = 0.08;
-const ITEM_COLUMN_SHARE: f32 = 0.62;
+const ITEM_COLUMN_SHARE: f32 = 0.56;
+const OVERLAY_FILE_SEPARATOR: &str = ", ";
+const ALL_RESOLUTIONS_SLUG: &str = "pack-import-all";
 
 const KIND_ORDER: [PackItemKind; 8] = [
     PackItemKind::Action,
@@ -148,23 +150,39 @@ fn warning_text(warning: &PackWarning) -> String {
     }
 }
 
-fn executable_text(content: &ExecutableContent) -> String {
-    match content {
-        ExecutableContent::Script { name } => {
-            tr!("pack_import_runs_script", name = name.as_str())
+fn executable_lines(contents: &[ExecutableContent]) -> Vec<String> {
+    let mut lines = Vec::new();
+    let mut overlays: Vec<(&str, Vec<&str>)> = Vec::new();
+    for content in contents {
+        match content {
+            ExecutableContent::Script { name } => {
+                lines.push(tr!("pack_import_runs_script", name = name.as_str()));
+            }
+            ExecutableContent::HttpStep { action, .. } => {
+                lines.push(tr!("pack_import_runs_http", action = action.as_str()));
+            }
+            ExecutableContent::ScriptStep { action, .. } => {
+                lines.push(tr!(
+                    "pack_import_runs_script_step",
+                    action = action.as_str()
+                ));
+            }
+            ExecutableContent::OverlaySource { overlay, file } => {
+                match overlays.iter_mut().find(|(name, _)| *name == overlay) {
+                    Some((_, files)) => files.push(file),
+                    None => overlays.push((overlay, vec![file])),
+                }
+            }
         }
-        ExecutableContent::HttpStep { action, .. } => {
-            tr!("pack_import_runs_http", action = action.as_str())
-        }
-        ExecutableContent::ScriptStep { action, .. } => {
-            tr!("pack_import_runs_script_step", action = action.as_str())
-        }
-        ExecutableContent::OverlaySource { overlay, file } => tr!(
-            "pack_import_runs_overlay",
-            overlay = overlay.as_str(),
-            file = file.as_str()
-        ),
     }
+    lines.extend(overlays.into_iter().map(|(overlay, files)| {
+        tr!(
+            "pack_import_runs_overlay",
+            overlay = overlay,
+            file = files.join(OVERLAY_FILE_SEPARATOR)
+        )
+    }));
+    lines
 }
 
 fn limit_text(limit: PackImportLimit) -> String {
@@ -213,6 +231,87 @@ impl PackImportModal {
             self.failure = None;
             cx.notify();
         }
+    }
+
+    fn choose_for_all(&mut self, resolution: PackResolution, cx: &mut Context<Self>) {
+        if self.applying {
+            return;
+        }
+        let conflicted: Vec<PackItemKey> = self
+            .plan
+            .items()
+            .iter()
+            .filter(|item| item.conflict != PackConflict::Clear)
+            .map(|item| item.key.clone())
+            .collect();
+        for key in &conflicted {
+            #[expect(
+                clippy::let_underscore_must_use,
+                reason = "a choice is only refused for an item without a conflict"
+            )]
+            let _ = self.plan.set_resolution(key, resolution);
+        }
+        self.failure = None;
+        cx.notify();
+    }
+
+    fn shared_resolution(&self) -> Option<PackResolution> {
+        let mut conflicted = self
+            .plan
+            .items()
+            .iter()
+            .filter(|item| item.conflict != PackConflict::Clear)
+            .map(|item| item.resolution);
+        let first = conflicted.next()??;
+        conflicted
+            .all(|choice| choice == Some(first))
+            .then_some(first)
+    }
+
+    fn has_conflicts(&self) -> bool {
+        self.plan
+            .items()
+            .iter()
+            .any(|item| item.conflict != PackConflict::Clear)
+    }
+
+    fn render_choose_all(
+        &self,
+        palette: &ForgePalette,
+        density: Density,
+        cx: &Context<Self>,
+    ) -> AnyElement {
+        let view = cx.entity();
+        let shared = self.shared_resolution();
+        let segments = RESOLUTIONS
+            .iter()
+            .map(|resolution| {
+                let resolution = *resolution;
+                let view = view.clone();
+                segment(
+                    (ALL_RESOLUTIONS_SLUG, resolution as usize),
+                    resolution_label(resolution),
+                    shared == Some(resolution),
+                    move |_, _, app| {
+                        view.update(app, |this, cx| this.choose_for_all(resolution, cx));
+                    },
+                )
+                .disabled(self.applying)
+            })
+            .collect();
+        div()
+            .w_full()
+            .flex()
+            .items_center()
+            .justify_between()
+            .gap(spacing(Spacing::Xs, density))
+            .child(section_label(
+                tr!("pack_import_apply_to_all").to_uppercase(),
+                palette,
+                cx,
+            ))
+            .child(segmented(segments, palette).subtle(palette))
+            .into_any_element()
     }
 
     pub(crate) fn begin_apply(&mut self, cx: &mut Context<Self>) {
@@ -276,8 +375,12 @@ impl PackImportModal {
                 )
                 .into_any_element()
         };
+        let choose_all = self
+            .has_conflicts()
+            .then(|| self.render_choose_all(palette, density, cx));
         div()
             .flex_none()
+            .h_full()
             .w(relative(ITEM_COLUMN_SHARE))
             .max_w(relative(ITEM_COLUMN_SHARE))
             .min_w(px(0.0))
@@ -306,11 +409,13 @@ impl PackImportModal {
                             )),
                     ),
             )
+            .children(choose_all)
             .child(
                 div()
                     .id("pack-import-items")
                     .w_full()
-                    .h(ITEM_LIST_H)
+                    .flex_1()
+                    .min_h_0()
                     .overflow_y_revealing_focus()
                     .p(spacing(Spacing::Xs, density))
                     .rounded(radius(Radius::Md))
@@ -383,14 +488,11 @@ impl PackImportModal {
                 palette,
             ));
         }
-        let mut row = div()
+        let heading = div()
             .w_full()
             .flex()
             .items_center()
             .gap(spacing(Spacing::Xs, density))
-            .py(spacing(Spacing::Xxs, density))
-            .px(spacing(Spacing::Xs, density))
-            .rounded(radius(Radius::Sm))
             .child(
                 div()
                     .flex_1()
@@ -402,6 +504,15 @@ impl PackImportModal {
                     .child(item.name.clone()),
             )
             .child(badges);
+        let mut row = div()
+            .w_full()
+            .flex()
+            .flex_col()
+            .gap(spacing(Spacing::Xxs, density))
+            .py(spacing(Spacing::Xxs, density))
+            .px(spacing(Spacing::Xs, density))
+            .rounded(radius(Radius::Sm))
+            .child(heading);
         if item.conflict != PackConflict::Clear {
             row = row.child(self.render_resolution(index, item, palette, cx));
         }
@@ -441,17 +552,20 @@ impl PackImportModal {
 
     fn render_notices(&self, palette: &ForgePalette, density: Density, cx: &App) -> AnyElement {
         let mut column = div()
+            .id("pack-import-notices")
             .flex_1()
+            .h_full()
             .min_w(px(0.0))
             .flex()
             .flex_col()
+            .overflow_y_revealing_focus()
             .gap(spacing(Spacing::Sm, density))
             .child(self.render_header(palette, density, cx));
-        if !self.plan.executable_content().is_empty() {
-            column = column.child(self.render_executable(palette, density, cx));
-        }
         if !self.plan.warnings().is_empty() {
             column = column.child(self.render_warnings(palette, density, cx));
+        }
+        if !self.plan.executable_content().is_empty() {
+            column = column.child(self.render_executable(palette, density, cx));
         }
         let mut notes = div()
             .w_full()
@@ -518,14 +632,16 @@ impl PackImportModal {
     }
 
     fn render_executable(&self, palette: &ForgePalette, density: Density, cx: &App) -> AnyElement {
-        let lines = self.plan.executable_content().iter().map(|content| {
-            div()
-                .w_full()
-                .font_family(cx.mono_family())
-                .text_size(FONT_XXS)
-                .text_color(palette.text_secondary)
-                .child(executable_text(content))
-        });
+        let lines = executable_lines(self.plan.executable_content())
+            .into_iter()
+            .map(|line| {
+                div()
+                    .w_full()
+                    .font_family(cx.mono_family())
+                    .text_size(FONT_XXS)
+                    .text_color(palette.text_secondary)
+                    .child(line)
+            });
         card(
             palette.warning,
             with_alpha(palette.warning, NOTICE_TINT_ALPHA),
@@ -544,7 +660,6 @@ impl PackImportModal {
                 .flex()
                 .flex_col()
                 .gap(spacing(Spacing::Xxs, density))
-                .pl(spacing(Spacing::Md, density))
                 .children(lines),
         )
         .into_any_element()
@@ -673,6 +788,7 @@ impl Render for PackImportModal {
 
         let body = div()
             .w_full()
+            .h(PREVIEW_H)
             .flex()
             .items_start()
             .gap(spacing(Spacing::Md, density))

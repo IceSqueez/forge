@@ -95,6 +95,7 @@ pack_export_done = Пакет збережено до { $path }
 pack_export_failed = Не вдалося експортувати пакет: { $error }
 pack_import_title = Імпорт пакета
 pack_import_subtitle = Перегляньте, що додасть пакет, перш ніж щось буде записано
+pack_import_apply_to_all = Застосувати до всіх
 pack_import_items_label = Вміст пакета
 pack_import_item_count = Елементів: { $count }
 pack_import_empty = У цьому пакеті немає елементів

@@ -95,6 +95,7 @@ pack_export_done = Pack saved to { $path }
 pack_export_failed = Pack export failed: { $error }
 pack_import_title = Import pack
 pack_import_subtitle = Review what the pack adds before anything is written
+pack_import_apply_to_all = Apply to all
 pack_import_items_label = Pack items
 pack_import_item_count = { $count } items
 pack_import_empty = This pack has no items

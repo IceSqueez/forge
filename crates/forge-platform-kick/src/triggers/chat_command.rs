@@ -1,16 +1,15 @@
 use forge_events::{Event, EventSource};
 use forge_registry::{
-    ActorDeclaration, ActorRole, ActorSlot, COMMAND_CASE_SENSITIVE_KEY, COMMAND_PHRASE_KEY,
-    CanonicalVariable, ChatTriggerFamily, EventFilter, FormField, KindPlatformContract,
-    SubActionConfigExt, TriggerCategory, TriggerKindDescriptor, TriggerVariables,
-    command_phrase_matches,
+    ActorDeclaration, COMMAND_CASE_SENSITIVE_KEY, COMMAND_PHRASE_KEY, ChatTriggerFamily,
+    EventFilter, FormField, KindPlatformContract, SubActionConfigExt, TriggerCategory,
+    TriggerKindDescriptor, TriggerVariables, command_phrase_matches,
 };
-use forge_types::{DeclaredVariable, PlatformId, TriggerConfig, UserText, Variant, VariantKind};
+use forge_types::{PlatformId, TriggerConfig, UserText, Variant};
 
-use super::chat::{sender_color, sender_identity};
-use super::payload_read::{self, kick_actor};
+use super::chat::{chat_line_variables, with_sender_aliases};
+use super::payload_read;
 use crate::vocabulary::fields::chat as fields;
-use crate::vocabulary::{event_kinds, trigger_ids, variables};
+use crate::vocabulary::{event_kinds, trigger_ids};
 
 pub(crate) struct ChatCommandDescriptor;
 
@@ -93,52 +92,9 @@ impl TriggerKindDescriptor for ChatCommandDescriptor {
     }
 
     fn variables(&self) -> Option<TriggerVariables> {
-        Some(
-            TriggerVariables::new()
-                .actor(kick_actor(ActorRole::Principal), sender_identity)
-                .message_text(|event| payload_read::text(event, fields::CONTENT))
-                .first_chat_message()
-                .chat_message_id(|event| payload_read::text(event, fields::MESSAGE_ID))
-                .event_specific(
-                    DeclaredVariable {
-                        name: variables::chat::COLOR.to_owned(),
-                        kind: VariantKind::String,
-                        label: "Sender name color".to_owned(),
-                        synthesis: None,
-                    },
-                    |event| Variant::String(sender_color(event)),
-                )
-                .event_specific(
-                    DeclaredVariable {
-                        name: variables::chat::REPLY_TO_ID.to_owned(),
-                        kind: VariantKind::String,
-                        label: "Replied-to message ID".to_owned(),
-                        synthesis: None,
-                    },
-                    |event| Variant::String(payload_read::text(event, fields::REPLY_TO_MESSAGE_ID)),
-                )
-                .command_line(|event| payload_read::text(event, fields::CONTENT))
-                .legacy(
-                    variables::legacy::SENDER_ID,
-                    "Sender user ID",
-                    CanonicalVariable::actor(ActorRole::Principal, ActorSlot::Id),
-                )
-                .legacy(
-                    variables::legacy::USERNAME,
-                    "Sender username",
-                    CanonicalVariable::actor(ActorRole::Principal, ActorSlot::Login),
-                )
-                .legacy(
-                    variables::legacy::DISPLAY_NAME,
-                    "Sender display name",
-                    CanonicalVariable::actor(ActorRole::Principal, ActorSlot::Name),
-                )
-                .legacy(
-                    variables::legacy::CONTENT,
-                    "Message content",
-                    CanonicalVariable::MessageText,
-                ),
-        )
+        Some(with_sender_aliases(chat_line_variables().command_line(
+            |event| payload_read::text(event, fields::CONTENT),
+        )))
     }
 
     fn actors(&self) -> ActorDeclaration {

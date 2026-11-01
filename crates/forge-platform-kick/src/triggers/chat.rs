@@ -66,51 +66,7 @@ impl TriggerKindDescriptor for ChatDescriptor {
     }
 
     fn variables(&self) -> Option<TriggerVariables> {
-        Some(
-            TriggerVariables::new()
-                .actor(kick_actor(ActorRole::Principal), sender_identity)
-                .message_text(|event| payload_read::text(event, fields::CONTENT))
-                .first_chat_message()
-                .chat_message_id(|event| payload_read::text(event, fields::MESSAGE_ID))
-                .event_specific(
-                    DeclaredVariable {
-                        name: variables::chat::COLOR.to_owned(),
-                        kind: VariantKind::String,
-                        label: "Sender name color".to_owned(),
-                        synthesis: None,
-                    },
-                    |event| Variant::String(sender_color(event)),
-                )
-                .event_specific(
-                    DeclaredVariable {
-                        name: variables::chat::REPLY_TO_ID.to_owned(),
-                        kind: VariantKind::String,
-                        label: "Replied-to message ID".to_owned(),
-                        synthesis: None,
-                    },
-                    |event| Variant::String(payload_read::text(event, fields::REPLY_TO_MESSAGE_ID)),
-                )
-                .legacy(
-                    variables::legacy::SENDER_ID,
-                    "Sender user ID",
-                    CanonicalVariable::actor(ActorRole::Principal, ActorSlot::Id),
-                )
-                .legacy(
-                    variables::legacy::USERNAME,
-                    "Sender username",
-                    CanonicalVariable::actor(ActorRole::Principal, ActorSlot::Login),
-                )
-                .legacy(
-                    variables::legacy::DISPLAY_NAME,
-                    "Sender display name",
-                    CanonicalVariable::actor(ActorRole::Principal, ActorSlot::Name),
-                )
-                .legacy(
-                    variables::legacy::CONTENT,
-                    "Message content",
-                    CanonicalVariable::MessageText,
-                ),
-        )
+        Some(with_sender_aliases(chat_line_variables()))
     }
 
     fn actors(&self) -> ActorDeclaration {
@@ -124,6 +80,56 @@ impl TriggerKindDescriptor for ChatDescriptor {
     fn delivery_lane(&self) -> DeliveryLane {
         DeliveryLane::Bulk
     }
+}
+
+pub(super) fn chat_line_variables() -> TriggerVariables {
+    TriggerVariables::new()
+        .actor(kick_actor(ActorRole::Principal), sender_identity)
+        .message_text(|event| payload_read::text(event, fields::CONTENT))
+        .first_chat_message()
+        .chat_message_id(|event| payload_read::text(event, fields::MESSAGE_ID))
+        .event_specific(
+            DeclaredVariable {
+                name: variables::chat::COLOR.to_owned(),
+                kind: VariantKind::String,
+                label: "Sender name color".to_owned(),
+                synthesis: None,
+            },
+            |event| Variant::String(sender_color(event)),
+        )
+        .event_specific(
+            DeclaredVariable {
+                name: variables::chat::REPLY_TO_ID.to_owned(),
+                kind: VariantKind::String,
+                label: "Replied-to message ID".to_owned(),
+                synthesis: None,
+            },
+            |event| Variant::String(payload_read::text(event, fields::REPLY_TO_MESSAGE_ID)),
+        )
+}
+
+pub(super) fn with_sender_aliases(variables: TriggerVariables) -> TriggerVariables {
+    variables
+        .legacy(
+            variables::legacy::SENDER_ID,
+            "Sender user ID",
+            CanonicalVariable::actor(ActorRole::Principal, ActorSlot::Id),
+        )
+        .legacy(
+            variables::legacy::USERNAME,
+            "Sender username",
+            CanonicalVariable::actor(ActorRole::Principal, ActorSlot::Login),
+        )
+        .legacy(
+            variables::legacy::DISPLAY_NAME,
+            "Sender display name",
+            CanonicalVariable::actor(ActorRole::Principal, ActorSlot::Name),
+        )
+        .legacy(
+            variables::legacy::CONTENT,
+            "Message content",
+            CanonicalVariable::MessageText,
+        )
 }
 
 pub(super) fn sender_identity(event: &Event) -> ActorIdentity {

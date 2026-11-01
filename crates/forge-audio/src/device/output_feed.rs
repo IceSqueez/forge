@@ -69,7 +69,7 @@ impl PlaybackFeed {
         let block = &self.samples[self.cursor..self.cursor + whole_frames];
         write_frames(block, data);
         self.cursor += whole_frames;
-        if self.cursor == self.samples.len() {
+        if self.samples.len() - self.cursor < self.channels {
             self.tail_left = self.tail_left.saturating_sub(data.len() - whole_frames);
             if self.tail_left == 0 {
                 self.watch.mark_drained();
@@ -138,6 +138,19 @@ mod tests {
 
         feed.fill(&mut block);
         assert_eq!(block, [3, 4, 0], "the next block lost its place");
+    }
+
+    #[test]
+    fn a_trailing_partial_frame_does_not_keep_the_feed_from_draining() {
+        let mut feed = feed_with(&[1, 2, 3], false, false);
+        feed.channels = 2;
+        feed.tail_left = 2;
+        let mut block = [9_i16; 4];
+
+        feed.fill(&mut block);
+
+        assert_eq!(block, [1, 2, 0, 0], "half a frame reached the device");
+        assert!(feed.watch.is_drained(), "the clip never finished");
     }
 
     #[test]

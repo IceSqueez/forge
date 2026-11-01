@@ -3394,7 +3394,6 @@ dependencies = [
 name = "forge-tts-avspeech"
 version = "0.6.3"
 dependencies = [
- "async-trait",
  "block2 0.6.2",
  "forge-speech-types",
  "forge-tts-core",
@@ -3479,7 +3478,6 @@ dependencies = [
 name = "forge-tts-sapi"
 version = "0.6.3"
 dependencies = [
- "async-trait",
  "forge-speech-types",
  "forge-tts-core",
  "thiserror 2.0.21",

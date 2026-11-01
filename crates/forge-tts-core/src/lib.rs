@@ -342,6 +342,28 @@ mod tests {
         }
     }
 
+    #[test]
+    fn timeout_after_reports_whole_ms_and_saturates_past_the_u64_range() {
+        use std::time::Duration;
+
+        let u64_max_ms = Duration::from_millis(u64::MAX);
+        for (budget, ms) in [
+            (Duration::ZERO, 0),
+            (Duration::from_micros(1_999), 1),
+            (u64_max_ms - Duration::from_millis(1), u64::MAX - 1),
+            (u64_max_ms, u64::MAX),
+            (u64_max_ms + Duration::from_millis(1), u64::MAX),
+            (Duration::MAX, u64::MAX),
+        ] {
+            let error = TtsError::timeout_after(budget);
+
+            assert!(
+                matches!(error, TtsError::Timeout { ms: reported } if reported == ms),
+                "{budget:?}: {error:?}"
+            );
+        }
+    }
+
     struct NullEngine {
         id: EngineId,
     }

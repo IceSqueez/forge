@@ -72,7 +72,7 @@ The event feed shows every event, every action start and finish, and every step,
 
 ### Also inside
 
-- **OBS** control and triggers over obs-websocket: scenes, sources, audio, recording and streaming, filters, and 47 kinds of OBS events.
+- **OBS** control and triggers over obs-websocket: scenes, sources, audio, recording and streaming, filters, and 49 kinds of OBS events.
 - **VTube Studio**, **MIDI** controllers (with MIDI Learn), **Discord** webhooks and **global hotkeys** (including hold-to-talk style press and release).
 - **Globals**: counters and values that survive restarts, usable everywhere.
 - **WebSocket + HTTP server** for your own dashboards and companion tools.
@@ -99,7 +99,7 @@ Chat triggers carry a permission level (everyone, subscriber, VIP, moderator, br
 
 ### Stream apps and devices
 
-- **OBS Studio** (obs-websocket v5): 47 triggers (scenes, sources, audio, recording, streaming, transitions, filters, studio mode, virtual camera, connection) and 39 sub-actions (switch scene, source visibility, mute/volume, start/stop/pause recording and streaming, filters, browser-source refresh, media restart, screenshots, profiles and scene collections, raw requests)
+- **OBS Studio** (obs-websocket v5): 49 triggers (scenes, sources, audio, recording, streaming, transitions, filters, studio mode, virtual camera, connection) and 39 sub-actions (switch scene, source visibility, mute/volume, start/stop/pause recording and streaming, filters, browser-source refresh, media restart, screenshots, profiles and scene collections, raw requests)
 - **VTube Studio**: 9 triggers (model loaded, tracking status, hotkey/expression/item events) and 18 sub-actions (hotkeys, expressions, parameters, model load/move/scale, color tint, physics, items)
 - **MIDI**: note on/off, control change, pitch bend, program change, device connected/disconnected; a `midi.send` sub-action for output
 - **Global hotkeys**: key pressed and key released triggers, so one combo can start something on press and stop it on release

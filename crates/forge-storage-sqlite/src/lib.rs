@@ -1,5 +1,6 @@
 mod batch;
 mod codec;
+mod credential_reseal_v063;
 mod error;
 #[cfg(feature = "settings-test-support")]
 mod foreign_settings;

@@ -115,6 +115,7 @@ impl SqliteBackend {
         let pool = Self::migrate_and_gate(url).await?;
         let key_file = forge_paths::credentials_key_path_in(&paths.data_dir());
         let key = crate::codec::crypto::load_or_create_key(&key_file)?;
+        crate::credential_reseal_v063::reseal_unbound_credentials(&pool, &key.key).await;
         let credentials = SqliteCredentialsRepo::new_with_key(pool.clone(), key.key);
         if key.minted {
             report_stranded_credentials(&pool, &credentials).await?;

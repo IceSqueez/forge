@@ -16,4 +16,5 @@ pub(crate) mod tts_filters;
 pub(crate) mod voice_alias_form;
 pub(crate) mod voice_alias_store;
 pub(crate) mod voice_aliases;
+pub(crate) mod voice_listing;
 pub(crate) mod voice_test_text;

@@ -253,14 +253,14 @@ impl TtsEnginesView {
 
     pub(super) fn detail_pane(
         &self,
-        catalog: &[TtsVoice],
+        voices: &VoiceListing,
         palette: &ForgePalette,
         density: Density,
-        cx: &Context<Self>,
+        cx: &mut Context<Self>,
     ) -> AnyElement {
         let inner: AnyElement = match self.selected {
             Selection::Engine(index) => match self.engines.get(index) {
-                Some(engine) => self.engine_detail(engine, catalog, palette, density, cx),
+                Some(engine) => self.engine_detail(engine, voices, palette, density, cx),
                 None => self.detail_hint(palette, cx),
             },
             Selection::Adding(kind) => self.adding_detail(kind, palette, density, cx),
@@ -299,15 +299,11 @@ impl TtsEnginesView {
     pub(super) fn engine_detail(
         &self,
         engine: &RosterEngine,
-        catalog: &[TtsVoice],
+        voices: &VoiceListing,
         palette: &ForgePalette,
         density: Density,
-        cx: &Context<Self>,
+        cx: &mut Context<Self>,
     ) -> AnyElement {
-        let voices: Vec<&TtsVoice> = catalog
-            .iter()
-            .filter(|v| v.engine_id.0 == engine.id)
-            .collect();
         let is_cloud = CloudEngineKind::from_engine_id(&engine.id).is_some();
         let region = self.regions.get(&engine.id).map(|s| s.as_str());
 
@@ -315,7 +311,7 @@ impl TtsEnginesView {
             &engine.name,
             engine.class,
             region,
-            voices.len(),
+            voices.engine_total,
             Some(&engine.id),
             palette,
             density,
@@ -325,7 +321,7 @@ impl TtsEnginesView {
             col = col.child(self.cloud.clone());
         }
         col.child(self.params_section(palette, density, cx))
-            .child(self.voices_section(engine, &voices, palette, density, cx))
+            .child(self.voices_section(engine, voices, palette, density, cx))
             .into_any_element()
     }
 
@@ -453,10 +449,10 @@ impl TtsEnginesView {
     pub(super) fn voices_section(
         &self,
         engine: &RosterEngine,
-        voices: &[&TtsVoice],
+        voices: &VoiceListing,
         palette: &ForgePalette,
         density: Density,
-        cx: &Context<Self>,
+        cx: &mut Context<Self>,
     ) -> AnyElement {
         let header = div()
             .w_full()
@@ -474,36 +470,40 @@ impl TtsEnginesView {
                     .text_color(palette.text_faint)
                     .child(tr!(
                         "tts_engines_voices_available",
-                        count = i64::try_from(voices.len()).unwrap_or(i64::MAX)
+                        count = i64::try_from(voices.engine_total).unwrap_or(i64::MAX)
                     )),
             );
 
-        let body: AnyElement = if voices.is_empty() {
+        let filters =
+            (voices.engine_total > 0).then(|| self.voice_filter_row(voices, palette, density, cx));
+
+        let body: AnyElement = if voices.engine_total == 0 {
             empty_state(tr!("tts_engines_voices_empty"), palette)
                 .density(density)
                 .into_any_element()
+        } else if voices.groups.is_empty() {
+            empty_state(tr!("tts_engines_voices_no_match"), palette)
+                .density(density)
+                .into_any_element()
         } else {
-            let mut grid = div()
+            let mut groups = div()
                 .w_full()
                 .flex()
                 .flex_col()
-                .gap(spacing(Spacing::Xs, density));
-            for row in voices.chunks(GRID_COLS) {
-                let mut line = div().w_full().flex().gap(spacing(Spacing::Xs, density));
-                for voice in row {
-                    line = line.child(
-                        div()
-                            .flex_1()
-                            .min_w(px(0.0))
-                            .child(self.voice_cell(&engine.id, voice, palette, density, cx)),
-                    );
-                }
-                for _ in row.len()..GRID_COLS {
-                    line = line.child(div().flex_1());
-                }
-                grid = grid.child(line);
+                .gap(spacing(Spacing::Md, density));
+            for group in &voices.groups {
+                let group_voices: Vec<&TtsVoice> = voices.voices_of(group).collect();
+                groups = groups.child(
+                    div()
+                        .w_full()
+                        .flex()
+                        .flex_col()
+                        .gap(spacing(Spacing::Xs, density))
+                        .child(self.voice_group_header(&group.name, group.count(), palette, cx))
+                        .child(self.voice_grid(&engine.id, &group_voices, palette, density, cx)),
+                );
             }
-            grid.into_any_element()
+            groups.into_any_element()
         };
 
         div()
@@ -513,8 +513,40 @@ impl TtsEnginesView {
             .gap(spacing(Spacing::Xs, density))
             .child(self.test_text_section(palette, density, cx))
             .child(header)
+            .children(filters)
             .child(body)
             .into_any_element()
+    }
+
+    fn voice_grid(
+        &self,
+        engine_id: &str,
+        voices: &[&TtsVoice],
+        palette: &ForgePalette,
+        density: Density,
+        cx: &Context<Self>,
+    ) -> AnyElement {
+        let mut grid = div()
+            .w_full()
+            .flex()
+            .flex_col()
+            .gap(spacing(Spacing::Xs, density));
+        for row in voices.chunks(GRID_COLS) {
+            let mut line = div().w_full().flex().gap(spacing(Spacing::Xs, density));
+            for voice in row {
+                line = line.child(
+                    div()
+                        .flex_1()
+                        .min_w(px(0.0))
+                        .child(self.voice_cell(engine_id, voice, palette, density, cx)),
+                );
+            }
+            for _ in row.len()..GRID_COLS {
+                line = line.child(div().flex_1());
+            }
+            grid = grid.child(line);
+        }
+        grid.into_any_element()
     }
 
     pub(super) fn voice_cell(

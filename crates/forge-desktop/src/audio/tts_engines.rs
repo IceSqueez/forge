@@ -1,10 +1,12 @@
 mod panes;
 mod test_text;
+mod voice_filters;
 
 use forge_components::FONT_LABEL;
 use forge_components::FONT_META;
 use forge_components::FONT_MICRO;
 use std::collections::{HashMap, HashSet};
+use std::rc::Rc;
 use std::sync::Arc;
 
 use forge_components::OverflowRevealingFocus;
@@ -35,10 +37,12 @@ use crate::audio::cloud_credentials::{
 use crate::audio::tts_engine_roster::{
     RosterEngine, engine_class_label, load_engine_roster, voice_descriptor_label,
 };
+use crate::audio::voice_listing::VoiceListing;
 use crate::audio::voice_test_text::{
     default_voice_test_text, spoken_voice_test_text, voice_preview_request,
 };
 use crate::shared::repo_failure::RepoFailure;
+use voice_filters::VoiceBrowser;
 
 const RAIL_W: Pixels = px(240.0);
 const TILE: Pixels = px(36.0);
@@ -88,6 +92,7 @@ pub(crate) struct TtsEnginesView {
     test_text: Entity<TextArea>,
     test_text_load: Loadable<()>,
     test_text_debounce: Debounced,
+    voices: VoiceBrowser,
     _subs: Vec<Subscription>,
 }
 
@@ -122,6 +127,12 @@ impl TtsEnginesView {
             }
         });
 
+        let voices = VoiceBrowser::new(cx);
+        let voice_search_sub = cx.subscribe(
+            voices.search.field(),
+            |this, _input, event: &InputEvent, cx| this.on_voice_search_event(event, cx),
+        );
+
         let mut view = Self {
             engines: load_engine_roster(speak.as_ref()),
             credentials,
@@ -140,7 +151,8 @@ impl TtsEnginesView {
             test_text,
             test_text_load: Loadable::Loading,
             test_text_debounce: Debounced::new(SLIDER_PERSIST_DEBOUNCE),
-            _subs: vec![sub, test_text_sub],
+            voices,
+            _subs: vec![sub, test_text_sub, voice_search_sub],
         };
         view.load_disabled(cx);
         view.load_test_text(cx);
@@ -247,8 +259,19 @@ impl TtsEnginesView {
             .unwrap_or_default()
     }
 
+    fn voice_listing(&mut self, catalog: &Arc<Vec<TtsVoice>>) -> Rc<VoiceListing> {
+        let engine_id = self.selected_engine_id().unwrap_or_default();
+        self.voices
+            .cache
+            .listing(catalog, &engine_id, &self.voices.filter)
+    }
+
     fn select_engine(&mut self, index: usize, cx: &mut Context<Self>) {
+        let previous_engine = self.selected_engine_id();
         self.selected = Selection::Engine(index);
+        if self.selected_engine_id() != previous_engine {
+            self.reset_voice_filters(cx);
+        }
         self.add_open = false;
         let kind = self
             .engines
@@ -516,8 +539,10 @@ impl Render for TtsEnginesView {
         let density = cx.density();
         let catalog = self.catalog();
 
+        let voices = self.voice_listing(&catalog);
+
         let list = self.engine_list(&catalog, &palette, density, cx);
-        let detail = self.detail_pane(&catalog, &palette, density, cx);
+        let detail = self.detail_pane(&voices, &palette, density, cx);
 
         div()
             .size_full()

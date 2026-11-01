@@ -66,7 +66,7 @@ pub use render::preview::PreviewLine;
 pub use render::preview::{
     PreviewAccent, PreviewCanvas, PreviewComposition, PreviewElement, PreviewFont, PreviewImage,
     PreviewImageSide, PreviewLabel, PreviewLabelSide, PreviewLineRole, PreviewMark,
-    PreviewPosition, PreviewShape, PreviewSurface,
+    PreviewPosition, PreviewShape, PreviewSurface, TALLY_SEPARATOR,
 };
 pub use render::sample::{SampleContext, SampleTrigger, sample_content, sample_context};
 

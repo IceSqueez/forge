@@ -3578,10 +3578,10 @@ opt_label_side__right = Right
 overlays_accent_add = Add color
 overlays_accent_remove = Remove this color from the list
 overlays_accent_remove_title = Remove this color?
-overlays_accent_remove_body = This color is used in { $overlays ->
-    [one] { $overlays } overlay
-   *[other] { $overlays } overlays
-}. Removing it switches them to the default color.
+overlays_accent_remove_body = { $overlays ->
+    [one] This color is used in { $overlays } overlay. Removing it switches that overlay to the default color.
+   *[other] This color is used in { $overlays } overlays. Removing it switches them to the default color.
+}
 overlays_accent_remove_fields = { $fields ->
     [one] { $fields } color field holds it.
    *[other] { $fields } color fields hold it.

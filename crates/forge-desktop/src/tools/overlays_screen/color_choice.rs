@@ -105,13 +105,29 @@ fn preset_colors(key: &str) -> Vec<(String, Rgba)> {
         .collect()
 }
 
+fn is_preset(key: &str, color: &str) -> bool {
+    let tint = stored_color_tint(color);
+    preset_colors(key).iter().any(|(_, preset)| *preset == tint)
+}
+
+fn is_preset_in_every_row(color: &str) -> bool {
+    COLOR_FIELD_KEYS.iter().all(|key| is_preset(key, color))
+}
+
+fn paints_selection(name: &str, tint: Rgba, selected: &str) -> bool {
+    name == selected
+        || normalized_accent(selected).is_some_and(|hex| stored_color_tint(&hex) == tint)
+}
+
 pub(super) fn offered_colors(key: &str, saved: &[String], selected: &str) -> Vec<(String, Rgba)> {
     let mut offered = preset_colors(key);
     let chosen = normalized_accent(selected).filter(|color| !saved.contains(color));
     for color in saved.iter().cloned().chain(chosen) {
-        let listed = offered.iter().any(|(known, _)| *known == color);
-        if !listed && hex_color_channels(&color).is_some() {
-            let tint = stored_color_tint(&color);
+        if hex_color_channels(&color).is_none() {
+            continue;
+        }
+        let tint = stored_color_tint(&color);
+        if !offered.iter().any(|(_, known)| *known == tint) {
             offered.push((color, tint));
         }
     }
@@ -188,7 +204,9 @@ impl OverlayPropertyPanel {
         self.colors.set_rejected(key, false);
         input.update(cx, |input, cx| input.set_content("", cx));
         self.pick_swatch(key.to_owned(), color.clone(), cx);
-        cx.emit(AccentListEdit::Add(color));
+        if !is_preset_in_every_row(&color) {
+            cx.emit(AccentListEdit::Add(color));
+        }
     }
 
     pub(super) fn remove_color(&mut self, key: &str, color: &str, cx: &mut Context<Self>) {
@@ -217,7 +235,7 @@ impl OverlayPropertyPanel {
     }
 
     pub(super) fn removable_color(&self, key: &str, color: &str) -> bool {
-        self.colors.is_saved(color) && !presets_of(key).contains(&color)
+        self.colors.is_saved(color) && !is_preset(key, color)
     }
 
     fn removable_swatch(
@@ -283,7 +301,7 @@ impl OverlayPropertyPanel {
                         key,
                         name,
                         tint: *tint,
-                        selected: name == selected,
+                        selected: paints_selection(name, *tint, selected),
                         id_prefix: SWATCH_ID_PREFIX,
                     },
                     palette,
@@ -421,6 +439,46 @@ mod tests {
             )),
             extended(BACKGROUND_COLOR_OPTIONS, &[CUSTOM])
         );
+    }
+
+    #[test]
+    fn a_saved_hex_equal_to_a_named_preset_adds_no_second_swatch() {
+        assert_eq!(
+            names(&offered(ACCENT, &[ACCENT_MAUVE_HEX, CUSTOM], ACCENT_SKY)),
+            extended(ACCENT_OPTIONS, &[CUSTOM])
+        );
+    }
+
+    #[test]
+    fn a_selected_hex_equal_to_a_named_preset_lights_that_preset() {
+        let mauve = stored_color_tint(ACCENT_MAUVE);
+        let sky = stored_color_tint(ACCENT_SKY);
+
+        for (name, tint, selected, expected) in [
+            (ACCENT_MAUVE, mauve, ACCENT_MAUVE, true),
+            (ACCENT_MAUVE, mauve, ACCENT_MAUVE_HEX, true),
+            (ACCENT_MAUVE, mauve, " #CBA6F7 ", true),
+            (ACCENT_SKY, sky, ACCENT_MAUVE_HEX, false),
+            (ACCENT_MAUVE, mauve, "", false),
+            (ACCENT_MAUVE, mauve, "teal", false),
+        ] {
+            assert_eq!(
+                paints_selection(name, tint, selected),
+                expected,
+                "{name} with {selected:?} selected"
+            );
+        }
+    }
+
+    #[test]
+    fn a_color_is_a_preset_of_every_row_only_when_each_row_paints_it() {
+        for (color, expected) in [
+            (ACCENT_MAUVE_HEX, true),
+            (DEFAULT_BACKGROUND_COLOR, false),
+            (CUSTOM, false),
+        ] {
+            assert_eq!(is_preset_in_every_row(color), expected, "{color}");
+        }
     }
 
     #[test]
@@ -700,6 +758,13 @@ mod panel_tests {
 
         assert!(rig.removable(ACCENT, DEFAULT_BACKGROUND_COLOR, cx));
         assert!(!rig.removable(BACKGROUND_COLOR, DEFAULT_BACKGROUND_COLOR, cx));
+    }
+
+    #[gpui::test]
+    fn a_listed_hex_equal_to_a_named_preset_is_a_preset_in_that_field(cx: &mut TestAppContext) {
+        let rig = open(cx, OverlayConfig::new(), &["#cba6f7"]);
+
+        assert!(!rig.removable(ACCENT, "#cba6f7", cx));
     }
 
     struct Shown<'a> {

@@ -1,16 +1,19 @@
 use forge_components::{
     ActivePresentation, BORDER_THIN, Density, ForgePalette, GlyphArt, Icon, Radius, Spacing,
-    glyph_art, icon, radius, spacing, tr, with_alpha,
+    glyph_art, icon, radius, spacing, tr,
 };
-use forge_overlay::metrics::{ALERT, CHAT, FRAME, GOAL, LATEST, SURFACE_RGB, TICKER};
+use forge_overlay::metrics::{
+    ALERT, BRIGHT_INK_RGB, CHAT, FRAME, GOAL, LATEST, MESSAGE_INK_RGB, SURFACE_RGB, TICKER,
+};
 use forge_overlay::{
     AxisBound, ElementSizing, PreviewComposition, PreviewElement, PreviewFont, PreviewImageSide,
-    PreviewLabelSide, PreviewLineRole, PreviewMark, PreviewPosition, PreviewShape,
+    PreviewLabelSide, PreviewLineRole, PreviewMark, PreviewPosition, PreviewShape, TALLY_SEPARATOR,
 };
 use gpui::{
-    AnyElement, App, Div, FontWeight, Length, Pixels, Rgba, SharedString, div, img, prelude::*, px,
-    relative,
+    AnyElement, App, Div, FontWeight, HighlightStyle, Hsla, Length, Pixels, Rgba, SharedString,
+    StyledText, div, img, prelude::*, px, relative,
 };
+use std::ops::Range;
 use std::path::Path;
 use std::sync::Arc;
 
@@ -21,8 +24,7 @@ const PLACEHOLDER: &str = "-";
 const CHANNEL_MAX: f32 = 255.0;
 const UNSCALED_TEXT: f32 = 1.0;
 
-const TRACK_WASH_ALPHA: f32 = 0.14;
-const LATEST_SUBLINE_ALPHA: f32 = 0.7;
+const OPAQUE: f32 = 1.0;
 const WHOLE_BOX: f32 = 1.0;
 
 #[derive(Clone, Copy)]
@@ -115,18 +117,12 @@ pub(super) fn render_composition(
 
     match composition.shape {
         PreviewShape::Blank => blank_note(glyphs.badge, family, palette, density),
-        PreviewShape::BadgeBanner => {
-            badge_banner(composition, plan, scale, accent, family, glyphs, palette)
-        }
-        PreviewShape::BorderedFrame => bordered_frame(composition, scale, accent, family, palette),
-        PreviewShape::LatestCard => latest_card(composition, plan, scale, accent, family, palette),
-        PreviewShape::MessageFeed => {
-            message_feed(composition, plan, scale, accent, family, palette)
-        }
-        PreviewShape::ProgressBar => {
-            progress_bar(composition, plan, scale, accent, family, palette)
-        }
-        PreviewShape::Strip => strip(composition, plan, scale, accent, family, palette),
+        PreviewShape::BadgeBanner => badge_banner(composition, plan, scale, accent, family, glyphs),
+        PreviewShape::BorderedFrame => bordered_frame(composition, scale, accent, family),
+        PreviewShape::LatestCard => latest_card(composition, plan, scale, accent, family),
+        PreviewShape::MessageFeed => message_feed(composition, plan, scale, accent, family),
+        PreviewShape::ProgressBar => progress_bar(composition, plan, scale, accent, family),
+        PreviewShape::Strip => strip(composition, plan, scale, accent, family),
     }
 }
 
@@ -172,13 +168,12 @@ fn badge_banner(
     accent: Rgba,
     family: SharedString,
     glyphs: &StageGlyphs,
-    palette: &ForgePalette,
 ) -> AnyElement {
     let art = glyphs.icon.as_ref();
     let mut lines = div().flex_1().min_w(px(0.0)).flex().flex_col();
 
     if let Some(text) = line_text(composition, PreviewLineRole::Headline) {
-        lines = lines.child(banner_headline(text, scale, family.clone(), palette));
+        lines = lines.child(banner_headline(text, scale, family.clone()));
     }
     if let Some(text) = line_text(composition, PreviewLineRole::Subline) {
         lines = lines.child(
@@ -190,7 +185,7 @@ fn badge_banner(
         );
     }
     if composition.lines.is_empty() {
-        lines = lines.child(banner_headline(PLACEHOLDER.into(), scale, family, palette));
+        lines = lines.child(banner_headline(PLACEHOLDER.into(), scale, family));
     }
 
     let message = div()
@@ -234,7 +229,7 @@ fn badge_banner(
         .border_color(accent)
         .bg(composition.surface.map_or_else(
             || surface(ALERT.surface_alpha),
-            |chosen| surface_color(chosen.rgb, chosen.alpha),
+            |chosen| page_color(chosen.rgb, chosen.alpha),
         ))
         .children(leading)
         .child(message)
@@ -250,17 +245,12 @@ fn banner_picture(path: &Arc<Path>, height: u16, scale: Scale) -> impl IntoEleme
         .h(scale.at(f32::from(height)))
 }
 
-fn banner_headline(
-    text: SharedString,
-    scale: Scale,
-    family: SharedString,
-    palette: &ForgePalette,
-) -> impl IntoElement {
+fn banner_headline(text: SharedString, scale: Scale, family: SharedString) -> impl IntoElement {
     div()
         .font_family(family)
         .font_weight(FontWeight::BOLD)
         .text_size(scale.text_at(ALERT.headline_size))
-        .text_color(palette.text_primary)
+        .text_color(bright_ink())
         .child(text)
 }
 
@@ -269,7 +259,6 @@ fn bordered_frame(
     scale: Scale,
     accent: Rgba,
     family: SharedString,
-    palette: &ForgePalette,
 ) -> AnyElement {
     let headline = line_text(composition, PreviewLineRole::Headline);
     let subline = line_text(composition, PreviewLineRole::Subline);
@@ -292,7 +281,7 @@ fn bordered_frame(
             div()
                 .font_weight(FontWeight::SEMIBOLD)
                 .text_size(scale.text_at(FRAME.headline_size))
-                .text_color(palette.text_primary)
+                .text_color(bright_ink())
                 .child(text)
         }))
         .children(subline.map(|text| {
@@ -306,7 +295,7 @@ fn bordered_frame(
             label.child(
                 div()
                     .text_size(scale.text_at(FRAME.headline_size))
-                    .text_color(palette.text_primary)
+                    .text_color(bright_ink())
                     .child(PLACEHOLDER),
             )
         });
@@ -360,11 +349,11 @@ fn message_feed(
     scale: Scale,
     accent: Rgba,
     family: SharedString,
-    palette: &ForgePalette,
 ) -> AnyElement {
     let author = line_text(composition, PreviewLineRole::Headline);
     let message = line_text(composition, PreviewLineRole::Subline)
         .unwrap_or_else(|| SharedString::from(PLACEHOLDER));
+    let badges = line_text(composition, PreviewLineRole::Label);
 
     let row = div()
         .w_full()
@@ -375,19 +364,27 @@ fn message_feed(
         .px(scale.text_at(CHAT.row_padding_inline))
         .rounded(scale.text_at(CHAT.row_radius))
         .bg(surface(CHAT.surface_alpha))
+        .children(badges.map(|text| {
+            div()
+                .flex_none()
+                .font_weight(FontWeight::BOLD)
+                .text_size(scale.text_at(CHAT.badges_size))
+                .text_color(accent)
+                .child(text.to_uppercase())
+        }))
         .children(author.map(|name| {
             div()
                 .min_w(px(0.0))
                 .font_weight(FontWeight::BOLD)
                 .text_size(scale.text_at(CHAT.author_size))
-                .text_color(accent)
+                .text_color(author_ink(composition))
                 .child(name)
         }))
         .child(
             div()
                 .min_w(px(0.0))
                 .text_size(scale.text_at(CHAT.message_size))
-                .text_color(palette.text_primary)
+                .text_color(page_color(MESSAGE_INK_RGB, OPAQUE))
                 .child(message),
         );
 
@@ -413,7 +410,6 @@ fn progress_bar(
     scale: Scale,
     accent: Rgba,
     family: SharedString,
-    palette: &ForgePalette,
 ) -> AnyElement {
     let label = line_text(composition, PreviewLineRole::Headline)
         .unwrap_or_else(|| SharedString::from(PLACEHOLDER));
@@ -426,7 +422,7 @@ fn progress_bar(
         .h(scale.text_at(GOAL.track_height))
         .overflow_hidden()
         .rounded(scale.at(GOAL.track_radius))
-        .bg(with_alpha(palette.text_primary, TRACK_WASH_ALPHA))
+        .bg(translucent_ink(GOAL.track_wash_alpha))
         .children(
             composition
                 .fill
@@ -452,7 +448,7 @@ fn progress_bar(
                 .min_w(px(0.0))
                 .font_weight(FontWeight::BOLD)
                 .text_size(scale.text_at(GOAL.label_size))
-                .text_color(palette.text_primary)
+                .text_color(bright_ink())
                 .child(label),
         )
         .child(track)
@@ -463,7 +459,7 @@ fn progress_bar(
                 .font_weight(FontWeight::SEMIBOLD)
                 .text_size(scale.text_at(GOAL.figure_size))
                 .text_color(accent)
-                .child(figure),
+                .child(tally_text(figure)),
         );
 
     sized(card, plan).into_any_element()
@@ -475,7 +471,6 @@ fn strip(
     scale: Scale,
     accent: Rgba,
     family: SharedString,
-    palette: &ForgePalette,
 ) -> AnyElement {
     let headline = line_text(composition, PreviewLineRole::Headline)
         .unwrap_or_else(|| SharedString::from(PLACEHOLDER));
@@ -494,7 +489,7 @@ fn strip(
                 .truncate()
                 .font_weight(FontWeight::BOLD)
                 .text_size(scale.text_at(TICKER.headline_size))
-                .text_color(palette.text_primary)
+                .text_color(bright_ink())
                 .child(headline),
         )
         .children(subline.map(|text| {
@@ -539,7 +534,6 @@ fn latest_card(
     scale: Scale,
     accent: Rgba,
     family: SharedString,
-    palette: &ForgePalette,
 ) -> AnyElement {
     let headline = line_text(composition, PreviewLineRole::Headline)
         .unwrap_or_else(|| SharedString::from(PLACEHOLDER));
@@ -557,7 +551,7 @@ fn latest_card(
                 .truncate()
                 .font_weight(FontWeight::BOLD)
                 .text_size(scale.text_at(LATEST.headline_size))
-                .text_color(palette.text_primary)
+                .text_color(bright_ink())
                 .child(headline),
         )
         .children(subline.map(|text| {
@@ -567,7 +561,7 @@ fn latest_card(
                 .ml(scale.text_at(LATEST.subline_margin))
                 .truncate()
                 .text_size(scale.text_at(LATEST.subline_size))
-                .text_color(with_alpha(palette.text_primary, LATEST_SUBLINE_ALPHA))
+                .text_color(translucent_ink(LATEST.subline_alpha))
                 .child(text)
         }));
 
@@ -625,11 +619,39 @@ fn line_text(composition: &PreviewComposition, role: PreviewLineRole) -> Option<
         .map(|line| SharedString::from(line.text.clone()))
 }
 
-fn surface(alpha: f32) -> Rgba {
-    surface_color(SURFACE_RGB, alpha)
+fn tally_separator_range(tally: &str) -> Option<Range<usize>> {
+    tally
+        .find(TALLY_SEPARATOR)
+        .map(|start| start..start + TALLY_SEPARATOR.len())
 }
 
-fn surface_color([red, green, blue]: [u8; 3], alpha: f32) -> Rgba {
+fn tally_text(tally: SharedString) -> StyledText {
+    let highlights = tally_separator_range(&tally).map(|range| {
+        let ink = Hsla::from(translucent_ink(GOAL.separator_alpha));
+        (range, HighlightStyle::from(ink))
+    });
+    StyledText::new(tally).with_highlights(highlights)
+}
+
+fn author_ink(composition: &PreviewComposition) -> Rgba {
+    composition
+        .author_ink
+        .map_or_else(bright_ink, |chosen| page_color(chosen, OPAQUE))
+}
+
+fn bright_ink() -> Rgba {
+    page_color(BRIGHT_INK_RGB, OPAQUE)
+}
+
+fn translucent_ink(alpha: f32) -> Rgba {
+    page_color(BRIGHT_INK_RGB, alpha)
+}
+
+fn surface(alpha: f32) -> Rgba {
+    page_color(SURFACE_RGB, alpha)
+}
+
+fn page_color([red, green, blue]: [u8; 3], alpha: f32) -> Rgba {
     Rgba {
         r: f32::from(red) / CHANNEL_MAX,
         g: f32::from(green) / CHANNEL_MAX,
@@ -723,5 +745,36 @@ mod tests {
 
             assert_eq!(extents(sized(div(), plan)), expected, "{kind}");
         }
+    }
+
+    #[test]
+    fn the_tally_separator_is_found_only_when_the_tally_carries_one() {
+        for (tally, expected) in [
+            ("42 / 100", Some(2..5)),
+            ("a / b / c", Some(1..4)),
+            ("42", None),
+            ("42/100", None),
+            ("", None),
+        ] {
+            assert_eq!(tally_separator_range(tally), expected, "{tally:?}");
+        }
+    }
+
+    #[test]
+    fn a_message_author_takes_the_chosen_name_color_and_otherwise_the_page_white() {
+        let mut registry = forge_overlay::OverlayKindRegistry::new();
+        forge_overlay::register_builtin_kinds(&mut registry).unwrap();
+        let descriptor = registry.get(CHAT_KIND).unwrap();
+        let mut composition =
+            descriptor.preview(&Default::default(), forge_types::NamesLanguage::default());
+
+        composition.author_ink = None;
+        assert_eq!(author_ink(&composition), page_color(BRIGHT_INK_RGB, OPAQUE));
+
+        composition.author_ink = Some([0x10, 0x20, 0x30]);
+        assert_eq!(
+            author_ink(&composition),
+            page_color([0x10, 0x20, 0x30], OPAQUE)
+        );
     }
 }

@@ -917,4 +917,28 @@ mod tests {
         assert_eq!(rig.heard.read_with(cx, |heard, _| heard.unknown), 1);
         assert_eq!(cx.update(|cx| error_toasts(cx)), 1);
     }
+
+    #[test]
+    fn the_prompt_names_one_overlay_alone_and_every_other_count_as_many() {
+        const EN_ONE: &str = "that overlay";
+        const EN_MANY: &str = "switches them";
+        const UK_ONE: &str = "цей оверлей перейде";
+        const UK_MANY: &str = "вони перейдуть";
+
+        for (language, count, form, other) in [
+            (forge_storage::Language::En, 1, EN_ONE, EN_MANY),
+            (forge_storage::Language::En, 2, EN_MANY, EN_ONE),
+            (forge_storage::Language::En, 21, EN_MANY, EN_ONE),
+            (forge_storage::Language::Uk, 1, UK_ONE, UK_MANY),
+            (forge_storage::Language::Uk, 2, UK_MANY, UK_ONE),
+            (forge_storage::Language::Uk, 5, UK_MANY, UK_ONE),
+            (forge_storage::Language::Uk, 21, UK_MANY, UK_ONE),
+        ] {
+            crate::app::i18n::install_language(language);
+            let body = tr!("overlays_accent_remove_body", overlays = count as i64);
+
+            assert!(body.contains(form), "{language:?} {count}: {body}");
+            assert!(!body.contains(other), "{language:?} {count}: {body}");
+        }
+    }
 }

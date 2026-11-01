@@ -327,3 +327,40 @@ fn only_the_looks_that_keep_position_read_it_from_the_page() {
         );
     }
 }
+
+#[test]
+fn every_ink_the_preview_paints_is_the_ink_its_page_rule_states() {
+    let bright = "color: #fff;";
+    for (kind_id, selector, declaration) in [
+        (ALERT_KIND, ".headline", bright),
+        (CHAT_KIND, ".author", bright),
+        (CHAT_KIND, ".message", "color: #eee;"),
+        (FRAME_KIND, ".headline", bright),
+        (GOAL_KIND, ".label", bright),
+        (
+            GOAL_KIND,
+            ".track",
+            "background: rgba(255, 255, 255, 0.14);",
+        ),
+        (GOAL_KIND, ".sep", "color: rgba(255, 255, 255, 0.5);"),
+        (LATEST_KIND, ".headline", bright),
+        (LATEST_KIND, ".subline", "color: rgba(255, 255, 255, 0.7);"),
+        (TICKER_KIND, ".headline", bright),
+    ] {
+        assert!(
+            rule_block(stylesheet(kind_id), selector).contains(declaration),
+            "{kind_id} {selector} no longer states '{declaration}'"
+        );
+        let guards = registry().style_guards();
+        assert!(
+            guards.iter().any(|guard| {
+                guard.kind_id == kind_id
+                    && guard
+                        .declarations
+                        .iter()
+                        .any(|guarded| guarded == declaration)
+            }),
+            "{kind_id} does not guard '{declaration}', so its preview ink can drift"
+        );
+    }
+}

@@ -6,6 +6,7 @@ use crate::config;
 use crate::metrics::{ALERT, ElementSizing, SURFACE_RGB};
 
 const PERCENT_SCALE: f32 = 100.0;
+pub const TALLY_SEPARATOR: &str = " / ";
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum PreviewShape {
@@ -172,6 +173,7 @@ pub struct PreviewComposition {
     pub surface: Option<PreviewSurface>,
     pub image: Option<PreviewImage>,
     pub label: Option<PreviewLabel>,
+    pub author_ink: Option<[u8; 3]>,
 }
 
 pub(crate) fn compose(
@@ -193,7 +195,15 @@ pub(crate) fn compose(
         surface: surface_of(shape, config),
         image: image_of(shape, config),
         label: label_of(shape, config),
+        author_ink: author_ink_of(shape, config),
     }
+}
+
+fn author_ink_of(shape: PreviewShape, config: &OverlayConfig) -> Option<[u8; 3]> {
+    if shape != PreviewShape::MessageFeed {
+        return None;
+    }
+    config::hex_color_channels(config::read_str(config, config::AUTHOR_COLOR).trim())
 }
 
 fn label_of(shape: PreviewShape, config: &OverlayConfig) -> Option<PreviewLabel> {
@@ -321,11 +331,22 @@ fn bounded_px(config: &OverlayConfig, key: &str, min: i64, max: i64) -> Option<u
 fn lines_of(shape: PreviewShape, config: &OverlayConfig) -> Vec<PreviewLine> {
     match shape {
         PreviewShape::Blank => Vec::new(),
-        PreviewShape::MessageFeed => paired_lines(config, config::AUTHOR, config::MESSAGE),
+        PreviewShape::MessageFeed => message_lines(config),
         PreviewShape::ProgressBar => progress_lines(config),
         PreviewShape::LatestCard => latest_lines(config),
         _ => paired_lines(config, config::HEADLINE, config::SUBLINE),
     }
+}
+
+fn message_lines(config: &OverlayConfig) -> Vec<PreviewLine> {
+    let badges = line(
+        PreviewLineRole::Label,
+        config::read_str(config, config::BADGES),
+    );
+    badges
+        .into_iter()
+        .chain(paired_lines(config, config::AUTHOR, config::MESSAGE))
+        .collect()
 }
 
 fn latest_lines(config: &OverlayConfig) -> Vec<PreviewLine> {
@@ -366,7 +387,7 @@ fn progress_lines(config: &OverlayConfig) -> Vec<PreviewLine> {
     let tally = if value.is_empty() || target.is_empty() {
         String::new()
     } else {
-        format!("{value} / {target}")
+        format!("{value}{TALLY_SEPARATOR}{target}")
     };
 
     [
@@ -680,6 +701,50 @@ mod tests {
             composition.lines.first().map(|line| line.text.as_str()),
             Some("%user% just subscribed!"),
             "expanding tokens is the caller's job, not the preview's"
+        );
+    }
+
+    #[test]
+    fn a_message_feed_carries_the_name_color_the_page_would_set_on_the_author() {
+        for (stored, expected) in [
+            ("#102030", Some([0x10, 0x20, 0x30])),
+            (" #102030 ", Some([0x10, 0x20, 0x30])),
+            ("", None),
+            ("%user_color%", None),
+        ] {
+            let config = one_text(config::AUTHOR_COLOR, stored);
+
+            assert_eq!(
+                compose(PreviewShape::MessageFeed, None, &config).author_ink,
+                expected,
+                "{stored:?}"
+            );
+            assert_eq!(compose(PreviewShape::Strip, None, &config).author_ink, None);
+        }
+    }
+
+    #[test]
+    fn a_message_feed_composes_its_badges_as_the_label_line() {
+        let config = OverlayConfig::from([
+            (config::BADGES.to_owned(), config::text("mod")),
+            (config::AUTHOR.to_owned(), config::text("PixelPal")),
+            (config::MESSAGE.to_owned(), config::text("hey")),
+        ]);
+
+        let lines: Vec<(PreviewLineRole, String)> =
+            compose(PreviewShape::MessageFeed, None, &config)
+                .lines
+                .into_iter()
+                .map(|line| (line.role, line.text))
+                .collect();
+
+        assert_eq!(
+            lines,
+            vec![
+                (PreviewLineRole::Label, "mod".to_owned()),
+                (PreviewLineRole::Headline, "PixelPal".to_owned()),
+                (PreviewLineRole::Subline, "hey".to_owned()),
+            ]
         );
     }
 }

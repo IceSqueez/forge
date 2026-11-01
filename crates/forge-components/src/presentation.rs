@@ -108,3 +108,64 @@ impl ActivePresentation for App {
         self.global::<Presentation>().fonts.mono.clone()
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn family(name: &'static str) -> Option<SharedString> {
+        Some(SharedString::from(name))
+    }
+
+    #[test]
+    fn an_override_replaces_only_its_own_family() {
+        let body_only = FontFamilies::with_overrides(family("Inter"), None);
+        let mono_only = FontFamilies::with_overrides(None, family("Hack"));
+
+        assert_eq!(
+            (body_only.body.as_ref(), body_only.mono.as_ref()),
+            ("Inter", DEFAULT_MONO_FAMILY)
+        );
+        assert_eq!(
+            (mono_only.body.as_ref(), mono_only.mono.as_ref()),
+            (DEFAULT_BODY_FAMILY, "Hack")
+        );
+    }
+
+    #[test]
+    fn clearing_an_override_restores_that_familys_default_and_keeps_the_other() {
+        let mut fonts = FontFamilies::with_overrides(family("Inter"), family("Hack"));
+
+        fonts.set_body_override(None);
+        assert_eq!(
+            (fonts.body.as_ref(), fonts.mono.as_ref()),
+            (DEFAULT_BODY_FAMILY, "Hack")
+        );
+
+        fonts.set_body_override(family("Lora"));
+        fonts.set_mono_override(None);
+        assert_eq!(
+            (fonts.body.as_ref(), fonts.mono.as_ref()),
+            ("Lora", DEFAULT_MONO_FAMILY)
+        );
+    }
+
+    #[test]
+    fn restyling_applies_the_new_look_and_keeps_the_chosen_fonts() {
+        let fonts = FontFamilies::with_overrides(family("Inter"), family("Hack"));
+        let current =
+            Presentation::new(ThemeId::ForgeDefault, Density::Cozy).with_fonts(fonts.clone());
+
+        let restyled = current.restyled(ThemeId::Latte, AccentColor::Green, Density::Compact);
+
+        assert_eq!(restyled.fonts, fonts);
+        assert_eq!(
+            (restyled.theme, restyled.accent, restyled.density),
+            (ThemeId::Latte, AccentColor::Green, Density::Compact)
+        );
+        assert_eq!(
+            restyled.palette,
+            ThemeId::Latte.accented_palette(AccentColor::Green)
+        );
+    }
+}

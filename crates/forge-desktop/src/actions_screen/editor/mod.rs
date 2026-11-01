@@ -446,7 +446,7 @@ fn step_icon_btn(
 pub(in crate::actions_screen) mod tests {
     use forge_components::ThemeId;
     use forge_runtime::ActionsService;
-    use forge_runtime::{ActionCancelRegistry, QueueScheduler, spawn_action_engine};
+    use forge_runtime::QueueScheduler;
     use forge_soundboard::ClipLibrary;
     use forge_storage::MockGlobalsRepo;
     use forge_storage::MockQueueRepo;
@@ -458,9 +458,7 @@ pub(in crate::actions_screen) mod tests {
     };
 
     use super::*;
-    use crate::test_support::{
-        StubActions, StubEventLog, StubHistory, StubOverlays, stub_catalog, test_backend_with_media,
-    };
+    use crate::test_support::{StubEventLog, StubHistory, StubOverlays, test_backend_with_media};
     use forge_components::Presentation;
 
     pub(in crate::actions_screen) fn screen_parts(
@@ -509,15 +507,7 @@ pub(in crate::actions_screen) mod tests {
         let (backend, _writes) = test_backend_with_media(Arc::new(media));
         let (bus, scheduler) = rt.block_on(async {
             let bus = EventBus::new(Arc::new(StubEventLog));
-            let engine = spawn_action_engine(
-                Arc::clone(&bus),
-                stub_catalog(),
-                Arc::new(StubActions),
-                Arc::new(StubHistory),
-                Arc::new(SubActionRegistry::new()),
-                Arc::new(ActionCancelRegistry::new()),
-                forge_runtime::DateNamesHandle::default(),
-            );
+            let engine = crate::test_support::stub_action_engine(Arc::clone(&bus));
             let scheduler = QueueScheduler::spawn(engine, Arc::clone(&bus), Vec::new());
             (bus, scheduler)
         });

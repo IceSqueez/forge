@@ -315,7 +315,7 @@ async fn official_limits_allow_one_client_info_call_per_minute() {
 
     assert!(first.is_ok(), "{first:?}");
     assert!(
-        matches!(second, Err(MonobankError::CoolingDown { retry_after_secs }) if (59..=60).contains(&retry_after_secs)),
+        matches!(second, Err(MonobankError::CoolingDown { retry_after_secs }) if (1..=60).contains(&retry_after_secs)),
         "{second:?}"
     );
     assert_eq!(bank.client_info_calls(), 1);

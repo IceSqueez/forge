@@ -754,29 +754,32 @@ mod tests {
 
     #[gpui::test]
     fn only_a_payload_from_the_visible_chain_is_accepted(cx: &mut TestAppContext) {
-        let nested = vec![nav::NavFrame {
-            step_index: 0,
-            chain_key: FIRST.to_owned(),
-            case_index: None,
-        }];
-        for (case, accepted) in [
-            ("visible chain", true),
-            ("another action", false),
-            ("nested chain", false),
-            ("index past the chain", false),
-            ("no action open", false),
-        ] {
+        type Arrange = fn(&mut Fixture<'_>, &mut StepDrag);
+        let cases: [(&str, bool, Arrange); 5] = [
+            ("visible chain", true, |_, _| {}),
+            ("another action", false, |_, drag| {
+                drag.action_id = ActionId::new();
+            }),
+            ("nested chain", false, |_, drag| {
+                drag.path = vec![nav::NavFrame {
+                    step_index: 0,
+                    chain_key: FIRST.to_owned(),
+                    case_index: None,
+                }];
+            }),
+            ("index past the chain", false, |_, drag| {
+                drag.from = chain().len();
+            }),
+            ("no action open", false, |fixture, _| {
+                fixture
+                    .view
+                    .update(fixture.vcx, |view, _| view.detail = None);
+            }),
+        ];
+        for (case, accepted, arrange) in cases {
             let mut fixture = mount(cx, false);
             let mut drag = fixture.payload(0);
-            match case {
-                "another action" => drag.action_id = ActionId::new(),
-                "nested chain" => drag.path = nested.clone(),
-                "index past the chain" => drag.from = chain().len(),
-                "no action open" => fixture
-                    .view
-                    .update(fixture.vcx, |view, _| view.detail = None),
-                _ => {}
-            }
+            arrange(&mut fixture, &mut drag);
 
             assert_eq!(fixture.accepts(&drag), accepted, "{case}");
         }
@@ -784,13 +787,15 @@ mod tests {
 
     #[gpui::test]
     fn no_payload_is_accepted_while_a_dialog_or_the_step_menu_is_open(cx: &mut TestAppContext) {
-        for case in ["dialog", "step menu"] {
+        type Block = fn(&mut ActionEditor);
+        let cases: [(&str, Block); 2] = [
+            ("dialog", |view| view.set_step_drag_locked(true)),
+            ("step menu", |view| view.step_open = Some(0)),
+        ];
+        for (case, block) in cases {
             let mut fixture = mount(cx, false);
             let drag = fixture.payload(0);
-            fixture.view.update(fixture.vcx, |view, _| match case {
-                "dialog" => view.set_step_drag_locked(true),
-                _ => view.step_open = Some(0),
-            });
+            fixture.view.update(fixture.vcx, |view, _| block(view));
 
             assert!(!fixture.accepts(&drag), "{case}");
         }

@@ -710,6 +710,77 @@ async fn do_bind_of_a_hand_typed_spelling_replaces_the_canonical_binding() {
     );
 }
 
+async fn stored_press_combos(backend: &Arc<dyn DataProvider>) -> Vec<String> {
+    let stored = backend.trigger_instance_repo().list_all().await.unwrap();
+    stored_combos(&stored)
+        .into_iter()
+        .filter(|(kind, _)| kind == event_kinds::GLOBAL_PRESSED)
+        .filter_map(|(_, combo)| combo)
+        .collect()
+}
+
+#[tokio::test]
+async fn a_binding_stays_one_canonical_row_through_every_hand_typed_path() {
+    let store = store().await;
+    let backend = Arc::clone(&store.provider);
+    let action = seed_action(&backend, "Scene swap").await;
+    let rig = reconciled(&backend).await;
+
+    do_bind(
+        Arc::clone(&rig.reconciler),
+        Arc::clone(&backend),
+        " f3 + ctrl ".to_owned(),
+        HotkeyEdge::Press,
+        action,
+    )
+    .await
+    .unwrap();
+    assert_eq!(rig.registered(), ["Ctrl+F3"]);
+    assert_eq!(stored_press_combos(&backend).await, ["Ctrl+F3"]);
+
+    rebind_combo(
+        Arc::clone(&rig.reconciler),
+        Arc::clone(&backend),
+        "ctrl + f3".to_owned(),
+        " alt + f4 ".to_owned(),
+    )
+    .await
+    .unwrap();
+    assert_eq!(rig.registered(), ["Alt+F4"]);
+    assert_eq!(stored_press_combos(&backend).await, ["Alt+F4"]);
+
+    let moved = backend.trigger_instance_repo().list_all().await.unwrap();
+    let [only] = moved.as_slice() else {
+        panic!("the rebind left {} instances", moved.len());
+    };
+    apply_update(
+        &backend,
+        &rig,
+        update_to(only.id, " shift + f5 ", HotkeyEdge::Press, action),
+    )
+    .await
+    .unwrap();
+    assert_eq!(rig.registered(), ["Shift+F5"]);
+    assert_eq!(stored_press_combos(&backend).await, ["Shift+F5"]);
+
+    delete_binding(
+        Arc::clone(&rig.reconciler),
+        Arc::clone(&backend),
+        "f5 + shift".to_owned(),
+    )
+    .await
+    .unwrap();
+    assert!(rig.registered().is_empty());
+    assert!(
+        backend
+            .trigger_instance_repo()
+            .list_all()
+            .await
+            .unwrap()
+            .is_empty()
+    );
+}
+
 #[tokio::test]
 async fn do_bind_with_an_unparseable_combo_claims_and_stores_nothing() {
     let store = store().await;

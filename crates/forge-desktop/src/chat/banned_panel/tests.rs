@@ -9,8 +9,7 @@ use forge_platform_core::{
     BanPageToken, UnbanAbility, UnbanRefusal,
 };
 use forge_registry::{
-    FormField, RegistryError, RunContext, StepTimer, SubActionCategory, SubActionRegistry,
-    SubActionRunner,
+    RunContext, StepTimer, SubActionCategory, SubActionRegistry, SubActionRunner,
 };
 use forge_runtime::{ActionCancelRegistry, ActionEngineHandle, EventBus, spawn_action_engine};
 use forge_storage::Language;
@@ -78,21 +77,22 @@ impl BanListSource for FakeBans {
     }
 }
 
-struct UnbanRunner {
-    seen: Arc<Mutex<Vec<SubActionConfig>>>,
-    outcome: SubActionOutcome,
+pub(crate) struct ModerationRunner {
+    pub(crate) kind: &'static str,
+    pub(crate) seen: Arc<Mutex<Vec<SubActionConfig>>>,
+    pub(crate) outcome: SubActionOutcome,
 }
 
 #[async_trait::async_trait]
-impl SubActionRunner for UnbanRunner {
+impl SubActionRunner for ModerationRunner {
     fn id(&self) -> &str {
-        UNBAN_KIND
+        self.kind
     }
     fn category(&self) -> SubActionCategory {
         SubActionCategory::Util
     }
     fn label(&self) -> &str {
-        UNBAN_KIND
+        self.kind
     }
     fn summary(&self) -> &str {
         ""
@@ -103,15 +103,6 @@ impl SubActionRunner for UnbanRunner {
     fn icon_name(&self) -> &str {
         ""
     }
-    fn default_config(&self) -> SubActionConfig {
-        SubActionConfig::new()
-    }
-    fn config_fields(&self) -> Vec<FormField> {
-        Vec::new()
-    }
-    fn validate_config(&self, _: &SubActionConfig) -> Result<(), RegistryError> {
-        Ok(())
-    }
     async fn execute(
         &self,
         config: &SubActionConfig,
@@ -119,7 +110,7 @@ impl SubActionRunner for UnbanRunner {
     ) -> (SubActionTelemetry, Option<ArgStack>) {
         self.seen.lock().unwrap().push(config.clone());
         (
-            StepTimer::start(ctx, UNBAN_KIND).finish(self.outcome.clone()),
+            StepTimer::start(ctx, self.kind).finish(self.outcome.clone()),
             None,
         )
     }
@@ -165,7 +156,7 @@ fn loaded(ids: &[&str], next: Option<&str>) -> BanGroup {
     group
 }
 
-fn engine_with(registry: SubActionRegistry) -> ActionEngineHandle {
+pub(crate) fn engine_with(registry: SubActionRegistry) -> ActionEngineHandle {
     let mut history = MockHistoryRepo::new();
     history.expect_save().returning(|_| Ok(()));
     spawn_action_engine(
@@ -185,7 +176,8 @@ fn unban_engine(
     let seen = Arc::new(Mutex::new(Vec::new()));
     let mut registry = SubActionRegistry::new();
     registry
-        .register(Box::new(UnbanRunner {
+        .register(Box::new(ModerationRunner {
+            kind: UNBAN_KIND,
             seen: Arc::clone(&seen),
             outcome,
         }))

@@ -963,9 +963,7 @@ mod tests {
         ] {
             let label: String = modal
                 .scheduled_by_label(scheduled_by)
-                .chars()
-                .filter(|c| !matches!(c, '\u{2068}' | '\u{2069}'))
-                .collect();
+                .replace(crate::test_support::FORMAT_ISOLATES, "");
             assert_eq!(label, expected, "{scheduled_by:?}");
         }
     }

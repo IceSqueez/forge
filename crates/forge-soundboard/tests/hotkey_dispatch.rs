@@ -179,14 +179,12 @@ async fn a_press_toggles_every_clip_bound_to_the_combo_and_no_other() {
     let mut toggled = [
         dispatching.next_toggled().await,
         dispatching.next_toggled().await,
+        dispatching.next_toggled().await,
     ];
     toggled.sort();
-    let mut expected = [first, second];
+    let mut expected = [first, second, elsewhere];
     expected.sort();
-    assert_eq!(
-        (toggled, dispatching.next_toggled().await),
-        (expected, elsewhere)
-    );
+    assert_eq!(toggled, expected);
 }
 
 #[tokio::test]

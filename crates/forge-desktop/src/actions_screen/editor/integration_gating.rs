@@ -122,7 +122,7 @@ impl ActionEditor {
 pub(in crate::actions_screen) mod tests {
     use forge_components::ThemeId;
     use forge_runtime::ActionsService;
-    use forge_runtime::{ActionCancelRegistry, QueueScheduler, spawn_action_engine};
+    use forge_runtime::QueueScheduler;
     use forge_soundboard::ClipLibrary;
     use forge_storage::MockQueueRepo;
     use forge_storage::MockSoundboardClipsRepo;
@@ -133,8 +133,7 @@ pub(in crate::actions_screen) mod tests {
     use super::*;
     use crate::test_support::{
         StubActions, StubEventLog, StubHistory, StubOverlays, action_running, lifecycle_switch,
-        owned_sub_actions, owned_triggers, runtime, step, stub_catalog, switch_lifecycle,
-        test_backend,
+        owned_sub_actions, owned_triggers, runtime, step, switch_lifecycle, test_backend,
     };
     use forge_components::Presentation;
     use forge_runtime::{LifecycleState, LifecycleStates};
@@ -192,15 +191,7 @@ pub(in crate::actions_screen) mod tests {
             let (backend, _writes) = test_backend();
             let (bus, scheduler) = rt.block_on(async {
                 let bus = EventBus::new(Arc::new(StubEventLog));
-                let engine = spawn_action_engine(
-                    Arc::clone(&bus),
-                    stub_catalog(),
-                    Arc::new(StubActions),
-                    Arc::new(StubHistory),
-                    Arc::new(SubActionRegistry::new()),
-                    Arc::new(ActionCancelRegistry::new()),
-                    forge_runtime::DateNamesHandle::default(),
-                );
+                let engine = crate::test_support::stub_action_engine(Arc::clone(&bus));
                 let scheduler = QueueScheduler::spawn(engine, Arc::clone(&bus), Vec::new());
                 (bus, scheduler)
             });

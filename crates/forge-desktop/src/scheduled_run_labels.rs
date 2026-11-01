@@ -155,10 +155,7 @@ mod tests {
     ];
 
     fn plain(rendered: String) -> String {
-        rendered
-            .chars()
-            .filter(|c| !matches!(c, '\u{2068}' | '\u{2069}'))
-            .collect()
+        rendered.replace(crate::test_support::FORMAT_ISOLATES, "")
     }
 
     fn reason_tokens_declared_in(source: &str) -> Vec<String> {

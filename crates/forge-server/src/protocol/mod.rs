@@ -711,6 +711,59 @@ mod tests {
         );
     }
 
+    const PRIVATE_VALUE: &str = "sk_live_private_value";
+    const PRIVATE_KEY: &str = "sk_live_private_key";
+
+    fn too_deep_to_represent() -> serde_json::Value {
+        (0..=forge_types::VARIANT_MAX_DEPTH).fold(serde_json::json!(PRIVATE_VALUE), |inner, _| {
+            serde_json::json!([inner])
+        })
+    }
+
+    #[test]
+    fn rejected_action_args_log_their_shape_and_never_their_content() {
+        for (args, field, expected) in [
+            (serde_json::json!(PRIVATE_VALUE), "shape", "string"),
+            (serde_json::json!([PRIVATE_VALUE]), "shape", "array"),
+            (
+                serde_json::json!({ PRIVATE_KEY: too_deep_to_represent() }),
+                "dropped",
+                "1",
+            ),
+        ] {
+            let (stack, lines) =
+                forge_test_support::log_capture::capture(tracing::Level::TRACE, || {
+                    super::helpers::build_arg_stack(args)
+                });
+
+            let warnings = forge_test_support::log_capture::forge_warnings(&lines);
+            let [warning] = warnings.as_slice() else {
+                panic!("{field}: expected one warning, got {lines:?}");
+            };
+            assert_eq!(warning.field(field), Some(expected));
+            assert!(stack.snapshot().is_empty());
+            assert!(
+                !lines
+                    .iter()
+                    .any(|line| line.mentions(PRIVATE_VALUE) || line.mentions(PRIVATE_KEY)),
+                "{lines:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn a_dropped_action_arg_leaves_its_representable_siblings_in_place() {
+        let stack = super::helpers::build_arg_stack(serde_json::json!({
+            "broken": too_deep_to_represent(),
+            "kept": 1,
+        }));
+
+        assert_eq!(
+            stack.snapshot(),
+            BTreeMap::from([("kept".to_owned(), Variant::Int(1))])
+        );
+    }
+
     #[tokio::test]
     async fn replay_event_maps_history_outcomes_to_wire_error_codes() {
         let ghost = EventId::new();

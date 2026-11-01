@@ -4,10 +4,7 @@ use std::sync::Arc;
 use forge_overlay::{OverlayKindRegistry, register_builtin_kinds};
 use forge_paths::{CREDENTIALS_KEY_FILE_NAME, MEDIA_DIR_NAME, OVERLAYS_DIR_NAME};
 use forge_registry::{SubActionRegistry, TriggerRegistry};
-use forge_runtime::{
-    ActionCancelRegistry, EventBus, OverlayServiceHandle, QueueScheduler, ScriptRegistry,
-    spawn_action_engine,
-};
+use forge_runtime::{EventBus, OverlayServiceHandle, QueueScheduler, ScriptRegistry};
 use forge_storage::settings::core_settings::SERVER_OVERLAY_ROOT;
 use forge_storage::{
     DATABASE_FILE_NAME, DataProvider, OverlayConfig, OverlayDefinition, OverlayId, SettingsRepo,
@@ -22,7 +19,7 @@ use forge_types::{Action, ActionId, Queue, QueueId};
 use tempfile::TempDir;
 use ulid::Ulid;
 
-use super::{STORAGE_KEY, StubActions, StubEventLog, StubHistory, stub_catalog};
+use super::{STORAGE_KEY, StubEventLog};
 use crate::pack_services::PackServices;
 
 pub(crate) const PACK_NAME: &str = "Alerts pack";
@@ -88,15 +85,7 @@ pub(crate) fn pack_world(rt: &tokio::runtime::Runtime) -> PackWorld {
             speaker: None,
             latest: None,
         });
-        let engine = spawn_action_engine(
-            Arc::clone(&bus),
-            stub_catalog(),
-            Arc::new(StubActions),
-            Arc::new(StubHistory),
-            Arc::new(SubActionRegistry::new()),
-            Arc::new(ActionCancelRegistry::new()),
-            forge_runtime::DateNamesHandle::default(),
-        );
+        let engine = crate::test_support::stub_action_engine(Arc::clone(&bus));
         let scheduler = QueueScheduler::spawn(engine, bus, Vec::new());
         PackWorld {
             services: PackServices {

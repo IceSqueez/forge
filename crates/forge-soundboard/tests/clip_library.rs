@@ -112,11 +112,7 @@ fn slot_key(referrer: &MediaReferrer) -> (String, String, String) {
 }
 
 fn clip_source(clip_id: ClipId) -> MediaReferrer {
-    MediaReferrer::new(
-        MediaReferrerKind::SoundboardClip,
-        clip_id.to_string(),
-        forge_storage::CLIP_SOURCE_SLOT,
-    )
+    forge_storage::clip_source_referrer(clip_id)
 }
 
 #[async_trait]

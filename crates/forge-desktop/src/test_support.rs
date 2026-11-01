@@ -416,21 +416,25 @@ pub(crate) fn sandboxed_over(provider: Arc<dyn DataProvider>) -> Sandboxed<Arc<d
     )
 }
 
+pub(crate) fn stub_action_engine(bus: Arc<EventBus>) -> forge_runtime::ActionEngineHandle {
+    spawn_action_engine(
+        bus,
+        stub_catalog(),
+        Arc::new(StubActions),
+        Arc::new(StubHistory),
+        Arc::new(SubActionRegistry::new()),
+        Arc::new(ActionCancelRegistry::new()),
+        forge_runtime::DateNamesHandle::default(),
+    )
+}
+
 pub(crate) fn held_queue_scheduler(
     rt: &tokio::runtime::Runtime,
     queue: forge_types::Queue,
 ) -> forge_runtime::QueueSchedulerHandle {
     rt.block_on(async {
         let bus = EventBus::new(Arc::new(StubEventLog));
-        let engine = spawn_action_engine(
-            Arc::clone(&bus),
-            stub_catalog(),
-            Arc::new(StubActions),
-            Arc::new(StubHistory),
-            Arc::new(SubActionRegistry::new()),
-            Arc::new(ActionCancelRegistry::new()),
-            forge_runtime::DateNamesHandle::default(),
-        );
+        let engine = crate::test_support::stub_action_engine(Arc::clone(&bus));
         let id = queue.id;
         let scheduler = forge_runtime::QueueScheduler::spawn(engine, bus, vec![queue]);
         scheduler

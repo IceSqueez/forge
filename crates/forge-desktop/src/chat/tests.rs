@@ -2,8 +2,7 @@ use std::sync::Arc;
 
 use crate::chat_row::ChatBody;
 use forge_components::FORGE_DEFAULT;
-use forge_registry::SubActionRegistry;
-use forge_runtime::{ActionCancelRegistry, EventBus, spawn_action_engine};
+use forge_runtime::EventBus;
 use forge_storage::Language;
 use forge_storage::MockChatHistoryRepo;
 use forge_storage::MockViewerRepo;
@@ -23,8 +22,7 @@ use crate::home_stats::{HomeStats, Integration};
 use crate::i18n::install_language;
 use crate::integration_lifecycle::IntegrationLifecycle;
 use crate::test_support::{
-    StubActions, StubEventLog, StubHistory, install_presentation, pump, pump_until, runtime,
-    switch_lifecycle,
+    StubEventLog, install_presentation, pump, pump_until, runtime, switch_lifecycle,
 };
 use forge_components::Toasts;
 use forge_runtime::{LifecycleState, LifecycleStates};
@@ -254,15 +252,7 @@ pub(super) fn new_view(
     let home_stats = cx.new(|_| HomeStats::new());
     let mut viewers = MockViewerRepo::new();
     viewers.expect_get().returning(|_, _| Ok(None));
-    let engine = spawn_action_engine(
-        EventBus::new(Arc::new(StubEventLog)),
-        crate::test_support::stub_catalog(),
-        Arc::new(StubActions),
-        Arc::new(StubHistory),
-        Arc::new(SubActionRegistry::new()),
-        Arc::new(ActionCancelRegistry::new()),
-        forge_runtime::DateNamesHandle::default(),
-    );
+    let engine = crate::test_support::stub_action_engine(EventBus::new(Arc::new(StubEventLog)));
     ChatView::new(
         feed,
         home_stats,

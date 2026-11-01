@@ -98,24 +98,23 @@ mod tests {
     use std::time::Duration;
 
     use forge_events::{Event, EventSource};
-    use forge_registry::{
-        FormField, RegistryError, RunContext, StepTimer, SubActionCategory, SubActionRegistry,
-        SubActionRunner,
-    };
-    use forge_runtime::{ActionCancelRegistry, ActionEngineHandle, EventBus, spawn_action_engine};
+    use forge_registry::SubActionRegistry;
+    use forge_runtime::EventBus;
     use forge_storage::MockChatHistoryRepo;
-    use forge_storage::MockHistoryRepo;
+
     use forge_types::PlatformId;
-    use forge_types::{ArgStack, SubActionConfig, SubActionOutcome, SubActionTelemetry};
+    use forge_types::SubActionOutcome;
     use gpui::{Entity, TestAppContext, VisualTestContext};
 
     use super::ChatTab;
     use crate::chat::ChatView;
-    use crate::chat::banned_panel::tests::{FakeBans, outcome, registry_with, settle};
+    use crate::chat::banned_panel::tests::{
+        FakeBans, ModerationRunner, engine_with, outcome, registry_with, settle,
+    };
     use crate::chat::tests::{mount_gated, mount_under_root};
     use crate::chat::viewer_actions::ViewerTarget;
     use crate::home_stats::Integration;
-    use crate::test_support::{ClickArea, StubActions, StubEventLog, click_until, runtime};
+    use crate::test_support::{ClickArea, StubEventLog, click_until, runtime};
     use forge_components::Toasts;
 
     const PAST_ANY_RELIST_DEBOUNCE: Duration = Duration::from_secs(10);
@@ -218,52 +217,6 @@ mod tests {
     const KICK_BAN: &str = "kick.moderation.ban";
     const KICK_TIMEOUT: &str = "kick.moderation.timeout";
 
-    struct ModerationRunner {
-        kind: &'static str,
-        outcome: SubActionOutcome,
-    }
-
-    #[async_trait::async_trait]
-    impl SubActionRunner for ModerationRunner {
-        fn id(&self) -> &str {
-            self.kind
-        }
-        fn category(&self) -> SubActionCategory {
-            SubActionCategory::Util
-        }
-        fn label(&self) -> &str {
-            self.kind
-        }
-        fn summary(&self) -> &str {
-            ""
-        }
-        fn search_text(&self) -> &str {
-            ""
-        }
-        fn icon_name(&self) -> &str {
-            ""
-        }
-        fn default_config(&self) -> SubActionConfig {
-            SubActionConfig::new()
-        }
-        fn config_fields(&self) -> Vec<FormField> {
-            Vec::new()
-        }
-        fn validate_config(&self, _: &SubActionConfig) -> Result<(), RegistryError> {
-            Ok(())
-        }
-        async fn execute(
-            &self,
-            _: &SubActionConfig,
-            ctx: &RunContext<'_>,
-        ) -> (SubActionTelemetry, Option<ArgStack>) {
-            (
-                StepTimer::start(ctx, self.kind).finish(self.outcome.clone()),
-                None,
-            )
-        }
-    }
-
     struct Moderated {
         view: Entity<ChatView>,
         twitch: Arc<FakeBans>,
@@ -287,21 +240,12 @@ mod tests {
             registry
                 .register(Box::new(ModerationRunner {
                     kind,
+                    seen: Arc::default(),
                     outcome: outcome.clone(),
                 }))
                 .expect("distinct kinds");
         }
-        let mut history = MockHistoryRepo::new();
-        history.expect_save().returning(|_| Ok(()));
-        let engine: ActionEngineHandle = spawn_action_engine(
-            EventBus::new(Arc::new(StubEventLog)),
-            crate::test_support::stub_catalog(),
-            Arc::new(StubActions),
-            Arc::new(history),
-            Arc::new(registry),
-            Arc::new(ActionCancelRegistry::new()),
-            forge_runtime::DateNamesHandle::default(),
-        );
+        let engine = engine_with(registry);
         let builtins = registry_with(&[
             (Integration::Twitch, Some(Arc::clone(&twitch))),
             (Integration::YouTube, Some(Arc::clone(&youtube))),

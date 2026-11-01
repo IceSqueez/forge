@@ -368,9 +368,7 @@ mod tests {
     }
 
     fn plain(text: &str) -> String {
-        text.chars()
-            .filter(|c| !matches!(c, '\u{2068}' | '\u{2069}'))
-            .collect()
+        text.replace(crate::test_support::FORMAT_ISOLATES, "")
     }
 
     fn digit_shape(text: &str) -> String {

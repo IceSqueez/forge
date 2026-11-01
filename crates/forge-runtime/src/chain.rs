@@ -456,7 +456,9 @@ mod tests {
         ConfigSpec, IntegerEditor, IntegerField, SubActionCategory, SubActionConfig,
         SubActionRunner, ValueBounds,
     };
-    use forge_types::{IntegrationId, UserText, Variant, integration_disabled_message};
+    use forge_types::{
+        IntegrationId, NamesLanguage, UserText, Variant, integration_disabled_message,
+    };
     use time::OffsetDateTime;
 
     use super::*;
@@ -632,6 +634,99 @@ mod tests {
             .filter(|e| e.kind == "subaction.run")
             .map(|e| (e.payload["step_index"].as_u64().unwrap() as usize, e.id))
             .collect()
+    }
+
+    struct LanguageProbe {
+        id: &'static str,
+        date_names: crate::DateNamesHandle,
+        switch_to: NamesLanguage,
+        seen: Arc<Mutex<Vec<NamesLanguage>>>,
+    }
+
+    #[async_trait]
+    impl SubActionRunner for LanguageProbe {
+        fn id(&self) -> &str {
+            self.id
+        }
+        fn category(&self) -> SubActionCategory {
+            SubActionCategory::Util
+        }
+        fn label(&self) -> &str {
+            ""
+        }
+        fn summary(&self) -> &str {
+            ""
+        }
+        fn search_text(&self) -> &str {
+            ""
+        }
+        fn icon_name(&self) -> &str {
+            ""
+        }
+        async fn execute(
+            &self,
+            _config: &SubActionConfig,
+            ctx: &RunContext<'_>,
+        ) -> (SubActionTelemetry, Option<ArgStack>) {
+            self.seen
+                .lock()
+                .unwrap()
+                .push(ctx.arg_stack.names_language());
+            self.date_names.set_language(self.switch_to);
+            let tel = SubActionTelemetry {
+                index: ctx.index,
+                kind: self.id.to_owned(),
+                started_at: OffsetDateTime::now_utc(),
+                duration_ms: 0,
+                outcome: SubActionOutcome::Success,
+                args_in: BTreeMap::new(),
+                produced: BTreeMap::new(),
+            };
+            (tel, Some(ArgStack::new()))
+        }
+    }
+
+    #[tokio::test]
+    async fn every_step_reads_the_language_current_when_it_starts() {
+        let date_names = crate::DateNamesHandle::new(NamesLanguage::En);
+        let seen = Arc::new(Mutex::new(Vec::new()));
+        let probe = |id, switch_to| -> Box<dyn SubActionRunner> {
+            Box::new(LanguageProbe {
+                id,
+                date_names: date_names.clone(),
+                switch_to,
+                seen: Arc::clone(&seen),
+            })
+        };
+        let reg = registry(vec![
+            probe("lang.first", NamesLanguage::Uk),
+            probe("lang.second", NamesLanguage::Uk),
+        ]);
+        let config = Config::default();
+        let gate = Arc::new(ConditionGate::new(&config));
+        let eng = Arc::new(ChainEngine::new(
+            reg,
+            Arc::new(NullPublisher),
+            gate,
+            date_names.clone(),
+            config,
+        ));
+        let started_in_the_other_language = ArgStack::new().with_names_language(NamesLanguage::Uk);
+
+        let run = eng
+            .run_sequential(
+                &[step("lang.first"), step("lang.second")],
+                &started_in_the_other_language,
+                EventId::new(),
+                &CancelSignal::new(),
+            )
+            .await;
+
+        assert_eq!(run.signal, ChainSignal::Completed);
+        assert_eq!(
+            *seen.lock().unwrap(),
+            [NamesLanguage::En, NamesLanguage::Uk]
+        );
     }
 
     #[tokio::test]

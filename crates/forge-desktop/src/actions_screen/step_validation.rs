@@ -127,11 +127,7 @@ mod tests {
         install_language(Language::En);
         let runner = Verdict(Some(problem), fields);
         step_rejection(&runner, &config(entries), &keys()).map(|r| StepRejection {
-            message: r
-                .message
-                .chars()
-                .filter(|c| !matches!(c, '\u{2068}' | '\u{2069}'))
-                .collect(),
+            message: r.message.replace(crate::test_support::FORMAT_ISOLATES, ""),
             ..r
         })
     }

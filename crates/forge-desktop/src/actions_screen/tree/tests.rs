@@ -6,7 +6,7 @@ use gpui::MouseButton;
 use std::collections::HashMap;
 
 use forge_components::ThemeId;
-use forge_runtime::{ActionCancelRegistry, QueueScheduler, spawn_action_engine};
+use forge_runtime::QueueScheduler;
 use forge_runtime::{TIMER_TICK_KIND, TimerTickDescriptor};
 use forge_soundboard::ClipLibrary;
 use forge_storage::MockActionRepo;
@@ -17,8 +17,8 @@ use forge_storage::{DataProvider, SoundboardClipsRepo};
 use forge_types::{PermissionRung, PlatformScope, TriggerInstance, TriggerInstanceId};
 
 use crate::test_support::{
-    Declares, StubEventLog, StubHistory, StubOverlays, StubTrigger, runtime, stub_catalog,
-    test_backend, trigger_registry,
+    Declares, StubEventLog, StubHistory, StubOverlays, StubTrigger, runtime, test_backend,
+    trigger_registry,
 };
 use forge_components::Presentation;
 
@@ -143,15 +143,7 @@ impl Fixture {
         globals.expect_list().returning(|| Ok(Vec::new()));
         let (bus, scheduler) = rt.block_on(async {
             let bus = EventBus::new(Arc::new(StubEventLog));
-            let engine = spawn_action_engine(
-                Arc::clone(&bus),
-                stub_catalog(),
-                Arc::new(crate::test_support::StubActions),
-                Arc::new(StubHistory),
-                Arc::new(SubActionRegistry::new()),
-                Arc::new(ActionCancelRegistry::new()),
-                forge_runtime::DateNamesHandle::default(),
-            );
+            let engine = crate::test_support::stub_action_engine(Arc::clone(&bus));
             let scheduler = QueueScheduler::spawn(engine, Arc::clone(&bus), Vec::new());
             (bus, scheduler)
         });
@@ -543,11 +535,15 @@ fn actions_by_trigger_filter_buckets_actions_per_filter_and_skips_unmapped_kinds
         .block_on(actions_by_trigger_filter(&repo, &filter_by_kind))
         .unwrap();
 
-    let expected = HashMap::from([
-        (ActionsFilter::Timers, HashSet::from([first, second])),
-        (ActionsFilter::Points, HashSet::from([first, redeemer])),
-    ]);
-    assert!(members == expected);
+    assert_eq!(members.len(), 2);
+    assert_eq!(
+        members[&ActionsFilter::Timers],
+        HashSet::from([first, second])
+    );
+    assert_eq!(
+        members[&ActionsFilter::Points],
+        HashSet::from([first, redeemer])
+    );
 }
 
 #[gpui::test]

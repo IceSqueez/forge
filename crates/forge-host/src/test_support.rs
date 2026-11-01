@@ -361,54 +361,54 @@ impl CredentialsRepo for TestBackend {
 #[async_trait::async_trait]
 impl GlobalsRepo for TestBackend {
     async fn get(&self, _: &str) -> Result<Option<Variant>, StorageError> {
-        unreachable!("globals are out of scope for the settings pane")
+        unreachable!("this TestBackend was built without globals")
     }
 
     async fn set(&self, _: &str, _: Variant, _: bool) -> Result<(), StorageError> {
-        unreachable!("globals are out of scope for the settings pane")
+        unreachable!("this TestBackend was built without globals")
     }
 
     async fn delete(&self, _: &str) -> Result<bool, StorageError> {
-        unreachable!("globals are out of scope for the settings pane")
+        unreachable!("this TestBackend was built without globals")
     }
 
     async fn list(&self) -> Result<Vec<GlobalEntry>, StorageError> {
-        unreachable!("globals are out of scope for the settings pane")
+        unreachable!("this TestBackend was built without globals")
     }
 
     async fn storage_bytes(&self) -> Result<u64, StorageError> {
-        unreachable!("globals are out of scope for the settings pane")
+        unreachable!("this TestBackend was built without globals")
     }
 
     async fn last_save_at(&self) -> Result<Option<OffsetDateTime>, StorageError> {
-        unreachable!("globals are out of scope for the settings pane")
+        unreachable!("this TestBackend was built without globals")
     }
 
     async fn incr(&self, _: &str, _: i64) -> Result<Variant, StorageError> {
-        unreachable!("globals are out of scope for the settings pane")
+        unreachable!("this TestBackend was built without globals")
     }
 }
 
 #[async_trait::async_trait]
 impl UserGlobalsRepo for TestBackend {
     async fn get(&self, _: &str, _: &str, _: &str) -> Result<Option<Variant>, StorageError> {
-        unreachable!("user globals are out of scope for the settings pane")
+        unreachable!("this TestBackend was built without user globals")
     }
 
     async fn set(&self, _: &str, _: &str, _: &str, _: Variant) -> Result<(), StorageError> {
-        unreachable!("user globals are out of scope for the settings pane")
+        unreachable!("this TestBackend was built without user globals")
     }
 
     async fn delete(&self, _: &str, _: &str, _: &str) -> Result<bool, StorageError> {
-        unreachable!("user globals are out of scope for the settings pane")
+        unreachable!("this TestBackend was built without user globals")
     }
 
     async fn list_for_user(&self, _: &str, _: &str) -> Result<Vec<UserGlobalEntry>, StorageError> {
-        unreachable!("user globals are out of scope for the settings pane")
+        unreachable!("this TestBackend was built without user globals")
     }
 
     async fn list_for_broadcaster(&self, _: &str) -> Result<Vec<UserGlobalEntry>, StorageError> {
-        unreachable!("user globals are out of scope for the settings pane")
+        unreachable!("this TestBackend was built without user globals")
     }
 }
 
@@ -416,7 +416,7 @@ impl TestBackend {
     fn scripts(&self) -> &Arc<dyn ScriptRepo> {
         self.scripts
             .as_ref()
-            .unwrap_or_else(|| unreachable!("scripts are out of scope for the settings pane"))
+            .unwrap_or_else(|| unreachable!("this TestBackend was built without scripts"))
     }
 }
 
@@ -500,52 +500,52 @@ impl DataProvider for TestBackend {
         if self.scripts.is_some() {
             return Arc::new(StubActions);
         }
-        unreachable!("the settings pane reaches no sub-repo")
+        unreachable!("this TestBackend was built without that repo")
     }
 
     fn trigger_instance_repo(&self) -> Arc<dyn TriggerInstanceRepo> {
         if let Some(triggers) = &self.triggers {
             return Arc::clone(triggers);
         }
-        unreachable!("the settings pane reaches no sub-repo")
+        unreachable!("this TestBackend was built without that repo")
     }
 
     fn queue_repo(&self) -> Arc<dyn QueueRepo> {
-        unreachable!("the settings pane reaches no sub-repo")
+        unreachable!("this TestBackend was built without that repo")
     }
 
     fn history_repo(&self) -> Arc<dyn HistoryRepo> {
-        unreachable!("the settings pane reaches no sub-repo")
+        unreachable!("this TestBackend was built without that repo")
     }
 
     fn event_log_repo(&self) -> Arc<dyn EventLogRepo> {
-        unreachable!("the settings pane reaches no sub-repo")
+        unreachable!("this TestBackend was built without that repo")
     }
 
     fn soundboard_clips_repo(&self) -> Arc<dyn SoundboardClipsRepo> {
-        unreachable!("the settings pane reaches no sub-repo")
+        unreachable!("this TestBackend was built without that repo")
     }
 
     fn voice_alias_repo(&self) -> Arc<dyn VoiceAliasRepo> {
-        unreachable!("the settings pane reaches no sub-repo")
+        unreachable!("this TestBackend was built without that repo")
     }
 
     fn viewer_repo(&self) -> Arc<dyn ViewerRepo> {
-        unreachable!("the settings pane reaches no sub-repo")
+        unreachable!("this TestBackend was built without that repo")
     }
 
     fn tts_filters_repo(&self) -> Arc<dyn TtsFiltersRepo> {
-        unreachable!("the settings pane reaches no sub-repo")
+        unreachable!("this TestBackend was built without that repo")
     }
 
     fn chat_history_repo(&self) -> Arc<dyn ChatHistoryRepo> {
-        unreachable!("the settings pane reaches no sub-repo")
+        unreachable!("this TestBackend was built without that repo")
     }
 
     fn overlay_repo(&self) -> Arc<dyn OverlayRepo> {
         self.overlays
             .clone()
-            .unwrap_or_else(|| unreachable!("the settings pane reaches no sub-repo"))
+            .unwrap_or_else(|| unreachable!("this TestBackend was built without that repo"))
     }
 
     fn media_repo(&self) -> Arc<dyn MediaRepo> {
@@ -553,27 +553,27 @@ impl DataProvider for TestBackend {
     }
 
     fn donation_repo(&self) -> Arc<dyn DonationRepo> {
-        unreachable!("the settings pane reaches no sub-repo")
+        unreachable!("this TestBackend was built without that repo")
     }
 
     fn latest_value_repo(&self) -> Arc<dyn LatestValueRepo> {
-        unreachable!("the settings pane reaches no sub-repo")
+        unreachable!("this TestBackend was built without that repo")
     }
 
     fn ban_ledger_repo(&self) -> Arc<dyn BanLedgerRepo> {
-        unreachable!("the settings pane reaches no sub-repo")
+        unreachable!("this TestBackend was built without that repo")
     }
 
     fn scheduled_run_repo(&self) -> Arc<dyn ScheduledRunRepo> {
-        unreachable!("the settings pane reaches no sub-repo")
+        unreachable!("this TestBackend was built without that repo")
     }
 
     fn scheduled_run_revision(&self) -> CatalogRevision {
-        unreachable!("the settings pane reaches no catalog")
+        unreachable!("this TestBackend was built without a catalog")
     }
 
     fn catalog_revision(&self) -> CatalogRevision {
-        unreachable!("the settings pane reaches no catalog")
+        unreachable!("this TestBackend was built without a catalog")
     }
 
     async fn export(&self, snapshot: &std::path::Path) -> Result<(), StorageError> {
@@ -582,7 +582,7 @@ impl DataProvider for TestBackend {
             std::future::pending::<()>().await;
         }
         let Some(gate) = &self.export_gate else {
-            unreachable!("the settings pane never exports")
+            unreachable!("this TestBackend was not built to exports")
         };
         gate.notified().await;
         if self.export_lands_late {
@@ -596,7 +596,7 @@ impl DataProvider for TestBackend {
 
     async fn schema_version(&self) -> Result<u32, StorageError> {
         if self.export_gate.is_none() {
-            unreachable!("the settings pane never reads the schema version")
+            unreachable!("this TestBackend was not built to reads the schema version")
         }
         Ok(0)
     }
@@ -710,7 +710,7 @@ impl OverlayRepo for StubOverlays {
     }
 
     async fn create(&self, _: &str, _: &str, _: u32) -> Result<OverlayDefinition, StorageError> {
-        unreachable!("the settings pane never creates an overlay")
+        unreachable!("this TestBackend was not built to creates an overlay")
     }
 
     async fn reissue_all_credentials(&self) -> Result<Vec<OverlayId>, StorageError> {
@@ -718,19 +718,19 @@ impl OverlayRepo for StubOverlays {
     }
 
     async fn save(&self, _: &OverlayDefinition) -> Result<(), StorageError> {
-        unreachable!("the settings pane never saves an overlay")
+        unreachable!("this TestBackend was not built to saves an overlay")
     }
 
     async fn restore(&self, _: &OverlayDefinition) -> Result<(), StorageError> {
-        unreachable!("the settings pane never restores an overlay")
+        unreachable!("this TestBackend was not built to restores an overlay")
     }
 
     async fn set_enabled(&self, _: &OverlayId, _: bool) -> Result<bool, StorageError> {
-        unreachable!("the settings pane never toggles an overlay")
+        unreachable!("this TestBackend was not built to toggles an overlay")
     }
 
     async fn delete(&self, _: &OverlayId) -> Result<bool, StorageError> {
-        unreachable!("the settings pane never deletes an overlay")
+        unreachable!("this TestBackend was not built to deletes an overlay")
     }
 
     async fn get_retained_content(
@@ -745,7 +745,7 @@ impl OverlayRepo for StubOverlays {
         _: &OverlayId,
         _: &OverlayConfig,
     ) -> Result<(), StorageError> {
-        unreachable!("the settings pane never writes overlay content")
+        unreachable!("this TestBackend was not built to writes overlay content")
     }
 }
 
@@ -762,15 +762,15 @@ impl ActionRepo for StubActions {
     }
 
     async fn save(&self, _: &Action) -> Result<(), StorageError> {
-        unreachable!("the settings pane never writes an action")
+        unreachable!("this TestBackend was not built to writes an action")
     }
 
     async fn delete(&self, _: ActionId) -> Result<bool, StorageError> {
-        unreachable!("the settings pane never deletes an action")
+        unreachable!("this TestBackend was not built to deletes an action")
     }
 
     async fn telemetry(&self, _: ActionId) -> Result<ActionTelemetry, StorageError> {
-        unreachable!("the settings pane never reads action telemetry")
+        unreachable!("this TestBackend was not built to reads action telemetry")
     }
 
     async fn record_execution(
@@ -780,7 +780,7 @@ impl ActionRepo for StubActions {
         _: u64,
         _: ExecutionStatus,
     ) -> Result<(), StorageError> {
-        unreachable!("the settings pane never runs an action")
+        unreachable!("this TestBackend was not built to runs an action")
     }
 
     async fn prune_executions_before(&self, _: OffsetDateTime) -> Result<u64, StorageError> {
@@ -801,7 +801,7 @@ pub struct StubHistory;
 #[async_trait::async_trait]
 impl HistoryRepo for StubHistory {
     async fn save(&self, _: &ExecutionContext) -> Result<(), StorageError> {
-        unreachable!("the settings pane never records a run")
+        unreachable!("this TestBackend was not built to records a run")
     }
 
     async fn recent_for_action(

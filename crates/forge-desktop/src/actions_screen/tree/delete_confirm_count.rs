@@ -43,9 +43,7 @@ mod tests {
     fn scheduled_runs_sentence(language: Language, count: i64) -> String {
         install_language(language);
         forge_components::tr!("actions_delete_scheduled_runs", count = count)
-            .chars()
-            .filter(|c| !matches!(c, '\u{2068}' | '\u{2069}'))
-            .collect()
+            .replace(crate::test_support::FORMAT_ISOLATES, "")
     }
 
     #[test]

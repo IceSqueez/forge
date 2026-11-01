@@ -187,6 +187,7 @@ mod tests {
     use super::*;
     use crate::ConnectionState;
     use forge_types::MessageCode;
+    use std::pin::Pin;
 
     const LOST: MessageCode = MessageCode::from_static("test", "connection-lost");
     const REFUSED: MessageCode = MessageCode::from_static("test", "connection-refused");
@@ -211,5 +212,49 @@ mod tests {
 
         record_connection_failure(&state, &slot, None);
         assert!(revisions.moved(), "failure cleared");
+    }
+
+    async fn is_ready(wait: Pin<&mut impl Future<Output = ()>>) -> bool {
+        tokio::time::timeout(Duration::ZERO, wait).await.is_ok()
+    }
+
+    #[tokio::test]
+    async fn reached_phase_answers_at_once_for_the_phase_already_entered() {
+        let switch = AutoReconnectSwitch::new(true);
+        switch.watch().enter(RedialPhase::BackingOff);
+
+        let wait = switch.reached_phase(RedialPhase::BackingOff);
+        tokio::pin!(wait);
+
+        assert!(is_ready(wait.as_mut()).await);
+    }
+
+    #[tokio::test]
+    async fn reached_phase_ignores_other_phases_until_a_watcher_enters_the_wanted_one() {
+        let switch = AutoReconnectSwitch::new(true);
+        let watcher = switch.watch();
+        let wait = switch.reached_phase(RedialPhase::Parked);
+        tokio::pin!(wait);
+
+        assert!(!is_ready(wait.as_mut()).await, "still dialing");
+
+        watcher.enter(RedialPhase::BackingOff);
+        assert!(!is_ready(wait.as_mut()).await, "backing off");
+
+        watcher.enter(RedialPhase::Parked);
+        assert!(is_ready(wait.as_mut()).await, "parked");
+    }
+
+    #[tokio::test]
+    async fn reached_phase_reads_the_current_phase_not_one_already_left() {
+        let switch = AutoReconnectSwitch::new(true);
+        let watcher = switch.watch();
+        watcher.enter(RedialPhase::Parked);
+        watcher.enter(RedialPhase::Dialing);
+
+        let wait = switch.reached_phase(RedialPhase::Parked);
+        tokio::pin!(wait);
+
+        assert!(!is_ready(wait.as_mut()).await);
     }
 }

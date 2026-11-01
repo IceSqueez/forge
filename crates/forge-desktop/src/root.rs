@@ -1201,7 +1201,7 @@ mod tests {
     const FAILURE_WINDOW_H: f32 = 700.0;
 
     #[gpui::test]
-    fn a_pre_baseline_failure_renders_its_screen_and_keeps_the_failed_state(
+    fn a_pre_baseline_failure_renders_without_panicking_or_leaving_the_failed_state(
         cx: &mut TestAppContext,
     ) {
         crate::test_support::install_presentation(cx);

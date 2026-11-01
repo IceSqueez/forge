@@ -187,14 +187,13 @@ mod quick_action_bridge {
     use forge_platform_core::{
         CollectionRevisionSignal, CollectionRevisions, CredentialState, HealthStream,
     };
-    use forge_registry::SubActionRegistry;
-    use forge_runtime::{ActionCancelRegistry, spawn_action_engine};
+
     use forge_types::{IntegrationId, MessageCode, RecoverMutex, VerbatimText};
     use gpui::TestAppContext;
 
     use super::action;
     use super::*;
-    use crate::test_support::{StubActions, StubEventLog, StubHistory, runtime, test_backend};
+    use crate::test_support::{StubEventLog, StubHistory, runtime, test_backend};
     use crate::twitch_bot_presence::TwitchBotPresence;
     use crate::twitch_bot_section::StreamerSignInRequested;
     use forge_components::Presentation;
@@ -426,15 +425,7 @@ mod quick_action_bridge {
             cx.set_global(Presentation::new(ThemeId::ForgeDefault, Density::Cozy));
         });
         let bus = EventBus::new(Arc::new(StubEventLog));
-        let engine = spawn_action_engine(
-            Arc::clone(&bus),
-            crate::test_support::stub_catalog(),
-            Arc::new(StubActions),
-            Arc::new(StubHistory),
-            Arc::new(SubActionRegistry::new()),
-            Arc::new(ActionCancelRegistry::new()),
-            forge_runtime::DateNamesHandle::default(),
-        );
+        let engine = crate::test_support::stub_action_engine(Arc::clone(&bus));
         let (backend, _writes) = test_backend();
         let view = cx.new(|cx| {
             IntegrationDetail::new(
@@ -1589,17 +1580,14 @@ mod detail_lifetime {
         DetailSection, HeaderAction, HealthDelta, HealthMetric, HealthMetricId, HealthStream,
         HealthValue, QuickAction, QuickActions,
     };
-    use forge_runtime::{ActionCancelRegistry, spawn_action_engine};
-    use forge_types::{IntegrationId, MessageCode};
-    use gpui::{AppContext as _, TestAppContext};
 
-    use crate::integration_detail::{DetailServices, IntegrationDetail};
-    use crate::test_support::{StubActions, StubEventLog, StubHistory, runtime, test_backend};
+    use forge_types::{IntegrationId, MessageCode};
+    use gpui::TestAppContext;
+
+    use crate::test_support::{runtime, test_backend};
     use forge_components::Presentation;
-    use forge_host::integrations::{BuiltinObject, ObsInstallSeed};
-    use forge_registry::{SubActionRegistry, TriggerRegistry};
-    use forge_runtime::EventBus;
-    use forge_storage::{CredentialsRepo, SettingsRepo};
+    use forge_host::integrations::BuiltinObject;
+
     use std::sync::Arc;
     use std::time::Duration;
     use tokio::sync::mpsc;
@@ -1712,40 +1700,8 @@ mod detail_lifetime {
             follow: None,
             ban_list: None,
         };
-        let bus = EventBus::new(Arc::new(StubEventLog));
-        let engine = spawn_action_engine(
-            Arc::clone(&bus),
-            crate::test_support::stub_catalog(),
-            Arc::new(StubActions),
-            Arc::new(StubHistory),
-            Arc::new(SubActionRegistry::new()),
-            Arc::new(ActionCancelRegistry::new()),
-            forge_runtime::DateNamesHandle::default(),
-        );
         let (backend, _writes) = test_backend();
-        let view = cx.new(|cx| {
-            IntegrationDetail::new(
-                object,
-                DetailServices {
-                    rt_handle: rt.handle().clone(),
-                    action_engine: engine,
-                    credentials: Arc::clone(&backend) as Arc<dyn CredentialsRepo>,
-                    settings: backend as Arc<dyn SettingsRepo>,
-                    history: Arc::new(StubHistory),
-                    trigger_registry: Arc::new(TriggerRegistry::new()),
-                    bus: Arc::clone(&bus) as Arc<dyn forge_events::EventPublisher>,
-                    twitch_slot: None,
-                    kick_slot: None,
-                    youtube_slot: None,
-                    obs_install_seed: ObsInstallSeed::new(
-                        forge_obs::SwitchableObsSink::new(),
-                        Default::default(),
-                    ),
-                    sign_out: super::SignOutRoutes::default().over(Arc::new(super::NoSlots)),
-                },
-                cx,
-            )
-        });
+        let view = super::quick_action_bridge::open_detail_with(cx, &rt, object, backend);
         cx.run_until_parked();
         assert!(
             !deltas_tx.is_closed(),

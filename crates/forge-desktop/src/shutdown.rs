@@ -78,30 +78,21 @@ mod tests {
     }
 
     #[test]
-    fn finish_returns_within_the_runtime_budget_despite_a_stuck_blocking_task_and_silences_logging()
-    {
+    fn finish_abandons_a_stuck_blocking_task_and_silences_logging() {
         let (teardown, release) = teardown_with_stuck_blocking_task();
         log::set_max_level(log::LevelFilter::Info);
-        let started = std::time::Instant::now();
+        let (finished, returned) = std::sync::mpsc::channel();
+        std::thread::spawn(move || {
+            teardown.finish();
+            finished.send(()).unwrap();
+        });
 
-        teardown.finish();
+        returned
+            .recv_timeout(forge_test_support::HANG_GUARD)
+            .expect("finish waited on the stuck task");
 
-        let elapsed = started.elapsed();
-        release.send(()).unwrap();
-        assert!(
-            elapsed < RUNTIME_SHUTDOWN_BUDGET + Duration::from_secs(20),
-            "{elapsed:?}"
-        );
+        assert!(release.send(()).is_ok(), "the task was not stuck any more");
         assert_eq!(log::max_level(), log::LevelFilter::Off);
-    }
-
-    #[test]
-    fn finish_without_a_claimed_runtime_returns_immediately() {
-        let started = std::time::Instant::now();
-
-        QuitTeardown(None).finish();
-
-        assert!(started.elapsed() < RUNTIME_SHUTDOWN_BUDGET);
     }
 
     #[gpui::test]

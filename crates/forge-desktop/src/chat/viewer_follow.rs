@@ -176,14 +176,10 @@ mod tests {
 
     use crate::platform_visuals::BadgeKind;
     use forge_components::{DateShape, FORGE_DEFAULT, fmt_display, tr};
-    use forge_platform_core::{
-        BuiltinContent, BuiltinHealth, BuiltinStatus, CapabilityFlags, ConnectionState,
-        DetailSection, FollowLookup, FollowStatus, HeaderAction, HealthMetric, HealthMetricId,
-        HealthStream, HealthValue, QuickAction, QuickActions,
-    };
+    use forge_platform_core::{FollowLookup, FollowStatus};
     use forge_storage::MockChatHistoryRepo;
     use forge_storage::MockVoiceAliasRepo;
-    use forge_types::{IntegrationId, MessageCode, PlatformId};
+    use forge_types::{IntegrationId, PlatformId};
     use gpui::{AppContext as _, Entity, TestAppContext};
     use time::OffsetDateTime;
 
@@ -197,85 +193,6 @@ mod tests {
     use crate::test_support::{pump, runtime, switch_lifecycle};
     use forge_host::integrations::{BuiltinObject, BuiltinRegistry};
     use forge_runtime::LifecycleState;
-
-    struct StubBuiltin {
-        id: IntegrationId,
-    }
-
-    impl BuiltinStatus for StubBuiltin {
-        fn id(&self) -> &IntegrationId {
-            &self.id
-        }
-        fn credential_state(&self) -> forge_platform_core::CredentialState {
-            forge_platform_core::CredentialState::Valid
-        }
-        fn display_name(&self) -> &str {
-            "stub"
-        }
-        fn version(&self) -> Option<String> {
-            None
-        }
-        fn connection(&self) -> ConnectionState {
-            ConnectionState::Connected
-        }
-        fn uptime(&self) -> Option<std::time::Duration> {
-            None
-        }
-        fn endpoint(&self) -> Option<forge_types::UserText> {
-            None
-        }
-        fn capability_flags(&self) -> CapabilityFlags {
-            CapabilityFlags {
-                limited: false,
-                label: None,
-            }
-        }
-        fn header_actions(&self) -> Vec<HeaderAction> {
-            Vec::new()
-        }
-
-        fn status_revisions(&self) -> Option<forge_platform_core::CollectionRevisions> {
-            None
-        }
-    }
-
-    const STUB_METRIC_IDS: [HealthMetricId; 4] = [
-        HealthMetricId::new(MessageCode::from_static("stub", "metric0")),
-        HealthMetricId::new(MessageCode::from_static("stub", "metric1")),
-        HealthMetricId::new(MessageCode::from_static("stub", "metric2")),
-        HealthMetricId::new(MessageCode::from_static("stub", "metric3")),
-    ];
-
-    impl BuiltinHealth for StubBuiltin {
-        fn metrics(&self) -> [HealthMetric; 4] {
-            std::array::from_fn(|i| HealthMetric {
-                id: STUB_METRIC_IDS[i].clone(),
-                value: HealthValue::Text {
-                    primary: forge_types::VerbatimText::new("").into(),
-                    secondary: None,
-                },
-            })
-        }
-        fn stream(&self) -> HealthStream {
-            Box::pin(futures_util::stream::empty())
-        }
-    }
-
-    impl BuiltinContent for StubBuiltin {
-        fn sections(&self) -> Vec<DetailSection> {
-            Vec::new()
-        }
-
-        fn content_revisions(&self) -> Option<forge_platform_core::CollectionRevisions> {
-            None
-        }
-    }
-
-    impl QuickActions for StubBuiltin {
-        fn actions(&self) -> Vec<QuickAction> {
-            Vec::new()
-        }
-    }
 
     struct RecordingLookup {
         asked: Mutex<Vec<String>>,
@@ -306,19 +223,9 @@ mod tests {
     fn registry_with(lookup: &Arc<RecordingLookup>) -> BuiltinRegistry {
         let registry = BuiltinRegistry::default();
         for integration in [Integration::Twitch, Integration::YouTube, Integration::Kick] {
-            let stub = Arc::new(StubBuiltin {
-                id: integration.builtin_id(),
-            });
             registry.install(BuiltinObject {
-                status: stub.clone(),
-                health: stub.clone(),
-                content: stub.clone(),
-                quick: stub,
-                control: None,
-                collections: None,
-                option_source: None,
                 follow: Some(Arc::clone(lookup) as Arc<dyn FollowLookup>),
-                ban_list: None,
+                ..crate::unavailable_builtin::unavailable_builtin(&integration.builtin_id())
             });
         }
         registry
@@ -329,9 +236,7 @@ mod tests {
     }
 
     fn settle(cx: &mut TestAppContext, rt: &tokio::runtime::Runtime) {
-        cx.run_until_parked();
-        pump(rt);
-        cx.run_until_parked();
+        crate::test_support::settle_runtime_work(cx, rt);
     }
 
     fn mount_following(

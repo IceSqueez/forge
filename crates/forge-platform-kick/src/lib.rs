@@ -26,7 +26,7 @@ pub use api::chat_messages::KickSendChat;
 pub use api::moderation::{BanNote, BanSubject, KickModeration};
 pub use api::poller::spawn_kick_poller;
 pub use api::rewards::KickRewards;
-pub use auth::credentials::{CREDENTIAL_KEY, KickCredentials};
+pub use auth::credentials::{KICK_CREDENTIAL_ID, KickCredentials};
 pub use auth::credentials_manager::KickCredentialsManager;
 pub use auth::oauth_client::{
     KICK_OAUTH_BUDGET_CAPACITY, KICK_OAUTH_BUDGET_WINDOW, KickOAuthClient, kick_oauth_gateway,

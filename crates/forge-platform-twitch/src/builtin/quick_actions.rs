@@ -726,14 +726,14 @@ mod tests {
 
     use super::*;
     use crate::builtin::tests::make_bundle_with_tier;
-    use crate::chat::ChatConnectionState;
+    use crate::chat::ChatSessionState;
 
     #[test]
     fn commercial_action_locks_for_standard_tier_and_unlocks_for_affiliate() {
         let standard =
-            make_bundle_with_tier(ChatConnectionState::Connected, BroadcasterTier::Standard);
+            make_bundle_with_tier(ChatSessionState::Connected, BroadcasterTier::Standard);
         let affiliate =
-            make_bundle_with_tier(ChatConnectionState::Connected, BroadcasterTier::Affiliate);
+            make_bundle_with_tier(ChatSessionState::Connected, BroadcasterTier::Affiliate);
 
         let find_commercial = |bundle: &TwitchIntegrationBundle| {
             bundle
@@ -767,9 +767,9 @@ mod tests {
     #[test]
     fn every_poll_and_prediction_action_locks_for_standard_and_unlocks_for_affiliate() {
         let standard =
-            make_bundle_with_tier(ChatConnectionState::Connected, BroadcasterTier::Standard);
+            make_bundle_with_tier(ChatSessionState::Connected, BroadcasterTier::Standard);
         let affiliate =
-            make_bundle_with_tier(ChatConnectionState::Connected, BroadcasterTier::Affiliate);
+            make_bundle_with_tier(ChatSessionState::Connected, BroadcasterTier::Affiliate);
         let is_gated = |a: &QuickAction| {
             a.group == Some(Group::Polls.badge()) || a.group == Some(Group::Predictions.badge())
         };
@@ -826,8 +826,7 @@ mod tests {
 
     #[test]
     fn every_action_on_a_live_item_picks_it_from_a_list_the_source_declares() {
-        let bundle =
-            make_bundle_with_tier(ChatConnectionState::Connected, BroadcasterTier::Affiliate);
+        let bundle = make_bundle_with_tier(ChatSessionState::Connected, BroadcasterTier::Affiliate);
         let declared: Vec<OptionListId> = bundle
             .option_lists()
             .into_iter()
@@ -891,8 +890,7 @@ mod tests {
 
     #[test]
     fn a_dependent_live_item_field_follows_the_field_it_depends_on() {
-        let bundle =
-            make_bundle_with_tier(ChatConnectionState::Connected, BroadcasterTier::Affiliate);
+        let bundle = make_bundle_with_tier(ChatSessionState::Connected, BroadcasterTier::Affiliate);
         let lists = bundle.option_lists();
 
         let mut followers = std::collections::BTreeSet::new();

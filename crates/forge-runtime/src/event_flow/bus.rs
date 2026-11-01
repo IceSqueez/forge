@@ -1,4 +1,3 @@
-use crate::chat::first_chat_ledger::FirstChatLedger;
 use crate::config::Config;
 use crate::delivery::{
     CriticalSink, CriticalSinks, CriticalSubscription, EVENT_LOG, LaneTable, UNNAMED_OBSERVER,
@@ -29,6 +28,10 @@ use std::sync::{
 use time::OffsetDateTime;
 use tokio::sync::{oneshot, watch};
 
+pub trait EventStamp: Send + Sync {
+    fn stamp(&self, event: &mut Event);
+}
+
 pub struct EventBus {
     observers: EventChannel,
     ring: Mutex<EventRing>,
@@ -45,7 +48,7 @@ pub struct EventBus {
     flush_abandon: watch::Sender<bool>,
     abandoned_rows: Arc<AtomicU64>,
     flushes: Mutex<Vec<Shared<oneshot::Receiver<()>>>>,
-    first_chats: Option<FirstChatLedger>,
+    stamps: Vec<Box<dyn EventStamp>>,
     held_lineages: Mutex<HashMap<EventId, Lineage>>,
 }
 
@@ -93,21 +96,21 @@ impl EventBus {
         Self::with_config(event_log, &Config::default())
     }
 
-    pub fn with_first_chats(
+    pub fn with_stamps(
         event_log: Arc<dyn EventLogRepo>,
-        ledger: Option<FirstChatLedger>,
+        stamps: Vec<Box<dyn EventStamp>>,
     ) -> Arc<Self> {
-        Self::build(event_log, &Config::default(), ledger)
+        Self::build(event_log, &Config::default(), stamps)
     }
 
     pub fn with_config(event_log: Arc<dyn EventLogRepo>, config: &Config) -> Arc<Self> {
-        Self::build(event_log, config, None)
+        Self::build(event_log, config, Vec::new())
     }
 
     fn build(
         event_log: Arc<dyn EventLogRepo>,
         config: &Config,
-        first_chats: Option<FirstChatLedger>,
+        stamps: Vec<Box<dyn EventStamp>>,
     ) -> Arc<Self> {
         Arc::new(Self {
             observers: EventChannel::new(config.bus_observer_capacity),
@@ -125,7 +128,7 @@ impl EventBus {
             flush_abandon: watch::channel(false).0,
             abandoned_rows: Arc::new(AtomicU64::new(0)),
             flushes: Mutex::new(Vec::new()),
-            first_chats,
+            stamps,
             held_lineages: Mutex::new(HashMap::new()),
         })
     }
@@ -150,8 +153,8 @@ impl EventBus {
             let lineage = self.lineage_with_parent(&event, &ring);
             event.causation_depth = lineage.depth;
             event.replay = lineage.replay;
-            if let Some(ledger) = &self.first_chats {
-                ledger.stamp(&mut event);
+            for stamp in &self.stamps {
+                stamp.stamp(&mut event);
             }
             if hold_lineage {
                 self.held_lineages.lock_recover().insert(event.id, lineage);

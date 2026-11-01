@@ -57,8 +57,9 @@ pub use credentialed_control::{
 pub use donation::{DonationProvider, DonationStream};
 pub use donation_poll::{
     CycleError, DonationPoll, POLL_ERROR_BACKOFF_BASE, POLL_ERROR_BACKOFF_CAP, PollError,
-    PollMetrics, PollPhase, PollPhaseCodes, PollScope, PollStatus, PollStatusBoard, PollVocabulary,
-    PollWorker, PolledDonationProvider, RunningPoller, parse_header_token, poll_metrics,
+    PollMetrics, PollPhaseCodes, PollScope, PollStatus, PollStatusBoard, PollVocabulary,
+    PollWorker, PolledDonationProvider, PollerPhase, RunningPoller, parse_header_token,
+    poll_metrics,
 };
 pub use donation_setup::{
     AccountTarget, AdjustablePoll, DonationAccountSetup, SavedAccount, TokenCheck, TokenProblem,
@@ -71,7 +72,7 @@ pub use integration::{
     IntegrationCatalogGroup, IntegrationCategory, IntegrationDeclaration, IntegrationDisclaimer,
     IntegrationIdentity, IntegrationTint, SignInRoute, TileMark,
 };
-pub use live_viewers::{LiveViewerSource, ViewerReport, ViewerReportStream};
+pub use live_viewers::{LiveViewerSource, StreamOutputSignal, ViewerReport, ViewerReportStream};
 pub use option_source::{
     BuiltinOptionSource, OptionEntry, OptionHint, OptionListId, OptionListMetadata,
 };
@@ -93,6 +94,6 @@ pub use viewer_step::{ViewerAction, ViewerRef, ViewerStep};
 pub use auth::pkce_flow::PkceAuthorizeUrl;
 pub use auth::{
     CALLBACK_PATH, LoopbackAttempt, LoopbackSignIn, PkceAuthorization, PkceAuthorizeConfig,
-    PkceLoopback, REFRESH_BUFFER, SingleFlightRefresh, TokenRotation, TokenSource,
+    PkceLoopback, PlatformFuture, REFRESH_BUFFER, SingleFlightRefresh, TokenRotation, TokenSource,
     expires_within_refresh_buffer,
 };

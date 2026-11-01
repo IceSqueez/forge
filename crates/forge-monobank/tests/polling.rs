@@ -4,7 +4,7 @@ use std::collections::BTreeSet;
 use std::sync::Arc;
 use std::time::Duration;
 
-use forge_monobank::{MonobankRateLimits, PollFailure, PollPhase};
+use forge_monobank::{MonobankRateLimits, PollFailure, PollerPhase};
 use forge_net::RateLimitOutcome;
 use forge_platform_core::{BuiltinControl, DonationProvider, PlatformError};
 use forge_types::DonationOrigin;
@@ -179,10 +179,10 @@ async fn server_error_is_reported_and_polling_recovers_on_the_next_timer() {
         matches!(failure, Err(PlatformError::Http { status: 503, .. })),
         "{failure:?}"
     );
-    assert_eq!(h.provider.poll_status().phase, PollPhase::Retrying);
+    assert_eq!(h.provider.poll_status().phase, PollerPhase::Retrying);
 
     let recovered = h.next().await.unwrap();
-    h.wait_for("polling again", |s| s.phase == PollPhase::Polling)
+    h.wait_for("polling again", |s| s.phase == PollerPhase::Polling)
         .await;
     assert_eq!(recovered.donation_id, "D-1");
 }
@@ -250,7 +250,7 @@ async fn errors_needing_the_user_stop_polling_until_the_user_acts() {
         jars: &'static [&'static str],
         reject_token: bool,
         failure: PollFailure,
-        phase: PollPhase,
+        phase: PollerPhase,
     }
     let cases = [
         Case {
@@ -259,7 +259,7 @@ async fn errors_needing_the_user_stop_polling_until_the_user_acts() {
             jars: &[JAR],
             reject_token: false,
             failure: PollFailure::MissingToken,
-            phase: PollPhase::AwaitingToken,
+            phase: PollerPhase::AwaitingToken,
         },
         Case {
             name: "no jar",
@@ -267,7 +267,7 @@ async fn errors_needing_the_user_stop_polling_until_the_user_acts() {
             jars: &[JAR],
             reject_token: false,
             failure: PollFailure::JarNotSelected,
-            phase: PollPhase::ActionRequired,
+            phase: PollerPhase::ActionRequired,
         },
         Case {
             name: "jar gone",
@@ -275,7 +275,7 @@ async fn errors_needing_the_user_stop_polling_until_the_user_acts() {
             jars: &[JAR],
             reject_token: false,
             failure: PollFailure::JarMissing,
-            phase: PollPhase::ActionRequired,
+            phase: PollerPhase::ActionRequired,
         },
         Case {
             name: "token rejected",
@@ -283,7 +283,7 @@ async fn errors_needing_the_user_stop_polling_until_the_user_acts() {
             jars: &[JAR],
             reject_token: true,
             failure: PollFailure::TokenRejected,
-            phase: PollPhase::ActionRequired,
+            phase: PollerPhase::ActionRequired,
         },
     ];
     for case in cases {
@@ -364,7 +364,8 @@ async fn pause_and_resume_keeps_the_seen_top_ups() {
         .await;
 
     assert!(h.provider.disconnect().await.is_ok());
-    h.wait_for("paused", |s| s.phase == PollPhase::Paused).await;
+    h.wait_for("paused", |s| s.phase == PollerPhase::Paused)
+        .await;
     h.bank.add(JAR, top_up("NEW", now_unix()));
     assert!(h.provider.reconnect().await.is_ok());
     let next = h.next().await.unwrap();
@@ -381,7 +382,8 @@ async fn paused_poller_sends_no_requests() {
     h.wait_for("baseline poll", |s| s.last_poll_at.is_some())
         .await;
     assert!(h.provider.disconnect().await.is_ok());
-    h.wait_for("paused", |s| s.phase == PollPhase::Paused).await;
+    h.wait_for("paused", |s| s.phase == PollerPhase::Paused)
+        .await;
     let requests = h.bank.request_count();
 
     Harness::outlast_several_ticks().await;
@@ -402,7 +404,7 @@ async fn removing_the_token_moves_the_poller_to_awaiting_a_token() {
         matches!(failure, Err(PlatformError::Auth { .. })),
         "{failure:?}"
     );
-    assert_eq!(h.provider.poll_status().phase, PollPhase::AwaitingToken);
+    assert_eq!(h.provider.poll_status().phase, PollerPhase::AwaitingToken);
 }
 
 #[tokio::test]
@@ -437,7 +439,8 @@ async fn pausing_or_reconnecting_abandons_a_stalled_statement_call_and_keeps_the
         h.wait_for_statement_calls(calls + 1).await;
         if pause_first {
             assert!(h.provider.disconnect().await.is_ok());
-            h.wait_for("paused", |s| s.phase == PollPhase::Paused).await;
+            h.wait_for("paused", |s| s.phase == PollerPhase::Paused)
+                .await;
         }
         assert!(h.provider.reconnect().await.is_ok());
         let next = h.next().await.unwrap();

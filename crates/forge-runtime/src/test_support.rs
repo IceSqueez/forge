@@ -169,3 +169,16 @@ pub(crate) mod failure {
         step_problem(kind, &forge_registry::ConfigProblem::field(key, reason))
     }
 }
+
+pub(crate) struct WatchedObs(pub(crate) tokio::sync::watch::Receiver<bool>);
+
+impl forge_platform_core::StreamOutputSignal for WatchedObs {
+    fn is_active(&self) -> bool {
+        *self.0.borrow()
+    }
+
+    async fn changed(&mut self) -> Option<bool> {
+        self.0.changed().await.ok()?;
+        Some(*self.0.borrow_and_update())
+    }
+}

@@ -24,7 +24,7 @@ pub struct PollPhaseCodes {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum PollPhase {
+pub enum PollerPhase {
     Paused,
     AwaitingToken,
     Starting,
@@ -33,7 +33,7 @@ pub enum PollPhase {
     ActionRequired,
 }
 
-impl PollPhase {
+impl PollerPhase {
     pub const fn connection(self) -> ConnectionState {
         match self {
             Self::Paused | Self::AwaitingToken | Self::ActionRequired => {
@@ -68,7 +68,7 @@ pub trait PollError {
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct PollStatus<S, F> {
-    pub phase: PollPhase,
+    pub phase: PollerPhase,
     pub subject: Option<S>,
     pub poll_interval: Duration,
     pub last_poll_at: Option<OffsetDateTime>,
@@ -81,7 +81,7 @@ pub struct PollStatus<S, F> {
 impl<S, F> PollStatus<S, F> {
     pub const fn initial(poll_interval: Duration) -> Self {
         Self {
-            phase: PollPhase::Paused,
+            phase: PollerPhase::Paused,
             subject: None,
             poll_interval,
             last_poll_at: None,
@@ -96,13 +96,13 @@ impl<S, F> PollStatus<S, F> {
         self.polling_since.map(|since| since.elapsed())
     }
 
-    fn enter(&mut self, phase: PollPhase) {
+    fn enter(&mut self, phase: PollerPhase) {
         match phase {
-            PollPhase::Polling => {
+            PollerPhase::Polling => {
                 self.polling_since.get_or_insert_with(Instant::now);
             }
-            PollPhase::Retrying | PollPhase::Starting => {}
-            PollPhase::Paused | PollPhase::AwaitingToken | PollPhase::ActionRequired => {
+            PollerPhase::Retrying | PollerPhase::Starting => {}
+            PollerPhase::Paused | PollerPhase::AwaitingToken | PollerPhase::ActionRequired => {
                 self.polling_since = None;
             }
         }
@@ -153,7 +153,7 @@ impl<S: Clone + PartialEq, F: Copy + PartialEq> PollStatusBoard<S, F> {
         Box::pin(BroadcastStream::new(self.health_tx.subscribe()).filter_map(Result::ok))
     }
 
-    pub fn enter(&self, phase: PollPhase) {
+    pub fn enter(&self, phase: PollerPhase) {
         self.update_expected(|status| status.enter(phase));
     }
 
@@ -167,7 +167,7 @@ impl<S: Clone + PartialEq, F: Copy + PartialEq> PollStatusBoard<S, F> {
 
     pub fn record_poll(&self, newest_donation: Option<OffsetDateTime>) {
         self.update_expected(|status| {
-            status.enter(PollPhase::Polling);
+            status.enter(PollerPhase::Polling);
             status.last_poll_at = Some(OffsetDateTime::now_utc());
             if let Some(occurred_at) = newest_donation {
                 status.last_donation_at = Some(
@@ -181,11 +181,11 @@ impl<S: Clone + PartialEq, F: Copy + PartialEq> PollStatusBoard<S, F> {
 
     pub fn record_failure<E: PollError<Failure = F>>(&self, error: &E) {
         let phase = if !error.needs_user_action() {
-            PollPhase::Retrying
+            PollerPhase::Retrying
         } else if error.is_missing_token() {
-            PollPhase::AwaitingToken
+            PollerPhase::AwaitingToken
         } else {
-            PollPhase::ActionRequired
+            PollerPhase::ActionRequired
         };
         self.update(ConnectionTransition::Unexpected, |status| {
             status.enter(phase);
@@ -235,7 +235,7 @@ impl<S: Clone + PartialEq, F: Copy + PartialEq> Drop for RunningPoller<S, F> {
         if self.0.running_pollers.fetch_sub(1, Ordering::SeqCst) == 1 {
             self.0.update_expected(|status| {
                 if status.phase.connection() != ConnectionState::Disconnected {
-                    status.enter(PollPhase::Paused);
+                    status.enter(PollerPhase::Paused);
                 }
             });
         }
@@ -336,9 +336,9 @@ mod tests {
     #[test]
     fn failures_pick_the_phase_from_what_they_need_from_the_user() {
         for (error, phase) in [
-            (Failure::Network, PollPhase::Retrying),
-            (Failure::Rejected, PollPhase::ActionRequired),
-            (Failure::MissingToken, PollPhase::AwaitingToken),
+            (Failure::Network, PollerPhase::Retrying),
+            (Failure::Rejected, PollerPhase::ActionRequired),
+            (Failure::MissingToken, PollerPhase::AwaitingToken),
         ] {
             let board = board();
             board.record_failure(&error);
@@ -353,8 +353,8 @@ mod tests {
     fn polling_pausing_and_restarting_announce_expected_transitions() {
         let (board, recorder) = announcing_board();
         board.record_poll(None);
-        board.enter(PollPhase::Paused);
-        board.enter(PollPhase::Starting);
+        board.enter(PollerPhase::Paused);
+        board.enter(PollerPhase::Starting);
         assert_eq!(
             announcements(&recorder),
             [
@@ -398,7 +398,7 @@ mod tests {
             announcements(&recorder),
             [(ConnectionState::Connected, true)]
         );
-        assert_eq!(board.snapshot().phase, PollPhase::Polling);
+        assert_eq!(board.snapshot().phase, PollerPhase::Polling);
     }
 
     #[test]
@@ -434,7 +434,7 @@ mod tests {
         assert_eq!(last(&recorder), Some((ConnectionState::Disconnected, true)));
     }
 
-    fn phase_after_last_poller_exit(reach: impl FnOnce(&Board)) -> PollPhase {
+    fn phase_after_last_poller_exit(reach: impl FnOnce(&Board)) -> PollerPhase {
         let (board, _recorder) = announcing_board();
         let running = board.poller_started();
         reach(&board);
@@ -444,7 +444,7 @@ mod tests {
 
     #[test]
     fn last_poller_exit_parks_an_active_phase_as_paused() {
-        let reach_starting = |board: &Board| board.enter(PollPhase::Starting);
+        let reach_starting = |board: &Board| board.enter(PollerPhase::Starting);
         let reach_polling = |board: &Board| board.record_poll(None);
         let reach_retrying = |board: &Board| board.record_failure(&Failure::Network);
         assert_eq!(
@@ -453,7 +453,7 @@ mod tests {
                 phase_after_last_poller_exit(reach_polling),
                 phase_after_last_poller_exit(reach_retrying),
             ],
-            [PollPhase::Paused; 3]
+            [PollerPhase::Paused; 3]
         );
     }
 
@@ -466,7 +466,7 @@ mod tests {
                 phase_after_last_poller_exit(reach_awaiting),
                 phase_after_last_poller_exit(reach_action),
             ],
-            [PollPhase::AwaitingToken, PollPhase::ActionRequired]
+            [PollerPhase::AwaitingToken, PollerPhase::ActionRequired]
         );
     }
 }

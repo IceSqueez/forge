@@ -90,35 +90,13 @@ async fn stop_runner_maps_config_to_the_control_stop_signal() {
     let stack = ArgStack::new().set("who".to_owned(), Variant::String("bob".to_owned()));
 
     let rows: &[(Option<&str>, Option<&str>, StopMark)] = &[
-        (
-            None,
-            None,
-            StopMark {
-                failed: false,
-                reason: None,
-            },
-        ),
-        (
-            Some("completed"),
-            Some(""),
-            StopMark {
-                failed: false,
-                reason: None,
-            },
-        ),
-        (
-            Some("failed"),
-            None,
-            StopMark {
-                failed: true,
-                reason: None,
-            },
-        ),
+        (None, None, StopMark::Completed),
+        (Some("completed"), Some(""), StopMark::Completed),
+        (Some("failed"), None, StopMark::Failed { reason: None }),
         (
             Some("failed"),
             Some("%who%"),
-            StopMark {
-                failed: true,
+            StopMark::Failed {
                 reason: Some("bob".to_owned()),
             },
         ),

@@ -12,7 +12,8 @@ use tokio::sync::watch;
 
 use crate::account::auth::{YoutubeAuthBundle, fetch_own_channel};
 use crate::account::credentials::{
-    CREDENTIAL_KEY, DEFAULT_ACCESS_TOKEN_LIFETIME_SECS, YoutubeBroadcaster, YoutubeCredentials,
+    DEFAULT_ACCESS_TOKEN_LIFETIME_SECS, YOUTUBE_CREDENTIAL_ID, YoutubeBroadcaster,
+    YoutubeCredentials,
 };
 use crate::account::oauth_client::GoogleOAuthClient;
 use crate::api::data_api::YoutubeDataApi;
@@ -211,7 +212,7 @@ impl CredentialStore {
     async fn load(&self) -> Result<Option<YoutubeCredentials>, PlatformError> {
         let Some(json) = self
             .repo
-            .load(&CredentialId::new(CREDENTIAL_KEY))
+            .load(&CredentialId::new(YOUTUBE_CREDENTIAL_ID))
             .await
             .map_err(|e| credential_storage_error(PLATFORM, e.stored_secret_unrecoverable(), e))?
         else {
@@ -227,7 +228,7 @@ impl CredentialStore {
     async fn persist(&self, creds: &YoutubeCredentials) -> Result<(), PlatformError> {
         let json = serde_json::to_string(creds)?;
         self.repo
-            .store(&CredentialId::new(CREDENTIAL_KEY), &json)
+            .store(&CredentialId::new(YOUTUBE_CREDENTIAL_ID), &json)
             .await
             .map_err(|e| credential_storage_error(PLATFORM, e.stored_secret_unrecoverable(), e))?;
         self.expiry_tx
@@ -237,7 +238,7 @@ impl CredentialStore {
 
     async fn clear(&self) -> Result<(), PlatformError> {
         self.repo
-            .delete(&CredentialId::new(CREDENTIAL_KEY))
+            .delete(&CredentialId::new(YOUTUBE_CREDENTIAL_ID))
             .await
             .map_err(|e| credential_storage_error(PLATFORM, e.stored_secret_unrecoverable(), e))?;
         self.expiry_tx.send_replace(None);
@@ -262,7 +263,7 @@ mod tests {
     use super::YoutubeCredentialsManager;
     use crate::account::auth::YoutubeAuthBundle;
     use crate::account::credentials::{
-        CREDENTIAL_KEY, DEFAULT_ACCESS_TOKEN_LIFETIME_SECS, YoutubeCredentials,
+        DEFAULT_ACCESS_TOKEN_LIFETIME_SECS, YOUTUBE_CREDENTIAL_ID, YoutubeCredentials,
     };
     use crate::api::quota_state::SharedQuota;
     use crate::endpoints_test_support::{
@@ -282,13 +283,13 @@ mod tests {
 
     fn repo_with_creds(creds: &YoutubeCredentials) -> Arc<MemoryCredentials> {
         Arc::new(MemoryCredentials::holding(
-            CREDENTIAL_KEY,
+            YOUTUBE_CREDENTIAL_ID,
             &serde_json::to_string(creds).unwrap(),
         ))
     }
 
     fn stored_creds(repo: &MemoryCredentials) -> Option<YoutubeCredentials> {
-        repo.stored(CREDENTIAL_KEY)
+        repo.stored(YOUTUBE_CREDENTIAL_ID)
             .and_then(|bundle| serde_json::from_str(&bundle).ok())
     }
 

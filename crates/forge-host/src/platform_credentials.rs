@@ -49,8 +49,8 @@ async fn delete_unmanaged(
 fn credential_key(platform: PlatformId) -> &'static str {
     match platform {
         PlatformId::Twitch => forge_platform_twitch::TWITCH_CREDENTIAL_ID,
-        PlatformId::YouTube => forge_platform_youtube::CREDENTIAL_KEY,
-        PlatformId::Kick => forge_platform_kick::CREDENTIAL_KEY,
+        PlatformId::YouTube => forge_platform_youtube::YOUTUBE_CREDENTIAL_ID,
+        PlatformId::Kick => forge_platform_kick::KICK_CREDENTIAL_ID,
     }
 }
 
@@ -74,8 +74,11 @@ mod tests {
             PlatformId::Twitch,
             forge_platform_twitch::TWITCH_CREDENTIAL_ID,
         ),
-        (PlatformId::YouTube, forge_platform_youtube::CREDENTIAL_KEY),
-        (PlatformId::Kick, forge_platform_kick::CREDENTIAL_KEY),
+        (
+            PlatformId::YouTube,
+            forge_platform_youtube::YOUTUBE_CREDENTIAL_ID,
+        ),
+        (PlatformId::Kick, forge_platform_kick::KICK_CREDENTIAL_ID),
     ];
 
     struct Rows {

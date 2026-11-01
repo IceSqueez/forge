@@ -10,7 +10,7 @@ mod whisper;
 pub(crate) use send::send_chat_reply;
 pub(crate) use send::{MAX_MESSAGE_LEN, chat_failure, refusal_text};
 pub use send::{SentMessageId, send_chat};
-pub use session::ChatConnectionState;
+pub use session::ChatSessionState;
 pub(crate) use whisper::{MAX_WHISPER_CHARS, send_whisper, send_whisper_to};
 
 use crate::bot_account::TwitchBotAccount;
@@ -40,7 +40,7 @@ pub struct TwitchChat {
 }
 
 pub struct TwitchChatHandle {
-    state_rx: watch::Receiver<ChatConnectionState>,
+    state_rx: watch::Receiver<ChatSessionState>,
     shutdown_grace: Duration,
     shutdown_tx: Option<oneshot::Sender<()>>,
     task: Option<JoinHandle<()>>,
@@ -96,7 +96,7 @@ impl TwitchChat {
 
     pub(crate) fn start_reporting_to(
         self,
-        state_tx: watch::Sender<ChatConnectionState>,
+        state_tx: watch::Sender<ChatSessionState>,
     ) -> TwitchChatHandle {
         let state_rx = state_tx.subscribe();
         let (sess, shutdown_tx) = session::ChatSession::reporting_to(
@@ -120,7 +120,7 @@ impl TwitchChat {
 impl TwitchChatHandle {
     fn spawn(
         sess: session::ChatSession,
-        state_rx: watch::Receiver<ChatConnectionState>,
+        state_rx: watch::Receiver<ChatSessionState>,
         shutdown_tx: oneshot::Sender<()>,
         shutdown_grace: Duration,
     ) -> Self {
@@ -132,7 +132,7 @@ impl TwitchChatHandle {
         }
     }
 
-    pub fn connection_state(&self) -> ChatConnectionState {
+    pub fn connection_state(&self) -> ChatSessionState {
         *self.state_rx.borrow()
     }
 

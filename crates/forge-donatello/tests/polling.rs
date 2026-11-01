@@ -3,7 +3,7 @@ mod support;
 use std::collections::{BTreeSet, HashSet};
 use std::sync::Arc;
 
-use forge_donatello::PollPhase;
+use forge_donatello::PollerPhase;
 use forge_platform_core::{BuiltinControl, DonationProvider, PlatformError};
 use forge_types::{Donation, DonationOrigin};
 use serde_json::json;
@@ -412,7 +412,7 @@ async fn malformed_page_is_reported_and_polling_retries() {
         matches!(failure, Err(PlatformError::MalformedResponse { .. })),
         "{failure:?}"
     );
-    assert_eq!(phase, PollPhase::Retrying);
+    assert_eq!(phase, PollerPhase::Retrying);
 }
 
 #[tokio::test]
@@ -432,20 +432,20 @@ async fn server_error_backs_off_then_recovers_on_the_next_timer() {
         matches!(failure, Err(PlatformError::Http { status: 503, .. })),
         "{failure:?}"
     );
-    assert_eq!(h.provider.poll_status().phase, PollPhase::Retrying);
+    assert_eq!(h.provider.poll_status().phase, PollerPhase::Retrying);
 
     let recovered = h.next().await.unwrap();
-    h.wait_for("polling again", |s| s.phase == PollPhase::Polling)
+    h.wait_for("polling again", |s| s.phase == PollerPhase::Polling)
         .await;
     assert_eq!(recovered.donation_id, "D-1");
 }
 
 #[tokio::test]
 async fn errors_needing_the_user_stop_polling_until_the_user_acts() {
-    let cases: [(Option<u16>, PollPhase); 3] = [
-        (Some(401), PollPhase::ActionRequired),
-        (Some(404), PollPhase::ActionRequired),
-        (None, PollPhase::AwaitingToken),
+    let cases: [(Option<u16>, PollerPhase); 3] = [
+        (Some(401), PollerPhase::ActionRequired),
+        (Some(404), PollerPhase::ActionRequired),
+        (None, PollerPhase::AwaitingToken),
     ];
     for (me_status, phase) in cases {
         let server = MockServer::start().await;
@@ -491,7 +491,8 @@ async fn pause_and_resume_keeps_the_seen_donations() {
         .await;
 
     assert!(h.provider.disconnect().await.is_ok());
-    h.wait_for("paused", |s| s.phase == PollPhase::Paused).await;
+    h.wait_for("paused", |s| s.phase == PollerPhase::Paused)
+        .await;
     h.list.add(donate("NEW-1", "2026-07-02 10:00:00"));
     assert!(h.provider.reconnect().await.is_ok());
     let next = h.next().await.unwrap();
@@ -509,7 +510,8 @@ async fn paused_poller_sends_no_requests() {
     h.wait_for("baseline poll", |s| s.last_poll_at.is_some())
         .await;
     assert!(h.provider.disconnect().await.is_ok());
-    h.wait_for("paused", |s| s.phase == PollPhase::Paused).await;
+    h.wait_for("paused", |s| s.phase == PollerPhase::Paused)
+        .await;
     h.list.forget_requests();
 
     Harness::outlast_several_ticks().await;
@@ -547,7 +549,7 @@ async fn removing_the_token_moves_the_poller_to_awaiting_a_token() {
         matches!(failure, Err(PlatformError::Auth { .. })),
         "{failure:?}"
     );
-    assert_eq!(h.provider.poll_status().phase, PollPhase::AwaitingToken);
+    assert_eq!(h.provider.poll_status().phase, PollerPhase::AwaitingToken);
 }
 
 #[tokio::test]
@@ -579,7 +581,8 @@ async fn pausing_during_a_stalled_page_still_reports_what_the_scan_collected_and
     h.wait_for_requests(2).await;
     assert!(h.provider.disconnect().await.is_ok());
     let collected = h.donations(20).await;
-    h.wait_for("paused", |s| s.phase == PollPhase::Paused).await;
+    h.wait_for("paused", |s| s.phase == PollerPhase::Paused)
+        .await;
     assert!(h.provider.reconnect().await.is_ok());
     let rest = h.donations(1).await;
 

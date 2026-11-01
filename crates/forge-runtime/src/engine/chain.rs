@@ -313,22 +313,24 @@ impl ChainEngine {
         parent_event_id: EventId,
         executor: &dyn ChainExecutor,
     ) -> ChainRun {
-        let cancel = executor.cancel_signal();
-        let control = ControlCell::new();
-        let nested_sink = TelemetrySink::new();
+        let drive = StepDrive {
+            parent_event_id,
+            executor,
+            cancel: executor.cancel_signal(),
+            control: ControlCell::new(),
+            nested_sink: TelemetrySink::new(),
+        };
         let mut current = arg_stack.clone();
         let mut telemetry = Vec::new();
 
         for (index, step) in steps.iter().enumerate() {
             current = current.with_names_language(self.date_names.language());
             if !step.enabled {
-                let mut tel = disabled_telemetry(index, &step.kind_id);
-                tel.args_in = capture_args_in(&self.registry, step, &current);
-                publish_subaction_done(self.publisher.as_ref(), parent_event_id, &tel);
-                telemetry.push(tel);
+                let tel = disabled_telemetry(index, &step.kind_id);
+                telemetry.push(self.unstarted_step(tel, step, &current, parent_event_id));
                 continue;
             }
-            if cancel.is_cancelled() {
+            if drive.cancel.is_cancelled() {
                 return ChainRun {
                     signal: ChainSignal::Aborted,
                     arg_stack: current,
@@ -339,17 +341,13 @@ impl ChainEngine {
             match self.check_condition(step, &current).await {
                 ConditionVerdict::Run => {}
                 ConditionVerdict::Skip => {
-                    let mut tel = condition_skipped_telemetry(index, &step.kind_id);
-                    tel.args_in = capture_args_in(&self.registry, step, &current);
-                    publish_subaction_done(self.publisher.as_ref(), parent_event_id, &tel);
-                    telemetry.push(tel);
+                    let tel = condition_skipped_telemetry(index, &step.kind_id);
+                    telemetry.push(self.unstarted_step(tel, step, &current, parent_event_id));
                     continue;
                 }
                 ConditionVerdict::Fail(msg) => {
-                    let mut tel = condition_failed_telemetry(index, &step.kind_id, msg.clone());
-                    tel.args_in = capture_args_in(&self.registry, step, &current);
-                    publish_subaction_done(self.publisher.as_ref(), parent_event_id, &tel);
-                    telemetry.push(tel);
+                    let tel = condition_failed_telemetry(index, &step.kind_id, msg.clone());
+                    telemetry.push(self.unstarted_step(tel, step, &current, parent_event_id));
                     if !step.continue_on_error {
                         return ChainRun {
                             signal: ChainSignal::Error(msg),
@@ -361,57 +359,9 @@ impl ChainEngine {
                 }
             }
 
-            let args_in = capture_args_in(&self.registry, step, &current);
-
-            let run_event = SubActionRun {
-                step_index: index,
-                kind: step.kind_id.clone(),
-            }
-            .into_event(EventSource::Core, Some(parent_event_id));
-            let run_event_id = run_event.id;
-            let _step_lineage = self.publish_step_run(run_event);
-
-            let run_ctx = RunContext {
-                arg_stack: &current,
-                index,
-                parent_event_id: run_event_id,
-                publisher: self.publisher.as_ref(),
-                executor,
-                cancel: cancel.clone(),
-                control: control.clone(),
-                telemetry: nested_sink.clone(),
-            };
-
-            let (mut tel, updated) = match self.registry.get(&step.kind_id) {
-                Some(runner) => {
-                    execute_step(&self.registry, &self.integrations, runner, step, &run_ctx).await
-                }
-                None => {
-                    warn!(
-                        "unknown sub-action kind_id: {} - skipping step",
-                        step.kind_id
-                    );
-                    (skipped_telemetry(index, &step.kind_id), None)
-                }
-            };
-
-            let nested = nested_sink.drain();
-
-            let produced = match &updated {
-                Some(new_stack) => capture_produced(&current, new_stack),
-                None => BTreeMap::new(),
-            };
-            if let Some(new_stack) = updated {
-                current = new_stack;
-            }
-
-            tel.args_in = args_in;
-            tel.produced = produced;
-            publish_subaction_done(self.publisher.as_ref(), run_event_id, &tel);
-
-            let failure = tel.outcome.failure_reason();
-            telemetry.push(tel);
-            telemetry.extend(nested);
+            let failure = self
+                .run_step(&drive, index, step, &mut current, &mut telemetry)
+                .await;
 
             if let Some(msg) = failure
                 && !step.continue_on_error
@@ -423,7 +373,7 @@ impl ChainEngine {
                 };
             }
 
-            if let Some(control_signal) = control.take() {
+            if let Some(control_signal) = drive.control.take() {
                 return ChainRun {
                     signal: match control_signal {
                         ControlSignal::Break => ChainSignal::Break,
@@ -442,6 +392,88 @@ impl ChainEngine {
             telemetry,
         }
     }
+
+    fn unstarted_step(
+        &self,
+        mut telemetry: SubActionTelemetry,
+        step: &SubActionStep,
+        scope: &ArgStack,
+        parent_event_id: EventId,
+    ) -> SubActionTelemetry {
+        telemetry.args_in = capture_args_in(&self.registry, step, scope);
+        publish_subaction_done(self.publisher.as_ref(), parent_event_id, &telemetry);
+        telemetry
+    }
+
+    async fn run_step(
+        &self,
+        drive: &StepDrive<'_>,
+        index: usize,
+        step: &SubActionStep,
+        current: &mut ArgStack,
+        telemetry: &mut Vec<SubActionTelemetry>,
+    ) -> Option<UserText> {
+        let args_in = capture_args_in(&self.registry, step, current);
+
+        let run_event = SubActionRun {
+            step_index: index,
+            kind: step.kind_id.clone(),
+        }
+        .into_event(EventSource::Core, Some(drive.parent_event_id));
+        let run_event_id = run_event.id;
+        let _step_lineage = self.publish_step_run(run_event);
+
+        let run_ctx = RunContext {
+            arg_stack: current,
+            index,
+            parent_event_id: run_event_id,
+            publisher: self.publisher.as_ref(),
+            executor: drive.executor,
+            cancel: drive.cancel.clone(),
+            control: drive.control.clone(),
+            telemetry: drive.nested_sink.clone(),
+        };
+
+        let (mut tel, updated) = match self.registry.get(&step.kind_id) {
+            Some(runner) => {
+                execute_step(&self.registry, &self.integrations, runner, step, &run_ctx).await
+            }
+            None => {
+                warn!(
+                    "unknown sub-action kind_id: {} - skipping step",
+                    step.kind_id
+                );
+                (skipped_telemetry(index, &step.kind_id), None)
+            }
+        };
+
+        let nested = drive.nested_sink.drain();
+
+        let produced = match &updated {
+            Some(new_stack) => capture_produced(current, new_stack),
+            None => BTreeMap::new(),
+        };
+        if let Some(new_stack) = updated {
+            *current = new_stack;
+        }
+
+        tel.args_in = args_in;
+        tel.produced = produced;
+        publish_subaction_done(self.publisher.as_ref(), run_event_id, &tel);
+
+        let failure = tel.outcome.failure_reason();
+        telemetry.push(tel);
+        telemetry.extend(nested);
+        failure
+    }
+}
+
+struct StepDrive<'a> {
+    parent_event_id: EventId,
+    executor: &'a dyn ChainExecutor,
+    cancel: CancelSignal,
+    control: ControlCell,
+    nested_sink: TelemetrySink,
 }
 
 pub struct ChainScope {

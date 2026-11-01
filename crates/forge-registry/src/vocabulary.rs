@@ -4,6 +4,10 @@ const USER_ID: &str = "user_id";
 const USER_NAME: &str = "user_name";
 const USER_LOGIN: &str = "user_login";
 const USER_PLATFORM: &str = "user_platform";
+const USER: &str = "user";
+
+pub(crate) const ACTOR_IDENTITY_VARIABLES: [&str; 3] = [USER_ID, USER_LOGIN, USER];
+
 const MODERATOR_ID: &str = "moderator_id";
 const MODERATOR_NAME: &str = "moderator_name";
 const MODERATOR_LOGIN: &str = "moderator_login";

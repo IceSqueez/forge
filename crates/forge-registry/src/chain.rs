@@ -20,9 +20,12 @@ pub enum ChainSignal {
 }
 
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
-pub struct StopMark {
-    pub failed: bool,
-    pub reason: Option<String>,
+pub enum StopMark {
+    #[default]
+    Completed,
+    Failed {
+        reason: Option<String>,
+    },
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]

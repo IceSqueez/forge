@@ -10,7 +10,7 @@ use forge_platform_core::{
 use forge_storage::{CredentialId, CredentialsRepo};
 use tokio::sync::watch;
 
-use crate::auth::credentials::{CREDENTIAL_KEY, KickCredentials};
+use crate::auth::credentials::{KICK_CREDENTIAL_ID, KickCredentials};
 use crate::auth::oauth_client::KickOAuthClient;
 use crate::auth::{KickAuthBundle, expiry_after};
 
@@ -149,7 +149,7 @@ impl CredentialStore {
     async fn load(&self) -> Result<Option<KickCredentials>, PlatformError> {
         let Some(json) = self
             .repo
-            .load(&CredentialId::new(CREDENTIAL_KEY))
+            .load(&CredentialId::new(KICK_CREDENTIAL_ID))
             .await
             .map_err(|e| credential_storage_error(PLATFORM, e.stored_secret_unrecoverable(), e))?
         else {
@@ -165,7 +165,7 @@ impl CredentialStore {
     async fn persist(&self, creds: &KickCredentials) -> Result<(), PlatformError> {
         let json = serde_json::to_string(creds)?;
         self.repo
-            .store(&CredentialId::new(CREDENTIAL_KEY), &json)
+            .store(&CredentialId::new(KICK_CREDENTIAL_ID), &json)
             .await
             .map_err(|e| credential_storage_error(PLATFORM, e.stored_secret_unrecoverable(), e))?;
         self.expiry_tx
@@ -175,7 +175,7 @@ impl CredentialStore {
 
     async fn clear(&self) -> Result<(), PlatformError> {
         self.repo
-            .delete(&CredentialId::new(CREDENTIAL_KEY))
+            .delete(&CredentialId::new(KICK_CREDENTIAL_ID))
             .await
             .map_err(|e| credential_storage_error(PLATFORM, e.stored_secret_unrecoverable(), e))?;
         self.expiry_tx.send_replace(None);
@@ -202,7 +202,7 @@ mod tests {
 
     use super::KickCredentialsManager;
     use crate::auth::KickAuthBundle;
-    use crate::auth::credentials::{CREDENTIAL_KEY, KickCredentials};
+    use crate::auth::credentials::{KICK_CREDENTIAL_ID, KickCredentials};
     use crate::test_support::{oauth_client_at, offline_manager, unreachable_api};
 
     const TOKEN_PATH: &str = "/token";
@@ -257,7 +257,7 @@ mod tests {
                 gate,
             };
             repo.rows.lock().unwrap().insert(
-                CREDENTIAL_KEY.to_owned(),
+                KICK_CREDENTIAL_ID.to_owned(),
                 serde_json::to_string(creds).unwrap(),
             );
             Arc::new(repo)
@@ -267,7 +267,7 @@ mod tests {
             self.rows
                 .lock()
                 .unwrap()
-                .get(CREDENTIAL_KEY)
+                .get(KICK_CREDENTIAL_ID)
                 .and_then(|s| serde_json::from_str(s).ok())
         }
     }

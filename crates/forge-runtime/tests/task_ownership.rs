@@ -2,16 +2,27 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use forge_net::{TaskOwner, TaskShutdown};
-use forge_platform_core::{LiveViewerSource, ViewerReportStream};
+use forge_platform_core::{LiveViewerSource, StreamOutputSignal, ViewerReportStream};
 use forge_runtime::{
     EventBus, NotificationPreferences, NullEventLogRepo, TwitchEmoteLexicon,
     spawn_event_log_bridge, spawn_live_viewer_aggregator, spawn_notification_policy,
     spawn_stream_live_signal, spawn_twitch_emote_learning,
 };
 use forge_types::PlatformId;
-use tokio::sync::watch;
 
 const GRACE: Duration = Duration::from_secs(1);
+
+struct QuietObs;
+
+impl StreamOutputSignal for QuietObs {
+    fn is_active(&self) -> bool {
+        false
+    }
+
+    async fn changed(&mut self) -> Option<bool> {
+        std::future::pending().await
+    }
+}
 
 async fn settle() {
     for _ in 0..16 {
@@ -47,8 +58,7 @@ async fn the_viewer_aggregator_its_forwarders_and_the_live_signal_end_on_stop() 
     let tasks = TaskOwner::new();
     let viewers = spawn_live_viewer_aggregator(&tasks);
     viewers.register(PlatformId::Twitch, Box::new(SilentSource));
-    let (_obs_tx, obs) = watch::channel(false);
-    let live = spawn_stream_live_signal(&viewers, obs, &tasks);
+    let live = spawn_stream_live_signal(&viewers, QuietObs, &tasks);
     settle().await;
 
     let stopped = tasks.shutdown(GRACE).await;

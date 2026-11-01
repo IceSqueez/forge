@@ -231,10 +231,7 @@ pub async fn build_host(inputs: HostInputs) -> Host {
     }
     let stream_live = spawn_stream_live_signal(
         &live_viewers,
-        integrations
-            .obs_install_seed
-            .stream_output()
-            .into_receiver(),
+        integrations.obs_install_seed.stream_output(),
         services,
     );
     let bot_accounts = load_bot_accounts(&backend, &mut boot_warnings).await;

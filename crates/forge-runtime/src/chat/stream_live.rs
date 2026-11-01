@@ -1,6 +1,7 @@
 use std::collections::BTreeSet;
 
 use forge_net::TaskOwner;
+use forge_platform_core::StreamOutputSignal;
 use forge_types::PlatformId;
 use futures_core::Stream;
 use tokio::sync::watch;
@@ -61,11 +62,11 @@ impl StreamLiveHandle {
 
 pub fn spawn_stream_live_signal(
     viewers: &LiveViewerAggregatorHandle,
-    obs: watch::Receiver<bool>,
+    obs: impl StreamOutputSignal,
     tasks: &TaskOwner,
 ) -> StreamLiveHandle {
     let platforms = viewers.live_platforms();
-    let initial = StreamLiveState::from_parts(&platforms.borrow(), *obs.borrow());
+    let initial = StreamLiveState::from_parts(&platforms.borrow(), obs.is_active());
     let (output, receiver) = watch::channel(initial);
     tasks.spawn_until_stopped(follow_live_inputs(platforms, obs, output));
     StreamLiveHandle(receiver)
@@ -73,12 +74,12 @@ pub fn spawn_stream_live_signal(
 
 async fn follow_live_inputs(
     mut platforms: watch::Receiver<LivePlatforms>,
-    mut obs: watch::Receiver<bool>,
+    mut obs: impl StreamOutputSignal,
     output: watch::Sender<StreamLiveState>,
 ) {
     let mut platforms_open = true;
     let mut obs_open = true;
-    let mut obs_streaming = *obs.borrow();
+    let mut obs_streaming = obs.is_active();
     while platforms_open || obs_open {
         tokio::select! {
             () = output.closed() => return,
@@ -86,8 +87,8 @@ async fn follow_live_inputs(
                 platforms_open = changed.is_ok();
             }
             changed = obs.changed(), if obs_open => match changed {
-                Ok(()) => obs_streaming = *obs.borrow_and_update(),
-                Err(_) => {
+                Some(streaming) => obs_streaming = streaming,
+                None => {
                     obs_open = false;
                     obs_streaming = false;
                 }
@@ -119,10 +120,11 @@ mod tests {
     use tokio_stream::StreamExt as _;
 
     use crate::chat::live_viewers::spawn_live_viewer_aggregator;
-    use crate::test_support::channel_viewer_source;
+    use crate::test_support::{WatchedObs, channel_viewer_source};
 
-    fn idle_obs() -> (watch::Sender<bool>, watch::Receiver<bool>) {
-        watch::channel(false)
+    fn idle_obs() -> (watch::Sender<bool>, WatchedObs) {
+        let (sink, receiver) = watch::channel(false);
+        (sink, WatchedObs(receiver))
     }
 
     fn sources_of(items: &[LiveSource]) -> BTreeSet<LiveSource> {

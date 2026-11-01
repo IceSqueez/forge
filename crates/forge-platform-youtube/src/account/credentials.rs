@@ -2,7 +2,7 @@ use forge_types::OAuthToken;
 use serde::{Deserialize, Serialize};
 use time::OffsetDateTime;
 
-pub const CREDENTIAL_KEY: &str = "youtube:broadcaster";
+pub const YOUTUBE_CREDENTIAL_ID: &str = "youtube:broadcaster";
 pub(crate) const DEFAULT_ACCESS_TOKEN_LIFETIME_SECS: u64 = 3600;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

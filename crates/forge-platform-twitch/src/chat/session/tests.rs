@@ -713,7 +713,7 @@ fn session_with(
     endpoints: PlatformEndpoints,
 ) -> (
     ChatSession,
-    watch::Receiver<ChatConnectionState>,
+    watch::Receiver<ChatSessionState>,
     oneshot::Sender<()>,
 ) {
     let manager = Arc::new(TwitchCredentialsManager::new(
@@ -1146,7 +1146,7 @@ fn unreachable_ws_url() -> String {
 
 struct RunningSession {
     bus: Arc<EventChannel>,
-    state: watch::Receiver<ChatConnectionState>,
+    state: watch::Receiver<ChatSessionState>,
     task: tokio::task::JoinHandle<()>,
     _shutdown: oneshot::Sender<()>,
 }
@@ -1296,14 +1296,14 @@ async fn chat_texts_until(events: &mut EventSubscription, last: &str) -> Vec<Str
     texts
 }
 
-async fn next_retry_attempt(state: &mut watch::Receiver<ChatConnectionState>) -> u8 {
+async fn next_retry_attempt(state: &mut watch::Receiver<ChatSessionState>) -> u8 {
     let reported = within_hang_guard(FAKE_WAIT, async {
         loop {
             state
                 .changed()
                 .await
                 .expect("the session task must outlive the state it reports");
-            if let ChatConnectionState::Reconnecting { attempt } = *state.borrow_and_update() {
+            if let ChatSessionState::Reconnecting { attempt } = *state.borrow_and_update() {
                 return attempt;
             }
         }
@@ -1658,7 +1658,7 @@ async fn a_server_initiated_reconnect_never_leaves_the_connected_state() {
     let (mut live, _successor_socket, successor) = overlapping_session().await;
     assert_eq!(
         *live.session.state.borrow_and_update(),
-        ChatConnectionState::Connected
+        ChatSessionState::Connected
     );
 
     successor.send(welcome_frame("sess-2"));
@@ -2009,7 +2009,7 @@ fn session_over(
     endpoints: PlatformEndpoints,
 ) -> (
     ChatSession,
-    watch::Receiver<ChatConnectionState>,
+    watch::Receiver<ChatSessionState>,
     oneshot::Sender<()>,
 ) {
     let manager = match oauth_base {
@@ -2220,7 +2220,7 @@ const NEVER_REACHED_GRACE: Duration = Duration::from_secs(3600);
 
 struct ShutDownMidRefresh {
     bus: Arc<RecordingBus>,
-    state: watch::Receiver<ChatConnectionState>,
+    state: watch::Receiver<ChatSessionState>,
     manager: Arc<TwitchCredentialsManager>,
     repo: Arc<StoreSignallingRepo>,
     token_endpoint: HeldHttpEndpoint,
@@ -2314,7 +2314,7 @@ impl RecordingBus {
 async fn a_shutdown_during_the_welcome_token_fetch_stops_the_session_gracefully() {
     let stopped = shut_down_while_refreshing_the_token().await;
 
-    assert_eq!(*stopped.state.borrow(), ChatConnectionState::Disconnected);
+    assert_eq!(*stopped.state.borrow(), ChatSessionState::Disconnected);
     assert_eq!(stopped.bus.disconnect_flags(), [Some(true)]);
 }
 
@@ -2332,7 +2332,7 @@ async fn a_session_dropped_after_a_shutdown_request_reports_an_expected_disconne
 
     drop(session);
 
-    assert_eq!(*state.borrow(), ChatConnectionState::Disconnected);
+    assert_eq!(*state.borrow(), ChatSessionState::Disconnected);
     assert_eq!(bus.disconnect_flags(), [Some(true)]);
 }
 
@@ -2573,10 +2573,10 @@ async fn the_bundle_state_follows_the_session_reconnect_started() {
     );
 }
 
-async fn first_retry(state: &mut watch::Receiver<ChatConnectionState>) {
+async fn first_retry(state: &mut watch::Receiver<ChatSessionState>) {
     while !matches!(
         *state.borrow_and_update(),
-        ChatConnectionState::Reconnecting { .. }
+        ChatSessionState::Reconnecting { .. }
     ) {
         state
             .changed()

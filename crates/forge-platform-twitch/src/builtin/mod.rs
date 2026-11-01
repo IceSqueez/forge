@@ -26,7 +26,7 @@ use forge_storage::CredentialsRepo;
 
 use crate::TWITCH_BROADCASTER_SCOPES;
 use crate::account::identity::{BroadcasterTier, resolve_broadcaster_tier};
-use crate::chat::ChatConnectionState;
+use crate::chat::ChatSessionState;
 use crate::chat_platform::TwitchPlatform;
 use crate::config::ChatSessionConfig;
 use crate::creator_goals;
@@ -46,6 +46,24 @@ const CHAT_METRIC: HealthMetricId = HealthMetricId::new(messages::HEALTH_CHAT);
 const EVENTSUB_METRIC: HealthMetricId = HealthMetricId::new(messages::HEALTH_EVENTSUB);
 const API_CALLS_METRIC: HealthMetricId = HealthMetricId::new(messages::HEALTH_API_CALLS);
 const VIEWER_POLL_INTERVAL: Duration = Duration::from_secs(60);
+
+#[derive(Clone)]
+pub struct BroadcasterTierWatch(watch::Receiver<BroadcasterTier>);
+
+impl BroadcasterTierWatch {
+    pub async fn wait_for(&mut self, accepted: impl Fn(BroadcasterTier) -> bool) -> bool {
+        self.0.wait_for(|tier| accepted(*tier)).await.is_ok()
+    }
+}
+
+#[derive(Clone)]
+pub struct ChatSessionWatch(watch::Receiver<ChatSessionState>);
+
+impl ChatSessionWatch {
+    pub async fn wait_for(&mut self, accepted: impl Fn(ChatSessionState) -> bool) -> bool {
+        self.0.wait_for(|state| accepted(*state)).await.is_ok()
+    }
+}
 
 #[derive(Debug, Clone, Copy, Default)]
 enum ViewerPollState {
@@ -78,7 +96,7 @@ pub struct TwitchIntegrationBundle {
     id: IntegrationId,
     login: Option<String>,
     platform: Arc<TwitchPlatform>,
-    state_rx: watch::Receiver<ChatConnectionState>,
+    state_rx: watch::Receiver<ChatSessionState>,
     health_tx: broadcast::Sender<HealthDelta>,
     tracker: SubscriptionTracker,
     config: ChatSessionConfig,
@@ -252,8 +270,8 @@ impl TwitchIntegrationBundle {
         }
     }
 
-    fn on_chat_state_changed(self: &Arc<Self>, state: ChatConnectionState) {
-        if state == ChatConnectionState::Connected {
+    fn on_chat_state_changed(self: &Arc<Self>, state: ChatSessionState) {
+        if state == ChatSessionState::Connected {
             let already_connected = self.connected_at.read_recover().is_some();
             self.connected_at
                 .write_recover()
@@ -352,12 +370,12 @@ impl TwitchIntegrationBundle {
         *self.tier.borrow()
     }
 
-    pub fn tier_changes(&self) -> watch::Receiver<BroadcasterTier> {
-        self.tier.subscribe()
+    pub fn tier_changes(&self) -> BroadcasterTierWatch {
+        BroadcasterTierWatch(self.tier.subscribe())
     }
 
-    pub fn chat_connection_changes(&self) -> watch::Receiver<ChatConnectionState> {
-        self.state_rx.clone()
+    pub fn chat_session_changes(&self) -> ChatSessionWatch {
+        ChatSessionWatch(self.state_rx.clone())
     }
 
     fn spawn_viewer_poll(bundle: &Arc<Self>, transport: Arc<dyn HelixTransport>) {
@@ -447,7 +465,7 @@ impl TwitchIntegrationBundle {
     #[cfg(test)]
     pub(crate) fn for_test(
         login: Option<String>,
-        state_rx: watch::Receiver<ChatConnectionState>,
+        state_rx: watch::Receiver<ChatSessionState>,
         tracker: SubscriptionTracker,
         creds: Arc<dyn CredentialsRepo>,
         tier: BroadcasterTier,
@@ -468,7 +486,7 @@ impl TwitchIntegrationBundle {
     #[cfg(test)]
     pub(crate) fn for_test_with_transport(
         login: Option<String>,
-        state_rx: watch::Receiver<ChatConnectionState>,
+        state_rx: watch::Receiver<ChatSessionState>,
         tracker: SubscriptionTracker,
         creds: Arc<dyn CredentialsRepo>,
         tier: BroadcasterTier,
@@ -494,7 +512,7 @@ impl TwitchIntegrationBundle {
     #[cfg(test)]
     pub(crate) fn for_test_with_credentials_manager(
         login: Option<String>,
-        state_rx: watch::Receiver<ChatConnectionState>,
+        state_rx: watch::Receiver<ChatSessionState>,
         tracker: SubscriptionTracker,
         creds: Arc<dyn CredentialsRepo>,
         tier: BroadcasterTier,
@@ -521,7 +539,7 @@ impl TwitchIntegrationBundle {
     )]
     fn for_test_over(
         login: Option<String>,
-        state_rx: watch::Receiver<ChatConnectionState>,
+        state_rx: watch::Receiver<ChatSessionState>,
         tracker: SubscriptionTracker,
         creds: Arc<dyn CredentialsRepo>,
         tier: BroadcasterTier,
@@ -576,17 +594,17 @@ impl TwitchIntegrationBundle {
         })
     }
 
-    fn chat_connection_state(&self) -> ChatConnectionState {
+    fn chat_connection_state(&self) -> ChatSessionState {
         *self.state_rx.borrow()
     }
 
     fn is_chat_connected(&self) -> bool {
-        self.chat_connection_state() == ChatConnectionState::Connected
+        self.chat_connection_state() == ChatSessionState::Connected
     }
 
     fn chat_status(&self) -> HealthText {
         let state = self.chat_connection_state();
-        if state == ChatConnectionState::Connected {
+        if state == ChatSessionState::Connected {
             return message_text(messages::health_chat_joined());
         }
         HealthText::Connection(state.to_connection_state())
@@ -871,26 +889,26 @@ mod tests {
         SubStatus, SubscriptionFailure, SubscriptionRecord, SubscriptionTracker,
     };
 
-    fn make_bundle(state: ChatConnectionState) -> Arc<TwitchIntegrationBundle> {
+    fn make_bundle(state: ChatSessionState) -> Arc<TwitchIntegrationBundle> {
         make_bundle_with_tracker(state, SubscriptionTracker::default())
     }
 
     fn make_bundle_with_tracker(
-        state: ChatConnectionState,
+        state: ChatSessionState,
         tracker: SubscriptionTracker,
     ) -> Arc<TwitchIntegrationBundle> {
         make_bundle_full(state, tracker, BroadcasterTier::Standard)
     }
 
     pub(super) fn make_bundle_with_tier(
-        state: ChatConnectionState,
+        state: ChatSessionState,
         tier: BroadcasterTier,
     ) -> Arc<TwitchIntegrationBundle> {
         make_bundle_full(state, SubscriptionTracker::default(), tier)
     }
 
     fn make_bundle_full(
-        state: ChatConnectionState,
+        state: ChatSessionState,
         tracker: SubscriptionTracker,
         tier: BroadcasterTier,
     ) -> Arc<TwitchIntegrationBundle> {
@@ -910,24 +928,24 @@ mod tests {
 
     #[tokio::test]
     async fn a_shown_connection_change_moves_the_status_revision_and_a_new_attempt_does_not() {
-        let bundle = make_bundle(ChatConnectionState::Connecting);
+        let bundle = make_bundle(ChatSessionState::Connecting);
         let mut revisions = bundle
             .status_revisions()
             .expect("twitch declares a status signal");
 
-        bundle.on_chat_state_changed(ChatConnectionState::Connecting);
+        bundle.on_chat_state_changed(ChatSessionState::Connecting);
         assert!(!moved(&mut revisions), "same state");
 
-        bundle.on_chat_state_changed(ChatConnectionState::Reconnecting { attempt: 1 });
+        bundle.on_chat_state_changed(ChatSessionState::Reconnecting { attempt: 1 });
         assert!(moved(&mut revisions), "lost the connection");
 
-        bundle.on_chat_state_changed(ChatConnectionState::Reconnecting { attempt: 2 });
+        bundle.on_chat_state_changed(ChatSessionState::Reconnecting { attempt: 2 });
         assert!(!moved(&mut revisions), "only the attempt number moved");
     }
 
     #[tokio::test]
     async fn a_topic_missing_a_scope_asks_for_sign_in_until_the_subscriptions_are_reset() {
-        let bundle = make_bundle(ChatConnectionState::Connected);
+        let bundle = make_bundle(ChatSessionState::Connected);
         let rejected_topic = |status| SubscriptionRecord {
             kind: "channel.follow".to_owned(),
             direction: None,
@@ -959,7 +977,7 @@ mod tests {
 
     #[tokio::test]
     async fn the_manager_reported_credential_state_reaches_the_status_and_its_revision() {
-        let bundle = make_bundle(ChatConnectionState::Connected);
+        let bundle = make_bundle(ChatSessionState::Connected);
         let mut revisions = bundle
             .status_revisions()
             .expect("twitch declares a status signal");
@@ -976,7 +994,7 @@ mod tests {
 
     #[tokio::test]
     async fn a_token_or_tier_change_moves_the_status_revision_and_a_repeat_does_not() {
-        let bundle = make_bundle(ChatConnectionState::Connected);
+        let bundle = make_bundle(ChatSessionState::Connected);
         let mut revisions = bundle
             .status_revisions()
             .expect("twitch declares a status signal");
@@ -1017,7 +1035,7 @@ mod tests {
                 SubStatus::Failed(crate::subscriptions::SubscriptionFailure::Transport),
             ),
         ]);
-        let bundle = make_bundle_with_tracker(ChatConnectionState::Connected, tracker.clone());
+        let bundle = make_bundle_with_tracker(ChatSessionState::Connected, tracker.clone());
         let mut revisions = bundle
             .content_revisions()
             .expect("twitch declares a content signal");
@@ -1041,14 +1059,14 @@ mod tests {
     #[test]
     fn status_connection_maps_chat_state() {
         let cases = [
-            (ChatConnectionState::Connected, ConnectionState::Connected),
-            (ChatConnectionState::Connecting, ConnectionState::Connecting),
+            (ChatSessionState::Connected, ConnectionState::Connected),
+            (ChatSessionState::Connecting, ConnectionState::Connecting),
             (
-                ChatConnectionState::Reconnecting { attempt: 1 },
+                ChatSessionState::Reconnecting { attempt: 1 },
                 ConnectionState::Reconnecting,
             ),
             (
-                ChatConnectionState::Disconnected,
+                ChatSessionState::Disconnected,
                 ConnectionState::Disconnected,
             ),
         ];
@@ -1061,7 +1079,7 @@ mod tests {
 
     #[test]
     fn status_header_actions_contain_refresh_and_disconnect() {
-        let b = make_bundle(ChatConnectionState::Connected);
+        let b = make_bundle(ChatSessionState::Connected);
         let status: &dyn BuiltinStatus = b.as_ref();
         let actions = status.header_actions();
         assert!(actions.contains(&HeaderAction::RefreshToken));
@@ -1078,7 +1096,7 @@ mod tests {
 
     #[test]
     fn metrics_declare_unique_catalogued_ids() {
-        let b = make_bundle(ChatConnectionState::Connected);
+        let b = make_bundle(ChatSessionState::Connected);
 
         let ids: std::collections::HashSet<_> = BuiltinHealth::metrics(b.as_ref())
             .into_iter()
@@ -1099,7 +1117,7 @@ mod tests {
 
     #[test]
     fn chat_irc_metric_active_when_connected() {
-        let b = make_bundle(ChatConnectionState::Connected);
+        let b = make_bundle(ChatSessionState::Connected);
         let health: &dyn BuiltinHealth = b.as_ref();
         let metrics = health.metrics();
         let HealthValue::Status {
@@ -1120,7 +1138,7 @@ mod tests {
 
     #[test]
     fn chat_irc_metric_inactive_when_disconnected() {
-        let b = make_bundle(ChatConnectionState::Disconnected);
+        let b = make_bundle(ChatSessionState::Disconnected);
         let health: &dyn BuiltinHealth = b.as_ref();
         let metrics = health.metrics();
         let HealthValue::Status { active, label, .. } = metric_value(&metrics, &CHAT_METRIC) else {
@@ -1152,7 +1170,7 @@ mod tests {
                 subscription_id: None,
             },
         ]);
-        let b = make_bundle_with_tracker(ChatConnectionState::Connected, tracker);
+        let b = make_bundle_with_tracker(ChatSessionState::Connected, tracker);
         let health: &dyn BuiltinHealth = b.as_ref();
         let metrics = health.metrics();
         let HealthValue::Status {
@@ -1183,7 +1201,7 @@ mod tests {
             status: SubStatus::Pending,
             subscription_id: None,
         }]);
-        let b = make_bundle_with_tracker(ChatConnectionState::Connected, tracker);
+        let b = make_bundle_with_tracker(ChatSessionState::Connected, tracker);
         let health: &dyn BuiltinHealth = b.as_ref();
         let metrics = health.metrics();
         let HealthValue::Status { label, active, .. } = metric_value(&metrics, &EVENTSUB_METRIC)
@@ -1199,7 +1217,7 @@ mod tests {
 
     #[test]
     fn api_calls_metric_reports_helix_budget_ratio() {
-        let b = make_bundle(ChatConnectionState::Connected);
+        let b = make_bundle(ChatSessionState::Connected);
         let health: &dyn BuiltinHealth = b.as_ref();
         let metrics = health.metrics();
         let HealthValue::Ratio { used, total, .. } = metric_value(&metrics, &API_CALLS_METRIC)
@@ -1221,14 +1239,14 @@ mod tests {
 
     #[tokio::test]
     async fn every_fresh_connection_bumps_the_reward_revision() {
-        let b = make_bundle(ChatConnectionState::Disconnected);
+        let b = make_bundle(ChatSessionState::Disconnected);
         let mut revisions = b.lifecycle().reward_revisions();
         let mut moved = Vec::new();
 
         for state in [
-            ChatConnectionState::Connected,
-            ChatConnectionState::Reconnecting { attempt: 1 },
-            ChatConnectionState::Connected,
+            ChatSessionState::Connected,
+            ChatSessionState::Reconnecting { attempt: 1 },
+            ChatSessionState::Connected,
         ] {
             b.on_chat_state_changed(state);
             moved.push(reward_revision_moved(&mut revisions));
@@ -1239,11 +1257,11 @@ mod tests {
 
     #[tokio::test]
     async fn a_repeated_connected_state_does_not_bump_the_reward_revision() {
-        let b = make_bundle(ChatConnectionState::Disconnected);
-        b.on_chat_state_changed(ChatConnectionState::Connected);
+        let b = make_bundle(ChatSessionState::Disconnected);
+        b.on_chat_state_changed(ChatSessionState::Connected);
         let mut revisions = b.lifecycle().reward_revisions();
 
-        b.on_chat_state_changed(ChatConnectionState::Connected);
+        b.on_chat_state_changed(ChatSessionState::Connected);
 
         assert!(!reward_revision_moved(&mut revisions));
     }
@@ -1257,7 +1275,7 @@ mod tests {
         let transport = Arc::new(
             crate::sub_actions::test_support::MockTransport::returning_sequence(Vec::new()),
         );
-        let (_, rx) = watch::channel(ChatConnectionState::Disconnected);
+        let (_, rx) = watch::channel(ChatSessionState::Disconnected);
         let bundle = TwitchIntegrationBundle::for_test_with_transport(
             Some("streamer".to_owned()),
             rx,
@@ -1314,13 +1332,13 @@ mod tests {
     async fn creator_goals_sync_once_per_fresh_connection() {
         let (b, transport) = bundle_recording_helix("1");
         let steps = [
-            (ChatConnectionState::Connected, 1),
-            (ChatConnectionState::Connected, 1),
-            (ChatConnectionState::Reconnecting { attempt: 1 }, 1),
-            (ChatConnectionState::Connected, 2),
-            (ChatConnectionState::Disconnected, 2),
-            (ChatConnectionState::Connecting, 2),
-            (ChatConnectionState::Connected, 3),
+            (ChatSessionState::Connected, 1),
+            (ChatSessionState::Connected, 1),
+            (ChatSessionState::Reconnecting { attempt: 1 }, 1),
+            (ChatSessionState::Connected, 2),
+            (ChatSessionState::Disconnected, 2),
+            (ChatSessionState::Connecting, 2),
+            (ChatSessionState::Connected, 3),
         ];
 
         for (state, expected_syncs) in steps {
@@ -1337,7 +1355,7 @@ mod tests {
     async fn creator_goal_sync_asks_for_the_configured_broadcaster() {
         let (b, transport) = bundle_recording_helix("4242");
 
-        b.on_chat_state_changed(ChatConnectionState::Connected);
+        b.on_chat_state_changed(ChatSessionState::Connected);
         requests_reached(&transport, GOALS_PATH, 1).await;
 
         let queries: Vec<Vec<(String, String)>> = goal_requests(&transport)
@@ -1352,7 +1370,7 @@ mod tests {
 
     #[test]
     fn the_rewards_manager_action_targets_a_collection_the_bundle_declares() {
-        let b = make_bundle_with_tier(ChatConnectionState::Connected, BroadcasterTier::Affiliate);
+        let b = make_bundle_with_tier(ChatSessionState::Connected, BroadcasterTier::Affiliate);
         let declared: Vec<CollectionId> =
             forge_platform_core::BuiltinCollections::collections(b.as_ref())
                 .into_iter()
@@ -1370,7 +1388,7 @@ mod tests {
 
     #[test]
     fn hero_name_is_the_login_not_the_display_name() {
-        let b = make_bundle(ChatConnectionState::Connected);
+        let b = make_bundle(ChatSessionState::Connected);
         let status: &dyn BuiltinStatus = b.as_ref();
         assert_eq!(status.hero_name().as_deref(), Some("streamer"));
         assert_ne!(status.hero_name().as_deref(), Some(status.display_name()));
@@ -1383,7 +1401,7 @@ mod tests {
             (BroadcasterTier::Affiliate, HeroBadgeTone::Positive),
             (BroadcasterTier::Partner, HeroBadgeTone::Positive),
         ] {
-            let b = make_bundle_with_tier(ChatConnectionState::Connected, tier);
+            let b = make_bundle_with_tier(ChatSessionState::Connected, tier);
             let status: &dyn BuiltinStatus = b.as_ref();
             let badges = status.name_badges();
             assert_eq!(badges[0].label, messages::user_id_badge("1").into());
@@ -1398,7 +1416,7 @@ mod tests {
 
     #[test]
     fn sections_omit_the_broadcaster_info_card() {
-        let b = make_bundle_with_tier(ChatConnectionState::Connected, BroadcasterTier::Partner);
+        let b = make_bundle_with_tier(ChatSessionState::Connected, BroadcasterTier::Partner);
         let content: &dyn BuiltinContent = b.as_ref();
         assert!(
             !content
@@ -1411,7 +1429,7 @@ mod tests {
 
     #[test]
     fn sections_expose_two_column_scopes_and_subscriptions() {
-        let b = make_bundle(ChatConnectionState::Connected);
+        let b = make_bundle(ChatSessionState::Connected);
         let content: &dyn BuiltinContent = b.as_ref();
         let sections = content.sections();
         let DetailSection::TwoColumn { left, right } = &sections[0] else {
@@ -1488,7 +1506,7 @@ mod tests {
                 subscription_id: None,
             },
         ]);
-        let b = make_bundle_with_tracker(ChatConnectionState::Connected, tracker);
+        let b = make_bundle_with_tracker(ChatSessionState::Connected, tracker);
         let (items, banner) = subscription_list(&b);
 
         for (row, name, expected_status, expected_error) in [
@@ -1550,7 +1568,7 @@ mod tests {
                 subscription_id: None,
             },
         ]);
-        let b = make_bundle_with_tracker(ChatConnectionState::Connected, tracker);
+        let b = make_bundle_with_tracker(ChatSessionState::Connected, tracker);
 
         let (_, banner) = subscription_list(&b);
 
@@ -1572,7 +1590,7 @@ mod tests {
             )),
             subscription_id: None,
         }]);
-        let b = make_bundle_with_tracker(ChatConnectionState::Connected, tracker);
+        let b = make_bundle_with_tracker(ChatSessionState::Connected, tracker);
 
         let (items, banner) = subscription_list(&b);
 
@@ -1588,7 +1606,7 @@ mod tests {
 
     #[test]
     fn subscription_list_empty_without_records_and_carries_no_banner() {
-        let b = make_bundle(ChatConnectionState::Connected);
+        let b = make_bundle(ChatSessionState::Connected);
         let (items, banner) = subscription_list(&b);
         assert!(items.is_empty());
         assert!(banner.is_none());
@@ -1596,7 +1614,7 @@ mod tests {
 
     #[test]
     fn every_gated_action_carries_the_liveness_of_the_entity_it_targets() {
-        let b = make_bundle_with_tier(ChatConnectionState::Connected, BroadcasterTier::Affiliate);
+        let b = make_bundle_with_tier(ChatSessionState::Connected, BroadcasterTier::Affiliate);
         b.lifecycle
             .apply_notification("channel.poll.begin", &serde_json::Value::Null, "1");
         b.lifecycle
@@ -1630,7 +1648,7 @@ mod tests {
 
     #[test]
     fn only_the_actions_that_take_something_away_are_marked_destructive() {
-        let b = make_bundle_with_tier(ChatConnectionState::Connected, BroadcasterTier::Affiliate);
+        let b = make_bundle_with_tier(ChatSessionState::Connected, BroadcasterTier::Affiliate);
         let mut destructive: Vec<String> = b
             .actions()
             .into_iter()
@@ -1654,7 +1672,7 @@ mod tests {
 
     #[test]
     fn vip_and_mod_quick_actions_each_run_their_own_sub_action() {
-        let b = make_bundle(ChatConnectionState::Connected);
+        let b = make_bundle(ChatSessionState::Connected);
         let actions = b.actions();
 
         for (label, kind_id) in [
@@ -1698,13 +1716,13 @@ mod tests {
 
     #[tokio::test]
     async fn a_poisoned_connected_at_lock_still_records_both_connection_transitions() {
-        let b = make_bundle(ChatConnectionState::Disconnected);
+        let b = make_bundle(ChatSessionState::Disconnected);
         poison(&b.connected_at);
         let read = || b.connected_at.read_recover().is_some();
 
-        b.on_chat_state_changed(ChatConnectionState::Connected);
+        b.on_chat_state_changed(ChatSessionState::Connected);
         let after_connect = read();
-        b.on_chat_state_changed(ChatConnectionState::Disconnected);
+        b.on_chat_state_changed(ChatSessionState::Disconnected);
 
         assert_eq!((after_connect, read()), (true, false));
     }
@@ -1712,7 +1730,7 @@ mod tests {
     #[tokio::test]
     async fn a_poisoned_token_expiry_lock_still_takes_the_stored_expiry() {
         let expiry = std::time::SystemTime::now() + std::time::Duration::from_secs(3600);
-        let (_tx, rx) = watch::channel(ChatConnectionState::Connected);
+        let (_tx, rx) = watch::channel(ChatSessionState::Connected);
         let b = TwitchIntegrationBundle::for_test(
             Some("streamer".to_owned()),
             rx,
@@ -1731,7 +1749,7 @@ mod tests {
 
     #[test]
     fn action_groups_appear_in_the_expected_order() {
-        let b = make_bundle_with_tier(ChatConnectionState::Connected, BroadcasterTier::Affiliate);
+        let b = make_bundle_with_tier(ChatSessionState::Connected, BroadcasterTier::Affiliate);
         let mut groups: Vec<UserText> = Vec::new();
         for a in b.actions() {
             if let Some(group) = a.group
@@ -1757,21 +1775,21 @@ mod tests {
 
     #[test]
     fn quick_actions_enabled_when_chat_connected() {
-        let b = make_bundle_with_tier(ChatConnectionState::Connected, BroadcasterTier::Affiliate);
+        let b = make_bundle_with_tier(ChatSessionState::Connected, BroadcasterTier::Affiliate);
         let actions = b.actions();
         assert!(actions.iter().all(|a| a.enabled));
     }
 
     #[test]
     fn quick_actions_disabled_when_chat_disconnected() {
-        let b = make_bundle(ChatConnectionState::Disconnected);
+        let b = make_bundle(ChatSessionState::Disconnected);
         let actions = b.actions();
         assert!(actions.iter().all(|a| !a.enabled));
     }
 
     #[tokio::test]
     async fn refresh_token_without_stored_credentials_reports_not_connected() {
-        let b = make_bundle(ChatConnectionState::Disconnected);
+        let b = make_bundle(ChatSessionState::Disconnected);
         let outcome = forge_platform_core::BuiltinControl::refresh_token(b.as_ref()).await;
         assert_eq!(
             outcome,
@@ -1781,7 +1799,7 @@ mod tests {
 
     #[tokio::test]
     async fn reconnect_without_stored_credentials_reports_not_connected() {
-        let b = make_bundle(ChatConnectionState::Disconnected);
+        let b = make_bundle(ChatSessionState::Disconnected);
         let outcome = forge_platform_core::BuiltinControl::reconnect(b.as_ref()).await;
         assert_eq!(
             outcome,
@@ -1791,7 +1809,7 @@ mod tests {
 
     #[tokio::test]
     async fn disconnect_without_live_session_is_idempotent() {
-        let b = make_bundle(ChatConnectionState::Disconnected);
+        let b = make_bundle(ChatSessionState::Disconnected);
         let outcome = forge_platform_core::BuiltinControl::disconnect(b.as_ref()).await;
         assert_eq!(outcome, Ok(()));
     }
@@ -1822,8 +1840,7 @@ mod tests {
         )
         .unwrap();
 
-        let bundle =
-            make_bundle_with_tier(ChatConnectionState::Connected, BroadcasterTier::Affiliate);
+        let bundle = make_bundle_with_tier(ChatSessionState::Connected, BroadcasterTier::Affiliate);
 
         for action in bundle.actions() {
             if action.fields.is_empty() {
@@ -1864,8 +1881,7 @@ mod tests {
             None,
         )
         .unwrap();
-        let bundle =
-            make_bundle_with_tier(ChatConnectionState::Connected, BroadcasterTier::Affiliate);
+        let bundle = make_bundle_with_tier(ChatSessionState::Connected, BroadcasterTier::Affiliate);
 
         let problems: BTreeMap<String, String> = bundle
             .actions()
@@ -1906,8 +1922,7 @@ mod tests {
     #[test]
     fn free_text_quick_action_fields_open_blank() {
         for action in
-            make_bundle_with_tier(ChatConnectionState::Connected, BroadcasterTier::Affiliate)
-                .actions()
+            make_bundle_with_tier(ChatSessionState::Connected, BroadcasterTier::Affiliate).actions()
         {
             for field in &action.fields {
                 if !matches!(
@@ -1939,8 +1954,7 @@ mod tests {
 
     #[test]
     fn every_static_choice_field_default_is_one_of_its_listed_options() {
-        let bundle =
-            make_bundle_with_tier(ChatConnectionState::Connected, BroadcasterTier::Affiliate);
+        let bundle = make_bundle_with_tier(ChatSessionState::Connected, BroadcasterTier::Affiliate);
 
         let mut checked = std::collections::BTreeSet::new();
         for action in bundle.actions() {
@@ -2034,7 +2048,7 @@ mod tests {
         let repo: Arc<dyn CredentialsRepo> = crate::credentials_manager::tests::seeded_repo(
             &crate::credentials_manager::tests::stub_cred(stale_expiry),
         );
-        let (_, state_rx) = watch::channel(ChatConnectionState::Disconnected);
+        let (_, state_rx) = watch::channel(ChatSessionState::Disconnected);
         let credentials_manager = Arc::new(TwitchCredentialsManager::new(
             crate::sub_actions::test_support::oauth_client_at(&server.uri(), "test-client"),
             Arc::clone(&repo),
@@ -2153,7 +2167,7 @@ mod tests {
 
     #[test]
     fn the_quick_actions_carry_one_shield_toggle_that_follows_the_live_shield_state() {
-        let b = make_bundle(ChatConnectionState::Connected);
+        let b = make_bundle(ChatSessionState::Connected);
         let before = shield_labels(&b);
 
         b.lifecycle
@@ -2170,7 +2184,7 @@ mod tests {
 
     #[test]
     fn a_shield_change_moves_the_published_quick_action_revision() {
-        let b = make_bundle(ChatConnectionState::Connected);
+        let b = make_bundle(ChatSessionState::Connected);
         let Some(mut revisions) = QuickActions::revisions(b.as_ref()) else {
             panic!("twitch publishes quick action revisions");
         };
@@ -2191,7 +2205,7 @@ mod tests {
         }
         assert_eq!(transport.call_count(), 0);
 
-        b.on_chat_state_changed(ChatConnectionState::Connected);
+        b.on_chat_state_changed(ChatSessionState::Connected);
         assert_eq!(requests_reached(&transport, SHIELD_PATH, 1).await, 1);
     }
 
@@ -2200,10 +2214,10 @@ mod tests {
         let (b, transport) = bundle_recording_helix("4242");
 
         for state in [
-            ChatConnectionState::Connected,
-            ChatConnectionState::Connected,
-            ChatConnectionState::Reconnecting { attempt: 1 },
-            ChatConnectionState::Connected,
+            ChatSessionState::Connected,
+            ChatSessionState::Connected,
+            ChatSessionState::Reconnecting { attempt: 1 },
+            ChatSessionState::Connected,
         ] {
             b.on_chat_state_changed(state);
         }
@@ -2237,7 +2251,7 @@ mod tests {
                 subscription_id: None,
             },
         ]);
-        let shielded = make_bundle(ChatConnectionState::Connected);
+        let shielded = make_bundle(ChatSessionState::Connected);
         shielded.lifecycle.apply_notification(
             "channel.shield_mode.begin",
             &serde_json::Value::Null,
@@ -2246,23 +2260,20 @@ mod tests {
         for (case, bundle) in [
             (
                 "standard",
-                make_bundle_with_tier(ChatConnectionState::Connected, BroadcasterTier::Standard),
+                make_bundle_with_tier(ChatSessionState::Connected, BroadcasterTier::Standard),
             ),
             (
                 "affiliate",
-                make_bundle_with_tier(ChatConnectionState::Connected, BroadcasterTier::Affiliate),
+                make_bundle_with_tier(ChatSessionState::Connected, BroadcasterTier::Affiliate),
             ),
             (
                 "partner",
-                make_bundle_with_tier(ChatConnectionState::Connected, BroadcasterTier::Partner),
+                make_bundle_with_tier(ChatSessionState::Connected, BroadcasterTier::Partner),
             ),
-            (
-                "disconnected",
-                make_bundle(ChatConnectionState::Disconnected),
-            ),
+            ("disconnected", make_bundle(ChatSessionState::Disconnected)),
             (
                 "dropped subscriptions",
-                make_bundle_with_tracker(ChatConnectionState::Connected, dropped),
+                make_bundle_with_tracker(ChatSessionState::Connected, dropped),
             ),
             ("shield active", shielded),
         ] {

@@ -188,7 +188,7 @@ async fn seed_kick_account(
     })?;
     provider
         .store(
-            &CredentialId::new(forge_platform_kick::CREDENTIAL_KEY),
+            &CredentialId::new(forge_platform_kick::KICK_CREDENTIAL_ID),
             &stored,
         )
         .await
@@ -218,7 +218,7 @@ async fn seed_youtube_account(
     })?;
     provider
         .store(
-            &CredentialId::new(forge_platform_youtube::CREDENTIAL_KEY),
+            &CredentialId::new(forge_platform_youtube::YOUTUBE_CREDENTIAL_ID),
             &stored,
         )
         .await

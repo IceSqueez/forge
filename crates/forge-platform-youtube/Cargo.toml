@@ -20,7 +20,6 @@ forge-storage = { path = "../forge-storage" }
 tokio = { workspace = true }
 tokio-util = { workspace = true }
 tokio-stream = { workspace = true }
-futures = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
 async-trait = { workspace = true }
@@ -31,6 +30,7 @@ jiff = { workspace = true }
 [dev-dependencies]
 forge-test-support = { path = "../forge-test-support" }
 forge-events = { path = "../forge-events", features = ["test-support"] }
+futures = { workspace = true }
 reqwest = { workspace = true }
 wiremock = { workspace = true }
 forge-storage = { path = "../forge-storage", features = ["test-mocks", "settings-test-support"] }

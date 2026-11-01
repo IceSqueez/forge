@@ -4,16 +4,16 @@ use std::time::Duration;
 use forge_events::{Event, EventSource};
 use forge_net::{DedupSet, ExpectedRefusal, GatewayRequest};
 use forge_platform_core::PlatformError;
+use forge_platform_core::TokenSource;
 use forge_storage::BanLedgerRepo;
 use forge_types::Secret;
 use forge_types::{
     ChatEventDetail, ChatPayload, ChatSegment, ChatViewer, CurrencyCode, ModerationMarks,
     MoneyAmount, UserBadge,
 };
-use futures::future::BoxFuture;
 use time::OffsetDateTime;
 use tokio::sync::mpsc::UnboundedSender;
-use tokio_util::sync::CancellationToken;
+use tokio_util::sync::{CancellationToken, DropGuard};
 
 use crate::api::data_api::{DataApiError, YoutubeDataApi, malformed};
 use crate::api::poll_health::{PollHealthReporter, PollHealthTracker};
@@ -69,10 +69,32 @@ impl Default for ChatPollTimings {
     }
 }
 
+#[derive(Clone, Default)]
+pub struct ChatPollerStop(CancellationToken);
+
+impl ChatPollerStop {
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    pub fn stop(&self) {
+        self.0.cancel();
+    }
+
+    pub fn stop_on_drop(self) -> ChatPollerStopGuard {
+        ChatPollerStopGuard {
+            _cancels_on_drop: self.0.drop_guard(),
+        }
+    }
+}
+
+pub struct ChatPollerStopGuard {
+    _cancels_on_drop: DropGuard,
+}
+
 pub struct YoutubeChatPoller {
     api: YoutubeDataApi,
-    access_token_source:
-        Arc<dyn Fn() -> BoxFuture<'static, Result<String, PlatformError>> + Send + Sync>,
+    access_token_source: TokenSource,
     bus_sender: UnboundedSender<Event>,
     channel_id: String,
     live_chat_id: LiveChatIdHandle,
@@ -85,9 +107,7 @@ pub struct YoutubeChatPoller {
 impl YoutubeChatPoller {
     pub fn new(
         api: YoutubeDataApi,
-        access_token_source: Arc<
-            dyn Fn() -> BoxFuture<'static, Result<String, PlatformError>> + Send + Sync,
-        >,
+        access_token_source: TokenSource,
         bus_sender: UnboundedSender<Event>,
         channel_id: String,
         live_chat_id: LiveChatIdHandle,
@@ -117,7 +137,11 @@ impl YoutubeChatPoller {
         self
     }
 
-    pub async fn run(self, cancel: CancellationToken) -> Result<(), PlatformError> {
+    pub async fn run_until_stopped(self, stop: ChatPollerStop) -> Result<(), PlatformError> {
+        self.run(stop.0).await
+    }
+
+    pub(crate) async fn run(self, cancel: CancellationToken) -> Result<(), PlatformError> {
         let mut dedup = DedupSet::bounded(DEDUP_WINDOW_SIZE);
         let mut last_seen_title: Option<String> = None;
         let mut last_broadcast_id: Option<String> = None;

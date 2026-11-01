@@ -4,7 +4,7 @@ use std::sync::Arc;
 use forge_events::EventPublisher;
 use forge_net::TaskOwner;
 use forge_runtime::{
-    EventBus, FirstChatLedger, LatestValues, NotificationPreferences,
+    EventBus, EventStamp, FirstChatLedger, LatestValues, NotificationPreferences,
     spawn_chat_history_persistence, spawn_event_log_bridge, spawn_latest_projector,
     spawn_notification_policy, spawn_viewer_tracker,
 };
@@ -24,14 +24,14 @@ pub(crate) async fn build_core(
 ) -> CoreHandles {
     let settings_repo: Arc<dyn SettingsRepo> = Arc::clone(backend) as Arc<dyn SettingsRepo>;
     let viewer_repo = backend.viewer_repo();
-    let first_chats = match FirstChatLedger::load(viewer_repo.as_ref()).await {
-        Ok(ledger) => Some(ledger),
+    let stamps: Vec<Box<dyn EventStamp>> = match FirstChatLedger::load(viewer_repo.as_ref()).await {
+        Ok(ledger) => vec![Box::new(ledger)],
         Err(e) => {
             tracing::warn!(error = %e, "viewer history unreadable; first-time chatters are not detected");
-            None
+            Vec::new()
         }
     };
-    let bus = EventBus::with_first_chats(backend.event_log_repo(), first_chats);
+    let bus = EventBus::with_stamps(backend.event_log_repo(), stamps);
     EventBus::spawn_flush_task(Arc::clone(&bus));
     let services = TaskOwner::new();
     spawn_event_log_bridge(Arc::clone(&bus), &services);

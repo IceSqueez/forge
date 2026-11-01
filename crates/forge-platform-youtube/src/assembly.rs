@@ -2,11 +2,11 @@ use std::sync::Arc;
 
 use forge_events::EventPublisher;
 use forge_net::{RateLimiter, TokenBucketRateLimiter};
+use forge_platform_core::PlatformFuture;
 use forge_platform_core::{PlatformEndpoints, PlatformError};
 use forge_registry::SubActionRegistry;
 use forge_storage::{BanLedgerRepo, CredentialsRepo};
 use forge_types::Secret;
-use futures::future::BoxFuture;
 
 use crate::account::auth::YoutubeSignIn;
 use crate::account::oauth_client::{
@@ -89,7 +89,7 @@ impl YoutubeAssembly {
             let manager = Arc::clone(&self.manager);
             Arc::new(move || {
                 let manager = Arc::clone(&manager);
-                Box::pin(async move { manager.broadcaster().await }) as BoxFuture<'static, _>
+                Box::pin(async move { manager.broadcaster().await }) as PlatformFuture<_>
             })
         };
         let moderation = Arc::new(YoutubeModeration::new(

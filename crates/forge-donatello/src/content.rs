@@ -7,7 +7,7 @@ use forge_types::{MessageCode, MessageRef, UserText, VerbatimText};
 
 use crate::messages;
 use crate::provider::DonatelloProvider;
-use crate::status::{PollFailure, PollPhase, PollStatus};
+use crate::status::{PollFailure, PollStatus, PollerPhase};
 
 const NOT_SET: &str = "-";
 
@@ -40,7 +40,7 @@ fn account_card(status: &PollStatus) -> DetailSection {
     let known = |value: Option<&String>| value.map(|text| VerbatimText::new(text.as_str()).into());
     DetailSection::InfoCard {
         title: messages::LABEL_ACCOUNT_TITLE.into(),
-        live: status.phase == PollPhase::Polling,
+        live: status.phase == PollerPhase::Polling,
         fields: vec![
             field(
                 messages::LABEL_NICKNAME,
@@ -74,7 +74,7 @@ fn account_card(status: &PollStatus) -> DetailSection {
 fn action_banner(status: &PollStatus) -> Option<DetailSection> {
     if !matches!(
         status.phase,
-        PollPhase::AwaitingToken | PollPhase::ActionRequired
+        PollerPhase::AwaitingToken | PollerPhase::ActionRequired
     ) {
         return None;
     }
@@ -104,9 +104,9 @@ mod tests {
     #[test]
     fn every_banner_and_card_code_is_catalogued_in_both_languages() {
         for phase in [
-            PollPhase::AwaitingToken,
-            PollPhase::ActionRequired,
-            PollPhase::Polling,
+            PollerPhase::AwaitingToken,
+            PollerPhase::ActionRequired,
+            PollerPhase::Polling,
         ] {
             for failure in [
                 None,
@@ -146,7 +146,7 @@ mod tests {
             ),
         ] {
             let mut status = PollStatus::initial(std::time::Duration::ZERO);
-            status.phase = PollPhase::ActionRequired;
+            status.phase = PollerPhase::ActionRequired;
             status.last_error = Some(failure);
 
             let Some(DetailSection::WarningBanner { body: shown, .. }) = action_banner(&status)

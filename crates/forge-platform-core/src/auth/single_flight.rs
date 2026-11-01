@@ -1,7 +1,7 @@
+use std::pin::Pin;
 use std::sync::Arc;
 
 use async_trait::async_trait;
-use futures_core::future::BoxFuture;
 use time::{Duration, OffsetDateTime};
 use tokio::sync::{Mutex, MutexGuard};
 
@@ -10,8 +10,9 @@ use crate::credential_errors::reauth_required;
 use crate::credential_state::{CredentialState, CredentialStateTracker};
 use crate::error::PlatformError;
 
-pub type TokenSource =
-    Arc<dyn Fn() -> BoxFuture<'static, Result<String, PlatformError>> + Send + Sync>;
+pub type PlatformFuture<T> = Pin<Box<dyn Future<Output = Result<T, PlatformError>> + Send>>;
+
+pub type TokenSource = Arc<dyn Fn() -> PlatformFuture<String> + Send + Sync>;
 
 const REFRESH_TASK_LOST: &str = "token refresh did not complete";
 const REFRESH_BUFFER: Duration = Duration::seconds(REFRESH_WINDOW.as_secs().cast_signed());

@@ -155,13 +155,13 @@ async fn forge_reports_not_owned_when_touching_a_dashboard_reward() {
     let dashboard = CollectionItemId::new(fake.rewards()[0].id.clone());
     let mut tiers = forge.bundle.tier_changes();
     forge.connect().await;
-    timeout(
+    let reached = timeout(
         DEADLINE,
-        tiers.wait_for(|tier| *tier != BroadcasterTier::Standard),
+        tiers.wait_for(|tier| tier != BroadcasterTier::Standard),
     )
     .await
-    .expect("forge resolved the affiliate tier from the fake")
-    .expect("the bundle outlives the wait");
+    .expect("forge resolved the affiliate tier from the fake");
+    assert!(reached, "the bundle outlives the wait");
 
     let toggle = forge
         .bundle

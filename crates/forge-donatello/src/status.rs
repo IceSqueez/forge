@@ -5,7 +5,7 @@ use crate::api::DonatelloAccount;
 use crate::error::DonatelloError;
 use crate::messages;
 
-pub use forge_platform_core::PollPhase;
+pub use forge_platform_core::PollerPhase;
 
 pub type PollStatus = forge_platform_core::PollStatus<DonatelloAccount, PollFailure>;
 pub(crate) type StatusBoard = PollStatusBoard<DonatelloAccount, PollFailure>;
@@ -162,7 +162,7 @@ mod tests {
 
             assert_eq!(
                 (status.phase, status.last_error),
-                (PollPhase::ActionRequired, Some(failure)),
+                (PollerPhase::ActionRequired, Some(failure)),
                 "{error:?}"
             );
         }

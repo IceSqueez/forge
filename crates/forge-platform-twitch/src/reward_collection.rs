@@ -581,7 +581,7 @@ mod tests {
     use super::*;
     use crate::account::identity::SelfIdentity;
     use crate::bot_account::test_support::RecordingBus;
-    use crate::chat::ChatConnectionState;
+    use crate::chat::ChatSessionState;
     use crate::helix::{HelixMethod, HelixTransport};
     use crate::sub_actions::test_support::{
         MockCreds, MockTransport, SELF_USER_ID, TOKEN_SENTINEL, make_ctx,
@@ -603,7 +603,7 @@ mod tests {
         broadcaster_id: &str,
     ) -> (Arc<MockTransport>, Arc<TwitchIntegrationBundle>) {
         let transport = Arc::new(MockTransport::returning_sequence(responses));
-        let (_tx, rx) = watch::channel(ChatConnectionState::Connected);
+        let (_tx, rx) = watch::channel(ChatSessionState::Connected);
         let bundle = TwitchIntegrationBundle::for_test_with_transport(
             Some("streamer".to_owned()),
             rx,
@@ -1391,7 +1391,7 @@ mod tests {
             .mount(&server)
             .await;
         let (transport, bus) = observed_helix_at(&server.uri());
-        let (_tx, rx) = watch::channel(ChatConnectionState::Connected);
+        let (_tx, rx) = watch::channel(ChatSessionState::Connected);
         let bundle = TwitchIntegrationBundle::for_test_with_transport(
             Some("streamer".to_owned()),
             rx,

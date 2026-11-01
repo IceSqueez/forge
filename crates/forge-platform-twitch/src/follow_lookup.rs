@@ -70,7 +70,7 @@ mod tests {
 
     use super::*;
     use crate::BroadcasterTier;
-    use crate::chat::ChatConnectionState;
+    use crate::chat::ChatSessionState;
     use crate::chat_platform::EVENT_CHANNEL_CAPACITY;
     use crate::config::{HELIX_BUDGET_CAPACITY, HELIX_BUDGET_WINDOW};
     use crate::error::TwitchError;
@@ -130,7 +130,7 @@ mod tests {
         transport: Arc<dyn HelixTransport>,
         broadcaster_id: &str,
     ) -> Arc<TwitchIntegrationBundle> {
-        let (_tx, rx) = watch::channel(ChatConnectionState::Connected);
+        let (_tx, rx) = watch::channel(ChatSessionState::Connected);
         TwitchIntegrationBundle::for_test_with_transport(
             Some("streamer".to_owned()),
             rx,

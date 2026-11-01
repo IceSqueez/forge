@@ -1,9 +1,7 @@
-use std::sync::Arc;
-
 use forge_net::GatewayRequest;
 use forge_platform_core::PlatformError;
+use forge_platform_core::TokenSource;
 use forge_types::Secret;
-use futures::future::BoxFuture;
 
 use crate::api::data_api::{YoutubeDataApi, json_body};
 use crate::broadcast::live_chat_id::LiveChatIdHandle;
@@ -16,17 +14,14 @@ const MISSING_SCOPE: &str = "chat write scope missing";
 
 pub struct YoutubeSendChat {
     api: YoutubeDataApi,
-    access_token_source:
-        Arc<dyn Fn() -> BoxFuture<'static, Result<String, PlatformError>> + Send + Sync>,
+    access_token_source: TokenSource,
     live_chat_id: LiveChatIdHandle,
 }
 
 impl YoutubeSendChat {
     pub fn new(
         api: YoutubeDataApi,
-        access_token_source: Arc<
-            dyn Fn() -> BoxFuture<'static, Result<String, PlatformError>> + Send + Sync,
-        >,
+        access_token_source: TokenSource,
         live_chat_id: LiveChatIdHandle,
     ) -> Self {
         Self {

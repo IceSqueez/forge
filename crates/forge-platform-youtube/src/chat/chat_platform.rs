@@ -317,7 +317,7 @@ mod tests {
     fn platform() -> YoutubePlatform {
         platform_with(
             MemoryCredentials::holding(
-                crate::account::credentials::CREDENTIAL_KEY,
+                crate::account::credentials::YOUTUBE_CREDENTIAL_ID,
                 &stored_credentials(),
             ),
             crate::endpoints_test_support::unreachable_data_api(),
@@ -384,7 +384,7 @@ mod tests {
     fn platform_polling(server: &crate::endpoints_test_support::StubServer) -> YoutubePlatform {
         platform_with(
             MemoryCredentials::holding(
-                crate::account::credentials::CREDENTIAL_KEY,
+                crate::account::credentials::YOUTUBE_CREDENTIAL_ID,
                 &stored_credentials(),
             ),
             crate::endpoints_test_support::data_api_at(&server.uri()),

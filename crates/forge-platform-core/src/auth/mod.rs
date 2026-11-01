@@ -6,5 +6,5 @@ pub use local_callback::CALLBACK_PATH;
 pub use loopback_sign_in::{LoopbackAttempt, LoopbackSignIn};
 pub use pkce_flow::{PkceAuthorization, PkceAuthorizeConfig, PkceLoopback, REFRESH_BUFFER};
 pub use single_flight::{
-    SingleFlightRefresh, TokenRotation, TokenSource, expires_within_refresh_buffer,
+    PlatformFuture, SingleFlightRefresh, TokenRotation, TokenSource, expires_within_refresh_buffer,
 };

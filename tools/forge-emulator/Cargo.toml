@@ -78,4 +78,3 @@ forge-storage-sqlite = { path = "../../crates/forge-storage-sqlite", features = 
 tempfile = { version = "3.27" }
 time = { version = "0.3", features = ["macros"] }
 tokio = { version = "1.54", features = ["test-util"] }
-tokio-util = { version = "0.7" }

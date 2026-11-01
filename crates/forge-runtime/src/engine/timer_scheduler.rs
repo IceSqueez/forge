@@ -393,7 +393,11 @@ mod tests {
 
         let viewers = spawn_live_viewer_aggregator(&forge_net::TaskOwner::new());
         let (obs, obs_active) = tokio::sync::watch::channel(false);
-        let stream_live = spawn_stream_live_signal(&viewers, obs_active, &TaskOwner::new());
+        let stream_live = spawn_stream_live_signal(
+            &viewers,
+            crate::test_support::WatchedObs(obs_active),
+            &TaskOwner::new(),
+        );
         let (source, live_reports) = channel_viewer_source();
         viewers.register(PlatformId::Twitch, source);
 

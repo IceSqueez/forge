@@ -92,7 +92,7 @@ mod tests {
     use crate::account::identity::BroadcasterTier;
     use crate::bot_account::test_support::KeyedRepo;
     use crate::builtin::TwitchIntegrationBundle;
-    use crate::chat::ChatConnectionState;
+    use crate::chat::ChatSessionState;
     use crate::subscriptions::SubscriptionTracker;
 
     fn undecryptable() -> StorageError {
@@ -106,7 +106,7 @@ mod tests {
     }
 
     fn bundle_over(repo: Arc<KeyedRepo>) -> Arc<TwitchIntegrationBundle> {
-        let (_tx, rx) = watch::channel(ChatConnectionState::Disconnected);
+        let (_tx, rx) = watch::channel(ChatSessionState::Disconnected);
         TwitchIntegrationBundle::for_test(
             Some("streamer".to_owned()),
             rx,

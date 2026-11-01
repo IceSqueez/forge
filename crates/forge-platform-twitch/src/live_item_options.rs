@@ -233,7 +233,7 @@ mod tests {
 
     use super::*;
     use crate::account::identity::BroadcasterTier;
-    use crate::chat::ChatConnectionState;
+    use crate::chat::ChatSessionState;
     use crate::custom_rewards::{CUSTOM_REWARD_REDEMPTIONS_PATH, CUSTOM_REWARDS_PATH};
     use crate::error::TwitchError;
     use crate::helix::{HelixMethod, HelixRequest, HelixTransport};
@@ -247,7 +247,7 @@ mod tests {
         broadcaster_id: &str,
     ) -> (Arc<MockTransport>, Arc<TwitchIntegrationBundle>) {
         let transport = Arc::new(MockTransport::returning_sequence(replies));
-        let (_state, state_rx) = watch::channel(ChatConnectionState::Connected);
+        let (_state, state_rx) = watch::channel(ChatSessionState::Connected);
         let bundle = TwitchIntegrationBundle::for_test_with_transport(
             Some("streamer".to_owned()),
             state_rx,

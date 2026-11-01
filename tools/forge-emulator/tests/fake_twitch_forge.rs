@@ -15,7 +15,7 @@ use forge_events::{PlatformConnectionChanged, TypedEvent};
 use forge_net::{Gateway, TokenBucketRateLimiter};
 use forge_platform_core::{BuiltinControl, ChatPlatform, PlatformEndpoints};
 use forge_platform_twitch::{
-    ChatConnectionState, ChatSessionConfig, HELIX_BUDGET_CAPACITY, HELIX_BUDGET_WINDOW,
+    ChatSessionState, ChatSessionConfig, HELIX_BUDGET_CAPACITY, HELIX_BUDGET_WINDOW,
     HelixHttpTransport, HelixTokenSource, SubscriptionTracker, TWITCH_OAUTH_BUDGET_CAPACITY,
     TWITCH_OAUTH_BUDGET_WINDOW, TwitchAssembly, TwitchChat, TwitchChatHandle,
     TwitchCredentialsManager, TwitchError, TwitchIntegrationBundle, TwitchLifecycle,
@@ -346,14 +346,14 @@ async fn next_platform_event(events: &mut EventSubscription) -> Event {
 }
 
 async fn chat_reaches_connected(bundle: &TwitchIntegrationBundle) {
-    let mut states = bundle.chat_connection_changes();
-    timeout(
+    let mut states = bundle.chat_session_changes();
+    let reached = timeout(
         DEADLINE,
-        states.wait_for(|state| *state == ChatConnectionState::Connected),
+        states.wait_for(|state| state == ChatSessionState::Connected),
     )
     .await
-    .expect("the platform never reported Connected")
-    .expect("the bundle outlives the wait");
+    .expect("the platform never reported Connected");
+    assert!(reached, "the bundle outlives the wait");
 }
 
 async fn sole_live_session_subscribed_to(fake: &FakeTwitch, types: &[&str]) {

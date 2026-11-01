@@ -14,7 +14,7 @@ use tokio::sync::{Mutex, OnceCell, watch};
 
 use crate::account::identity::SelfIdentity;
 use crate::bot_account::TwitchBotAccount;
-use crate::chat::{ChatConnectionState, TwitchChat, TwitchChatHandle};
+use crate::chat::{ChatSessionState, TwitchChat, TwitchChatHandle};
 use crate::chat_sender::{ChatDelivery, ChatSenders};
 use crate::config::ChatSessionConfig;
 use crate::credentials::load;
@@ -34,7 +34,7 @@ pub struct TwitchPlatform {
     tracker: SubscriptionTracker,
     helix: Gateway,
     lifecycle: TwitchLifecycle,
-    state_tx: watch::Sender<ChatConnectionState>,
+    state_tx: watch::Sender<ChatSessionState>,
     session: Mutex<Option<TwitchChatHandle>>,
     transport: OnceCell<Arc<dyn HelixTransport>>,
     bot: Option<Arc<TwitchBotAccount>>,
@@ -57,7 +57,7 @@ impl TwitchPlatform {
             tracker,
             helix,
             lifecycle,
-            state_tx: watch::channel(ChatConnectionState::Disconnected).0,
+            state_tx: watch::channel(ChatSessionState::Disconnected).0,
             session: Mutex::new(None),
             transport: OnceCell::new(),
             bot: None,
@@ -77,7 +77,7 @@ impl TwitchPlatform {
         self.events.clone()
     }
 
-    pub(crate) fn session_states(&self) -> watch::Receiver<ChatConnectionState> {
+    pub(crate) fn session_states(&self) -> watch::Receiver<ChatSessionState> {
         self.state_tx.subscribe()
     }
 

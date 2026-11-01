@@ -12,7 +12,7 @@ use forge_types::Secret;
 pub use control::DonationPoll;
 pub use health::{PollVocabulary, poll_metrics};
 pub use status::{
-    PollError, PollMetrics, PollPhase, PollPhaseCodes, PollStatus, PollStatusBoard, RunningPoller,
+    PollError, PollMetrics, PollPhaseCodes, PollStatus, PollStatusBoard, PollerPhase, RunningPoller,
 };
 pub use surface::PolledDonationProvider;
 pub use worker::{CycleError, PollScope, PollWorker};

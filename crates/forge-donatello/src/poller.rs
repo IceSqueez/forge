@@ -12,7 +12,7 @@ use crate::api::{DonatelloAccount, DonatelloApi, PAGE_SIZE};
 use crate::credentials;
 use crate::error::{DonatelloError, redacted_serde_reason};
 use crate::normalize::{created_at_instant, donation_from_wire};
-use crate::status::{PollFailure, PollPhase, StatusBoard};
+use crate::status::{PollFailure, PollerPhase, StatusBoard};
 use crate::wire::{CREATED_AT_FIELD, DONATION_ID_FIELD, DonateWire, DonatesPageWire};
 
 const MAX_SCAN_PAGES: u64 = 500;
@@ -111,7 +111,7 @@ async fn cycle(
     let token = match session {
         Some(token) => token.clone(),
         None => {
-            ctx.status.enter(PollPhase::Starting);
+            ctx.status.enter(PollerPhase::Starting);
             let token = credentials::load(ctx.creds.as_ref())
                 .await?
                 .ok_or(DonatelloError::MissingToken)?;

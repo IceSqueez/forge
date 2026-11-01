@@ -30,4 +30,4 @@ pub use messages::DONATELLO_MESSAGES;
 pub use normalize::DONATELLO_ASSUMED_TIME_ZONE;
 pub use provider::DonatelloProvider;
 pub use status::PollFailure;
-pub use status::{PollPhase, PollStatus};
+pub use status::{PollStatus, PollerPhase};

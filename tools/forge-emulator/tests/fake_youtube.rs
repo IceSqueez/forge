@@ -15,7 +15,7 @@ use forge_emulator::vocabulary::REDACTED;
 use forge_events::Event;
 use forge_platform_core::{PlatformEndpoints, PlatformError, ViewerReport};
 use forge_platform_youtube::{
-    ActiveBroadcastIdHandle, GOOGLE_OAUTH_BUDGET_CAPACITY, GOOGLE_OAUTH_BUDGET_WINDOW,
+    ActiveBroadcastIdHandle, ChatPollerStop, GOOGLE_OAUTH_BUDGET_CAPACITY, GOOGLE_OAUTH_BUDGET_WINDOW,
     GoogleOAuthClient, LiveChatIdHandle, SharedQuota, YoutubeAuthBundle, YoutubeChatPoller,
     YoutubeCredentialsManager, YoutubeDataApi, YoutubeSendChat, YoutubeViewerPoll,
     google_oauth_gateway,
@@ -165,7 +165,7 @@ impl ForgePoller {
         );
         let task = tokio::spawn(async move {
             poller
-                .run(tokio_util::sync::CancellationToken::new())
+                .run_until_stopped(ChatPollerStop::new())
                 .await
                 .ok();
         });

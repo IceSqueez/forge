@@ -43,9 +43,12 @@ const REASON: TextField = TextField {
 const CONFIG: ConfigSpec = ConfigSpec::new(&[&MARK_AS, &REASON]);
 
 fn read_mark(config: &SubActionConfig, args: &ArgStack) -> Result<StopMark, ConfigProblem> {
-    let failed = MARK_AS.read(config, args)? == StopOutcome::Failed;
+    let outcome = MARK_AS.read(config, args)?;
     let reason = Some(REASON.read(config, args)?).filter(|text| !text.is_empty());
-    Ok(StopMark { failed, reason })
+    Ok(match outcome {
+        StopOutcome::Completed => StopMark::Completed,
+        StopOutcome::Failed => StopMark::Failed { reason },
+    })
 }
 
 pub struct CoreLogicStopRunner;

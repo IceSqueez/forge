@@ -1818,7 +1818,7 @@ fn youtube_data_api(
 }
 
 struct EchoForge {
-    _cancel: tokio_util::sync::DropGuard,
+    _cancel: forge_platform_youtube::ChatPollerStopGuard,
     echo: tokio::task::JoinHandle<()>,
 }
 
@@ -1843,8 +1843,8 @@ fn forge_youtube_echo(fake: &FakeYouTube) -> EchoForge {
         Arc::new(forge_storage::MockBanLedgerRepo::new()),
     );
     let sender = forge_platform_youtube::YoutubeSendChat::new(api, youtube_token(fake), live_chat);
-    let cancel = tokio_util::sync::CancellationToken::new();
-    let polling = tokio::spawn(poller.run(cancel.clone()));
+    let cancel = forge_platform_youtube::ChatPollerStop::new();
+    let polling = tokio::spawn(poller.run_until_stopped(cancel.clone()));
     let echo = tokio::spawn(async move {
         while let Some(event) = event_rx.recv().await {
             let text = event.payload["message_text"].as_str().unwrap_or_default();
@@ -1855,7 +1855,7 @@ fn forge_youtube_echo(fake: &FakeYouTube) -> EchoForge {
         polling.abort();
     });
     EchoForge {
-        _cancel: cancel.drop_guard(),
+        _cancel: cancel.stop_on_drop(),
         echo,
     }
 }

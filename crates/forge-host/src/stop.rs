@@ -703,9 +703,7 @@ mod tests {
             intake.timer_catalog,
             spawn_stream_live_signal(
                 &spawn_live_viewer_aggregator(&forge_net::TaskOwner::new()),
-                forge_obs::SwitchableObsSink::new()
-                    .stream_output()
-                    .into_receiver(),
+                forge_obs::SwitchableObsSink::new().stream_output(),
                 &TaskOwner::new(),
             ),
             forge_types::Shared::default(),

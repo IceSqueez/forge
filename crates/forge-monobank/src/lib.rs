@@ -32,4 +32,4 @@ pub use integration::MONOBANK_INTEGRATION;
 pub use jar::MonobankJar;
 pub use messages::MONOBANK_MESSAGES;
 pub use provider::MonobankProvider;
-pub use status::{PollFailure, PollPhase, PollStatus};
+pub use status::{PollFailure, PollStatus, PollerPhase};

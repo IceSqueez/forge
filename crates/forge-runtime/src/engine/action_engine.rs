@@ -8,7 +8,9 @@ use forge_events::{
     RunOutcome, SubActionRun, TypedEvent,
 };
 use forge_net::{TaskOwner, TaskShutdown};
-use forge_registry::{CancelSignal, ChainSignal, RunContext, RunningAction, SubActionRegistry};
+use forge_registry::{
+    CancelSignal, ChainSignal, RunContext, RunningAction, StopMark, SubActionRegistry,
+};
 use forge_storage::{ActionExecution, ActionRepo, ExecutionStatus, HistoryRepo, RunRefusal};
 use forge_types::{
     Action, ActionId, ArgStack, DEFAULT_QUEUE_ID, EventId, ExecutionContext, ExecutionMetadata,
@@ -24,6 +26,7 @@ use crate::engine::action_cancel::ActionCancelRegistry;
 use crate::engine::chain::{ChainEngine, pick_steps};
 use crate::engine::run_history::RunHistoryWriter;
 use crate::engine::scheduled_runs::ScheduledOrigin;
+use crate::event_flow::bus::LineageHold;
 use crate::integrations::integration_gate::{GatedLeafExecutor, IntegrationGate};
 use crate::services::catalog::Catalog;
 use crate::services::date_names::DateNamesHandle;
@@ -413,16 +416,8 @@ impl ActionEngine {
             outcome: ExecutionOutcome::Success,
         };
 
-        let mut start_event = ActionStarted {
-            action_id: action.id,
-            action_name: action.name.clone(),
-            sub_action_count: action.sub_actions.len(),
-        }
-        .into_event(EventSource::Core, Some(req.trigger_event_id));
-        start_event.causation_depth = trigger_depth.saturating_add(1);
-        let start_event_id = start_event.id;
-        let _lineage = self.bus.hold_lineage(&start_event);
-        self.bus.publish(start_event);
+        let (start_event_id, _lineage) =
+            self.announce_start(&action, req.trigger_event_id, trigger_depth);
 
         let pick = pick_steps(&action);
 
@@ -437,25 +432,42 @@ impl ActionEngine {
             .await;
 
         ctx.telemetry = run.telemetry;
-        ctx.outcome = match run.signal {
-            ChainSignal::Completed | ChainSignal::Break | ChainSignal::Continue => {
-                ExecutionOutcome::Success
-            }
-            ChainSignal::Stop(mark) if mark.failed => ExecutionOutcome::Failed(match mark.reason {
-                Some(reason) => VerbatimText::new(reason).into(),
-                None => core_messages::action_stopped().into(),
-            }),
-            ChainSignal::Stop(_) => ExecutionOutcome::Success,
-            ChainSignal::Error(msg) => ExecutionOutcome::Failed(msg),
-            ChainSignal::Aborted => ExecutionOutcome::Cancelled,
+        ctx.outcome = if cancel.is_cancelled() {
+            ExecutionOutcome::Cancelled
+        } else {
+            run_outcome(run.signal)
         };
-
-        if cancel.is_cancelled() {
-            ctx.outcome = ExecutionOutcome::Cancelled;
-        }
-
         ctx.completed_at = Some(OffsetDateTime::now_utc());
 
+        self.finish_run(&action, ctx, manual_test, start_event_id);
+    }
+
+    fn announce_start(
+        &self,
+        action: &Action,
+        trigger_event_id: EventId,
+        trigger_depth: u16,
+    ) -> (EventId, LineageHold<'_>) {
+        let mut start_event = ActionStarted {
+            action_id: action.id,
+            action_name: action.name.clone(),
+            sub_action_count: action.sub_actions.len(),
+        }
+        .into_event(EventSource::Core, Some(trigger_event_id));
+        start_event.causation_depth = trigger_depth.saturating_add(1);
+        let start_event_id = start_event.id;
+        let lineage = self.bus.hold_lineage(&start_event);
+        self.bus.publish(start_event);
+        (start_event_id, lineage)
+    }
+
+    fn finish_run(
+        &self,
+        action: &Action,
+        ctx: ExecutionContext,
+        manual_test: bool,
+        start_event_id: EventId,
+    ) {
         let total_ms: u64 = ctx
             .telemetry
             .iter()
@@ -470,7 +482,7 @@ impl ActionEngine {
         }
         .map(|status| ActionExecution {
             action_id: action.id,
-            started_at,
+            started_at: ctx.started_at,
             duration_ms: total_ms,
             status,
         });
@@ -494,6 +506,21 @@ impl ActionEngine {
             self.bus
                 .publish(done.into_event(EventSource::Core, Some(start_event_id)));
         }
+    }
+}
+
+fn run_outcome(signal: ChainSignal) -> ExecutionOutcome {
+    match signal {
+        ChainSignal::Completed
+        | ChainSignal::Break
+        | ChainSignal::Continue
+        | ChainSignal::Stop(StopMark::Completed) => ExecutionOutcome::Success,
+        ChainSignal::Stop(StopMark::Failed { reason }) => ExecutionOutcome::Failed(match reason {
+            Some(reason) => VerbatimText::new(reason).into(),
+            None => core_messages::action_stopped().into(),
+        }),
+        ChainSignal::Error(msg) => ExecutionOutcome::Failed(msg),
+        ChainSignal::Aborted => ExecutionOutcome::Cancelled,
     }
 }
 

@@ -13,7 +13,7 @@ use crate::credentials;
 use crate::error::{MonobankError, redacted_serde_reason};
 use crate::jar::{JarDirectory, JarId, MonobankJar};
 use crate::normalize::donation_from_item;
-use crate::status::{PollFailure, PollPhase, StatusBoard};
+use crate::status::{PollFailure, PollerPhase, StatusBoard};
 use crate::window::{Coverage, StatementWindow, WindowPlanner};
 use crate::wire::{StatementItemWire, TRANSACTION_ID_FIELD, TRANSACTION_TIME_FIELD};
 
@@ -108,7 +108,7 @@ async fn cycle(
     let current = match session {
         Some(current) => current.clone(),
         None => {
-            ctx.status.enter(PollPhase::Starting);
+            ctx.status.enter(PollerPhase::Starting);
             let credential = credentials::load(ctx.creds.as_ref())
                 .await?
                 .ok_or(MonobankError::MissingToken)?;

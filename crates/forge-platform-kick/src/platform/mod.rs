@@ -221,7 +221,7 @@ pub(crate) mod tests {
     use time::{Duration, OffsetDateTime};
 
     use super::*;
-    use crate::auth::credentials::{CREDENTIAL_KEY, KickCredentials};
+    use crate::auth::credentials::{KICK_CREDENTIAL_ID, KickCredentials};
     use crate::pusher::chatroom_lookup::ChannelInfoFetcher;
 
     fn repo_with_valid_creds() -> Arc<MemoryCredentials> {
@@ -234,7 +234,7 @@ pub(crate) mod tests {
             expires_at: OffsetDateTime::now_utc() + Duration::hours(1),
         };
         Arc::new(MemoryCredentials::holding(
-            CREDENTIAL_KEY,
+            KICK_CREDENTIAL_ID,
             &serde_json::to_string(&creds).unwrap(),
         ))
     }

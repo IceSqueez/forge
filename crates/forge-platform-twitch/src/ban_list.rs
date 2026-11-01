@@ -153,7 +153,7 @@ mod tests {
 
     use super::*;
     use crate::BroadcasterTier;
-    use crate::chat::ChatConnectionState;
+    use crate::chat::ChatSessionState;
     use crate::helix::{HelixHttpTransport, HelixTokenRefresher, HelixTokenSource, HelixTransport};
     use crate::sub_actions::test_support::{MockCreds, MockTransport, helix_gateway_at};
     use crate::subscriptions::SubscriptionTracker;
@@ -238,7 +238,7 @@ mod tests {
         transport: Arc<dyn HelixTransport>,
         broadcaster_id: &str,
     ) -> Arc<TwitchIntegrationBundle> {
-        let (_tx, rx) = watch::channel(ChatConnectionState::Connected);
+        let (_tx, rx) = watch::channel(ChatSessionState::Connected);
         TwitchIntegrationBundle::for_test_with_transport(
             Some("streamer".to_owned()),
             rx,

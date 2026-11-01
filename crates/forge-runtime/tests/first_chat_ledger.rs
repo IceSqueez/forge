@@ -5,7 +5,9 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use forge_events::{Event, EventSource};
-use forge_runtime::{EventBus, FirstChatLedger, NullEventLogRepo, spawn_viewer_tracker};
+use forge_runtime::{
+    EventBus, EventStamp, FirstChatLedger, NullEventLogRepo, spawn_viewer_tracker,
+};
 use forge_storage::MockViewerRepo;
 use forge_storage::{DataProvider, ViewerRepo};
 use forge_types::ChatViewer;
@@ -21,7 +23,11 @@ fn chat_line(viewer_id: &str) -> Event {
 }
 
 fn bus_with(ledger: Option<FirstChatLedger>) -> Arc<EventBus> {
-    EventBus::with_first_chats(Arc::new(NullEventLogRepo), ledger)
+    let stamps = ledger
+        .into_iter()
+        .map(|ledger| Box::new(ledger) as Box<dyn EventStamp>)
+        .collect();
+    EventBus::with_stamps(Arc::new(NullEventLogRepo), stamps)
 }
 
 async fn empty_history_ledger() -> FirstChatLedger {

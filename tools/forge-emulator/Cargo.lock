@@ -925,7 +925,6 @@ dependencies = [
  "time",
  "tokio",
  "tokio-tungstenite 0.30.0",
- "tokio-util",
 ]
 
 [[package]]
@@ -1098,7 +1097,6 @@ dependencies = [
  "forge-registry",
  "forge-storage",
  "forge-types",
- "futures",
  "jiff",
  "serde",
  "serde_json",

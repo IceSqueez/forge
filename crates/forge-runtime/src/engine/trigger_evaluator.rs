@@ -167,7 +167,10 @@ impl TriggerEvaluator {
             let Some(Some(args)) = decided.remove(&instance.id) else {
                 continue;
             };
-            if let Some(key) = cooldown_key(instance, &args) {
+            let Some(descriptor) = self.registry.get(&instance.kind_id) else {
+                continue;
+            };
+            if let Some(key) = cooldown_key(descriptor, instance, &args) {
                 self.cooldowns.release(&key, event.id);
             }
         }
@@ -287,7 +290,8 @@ impl TriggerEvaluator {
             }
         }
 
-        if let Some(remaining) = self.cooldown_remaining(instance, &args, event.id) {
+        let cooldown = cooldown_key(descriptor, instance, &args);
+        if let Some(remaining) = self.cooldown_remaining(instance, cooldown, event.id) {
             self.publish_blocked(instance, event.id, BlockReason::Cooldown { remaining });
             log_rejected(instance, event, is_command, Rejection::Cooldown);
             return None;
@@ -308,24 +312,28 @@ impl TriggerEvaluator {
     fn cooldown_remaining(
         &mut self,
         instance: &TriggerInstance,
-        args: &ArgStack,
+        key: Option<CooldownKey>,
         event_id: EventId,
     ) -> Option<Duration> {
         if instance.cooldown_secs == 0 {
             return None;
         }
 
-        let key = cooldown_key(instance, args)?;
+        let key = key?;
         let window = Duration::from_secs(u64::from(instance.cooldown_secs));
         self.cooldowns.remaining_or_stamp(key, window, event_id)
     }
 }
 
-fn cooldown_key(instance: &TriggerInstance, args: &ArgStack) -> Option<CooldownKey> {
+fn cooldown_key(
+    descriptor: &dyn TriggerKindDescriptor,
+    instance: &TriggerInstance,
+    args: &ArgStack,
+) -> Option<CooldownKey> {
     let user = if instance.cooldown_global {
         None
     } else {
-        Some(arg_stack_user(args)?)
+        Some(descriptor.cooldown_identity(args)?)
     };
     Some((instance.id, user))
 }
@@ -468,17 +476,6 @@ fn resolve_rung(event: &Event) -> PermissionRung {
         .and_then(|v| ChatPayload::deserialize(v).ok())
         .map(|chat| PermissionRung::from_badges(&chat.badges))
         .unwrap_or_default()
-}
-
-fn arg_stack_user(args: &ArgStack) -> Option<String> {
-    for key in ["user_id", "user_login", "user"] {
-        if let Some(Variant::String(s)) = args.get(key)
-            && !s.is_empty()
-        {
-            return Some(s.clone());
-        }
-    }
-    None
 }
 
 fn command_phrase(config: &TriggerConfig) -> String {

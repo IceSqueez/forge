@@ -10,7 +10,7 @@ use tokio::sync::{mpsc, watch};
 use tracing::warn;
 
 use super::control::PollControl;
-use super::status::{PollError, PollPhase, PollStatusBoard};
+use super::status::{PollError, PollStatusBoard, PollerPhase};
 use crate::PlatformError;
 
 pub enum CycleError<E> {
@@ -149,7 +149,7 @@ pub(super) async fn run<W: PollWorker>(
         let control = *scope.control.borrow_and_update();
         board.set_poll_interval(control.interval);
         if !control.enabled {
-            board.enter(PollPhase::Paused);
+            board.enter(PollerPhase::Paused);
             match scope.wait(None).await {
                 Wake::Closed => return,
                 Wake::Elapsed | Wake::ControlChanged => continue,

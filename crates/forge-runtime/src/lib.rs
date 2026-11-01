@@ -53,7 +53,7 @@ pub use engine::trigger_evaluator::{
 };
 pub use engine::triggers::register_core_triggers;
 pub use error::RuntimeError;
-pub use event_flow::bus::{EventBus, EventHistory};
+pub use event_flow::bus::{EventBus, EventHistory, EventStamp};
 pub use event_flow::delivery_loss::{ConsumerLoss, DeliveryTier, LossCount, LossWatch};
 pub use event_flow::event_log_bridge::spawn_event_log_bridge;
 #[cfg(any(test, feature = "test-support"))]

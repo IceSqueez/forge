@@ -4,7 +4,6 @@ use forge_net::{ExpectedRefusal, GatewayFailure, GatewayRequest};
 use forge_platform_core::PlatformError;
 use forge_storage::{BanLedgerEntry, BanLedgerKey, BanLedgerRepo, BanOrigin, StorageError};
 use forge_types::Secret;
-use futures::future::BoxFuture;
 use time::OffsetDateTime;
 
 use crate::account::credentials::YoutubeBroadcaster;
@@ -23,9 +22,8 @@ const MISSING_SCOPE: &str = "moderation scope missing";
 const BANNED_OUTSIDE_FORGE: &str =
     "unban - this ban was issued outside forge, lift it in YouTube Studio";
 
-use forge_platform_core::TokenSource;
-type BroadcasterSource =
-    Arc<dyn Fn() -> BoxFuture<'static, Result<YoutubeBroadcaster, PlatformError>> + Send + Sync>;
+use forge_platform_core::{PlatformFuture, TokenSource};
+type BroadcasterSource = Arc<dyn Fn() -> PlatformFuture<YoutubeBroadcaster> + Send + Sync>;
 
 pub struct YoutubeModeration {
     api: YoutubeDataApi,

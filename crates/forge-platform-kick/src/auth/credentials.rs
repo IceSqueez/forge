@@ -2,7 +2,7 @@ use forge_types::OAuthToken;
 use serde::{Deserialize, Serialize};
 use time::OffsetDateTime;
 
-pub const CREDENTIAL_KEY: &str = "kick:broadcaster";
+pub const KICK_CREDENTIAL_ID: &str = "kick:broadcaster";
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct KickCredentials {

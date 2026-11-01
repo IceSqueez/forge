@@ -5,7 +5,7 @@ use crate::error::MonobankError;
 use crate::jar::MonobankJar;
 use crate::messages;
 
-pub use forge_platform_core::PollPhase;
+pub use forge_platform_core::PollerPhase;
 
 pub type PollStatus = forge_platform_core::PollStatus<MonobankJar, PollFailure>;
 pub(crate) type StatusBoard = PollStatusBoard<MonobankJar, PollFailure>;
@@ -160,58 +160,58 @@ mod tests {
         for (error, phase, failure) in [
             (
                 MonobankError::MissingToken,
-                PollPhase::AwaitingToken,
+                PollerPhase::AwaitingToken,
                 PollFailure::MissingToken,
             ),
             (
                 MonobankError::MalformedToken,
-                PollPhase::ActionRequired,
+                PollerPhase::ActionRequired,
                 PollFailure::TokenUnreadable,
             ),
             (
                 MonobankError::Unauthorized,
-                PollPhase::ActionRequired,
+                PollerPhase::ActionRequired,
                 PollFailure::TokenRejected,
             ),
             (
                 MonobankError::MissingJar,
-                PollPhase::ActionRequired,
+                PollerPhase::ActionRequired,
                 PollFailure::JarNotSelected,
             ),
             (
                 MonobankError::InvalidJarId,
-                PollPhase::ActionRequired,
+                PollerPhase::ActionRequired,
                 PollFailure::JarNotSelected,
             ),
             (
                 MonobankError::JarNotFound,
-                PollPhase::ActionRequired,
+                PollerPhase::ActionRequired,
                 PollFailure::JarMissing,
             ),
             (
                 MonobankError::RateLimited {
                     retry_after_secs: 60,
                 },
-                PollPhase::Retrying,
+                PollerPhase::Retrying,
                 PollFailure::RateLimited,
             ),
             (
                 MonobankError::Http { status: 503 },
-                PollPhase::Retrying,
+                PollerPhase::Retrying,
                 PollFailure::ServerError,
             ),
             (
                 MonobankError::Network {
                     reason: String::new(),
                 },
-                PollPhase::Retrying,
+                PollerPhase::Retrying,
                 PollFailure::Network,
             ),
             (
                 MonobankError::MalformedResponse {
                     reason: String::new(),
                 },
-                PollPhase::Retrying,
+                PollerPhase::Retrying,
                 PollFailure::MalformedResponse,
             ),
         ] {
@@ -251,7 +251,7 @@ mod tests {
 
         assert_eq!(
             (status.phase, status.last_error),
-            (PollPhase::Polling, Some(PollFailure::InvalidDonation))
+            (PollerPhase::Polling, Some(PollFailure::InvalidDonation))
         );
     }
 

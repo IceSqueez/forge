@@ -2,7 +2,7 @@ use forge_types::{RecoverMutex, RecoverRwLock};
 use std::sync::{Arc, Mutex, RwLock};
 use std::time::Duration;
 
-use forge_platform_core::{AtomicConnectionState, ConnectionState};
+use forge_platform_core::{AtomicConnectionState, ConnectionState, StreamOutputSignal};
 use tokio::sync::watch;
 
 use crate::health::HealthSnapshot;
@@ -10,16 +10,12 @@ use crate::health::HealthSnapshot;
 #[derive(Debug, Clone)]
 pub struct StreamOutputActive(watch::Receiver<bool>);
 
-impl StreamOutputActive {
-    pub fn is_active(&self) -> bool {
+impl StreamOutputSignal for StreamOutputActive {
+    fn is_active(&self) -> bool {
         *self.0.borrow()
     }
 
-    pub fn into_receiver(self) -> watch::Receiver<bool> {
-        self.0
-    }
-
-    pub async fn changed(&mut self) -> Option<bool> {
+    async fn changed(&mut self) -> Option<bool> {
         self.0.changed().await.ok()?;
         Some(*self.0.borrow_and_update())
     }

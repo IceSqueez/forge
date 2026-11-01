@@ -108,14 +108,14 @@ type SuccessorDial =
 type SubscriptionPassRun = Pin<Box<dyn Future<Output = PassVerdict> + Send>>;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum ChatConnectionState {
+pub enum ChatSessionState {
     Connecting,
     Connected,
     Reconnecting { attempt: u8 },
     Disconnected,
 }
 
-impl ChatConnectionState {
+impl ChatSessionState {
     pub(crate) fn to_connection_state(self) -> ConnectionState {
         match self {
             Self::Connecting => ConnectionState::Connecting,
@@ -141,7 +141,7 @@ struct SessionConfig {
 
 pub(crate) struct ChatSession {
     config: SessionConfig,
-    state_tx: watch::Sender<ChatConnectionState>,
+    state_tx: watch::Sender<ChatSessionState>,
     shutdown_rx: oneshot::Receiver<()>,
     transition: ConnectionTransition,
     seen_messages: MessageIdWindow,
@@ -158,12 +158,8 @@ impl ChatSession {
         bus: Arc<dyn EventPublisher>,
         tracker: SubscriptionTracker,
         lifecycle: TwitchLifecycle,
-    ) -> (
-        Self,
-        watch::Receiver<ChatConnectionState>,
-        oneshot::Sender<()>,
-    ) {
-        let (state_tx, state_rx) = watch::channel(ChatConnectionState::Connecting);
+    ) -> (Self, watch::Receiver<ChatSessionState>, oneshot::Sender<()>) {
+        let (state_tx, state_rx) = watch::channel(ChatSessionState::Connecting);
         let (session, shutdown_tx) =
             Self::reporting_to(manager, helix, config, bus, tracker, lifecycle, state_tx);
         (session, state_rx, shutdown_tx)
@@ -176,7 +172,7 @@ impl ChatSession {
         bus: Arc<dyn EventPublisher>,
         tracker: SubscriptionTracker,
         lifecycle: TwitchLifecycle,
-        state_tx: watch::Sender<ChatConnectionState>,
+        state_tx: watch::Sender<ChatSessionState>,
     ) -> (Self, oneshot::Sender<()>) {
         let (shutdown_tx, shutdown_rx) = oneshot::channel();
         let ChatSessionConfig {
@@ -229,9 +225,9 @@ impl ChatSession {
         loop {
             let attempt = self.backoff.attempt();
             self.set_state(if attempt == 0 {
-                ChatConnectionState::Connecting
+                ChatSessionState::Connecting
             } else {
-                ChatConnectionState::Reconnecting {
+                ChatSessionState::Reconnecting {
                     attempt: u8::try_from(attempt).unwrap_or(u8::MAX),
                 }
             });
@@ -318,7 +314,7 @@ impl ChatSession {
                                 .and_then(TopicRetries::into_run);
                             self.backoff.reset();
                             self.apply_pass_live();
-                            self.set_state(ChatConnectionState::Connected);
+                            self.set_state(ChatSessionState::Connected);
                             self.publish_connection_event();
                             info!(broadcaster_id = %self.config.broadcaster_id, "chat connected");
                             for text in std::mem::take(&mut held_frames) {
@@ -611,7 +607,7 @@ impl ChatSession {
         self.config.bus.publish(event);
     }
 
-    fn set_state(&self, state: ChatConnectionState) {
+    fn set_state(&self, state: ChatSessionState) {
         self.state_tx.send_replace(state);
     }
 
@@ -688,8 +684,7 @@ impl Drop for ChatSession {
             Ok(()) => ConnectionTransition::Expected,
             Err(_) => self.transition,
         };
-        self.state_tx
-            .send_replace(ChatConnectionState::Disconnected);
+        self.state_tx.send_replace(ChatSessionState::Disconnected);
         self.config.bus.publish(connection_state_changed_event(
             vocabulary::PLATFORM_ID,
             ConnectionState::Disconnected,

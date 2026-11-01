@@ -3,13 +3,12 @@ use std::sync::atomic::{AtomicU32, Ordering};
 use std::sync::{Arc, RwLock};
 use std::time::{Duration, SystemTime};
 
+use forge_platform_core::TokenSource;
 use forge_platform_core::{
     BuiltinContent, BuiltinHealth, BuiltinStatus, CapabilityFlags, ChatPlatform, ConnectionState,
     DetailSection, HeaderAction, HealthDelta, HealthMetric, HealthMetricId, HealthStream,
-    HealthText, HealthValue, HeroBadge, HeroBadgeTone, LiveViewerSource, PlatformError,
-    ViewerReport,
+    HealthText, HealthValue, HeroBadge, HeroBadgeTone, LiveViewerSource, ViewerReport,
 };
-use futures::future::BoxFuture;
 use tokio::sync::{broadcast, watch};
 use tokio_stream::StreamExt;
 use tokio_stream::wrappers::BroadcastStream;
@@ -81,9 +80,7 @@ impl YoutubeIntegrationBundle {
         })
     }
 
-    fn token_source(
-        manager: &Arc<YoutubeCredentialsManager>,
-    ) -> Arc<dyn Fn() -> BoxFuture<'static, Result<String, PlatformError>> + Send + Sync> {
+    fn token_source(manager: &Arc<YoutubeCredentialsManager>) -> TokenSource {
         let manager = Arc::clone(manager);
         Arc::new(move || {
             let manager = Arc::clone(&manager);
@@ -554,7 +551,7 @@ mod tests {
 
     fn signed_in_repo() -> Arc<MemoryCredentials> {
         Arc::new(MemoryCredentials::holding(
-            crate::account::credentials::CREDENTIAL_KEY,
+            crate::account::credentials::YOUTUBE_CREDENTIAL_ID,
             &stored_credential_json(
                 "Live",
                 None,
@@ -932,7 +929,7 @@ mod tests {
     async fn refresh_identity_populates_hero_name_and_token_expiry() {
         let expires_at = OffsetDateTime::from_unix_timestamp(1_800_000_000).unwrap();
         let repo = Arc::new(MemoryCredentials::holding(
-            crate::account::credentials::CREDENTIAL_KEY,
+            crate::account::credentials::YOUTUBE_CREDENTIAL_ID,
             &stored_credential_json("GTNH Live", Some("@gtnhlive"), expires_at),
         ));
         let (bundle, _platform) = make_bundle(repo);
@@ -1160,7 +1157,7 @@ mod tests {
     async fn each_identity_refresh_replaces_the_hero_name() {
         let expires_at = OffsetDateTime::from_unix_timestamp(1_800_000_000).unwrap();
         let repo = Arc::new(MemoryCredentials::holding(
-            crate::account::credentials::CREDENTIAL_KEY,
+            crate::account::credentials::YOUTUBE_CREDENTIAL_ID,
             &stored_credential_json("Old Title", Some("@old"), expires_at),
         ));
         let (bundle, _platform) = make_bundle(Arc::clone(&repo) as Arc<dyn CredentialsRepo>);
@@ -1171,7 +1168,7 @@ mod tests {
             ("New Title", None, "New Title"),
         ] {
             repo.put(
-                crate::account::credentials::CREDENTIAL_KEY,
+                crate::account::credentials::YOUTUBE_CREDENTIAL_ID,
                 &stored_credential_json(title, handle, expires_at),
             );
             bundle.refresh_identity().await;

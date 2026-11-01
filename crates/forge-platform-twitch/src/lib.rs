@@ -44,7 +44,7 @@ pub use auth::{
     TwitchSignIn, UserInfo, client_id,
 };
 pub use bot_account::{BotModerator, BotStatus, BotUnavailable, TwitchBotAccount};
-pub use builtin::TwitchIntegrationBundle;
+pub use builtin::{BroadcasterTierWatch, ChatSessionWatch, TwitchIntegrationBundle};
 pub use chat::{TwitchChat, TwitchChatHandle, send_chat};
 pub use config::{ChatSessionConfig, HELIX_BUDGET_CAPACITY, HELIX_BUDGET_WINDOW};
 pub use credentials::TWITCH_CREDENTIAL_ID;
@@ -67,7 +67,7 @@ pub use assembly::TwitchSession;
 pub use auth::DeviceTiming;
 pub use auth::TwitchAuthBundle;
 pub use chat::SHUTDOWN_GRACE;
-pub use chat::{ChatConnectionState, SentMessageId};
+pub use chat::{ChatSessionState, SentMessageId};
 pub use chat_platform::TwitchPlatform;
 pub use config::ChatTiming;
 pub use helix::HelixMethod;

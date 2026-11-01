@@ -5,6 +5,8 @@ use std::sync::Mutex;
 use forge_events::Event;
 use forge_storage::{StorageError, ViewerRepo};
 
+use crate::event_flow::bus::EventStamp;
+
 pub struct FirstChatLedger {
     seen: Mutex<HashSet<(PlatformId, String)>>,
 }
@@ -21,8 +23,10 @@ impl FirstChatLedger {
             seen: Mutex::new(seen),
         })
     }
+}
 
-    pub(crate) fn stamp(&self, event: &mut Event) {
+impl EventStamp for FirstChatLedger {
+    fn stamp(&self, event: &mut Event) {
         if event.replay {
             return;
         }

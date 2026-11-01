@@ -15,3 +15,8 @@ pub type ViewerReportStream = Pin<Box<dyn Stream<Item = ViewerReport> + Send + '
 pub trait LiveViewerSource: Send + Sync {
     fn viewer_reports(&self) -> ViewerReportStream;
 }
+
+pub trait StreamOutputSignal: Send + 'static {
+    fn is_active(&self) -> bool;
+    fn changed(&mut self) -> impl Future<Output = Option<bool>> + Send;
+}

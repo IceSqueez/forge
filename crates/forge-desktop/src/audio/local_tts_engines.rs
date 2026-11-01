@@ -1,9 +1,9 @@
 use std::sync::Arc;
 use std::time::Duration;
 
+use forge_tts_avspeech::AvSpeechEngineFactory;
 use forge_tts_core::TtsEngineFactory;
 use forge_tts_espeak::EspeakEngineFactory;
-use forge_tts_nsspeech::NsSpeechEngineFactory;
 use forge_tts_piper::{PiperEngine, PiperEngineFactory};
 use forge_tts_sapi::SapiEngineFactory;
 
@@ -34,7 +34,7 @@ pub(crate) async fn discover_local_tts_engines() -> Vec<LocalTtsEngine> {
     }
     engines.push(probed(Arc::new(EspeakEngineFactory::default())));
     engines.push(probed(Arc::new(SapiEngineFactory)));
-    engines.push(probed(Arc::new(NsSpeechEngineFactory)));
+    engines.push(probed(Arc::new(AvSpeechEngineFactory)));
     engines
 }
 

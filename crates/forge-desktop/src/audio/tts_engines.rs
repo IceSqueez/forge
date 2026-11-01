@@ -878,7 +878,7 @@ mod tests {
             }),
             Arc::new(forge_tts_espeak::EspeakEngineFactory::default()),
             Arc::new(forge_tts_sapi::SapiEngineFactory),
-            Arc::new(forge_tts_nsspeech::NsSpeechEngineFactory),
+            Arc::new(forge_tts_avspeech::AvSpeechEngineFactory),
             Arc::new(forge_tts_cloud::azure::AzureEngineFactory::new(
                 forge_tts_cloud::credentials::AzureCredentials {
                     api_key: Secret::new("key"),

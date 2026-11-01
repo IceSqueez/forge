@@ -1,5 +1,5 @@
 use forge_speech_types::{EngineId, VoiceId};
-use forge_tts_core::{ENGINE_ID_SAPI, TtsError};
+use forge_tts_core::{ENGINE_ID_SAPI, ENGINE_SYNTHESIS_BUDGET, TtsError};
 
 #[derive(Debug, thiserror::Error)]
 pub(crate) enum SapiError {
@@ -21,11 +21,8 @@ pub(crate) enum SapiError {
     #[error("synthesis call {call} failed: HRESULT 0x{hr:08x}")]
     Synthesis { call: &'static str, hr: i32 },
 
-    #[error("STA worker terminated")]
-    WorkerTerminated,
-
-    #[error("{0}")]
-    Io(#[from] std::io::Error),
+    #[error("synthesis stopped past its deadline")]
+    Timeout,
 }
 
 impl SapiError {
@@ -53,12 +50,11 @@ impl From<SapiError> for TtsError {
                 id,
                 detail: error.to_string(),
             },
-            SapiError::Io(io_error) => TtsError::Io(io_error),
+            SapiError::Timeout => TtsError::timeout_after(ENGINE_SYNTHESIS_BUDGET),
             SapiError::ComInit(_)
             | SapiError::Catalog { .. }
             | SapiError::InvalidTokenString { .. }
-            | SapiError::NoCatalog
-            | SapiError::WorkerTerminated => TtsError::EngineUnavailable {
+            | SapiError::NoCatalog => TtsError::EngineUnavailable {
                 id,
                 detail: error.to_string(),
             },
@@ -75,7 +71,6 @@ mod tests {
         EngineUnavailable,
         InvalidVoice,
         SynthesisFailed,
-        Io,
         Unexpected,
     }
 
@@ -88,7 +83,6 @@ mod tests {
             TtsError::SynthesisFailed { id, detail } if id.0 == ENGINE_ID_SAPI => {
                 (Kind::SynthesisFailed, detail)
             }
-            TtsError::Io(io_error) => (Kind::Io, io_error.to_string()),
             other => (Kind::Unexpected, other.to_string()),
         }
     }
@@ -130,16 +124,6 @@ mod tests {
                 "80010106",
             ),
             (SapiError::NoCatalog, Kind::EngineUnavailable, "voices"),
-            (
-                SapiError::WorkerTerminated,
-                Kind::EngineUnavailable,
-                "worker",
-            ),
-            (
-                SapiError::Io(std::io::Error::other("pipe closed")),
-                Kind::Io,
-                "pipe closed",
-            ),
         ] {
             let (kind, detail) = kind_and_detail(TtsError::from(error));
             assert_eq!(kind, expected_kind, "detail={detail:?}");

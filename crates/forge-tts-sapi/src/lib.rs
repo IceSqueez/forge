@@ -10,6 +10,8 @@ mod com;
 mod engine;
 #[cfg(target_os = "windows")]
 pub(crate) mod error;
+#[cfg(target_os = "windows")]
+mod speech_wait;
 
 #[cfg(target_os = "windows")]
 pub use engine::SapiEngineFactory;

@@ -1,74 +1,43 @@
-use std::sync::{Arc, mpsc};
+use forge_speech_types::EngineId;
+use forge_tts_core::{
+    ENGINE_ID_SAPI, ENGINE_SYNTHESIS_BUDGET, EngineClass, SsmlInput, ThreadEngine,
+    ThreadEngineSpec, TtsEngine, TtsEngineFactory, TtsError,
+};
 
-use async_trait::async_trait;
-use forge_speech_types::{EngineId, PcmBuffer, TtsVoice};
-use forge_tts_core::{ENGINE_ID_SAPI, SynthesisRequest, TtsEngine, TtsEngineFactory, TtsError};
+use crate::com::{open_sta_worker, synthesize_on_sta};
 
-use crate::com::{StaRequest, spawn_sta_worker};
-use crate::error::SapiError;
-
-pub(crate) struct SapiEngine {
-    id: EngineId,
-    sta_tx: mpsc::Sender<StaRequest>,
-    voice_catalog: Arc<Vec<TtsVoice>>,
-}
-
-#[async_trait]
-impl TtsEngine for SapiEngine {
-    fn engine_id(&self) -> &EngineId {
-        &self.id
-    }
-
-    async fn list_voices(&self) -> Result<Vec<TtsVoice>, TtsError> {
-        Ok((*self.voice_catalog).clone())
-    }
-
-    async fn synthesize(&self, request: SynthesisRequest) -> Result<PcmBuffer, TtsError> {
-        if !self.voice_catalog.iter().any(|v| v.id == request.voice_id) {
-            return Err(TtsError::InvalidVoice {
-                id: request.voice_id,
-            });
-        }
-
-        let (oneshot_tx, oneshot_rx) = tokio::sync::oneshot::channel();
-        self.sta_tx
-            .send(StaRequest::Synthesize {
-                req: request,
-                tx: oneshot_tx,
-            })
-            .map_err(|_| SapiError::WorkerTerminated)?;
-
-        oneshot_rx
-            .await
-            .map_err(|_| SapiError::WorkerTerminated)?
-            .map_err(TtsError::from)
-    }
-}
+const STA_THREAD_NAME: &str = "sapi-sta";
 
 pub struct SapiEngineFactory;
 
 impl TtsEngineFactory for SapiEngineFactory {
-    fn engine_id(&self) -> forge_speech_types::EngineId {
-        forge_speech_types::EngineId(forge_tts_core::ENGINE_ID_SAPI.into())
+    fn engine_id(&self) -> EngineId {
+        EngineId(ENGINE_ID_SAPI.into())
     }
 
-    fn class(&self) -> forge_tts_core::EngineClass {
-        forge_tts_core::EngineClass::System
+    fn class(&self) -> EngineClass {
+        EngineClass::System
     }
 
     fn create(&self) -> Result<Box<dyn TtsEngine>, TtsError> {
-        let engine_id = EngineId(ENGINE_ID_SAPI.into());
-        let (sta_tx, catalog) = spawn_sta_worker(engine_id.clone()).map_err(TtsError::from)?;
-
-        if catalog.is_empty() {
-            return Err(SapiError::NoCatalog.into());
-        }
-
-        tracing::info!(voices = catalog.len(), "SAPI 5 engine ready");
-        Ok(Box::new(SapiEngine {
-            id: engine_id,
-            sta_tx,
-            voice_catalog: Arc::new(catalog),
-        }))
+        let engine_id = self.engine_id();
+        let spec = ThreadEngineSpec {
+            engine_id: engine_id.clone(),
+            thread_name: STA_THREAD_NAME,
+            ssml_input: SsmlInput::Accepted,
+            synthesis_budget: ENGINE_SYNTHESIS_BUDGET,
+        };
+        let engine = ThreadEngine::spawn(
+            spec,
+            move || {
+                let (worker, catalog) = open_sta_worker(&engine_id)?;
+                tracing::info!(voices = catalog.len(), "SAPI 5 engine ready");
+                Ok((worker, catalog))
+            },
+            |worker, request, watch| {
+                synthesize_on_sta(worker, &request, watch).map_err(TtsError::from)
+            },
+        )?;
+        Ok(Box::new(engine))
     }
 }

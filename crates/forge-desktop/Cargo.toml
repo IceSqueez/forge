@@ -51,7 +51,7 @@ forge-tts-cloud = { path = "../forge-tts-cloud", features = [
   "polly",
 ] }
 forge-tts-espeak = { path = "../forge-tts-espeak" }
-forge-tts-nsspeech = { path = "../forge-tts-nsspeech" }
+forge-tts-avspeech = { path = "../forge-tts-avspeech" }
 forge-tts-piper = { path = "../forge-tts-piper" }
 forge-tts-pipeline = { path = "../forge-tts-pipeline" }
 forge-tts-sapi = { path = "../forge-tts-sapi" }

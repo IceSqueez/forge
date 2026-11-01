@@ -2729,10 +2729,10 @@ dependencies = [
  "forge-storage-sqlite",
  "forge-test-support",
  "forge-transfer",
+ "forge-tts-avspeech",
  "forge-tts-cloud",
  "forge-tts-core",
  "forge-tts-espeak",
- "forge-tts-nsspeech",
  "forge-tts-pipeline",
  "forge-tts-piper",
  "forge-tts-sapi",
@@ -3391,6 +3391,22 @@ dependencies = [
 ]
 
 [[package]]
+name = "forge-tts-avspeech"
+version = "0.6.3"
+dependencies = [
+ "async-trait",
+ "block2 0.6.2",
+ "forge-speech-types",
+ "forge-tts-core",
+ "objc2 0.6.5",
+ "objc2-avf-audio",
+ "objc2-foundation 0.3.2",
+ "thiserror 2.0.21",
+ "tokio",
+ "tracing",
+]
+
+[[package]]
 name = "forge-tts-cloud"
 version = "0.6.3"
 dependencies = [
@@ -3430,22 +3446,6 @@ dependencies = [
  "forge-speech-types",
  "forge-tts-core",
  "tempfile",
- "thiserror 2.0.21",
- "tokio",
- "tracing",
-]
-
-[[package]]
-name = "forge-tts-nsspeech"
-version = "0.6.3"
-dependencies = [
- "async-trait",
- "block2 0.6.2",
- "forge-speech-types",
- "forge-tts-core",
- "objc2 0.6.5",
- "objc2-avf-audio",
- "objc2-foundation 0.3.2",
  "thiserror 2.0.21",
  "tokio",
  "tracing",

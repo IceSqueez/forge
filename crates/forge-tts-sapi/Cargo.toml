@@ -12,7 +12,6 @@ rust-version.workspace = true
 forge-speech-types = { path = "../forge-speech-types" }
 forge-tts-core = { path = "../forge-tts-core" }
 async-trait = { workspace = true }
-tokio = { workspace = true, features = ["sync"] }
 thiserror = { workspace = true }
 tracing = { workspace = true }
 

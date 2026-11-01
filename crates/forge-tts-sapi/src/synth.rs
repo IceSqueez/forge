@@ -81,11 +81,12 @@ pub(crate) fn prepare_speak_text(
 pub(crate) fn capture_pcm(
     voice: &windows::Win32::Media::Speech::ISpVoice,
     speak_text: &SpeakText,
+    watch: &forge_tts_core::AbandonWatch<'_>,
 ) -> Result<forge_speech_types::PcmBuffer, crate::error::SapiError> {
     use windows::Win32::Foundation::HGLOBAL;
     use windows::Win32::Media::Audio::{WAVE_FORMAT_PCM, WAVEFORMATEX};
     use windows::Win32::Media::Speech::{
-        ISpStream, SPF_IS_NOT_XML, SPF_IS_XML, SPF_PARSE_SSML, SpStream,
+        ISpStream, SPF_ASYNC, SPF_IS_NOT_XML, SPF_IS_XML, SPF_PARSE_SSML, SpStream,
     };
     use windows::Win32::System::Com::StructuredStorage::CreateStreamOnHGlobal;
     use windows::Win32::System::Com::{
@@ -135,9 +136,11 @@ pub(crate) fn capture_pcm(
     let text_utf16: Vec<u16> = text.encode_utf16().chain(std::iter::once(0)).collect();
     let pcwstr = windows::core::PCWSTR(text_utf16.as_ptr());
 
-    // SAFETY: pcwstr points into text_utf16, which is NUL-terminated and outlives this synchronous call (no SPF_ASYNC, so SAPI does not keep the pointer after returning).
-    unsafe { voice.Speak(pcwstr, speak_flags as u32, None) }
+    // SAFETY: pcwstr points into text_utf16, which is NUL-terminated and stays alive until wait_for_speech below has seen the voice finish or has purged it, so SAPI never reads it after this frame.
+    unsafe { voice.Speak(pcwstr, (speak_flags | SPF_ASYNC.0) as u32, None) }
         .map_err(SapiError::synthesis_call("ISpVoice::Speak"))?;
+
+    crate::speech_wait::wait_for_speech(voice, watch)?;
 
     // SAFETY: com_stream is a live IStream owned by this function; the new-position out-parameter is None.
     unsafe { com_stream.Seek(0i64, STREAM_SEEK_SET, None) }

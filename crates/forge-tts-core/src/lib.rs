@@ -5,8 +5,12 @@ use async_trait::async_trait;
 use forge_speech_types::{EngineId, PcmBuffer, TtsVoice, VoiceId};
 
 mod ssml;
+mod thread_engine;
 
 pub use ssml::xml_escape;
+pub use thread_engine::{
+    ABANDON_POLL_INTERVAL, AbandonWatch, SsmlInput, ThreadEngine, ThreadEngineSpec,
+};
 
 pub const SEMITONES_PER_OCTAVE: f32 = 12.0;
 
@@ -19,7 +23,7 @@ pub const ENGINE_SYNTHESIS_BUDGET: std::time::Duration = std::time::Duration::fr
 pub const ENGINE_ID_PIPER: &str = "piper";
 pub const ENGINE_ID_ESPEAK_NG: &str = "espeak-ng";
 pub const ENGINE_ID_SAPI: &str = "sapi";
-pub const ENGINE_ID_NSSPEECH: &str = "nsspeech";
+pub const ENGINE_ID_AVSPEECH_STORED_AS_NSSPEECH: &str = "nsspeech";
 pub const ENGINE_ID_AZURE: &str = "azure";
 pub const ENGINE_ID_ELEVENLABS: &str = "elevenlabs";
 pub const ENGINE_ID_OPENAI: &str = "openai";
@@ -30,7 +34,7 @@ pub fn engine_display_name(id: &str) -> &str {
         ENGINE_ID_PIPER => "Piper",
         ENGINE_ID_ESPEAK_NG => "eSpeak-NG",
         ENGINE_ID_SAPI => "Microsoft SAPI 5",
-        ENGINE_ID_NSSPEECH => "Apple AVSpeech",
+        ENGINE_ID_AVSPEECH_STORED_AS_NSSPEECH => "Apple AVSpeech",
         ENGINE_ID_AZURE => "Azure Speech",
         ENGINE_ID_ELEVENLABS => "ElevenLabs",
         ENGINE_ID_OPENAI => "OpenAI TTS",
@@ -177,6 +181,14 @@ pub enum TtsError {
 
     #[error("engine {id:?} failed to synthesize: {detail}")]
     SynthesisFailed { id: EngineId, detail: String },
+}
+
+impl TtsError {
+    pub fn timeout_after(budget: std::time::Duration) -> Self {
+        Self::Timeout {
+            ms: u64::try_from(budget.as_millis()).unwrap_or(u64::MAX),
+        }
+    }
 }
 
 #[async_trait]

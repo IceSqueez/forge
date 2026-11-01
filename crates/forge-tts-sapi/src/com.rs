@@ -1,11 +1,10 @@
 #![expect(unsafe_code, reason = "drives the COM speech API")]
 
 use std::marker::PhantomData;
-use std::sync::mpsc;
 
 use forge_speech_types::PcmBuffer;
 use forge_speech_types::{EngineId, TtsVoice};
-use forge_tts_core::SynthesisRequest;
+use forge_tts_core::{AbandonWatch, SynthesisRequest};
 use windows::Win32::Media::Speech::{
     ISpDataKey, ISpObjectToken, ISpObjectTokenCategory, ISpVoice, SPCAT_VOICES,
     SpObjectTokenCategory, SpVoice,
@@ -19,21 +18,19 @@ use windows::core::{HRESULT, PCWSTR, PWSTR, w};
 use crate::error::SapiError;
 use crate::{synth, voices};
 
-const STA_THREAD_NAME: &str = "sapi-sta";
 const SPERR_NOT_FOUND: HRESULT = HRESULT(0x8004_503A_u32 as i32);
 const FULL_VOLUME: u16 = 100;
-
-pub(crate) enum StaRequest {
-    Synthesize {
-        req: SynthesisRequest,
-        tx: tokio::sync::oneshot::Sender<Result<PcmBuffer, SapiError>>,
-    },
-}
 
 struct SapiVoiceToken {
     voice: TtsVoice,
     ssml_language: Option<&'static str>,
     token: ISpObjectToken,
+}
+
+pub(crate) struct StaWorker {
+    voice: ISpVoice,
+    tokens: Vec<SapiVoiceToken>,
+    _apartment: ComApartment,
 }
 
 struct ComApartment {
@@ -54,87 +51,34 @@ impl ComApartment {
 
 impl Drop for ComApartment {
     fn drop(&mut self) {
-        // SAFETY: a ComApartment exists only after a successful CoInitializeEx, it is !Send so it drops on the thread that initialized, and it is declared before every COM interface on that thread, so all of them are released before this call.
+        // SAFETY: a ComApartment exists only after a successful CoInitializeEx, it is !Send so it drops on the thread that initialized, and it is StaWorker's last field and the first local of open_sta_worker, so every COM interface is released before this call.
         unsafe { CoUninitialize() };
     }
 }
 
-pub(crate) fn spawn_sta_worker(
-    engine_id: EngineId,
-) -> Result<(mpsc::Sender<StaRequest>, Vec<TtsVoice>), SapiError> {
-    let (req_tx, req_rx) = mpsc::channel::<StaRequest>();
-    let (init_tx, init_rx) = mpsc::sync_channel::<Result<Vec<TtsVoice>, SapiError>>(0);
-
-    std::thread::Builder::new()
-        .name(STA_THREAD_NAME.into())
-        .spawn(move || sta_worker_main(req_rx, init_tx, engine_id))?;
-
-    let voices = init_rx.recv().map_err(|_| SapiError::WorkerTerminated)??;
-    Ok((req_tx, voices))
-}
-
-fn sta_worker_main(
-    rx: mpsc::Receiver<StaRequest>,
-    init_tx: mpsc::SyncSender<Result<Vec<TtsVoice>, SapiError>>,
-    engine_id: EngineId,
-) {
-    let _apartment = match ComApartment::enter() {
-        Ok(apartment) => apartment,
-        Err(error) => {
-            #[expect(
-                clippy::let_underscore_must_use,
-                reason = "the requester may stop waiting for the reply"
-            )]
-            let _ = init_tx.send(Err(error));
-            return;
-        }
-    };
+pub(crate) fn open_sta_worker(
+    engine_id: &EngineId,
+) -> Result<(StaWorker, Vec<TtsVoice>), SapiError> {
+    let apartment = ComApartment::enter()?;
 
     // SAFETY: this thread entered an STA above; the ISpVoice is created, used and released only on this thread, before the apartment guard drops.
-    let voice: ISpVoice = match unsafe { CoCreateInstance(&SpVoice, None, CLSCTX_INPROC_SERVER) } {
-        Ok(voice) => voice,
-        Err(error) => {
-            #[expect(
-                clippy::let_underscore_must_use,
-                reason = "the requester may stop waiting for the reply"
-            )]
-            let _ = init_tx.send(Err(SapiError::catalog_call("CoCreateInstance(SpVoice)")(
-                error,
-            )));
-            return;
-        }
-    };
+    let voice: ISpVoice = unsafe { CoCreateInstance(&SpVoice, None, CLSCTX_INPROC_SERVER) }
+        .map_err(SapiError::catalog_call("CoCreateInstance(SpVoice)"))?;
 
-    let tokens = match enumerate_voice_tokens(&engine_id) {
-        Ok(tokens) => tokens,
-        Err(error) => {
-            #[expect(
-                clippy::let_underscore_must_use,
-                reason = "the requester may stop waiting for the reply"
-            )]
-            let _ = init_tx.send(Err(error));
-            return;
-        }
-    };
-
-    let catalog: Vec<TtsVoice> = tokens.iter().map(|entry| entry.voice.clone()).collect();
-    #[expect(
-        clippy::let_underscore_must_use,
-        reason = "the requester may stop waiting for the reply"
-    )]
-    let _ = init_tx.send(Ok(catalog));
-
-    while let Ok(request) = rx.recv() {
-        match request {
-            StaRequest::Synthesize { req, tx } => {
-                #[expect(
-                    clippy::let_underscore_must_use,
-                    reason = "the requester may stop waiting for the reply"
-                )]
-                let _ = tx.send(synthesize_on_sta(&voice, &tokens, &req));
-            }
-        }
+    let tokens = enumerate_voice_tokens(engine_id)?;
+    if tokens.is_empty() {
+        return Err(SapiError::NoCatalog);
     }
+
+    let catalog = tokens.iter().map(|entry| entry.voice.clone()).collect();
+    Ok((
+        StaWorker {
+            voice,
+            tokens,
+            _apartment: apartment,
+        },
+        catalog,
+    ))
 }
 
 fn enumerate_voice_tokens(engine_id: &EngineId) -> Result<Vec<SapiVoiceToken>, SapiError> {
@@ -243,11 +187,12 @@ fn read_voice_token(
     })
 }
 
-fn synthesize_on_sta(
-    voice: &ISpVoice,
-    tokens: &[SapiVoiceToken],
+pub(crate) fn synthesize_on_sta(
+    worker: &StaWorker,
     req: &SynthesisRequest,
+    watch: &AbandonWatch<'_>,
 ) -> Result<PcmBuffer, SapiError> {
+    let StaWorker { voice, tokens, .. } = worker;
     let entry = tokens
         .iter()
         .find(|entry| entry.voice.id == req.voice_id)
@@ -273,5 +218,5 @@ fn synthesize_on_sta(
         entry.ssml_language,
     );
 
-    synth::capture_pcm(voice, &speak_text)
+    synth::capture_pcm(voice, &speak_text, watch)
 }

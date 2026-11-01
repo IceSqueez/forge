@@ -43,7 +43,7 @@ All crates live under `crates/`:
 | Chat platforms | `forge-platform-core` (shared traits, auth, rate limiting), `forge-platform-twitch`, `forge-platform-youtube`, `forge-platform-kick` |
 | Integrations | `forge-obs`, `forge-vtube`, `forge-discord`, `forge-midi`, `forge-hotkey` |
 | Server and overlays | `forge-server`, `forge-overlay` |
-| Audio and TTS | `forge-audio`, `forge-soundboard`, `forge-tts-core`, `forge-tts-pipeline`, `forge-voice`, `forge-speak-queue`, `forge-tts-piper`, `forge-tts-espeak`, `forge-tts-sapi` (Windows), `forge-tts-nsspeech` (macOS), `forge-tts-cloud` |
+| Audio and TTS | `forge-audio`, `forge-soundboard`, `forge-tts-core`, `forge-tts-pipeline`, `forge-voice`, `forge-speak-queue`, `forge-tts-piper`, `forge-tts-espeak`, `forge-tts-sapi` (Windows), `forge-tts-avspeech` (macOS), `forge-tts-cloud` |
 
 New platforms, TTS engines and integrations are added as new crates that implement an existing trait, not by editing the core.
 

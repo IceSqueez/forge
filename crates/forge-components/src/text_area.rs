@@ -3,14 +3,15 @@ use std::ops::Range;
 
 use gpui::{
     App, Bounds, ClipboardItem, Context, CursorStyle, Element, ElementId, ElementInputHandler,
-    Entity, EventEmitter, FocusHandle, Focusable, GlobalElementId, Hsla, LayoutId, PaintQuad,
-    Pixels, Point, ScrollEvent, SharedString, Style, TextAlign, TextRun, UnderlineStyle, Window,
-    WrappedLine, div, fill, point, prelude::*, px, relative, size,
+    Entity, EventEmitter, FocusHandle, Focusable, FontWeight, GlobalElementId, Hsla, LayoutId,
+    PaintQuad, Pixels, Point, ScrollEvent, SharedString, Style, TextAlign, TextRun, UnderlineStyle,
+    Window, WrappedLine, div, fill, point, prelude::*, px, relative, size,
 };
 
 use crate::caret_blink::{CaretBlink, CaretHost, watch_focus};
-use crate::palette::with_alpha;
+use crate::palette::{ForgePalette, PaletteColor, with_alpha};
 use crate::text_buffer::{EditKind, TextBuffer};
+use crate::text_drag::{DragViewport, ScrollAxis, paint_drag_tracking};
 use crate::text_editing::*;
 use crate::text_input::InputEvent;
 use crate::tokens::{BORDER_THIN, FONT_XS, Radius, Spacing, radius, spacing};
@@ -24,6 +25,13 @@ pub fn bind_text_area_keys(cx: &mut App) {
 }
 
 const PARAGRAPH_BREAK_BYTES: usize = '\n'.len_utf8();
+
+#[derive(Clone)]
+pub struct TextTint {
+    pub range: Range<usize>,
+    pub color: PaletteColor,
+    pub weight: Option<FontWeight>,
+}
 
 struct AreaLayout {
     lines: Vec<WrappedLine>,
@@ -123,6 +131,10 @@ pub struct TextArea {
     follow_caret: bool,
     caret: CaretBlink,
     invalid: bool,
+    read_only: bool,
+    plain: bool,
+    line_height: Pixels,
+    tints: Vec<TextTint>,
 }
 
 impl EventEmitter<InputEvent> for TextArea {}
@@ -150,12 +162,35 @@ impl TextArea {
             follow_caret: true,
             caret: CaretBlink::new(),
             invalid: false,
+            read_only: false,
+            plain: false,
+            line_height: FONT_XS * LINE_HEIGHT_RATIO,
+            tints: Vec::new(),
         }
     }
 
     #[must_use]
     pub fn with_font_size(mut self, size: Pixels) -> Self {
         self.font_size = size;
+        self.line_height = size * LINE_HEIGHT_RATIO;
+        self
+    }
+
+    #[must_use]
+    pub fn with_line_height(mut self, line_height: Pixels) -> Self {
+        self.line_height = line_height;
+        self
+    }
+
+    #[must_use]
+    pub fn read_only(mut self) -> Self {
+        self.read_only = true;
+        self
+    }
+
+    #[must_use]
+    pub fn plain(mut self) -> Self {
+        self.plain = true;
         self
     }
 
@@ -188,12 +223,43 @@ impl TextArea {
         }
     }
 
+    pub fn set_height(&mut self, height: Pixels, cx: &mut Context<Self>) {
+        if self.height != height {
+            self.height = height;
+            cx.notify();
+        }
+    }
+
     pub fn set_content(&mut self, text: impl Into<SharedString>, cx: &mut Context<Self>) {
-        self.buffer.reset(text.into().into());
-        self.motion.goal_x = None;
         self.scroll_offset = px(0.0);
+        self.set_tinted_content(text, Vec::new(), cx);
+    }
+
+    pub fn set_tinted_content(
+        &mut self,
+        text: impl Into<SharedString>,
+        tints: Vec<TextTint>,
+        cx: &mut Context<Self>,
+    ) {
+        self.buffer.reset(text.into().into());
+        self.tints = tints;
+        self.motion.goal_x = None;
         self.follow_caret = false;
         cx.notify();
+    }
+
+    pub fn scroll_to_end(&mut self, cx: &mut Context<Self>) {
+        self.scroll_offset = Pixels::MAX;
+        self.follow_caret = false;
+        cx.notify();
+    }
+
+    pub fn is_near_end(&self, slack: Pixels) -> bool {
+        self.max_scroll() - self.scroll_offset <= slack
+    }
+
+    pub fn selection_in_progress(&self) -> bool {
+        self.motion.drag_selecting || !self.buffer.selected_range().is_empty()
     }
 
     pub fn clear(&mut self, cx: &mut Context<Self>) {
@@ -223,23 +289,25 @@ impl TextArea {
     }
 
     fn on_scroll_wheel(&mut self, event: &ScrollEvent, _: &mut Window, cx: &mut Context<Self>) {
-        let line_height = self.font_size * LINE_HEIGHT_RATIO;
-        let delta = event.delta.pixel_delta(line_height).y;
+        let delta = event.delta.pixel_delta(self.line_height).y;
         if delta == px(0.0) {
             return;
         }
-        let view_h = self.last_bounds.map_or(px(0.0), |b| b.size.height);
-        let total_h = self
-            .last_layout
-            .as_ref()
-            .map_or(px(0.0), |l| l.total_height);
-        let max_scroll = (total_h - view_h).max(px(0.0));
-        let next = (self.scroll_offset - delta).clamp(px(0.0), max_scroll);
+        let next = (self.scroll_offset - delta).clamp(px(0.0), self.max_scroll());
         if next != self.scroll_offset {
             self.scroll_offset = next;
             self.follow_caret = false;
             cx.notify();
         }
+    }
+
+    fn max_scroll(&self) -> Pixels {
+        let view_h = self.last_bounds.map_or(px(0.0), |b| b.size.height);
+        let total_h = self
+            .last_layout
+            .as_ref()
+            .map_or(px(0.0), |l| l.total_height);
+        (total_h - view_h).max(px(0.0))
     }
 }
 
@@ -258,6 +326,28 @@ impl TextEditor for TextArea {
 
     fn reveal_caret(&mut self) {
         self.follow_caret = true;
+    }
+
+    fn policy(&self) -> EditPolicy {
+        EditPolicy {
+            read_only: self.read_only,
+            ..EditPolicy::default()
+        }
+    }
+
+    fn drag_viewport(&self) -> Option<DragViewport> {
+        Some(DragViewport {
+            bounds: self.last_bounds?,
+            axis: ScrollAxis::Vertical,
+            scroll: self.scroll_offset,
+            max_scroll: self.max_scroll(),
+            line_height: self.line_height,
+        })
+    }
+
+    fn set_drag_scroll(&mut self, scroll: Pixels) {
+        self.scroll_offset = scroll;
+        self.follow_caret = false;
     }
 
     fn offset_for_position(&self, position: Point<Pixels>) -> usize {
@@ -346,22 +436,57 @@ fn apply_range(runs: &mut Vec<TextRun>, start: usize, end: usize, f: impl Fn(&mu
     *runs = out;
 }
 
-fn build_runs(
-    text: &SharedString,
+fn tinted_runs(base: &TextRun, tints: &[TextTint], palette: &ForgePalette) -> Vec<TextRun> {
+    let mut runs = Vec::with_capacity(tints.len() * 2 + 1);
+    let mut pos = 0usize;
+    for tint in tints {
+        if tint.range.start < pos || tint.range.end > base.len {
+            continue;
+        }
+        runs.push(TextRun {
+            len: tint.range.start - pos,
+            ..base.clone()
+        });
+        let mut font = base.font.clone();
+        font.weight = tint.weight.unwrap_or(font.weight);
+        runs.push(TextRun {
+            len: tint.range.len(),
+            font,
+            color: (tint.color)(palette).into(),
+            ..base.clone()
+        });
+        pos = tint.range.end;
+    }
+    runs.push(TextRun {
+        len: base.len - pos,
+        ..base.clone()
+    });
+    runs
+}
+
+struct RunStyle<'a> {
     base_color: Hsla,
     font: gpui::Font,
+    tints: &'a [TextTint],
+    palette: &'a ForgePalette,
+}
+
+fn build_runs(
+    text: &SharedString,
+    style: RunStyle<'_>,
     selection: &Range<usize>,
     selection_bg: Hsla,
     marked_range: Option<&Range<usize>>,
 ) -> Vec<TextRun> {
-    let mut runs = vec![TextRun {
+    let base = TextRun {
         len: text.len(),
-        font,
-        color: base_color,
+        font: style.font,
+        color: style.base_color,
         background_color: None,
         underline: None,
         strikethrough: None,
-    }];
+    };
+    let mut runs = tinted_runs(&base, style.tints, style.palette);
 
     if let Some(marked) = marked_range {
         apply_range(&mut runs, marked.start, marked.end, |run| {
@@ -452,10 +577,19 @@ impl Element for AreaElement {
         } else {
             selected_range.clone()
         };
+        let tints: &[TextTint] = if content.is_empty() {
+            &[]
+        } else {
+            &input.tints
+        };
         let runs = build_runs(
             &display_text,
-            base_color,
-            style.font(),
+            RunStyle {
+                base_color,
+                font: style.font(),
+                tints,
+                palette: &palette,
+            },
             &selection,
             with_alpha(palette.brand, SELECTION_ALPHA).into(),
             marked_range.as_ref(),
@@ -475,7 +609,7 @@ impl Element for AreaElement {
         let layout = AreaLayout::from_lines(shaped.into_iter().collect(), line_height);
 
         let view_h = bounds.size.height;
-        let caret_point = if selected_range.is_empty() {
+        let caret_point = if selected_range.is_empty() && !input.read_only {
             layout.point_for_offset(cursor)
         } else {
             None
@@ -519,6 +653,9 @@ impl Element for AreaElement {
             ElementInputHandler::new(bounds, self.input.clone()),
             cx,
         );
+        if self.input.read(cx).motion.drag_selecting {
+            paint_drag_tracking(&self.input, window);
+        }
 
         let scroll_offset = prepaint.scroll_offset;
         let Some(layout) = prepaint.layout.take() else {
@@ -614,14 +751,19 @@ impl Render for TextArea {
             .font_family(font_family)
             .text_size(self.font_size)
             .text_color(palette.text_primary)
-            .line_height(self.font_size * LINE_HEIGHT_RATIO)
-            .h(self.height)
-            .px(spacing(Spacing::Sm, density))
-            .py(spacing(Spacing::Xs, density))
-            .bg(surface)
-            .border(BORDER_THIN)
-            .border_color(border_color)
-            .rounded(radius(Radius::Md));
+            .line_height(self.line_height)
+            .h(self.height);
+        let field = if self.plain {
+            field.p(spacing(Spacing::Sm, density))
+        } else {
+            field
+                .px(spacing(Spacing::Sm, density))
+                .py(spacing(Spacing::Xs, density))
+                .bg(surface)
+                .border(BORDER_THIN)
+                .border_color(border_color)
+                .rounded(radius(Radius::Md))
+        };
         field.child(AreaElement { input: cx.entity() })
     }
 }

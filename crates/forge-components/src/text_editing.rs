@@ -3,14 +3,14 @@ use std::ops::Range;
 
 use gpui::{
     Bounds, ClipboardItem, Context, Div, EventEmitter, InteractiveElement, KeyBinding, MouseButton,
-    MouseDownEvent, MouseMoveEvent, MouseUpEvent, Pixels, Point, UTF16Selection, Window, actions,
-    px,
+    MouseDownEvent, MouseUpEvent, Pixels, Point, Task, UTF16Selection, Window, actions, px,
 };
 
 pub(crate) use gpui::EntityInputHandler;
 
 use crate::caret_blink::CaretHost;
 use crate::text_buffer::{EditKind, TextBuffer};
+use crate::text_drag::{DRAG_SCROLL_TICK, DragViewport, TextEdge};
 use crate::text_edit::{offset_from_utf16, offset_to_utf16, range_from_utf16, range_to_utf16};
 use crate::text_input::InputEvent;
 
@@ -82,6 +82,8 @@ pub(crate) fn editing_key_bindings(context: &str) -> Vec<KeyBinding> {
 pub(crate) struct CaretMotion {
     pub(crate) drag_selecting: bool,
     pub(crate) goal_x: Option<Pixels>,
+    pub(crate) drag_pointer: Option<Point<Pixels>>,
+    pub(crate) drag_ticker: Option<Task<()>>,
 }
 
 #[derive(Clone, Copy, Default)]
@@ -132,6 +134,10 @@ pub(crate) trait TextEditor: CaretHost + EventEmitter<InputEvent> {
         range: Range<usize>,
         element_bounds: Bounds<Pixels>,
     ) -> Option<Bounds<Pixels>>;
+
+    fn drag_viewport(&self) -> Option<DragViewport>;
+
+    fn set_drag_scroll(&mut self, scroll: Pixels);
 
     fn policy(&self) -> EditPolicy {
         EditPolicy::default()
@@ -358,15 +364,86 @@ pub(crate) trait TextEditor: CaretHost + EventEmitter<InputEvent> {
         }
     }
 
-    fn on_mouse_up(&mut self, _: &MouseUpEvent, _: &mut Window, _: &mut Context<Self>) {
-        self.motion().drag_selecting = false;
+    fn on_mouse_up(&mut self, _: &MouseUpEvent, _: &mut Window, cx: &mut Context<Self>) {
+        self.end_drag(cx);
     }
 
-    fn on_mouse_move(&mut self, event: &MouseMoveEvent, _: &mut Window, cx: &mut Context<Self>) {
-        if self.motion().drag_selecting {
-            let offset = self.offset_for_position(event.position);
-            self.select_to(offset, cx);
+    fn end_drag(&mut self, cx: &mut Context<Self>) {
+        let motion = self.motion();
+        motion.drag_selecting = false;
+        motion.drag_pointer = None;
+        motion.drag_ticker = None;
+        cx.notify();
+    }
+
+    fn drag_pointer_moved(
+        &mut self,
+        position: Point<Pixels>,
+        pressed: Option<MouseButton>,
+        cx: &mut Context<Self>,
+    ) {
+        if !self.motion().drag_selecting {
+            return;
         }
+        if pressed != Some(MouseButton::Left) {
+            self.end_drag(cx);
+            return;
+        }
+        self.motion().drag_pointer = Some(position);
+        self.extend_drag(px(0.0), cx);
+        self.arm_drag_scroll(cx);
+    }
+
+    fn drag_scroll_step(&mut self) -> Pixels {
+        let pointer = self.motion().drag_pointer;
+        pointer
+            .zip(self.drag_viewport())
+            .map_or(px(0.0), |(pointer, viewport)| viewport.scroll_step(pointer))
+    }
+
+    fn extend_drag(&mut self, step: Pixels, cx: &mut Context<Self>) {
+        let pointer = self.motion().drag_pointer;
+        let (Some(pointer), Some(mut viewport)) = (pointer, self.drag_viewport()) else {
+            return;
+        };
+        viewport.scroll = (viewport.scroll + step)
+            .max(px(0.0))
+            .min(viewport.max_scroll);
+        self.set_drag_scroll(viewport.scroll);
+        let target = match viewport.document_edge_past(pointer) {
+            Some(TextEdge::Start) => 0,
+            Some(TextEdge::End) => self.buffer().as_str().len(),
+            None => self.offset_for_position(viewport.pinned(pointer)),
+        };
+        self.buffer_mut().select_to(target);
+        self.caret().wake();
+        cx.notify();
+    }
+
+    fn arm_drag_scroll(&mut self, cx: &mut Context<Self>) {
+        if self.motion().drag_ticker.is_some() || self.drag_scroll_step() == px(0.0) {
+            return;
+        }
+        let ticker = cx.spawn(async move |editor, cx| {
+            loop {
+                cx.background_executor().timer(DRAG_SCROLL_TICK).await;
+                let scrolling = editor.update(cx, |editor, cx| editor.tick_drag_scroll(cx));
+                if !matches!(scrolling, Ok(true)) {
+                    break;
+                }
+            }
+        });
+        self.motion().drag_ticker = Some(ticker);
+    }
+
+    fn tick_drag_scroll(&mut self, cx: &mut Context<Self>) -> bool {
+        let step = self.drag_scroll_step();
+        if step == px(0.0) {
+            self.motion().drag_ticker = None;
+            return false;
+        }
+        self.extend_drag(step, cx);
+        true
     }
 
     fn input_text_for_range(
@@ -460,7 +537,6 @@ pub(crate) fn with_editing_actions<T: TextEditor>(field: Div, cx: &mut Context<T
         .on_mouse_down(MouseButton::Left, cx.listener(T::on_mouse_down))
         .on_mouse_up(MouseButton::Left, cx.listener(T::on_mouse_up))
         .on_mouse_up_out(MouseButton::Left, cx.listener(T::on_mouse_up))
-        .on_mouse_move(cx.listener(T::on_mouse_move))
 }
 
 pub(crate) fn with_multiline_actions<T: TextEditor>(field: Div, cx: &mut Context<T>) -> Div {

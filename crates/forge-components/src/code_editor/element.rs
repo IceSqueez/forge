@@ -10,6 +10,7 @@ use gpui::{
 use super::CodeEditor;
 use super::layout::{LineShape, TextMetrics, line_end_point, row_segments};
 use crate::palette::{ForgePalette, with_alpha};
+use crate::text_drag::paint_drag_tracking;
 use crate::text_editing::{CARET_WIDTH, COMPOSITION_UNDERLINE, SELECTION_ALPHA};
 use crate::tokens::{BORDER_THIN, Spacing, spacing};
 
@@ -528,6 +529,9 @@ impl Element for CodeEditorElement {
             ElementInputHandler::new(bounds, self.editor.clone()),
             cx,
         );
+        if self.editor.read(cx).motion.drag_selecting {
+            paint_drag_tracking(&self.editor, window);
+        }
 
         let palette = frame.palette;
         let line_height = frame.line_height;

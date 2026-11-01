@@ -346,6 +346,7 @@ settings_diagnostics_open_log_dir = Open logs folder
 settings_diagnostics_export_bundle = Export diagnostic bundle
 settings_diagnostics_clear_logs = Clear logs
 settings_diagnostics_tail_empty = No log lines captured yet.
+settings_diagnostics_tail_paused = New lines are paused while text is selected. Click the log to resume.
 settings_diagnostics_clear_confirm_title = Clear logs?
 settings_diagnostics_clear_confirm_body = Archived log files are deleted and today's log is emptied. This cannot be undone.
 settings_diagnostics_clear_confirm_action = Clear logs

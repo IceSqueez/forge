@@ -8,6 +8,7 @@ use tracing_subscriber::Layer;
 use tracing_subscriber::fmt::{self, MakeWriter};
 use tracing_subscriber::registry::LookupSpan;
 
+use crate::app::log_scrub::scrub;
 use crate::shared::repo_failure::RepoFailure;
 
 pub(crate) const LOG_PREFIX: &str = "forge.log";
@@ -68,7 +69,7 @@ pub(crate) fn corpus(dir: &Path, budget: usize) -> Result<Corpus, RepoFailure> {
         }
 
         let body = match fs::read_to_string(path) {
-            Ok(text) => text,
+            Ok(text) => scrub(&text).into_owned(),
             Err(e) => format!("<unreadable: {e}>\n"),
         };
         let room = remaining - header.len();

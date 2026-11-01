@@ -1,4 +1,5 @@
 use forge_types::RecoverMutex;
+use std::borrow::Cow;
 use std::collections::VecDeque;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, Mutex};
@@ -10,12 +11,14 @@ use tracing_subscriber::Layer;
 use tracing_subscriber::layer::Context;
 
 const CAPACITY: usize = 500;
+const BRIDGED_TARGET_FIELD: &str = "log.target";
+const BRIDGED_FIELD_PREFIX: &str = "log.";
 
 #[derive(Clone, Debug)]
 pub(crate) struct LogLine {
     pub at: OffsetDateTime,
     pub level: Level,
-    pub target: &'static str,
+    pub target: Cow<'static, str>,
     pub message: String,
 }
 
@@ -70,14 +73,18 @@ impl<S: Subscriber> Layer<S> for LogTailLayer {
     fn on_event(&self, event: &Event<'_>, _ctx: Context<'_, S>) {
         let mut visitor = LineVisitor::default();
         event.record(&mut visitor);
+        let metadata = event.metadata();
+        let target = visitor
+            .bridged_target
+            .take()
+            .map_or(Cow::Borrowed(metadata.target()), Cow::Owned);
         let Some(message) = visitor.line() else {
             return;
         };
-        let metadata = event.metadata();
         self.tail.push(LogLine {
             at: OffsetDateTime::now_utc(),
             level: *metadata.level(),
-            target: metadata.target(),
+            target,
             message: crate::app::log_scrub::scrub(&message).into_owned(),
         });
     }
@@ -87,6 +94,7 @@ impl<S: Subscriber> Layer<S> for LogTailLayer {
 struct LineVisitor {
     message: Option<String>,
     fields: String,
+    bridged_target: Option<String>,
 }
 
 impl LineVisitor {
@@ -97,7 +105,9 @@ impl LineVisitor {
     fn record_value(&mut self, field: &Field, value: String) {
         if field.name() == "message" {
             self.message = Some(value);
-        } else {
+        } else if field.name() == BRIDGED_TARGET_FIELD {
+            self.bridged_target = Some(value);
+        } else if !field.name().starts_with(BRIDGED_FIELD_PREFIX) {
             self.fields.push(' ');
             self.fields.push_str(field.name());
             self.fields.push('=');
@@ -126,7 +136,7 @@ mod tests {
         LogLine {
             at: OffsetDateTime::now_utc(),
             level: Level::INFO,
-            target: "qa_probe",
+            target: "qa_probe".into(),
             message: message.to_owned(),
         }
     }
@@ -192,16 +202,16 @@ mod tests {
             tracing::error!(target: "qa_other", "third");
         });
 
-        let seen: Vec<(Level, &str, String)> = captured
+        let seen: Vec<(Level, String, String)> = captured
             .into_iter()
-            .map(|l| (l.level, l.target, l.message))
+            .map(|l| (l.level, l.target.into_owned(), l.message))
             .collect();
         assert_eq!(
             seen,
             vec![
-                (Level::INFO, "qa_probe", "first".to_owned()),
-                (Level::WARN, "qa_probe", "second".to_owned()),
-                (Level::ERROR, "qa_other", "third".to_owned()),
+                (Level::INFO, "qa_probe".to_owned(), "first".to_owned()),
+                (Level::WARN, "qa_probe".to_owned(), "second".to_owned()),
+                (Level::ERROR, "qa_other".to_owned(), "third".to_owned()),
             ],
         );
     }

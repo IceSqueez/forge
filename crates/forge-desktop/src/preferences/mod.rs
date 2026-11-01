@@ -1,3 +1,4 @@
+pub(crate) mod log_tail_text;
 pub(crate) mod settings;
 pub(crate) mod settings_about;
 pub(crate) mod settings_audio;

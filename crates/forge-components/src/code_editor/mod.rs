@@ -16,6 +16,7 @@ use crate::highlight::Language;
 use crate::palette::{FORGE_DEFAULT, ForgePalette};
 use crate::presentation::{ActivePresentation, Presentation};
 use crate::text_buffer::TextBuffer;
+use crate::text_drag::{DragViewport, ScrollAxis};
 use crate::text_editing::*;
 use crate::text_input::{CommitFocusedField, FocusNextField, FocusPreviousField, InputEvent};
 use crate::tokens::{BORDER_THIN, Density, FONT_XS, Radius, Spacing, radius, spacing};
@@ -347,6 +348,21 @@ impl TextEditor for CodeEditor {
 
     fn reveal_caret(&mut self) {
         self.follow_caret = true;
+    }
+
+    fn drag_viewport(&self) -> Option<DragViewport> {
+        Some(DragViewport {
+            bounds: self.last_bounds?,
+            axis: ScrollAxis::Vertical,
+            scroll: self.scroll_offset,
+            max_scroll: self.max_scroll(),
+            line_height: self.line_height,
+        })
+    }
+
+    fn set_drag_scroll(&mut self, scroll: Pixels) {
+        self.scroll_offset = scroll;
+        self.follow_caret = false;
     }
 
     fn sync_after_edit(&mut self) {

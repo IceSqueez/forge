@@ -13,6 +13,7 @@ use crate::focus_reveal::ReportsRevealBounds;
 use crate::icons::{Icon, icon};
 use crate::palette::{ForgePalette, PaletteColor, with_alpha};
 use crate::text_buffer::TextBuffer;
+use crate::text_drag::{DragViewport, ScrollAxis, paint_drag_tracking};
 use crate::text_edit::{content_offset_for_mask, mask_graphemes, mask_offset};
 use crate::text_editing::*;
 use crate::tokens::{BORDER_THIN, FONT_SM, FONT_XS, Radius, Spacing, radius, spacing};
@@ -367,6 +368,26 @@ impl TextEditor for TextInput {
         }
     }
 
+    fn drag_viewport(&self) -> Option<DragViewport> {
+        let bounds = self.last_bounds?;
+        let full_width = if self.buffer.as_str().is_empty() {
+            px(0.0)
+        } else {
+            self.last_layout.as_ref()?.width()
+        };
+        Some(DragViewport {
+            bounds,
+            axis: ScrollAxis::Horizontal,
+            scroll: self.scroll_offset,
+            max_scroll: (full_width - bounds.size.width).max(px(0.0)),
+            line_height: self.font_size * LINE_HEIGHT_RATIO,
+        })
+    }
+
+    fn set_drag_scroll(&mut self, scroll: Pixels) {
+        self.scroll_offset = scroll;
+    }
+
     fn offset_for_position(&self, position: Point<Pixels>) -> usize {
         if self.buffer.as_str().is_empty() {
             return 0;
@@ -635,6 +656,9 @@ impl Element for TextElement {
             ElementInputHandler::new(bounds, self.input.clone()),
             cx,
         );
+        if self.input.read(cx).motion.drag_selecting {
+            paint_drag_tracking(&self.input, window);
+        }
         if let Some(selection) = prepaint.selection.take() {
             window.paint_quad(selection);
         }

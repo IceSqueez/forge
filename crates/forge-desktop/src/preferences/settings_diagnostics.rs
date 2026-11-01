@@ -2,10 +2,9 @@ use std::rc::Rc;
 use std::sync::Arc;
 use std::time::Duration;
 
-use forge_components::RevealsFocusIn;
 use forge_components::{
     ActivePresentation, ConfirmTone, Density, FONT_SM, FONT_XS, ForgePalette, Icon, ModalSize,
-    OverlayPosition, Spacing, ToastKind, card, confirm_modal, field_hint, ghost_button,
+    OverlayPosition, Spacing, TextArea, ToastKind, card, confirm_modal, field_hint, ghost_button,
     ghost_button_with_icon, icon, modal, overlay, primary_button, segment, segmented, setting_row,
     spacing, tr,
 };
@@ -14,10 +13,8 @@ use forge_storage::{
 };
 use forge_types::LogLevel;
 use gpui::{
-    AnyElement, App, ClickEvent, Context, FontWeight, Pixels, Rgba, ScrollHandle, SharedString,
-    Window, div, prelude::*, px,
+    AnyElement, App, ClickEvent, Context, Entity, Pixels, SharedString, Window, div, prelude::*, px,
 };
-use tracing::Level;
 
 use crate::app::async_bridge::{self, Loadable};
 use crate::app::boot_warnings::boot_warning_message;
@@ -28,11 +25,11 @@ use crate::app::navigation::SettingsSection;
 use crate::app::window_presence::PresenceGate;
 use crate::data_flows::bundle_preview::{export_statement, statement_row};
 use crate::data_flows::diagnostic_bundle::{self, BUNDLE_FILE_NAME, Bundle};
+use crate::preferences::log_tail_text::log_tail_text;
 use crate::preferences::settings_pane_header::SettingsPaneHeader;
 use crate::shared::load_notice::{LoadNotice, NoticeWidth, load_notice};
 use crate::shared::repo_failure::RepoFailure;
 use forge_components::PushToast;
-use forge_components::{DateShape, fmt_display};
 use forge_host::boot_warnings::BootWarnings;
 use forge_host::integrations::BuiltinRegistry;
 use forge_transfer::ScheduledBackupHandle;
@@ -40,7 +37,6 @@ use forge_transfer::ScheduledBackupHandle;
 const TAIL_REFRESH: Duration = Duration::from_secs(2);
 const TAIL_MAX_HEIGHT: Pixels = px(320.0);
 const TAIL_LINE_HEIGHT: Pixels = px(20.0);
-const LEVEL_COLUMN: Pixels = px(38.0);
 const FOLLOW_SLACK: Pixels = px(24.0);
 const NOTE_GLYPH: Pixels = px(14.0);
 const PREVIEW_WIDTH: Pixels = px(600.0);
@@ -54,12 +50,13 @@ pub(crate) struct SettingsDiagnosticsView {
     rt_handle: tokio::runtime::Handle,
     lines: Vec<LogLine>,
     shown_tail_revision: Option<u64>,
+    tail_text: Entity<TextArea>,
+    tail_paused: bool,
     level: LogLevel,
     level_load: Loadable<()>,
     level_picked: bool,
     env_overridden: bool,
     apply_level: LevelApplier,
-    scroll: ScrollHandle,
     active: bool,
     clear_pending: bool,
     clearing: bool,
@@ -79,6 +76,14 @@ impl SettingsDiagnosticsView {
         cx: &mut Context<Self>,
     ) -> Self {
         Self::spawn_refresher(cx);
+        let tail_text = cx.new(|cx| {
+            TextArea::new(SharedString::default(), cx)
+                .mono()
+                .read_only()
+                .plain()
+                .with_line_height(TAIL_LINE_HEIGHT)
+                .with_height(TAIL_MAX_HEIGHT)
+        });
         let mut view = Self {
             tail,
             backend,
@@ -86,12 +91,13 @@ impl SettingsDiagnosticsView {
             rt_handle,
             lines: Vec::new(),
             shown_tail_revision: None,
+            tail_text,
+            tail_paused: false,
             level: DEFAULT_DIAGNOSTIC_LOG_LEVEL,
             level_load: Loadable::Loading,
             level_picked: false,
             env_overridden: crate::app::log_level::env_overridden(),
             apply_level: Rc::new(crate::app::log_level::apply),
-            scroll: ScrollHandle::new(),
             active: initial_active,
             clear_pending: false,
             clearing: false,
@@ -218,18 +224,32 @@ impl SettingsDiagnosticsView {
         if self.shown_tail_revision == Some(revision) {
             return;
         }
-        self.shown_tail_revision = Some(revision);
-        let follow = self.is_at_bottom();
-        self.lines = self.tail.snapshot();
-        if follow {
-            self.scroll.scroll_to_bottom();
+        if self.tail_text.read(cx).selection_in_progress() {
+            if !self.tail_paused {
+                self.tail_paused = true;
+                cx.notify();
+            }
+            return;
         }
-        cx.notify();
+        self.shown_tail_revision = Some(revision);
+        self.lines = self.tail.snapshot();
+        self.show_lines(cx);
     }
 
-    fn is_at_bottom(&self) -> bool {
-        let max = self.scroll.max_offset().y;
-        max <= px(0.0) || self.scroll.offset().y <= FOLLOW_SLACK - max
+    fn show_lines(&mut self, cx: &mut Context<Self>) {
+        let shown = log_tail_text(&self.lines);
+        let pad = spacing(Spacing::Sm, cx.density());
+        let height = (TAIL_LINE_HEIGHT * self.lines.len() as f32 + pad + pad).min(TAIL_MAX_HEIGHT);
+        self.tail_paused = false;
+        self.tail_text.update(cx, |text, cx| {
+            let follow = text.is_near_end(FOLLOW_SLACK);
+            text.set_height(height, cx);
+            text.set_tinted_content(shown.text, shown.tints, cx);
+            if follow {
+                text.scroll_to_end(cx);
+            }
+        });
+        cx.notify();
     }
 
     fn log_dir() -> std::path::PathBuf {
@@ -352,6 +372,7 @@ impl SettingsDiagnosticsView {
                     Ok(()) => {
                         this.tail.clear();
                         this.lines.clear();
+                        this.show_lines(cx);
                         if let Some(scheduled) = &this.storage_changes {
                             scheduled.storage_changed();
                         }
@@ -545,20 +566,17 @@ impl SettingsDiagnosticsView {
                 .into_any_element();
         }
 
-        let mut list = div()
-            .id("settings-diagnostics-tail")
-            .track_scroll(&self.scroll)
-            .reveals_focus_in(&self.scroll)
-            .max_h(TAIL_MAX_HEIGHT)
-            .overflow_y_scroll()
-            .p(pad)
-            .font_family(cx.mono_family())
-            .text_size(FONT_XS)
-            .line_height(TAIL_LINE_HEIGHT);
-        for line in &self.lines {
-            list = list.child(log_row(line, palette, density));
-        }
-        list.into_any_element()
+        let paused = self.tail_paused.then(|| {
+            div().px(pad).pb(pad).child(field_hint(
+                tr!("settings_diagnostics_tail_paused"),
+                palette,
+                cx,
+            ))
+        });
+        div()
+            .child(self.tail_text.clone())
+            .children(paused)
+            .into_any_element()
     }
 
     fn export_overlay(
@@ -740,51 +758,6 @@ fn note_row(
                 .min_w(px(0.0))
                 .child(field_hint(text.into(), palette, cx)),
         )
-}
-
-fn log_row(line: &LogLine, palette: &ForgePalette, density: Density) -> impl IntoElement {
-    div()
-        .flex()
-        .gap(spacing(Spacing::Sm, density))
-        .child(
-            div()
-                .flex_none()
-                .text_color(palette.text_faint)
-                .child(fmt_display(DateShape::TimeWithMillis, line.at)),
-        )
-        .child(
-            div()
-                .flex_none()
-                .w(LEVEL_COLUMN)
-                .font_weight(FontWeight::MEDIUM)
-                .text_color(level_color(line.level, palette))
-                .child(line.level.as_str()),
-        )
-        .child(
-            div()
-                .flex_none()
-                .text_color(palette.brand)
-                .child(SharedString::from(line.target)),
-        )
-        .child(
-            div()
-                .flex_1()
-                .min_w(px(0.0))
-                .text_color(palette.text_primary)
-                .child(SharedString::from(line.message.clone())),
-        )
-}
-
-fn level_color(level: Level, palette: &ForgePalette) -> Rgba {
-    if level == Level::ERROR {
-        palette.danger
-    } else if level == Level::WARN {
-        palette.warning
-    } else if level == Level::INFO {
-        palette.success
-    } else {
-        palette.text_muted
-    }
 }
 
 #[cfg(test)]

@@ -354,6 +354,7 @@ settings_diagnostics_open_log_dir = Відкрити теку журналів
 settings_diagnostics_export_bundle = Експортувати діагностичний пакет
 settings_diagnostics_clear_logs = Очистити журнали
 settings_diagnostics_tail_empty = Записів журналу ще немає.
+settings_diagnostics_tail_paused = Нові рядки призупинено, поки виділено текст. Клацніть у журналі, щоб продовжити.
 settings_diagnostics_clear_confirm_title = Очистити журнали?
 settings_diagnostics_clear_confirm_body = Архівні файли журналів буде видалено, а сьогоднішній - очищено. Це незворотно.
 settings_diagnostics_clear_confirm_action = Очистити журнали

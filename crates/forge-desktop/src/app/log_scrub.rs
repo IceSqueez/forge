@@ -41,6 +41,13 @@ const CREDENTIAL_ASSIGNMENT: &str = r#"(?xi)
     "? [A-Za-z0-9._\-~+/]{6,} ={0,2} "?
 "#;
 
+const LOG_BRIDGE_FIELD: &str = r#"[ \t]*\blog\.(?:file|line|module_path|target)=(?:"[^"]*"|\S+)"#;
+
+const DEPENDENCY_PATH: &str = r#"(?x)
+    [^\s"',;()\[\]{}=]* [/\\] \. (?:cargo|rustup) [/\\] [^\s"',;)\]}]*
+    | /rustc/ [0-9a-f]{7,} / [^\s"',;)\]}]*
+"#;
+
 const HOME_DIR_UNIX: &str = r#"(?:/home/|/Users/)[^/\\\s:"',;)\]}]+"#;
 
 const HOME_DIR_WINDOWS: &str = r#"(?i)[a-z]:\\Users\\[^\\\s:"',;)\]}]+"#;
@@ -54,10 +61,14 @@ const AS_QUERY: &str = "${1}?<redacted:query>";
 const AS_ASSIGNED_TOKEN: &str = "${1}${2}<redacted:token>";
 const AS_HOME: &str = "~";
 const AS_EMAIL: &str = "<redacted:email>";
+const AS_NOTHING: &str = "";
+const AS_DEPENDENCY: &str = "<dependency>";
 
 const UNAVAILABLE: &str = "<redacted:log scrubber unavailable>";
 
-const VOCABULARY: [(&str, &str); 9] = [
+const VOCABULARY: [(&str, &str); 11] = [
+    (LOG_BRIDGE_FIELD, AS_NOTHING),
+    (DEPENDENCY_PATH, AS_DEPENDENCY),
     (JWT, AS_TOKEN),
     (BEARER_HEADER, AS_BEARER),
     (OAUTH_PREFIXED, AS_OAUTH),

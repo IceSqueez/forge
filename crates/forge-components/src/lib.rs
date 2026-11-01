@@ -55,6 +55,7 @@ mod syntax_color;
 mod test_support;
 mod text_area;
 pub(crate) mod text_buffer;
+pub(crate) mod text_drag;
 pub(crate) mod text_edit;
 pub(crate) mod text_editing;
 mod text_input;
@@ -153,7 +154,7 @@ pub use slider::{Slider, slider};
 pub use sparkline::sparkline;
 pub use status::{badge, pulse_dot, status_dot};
 pub use syntax_color::{SyntaxHighlights, highlighted_text, syntax_highlights};
-pub use text_area::{TextArea, bind_text_area_keys};
+pub use text_area::{TextArea, TextTint, bind_text_area_keys};
 pub use text_input::{
     FocusNextField, FocusPreviousField, InputEvent, SEARCH_FIELD_WIDTH, TextInput,
     bind_text_input_keys, search_input,

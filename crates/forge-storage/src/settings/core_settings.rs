@@ -154,6 +154,9 @@ pub const THEME: Setting<OptionalText> = Setting::new("theme", OptionalText, Por
 
 pub const ACCENT: Setting<OptionalText> = Setting::new("accent", OptionalText, Portable, Verbatim);
 
+pub const TTS_VOICE_TEST_TEXT: Setting<OptionalText> =
+    Setting::new("tts.voice_test_text", OptionalText, Portable, Presence);
+
 pub const AUDIO_OVERLAY_ID: Setting<OptionalText> =
     Setting::new("audio.overlay_id", OptionalText, Portable, Presence);
 
@@ -412,6 +415,7 @@ pub const CORE_SETTINGS: &[SettingSpec] = &[
     TTS_DISABLED_ENGINES.spec(),
     TTS_SYNTHESIS_DEFAULTS.spec(),
     TTS_MASTER_VOLUME.spec(),
+    TTS_VOICE_TEST_TEXT.spec(),
     TTS_ENGINE_PARAMS.spec(),
     DIAGNOSTICS_LOG_LEVEL.spec(),
     CREDENTIALS_KEY_LOSS.spec(),

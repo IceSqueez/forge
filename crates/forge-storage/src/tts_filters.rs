@@ -150,8 +150,10 @@ fn default_row_enabled() -> bool {
     true
 }
 
+pub const DEFAULT_LONGER_THAN_MAX_CHARS: u32 = 200;
+
 fn default_longer_than_max_chars() -> u32 {
-    200
+    DEFAULT_LONGER_THAN_MAX_CHARS
 }
 
 fn default_repeat_of_recent_window() -> u32 {

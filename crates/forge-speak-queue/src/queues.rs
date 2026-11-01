@@ -30,6 +30,11 @@ impl PendingQueues {
         }
     }
 
+    pub(crate) fn push_next(&mut self, request: SpeakRequest) {
+        *self.per_user.entry(request.viewer_id.clone()).or_insert(0) += 1;
+        self.high.push_front(request);
+    }
+
     pub(crate) fn pop_next(&mut self) -> Option<SpeakRequest> {
         let request = self.high.pop_front().or_else(|| self.normal.pop_front())?;
         self.release_user_slot(&request.viewer_id);

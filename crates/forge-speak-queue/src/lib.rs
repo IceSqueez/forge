@@ -70,6 +70,7 @@ pub struct SpeakRequest {
 #[derive(Debug)]
 pub enum SpeakCommand {
     Enqueue(SpeakRequest),
+    Preview(SpeakRequest),
     Shutdown,
     Skip,
     PlayNow(RequestId),

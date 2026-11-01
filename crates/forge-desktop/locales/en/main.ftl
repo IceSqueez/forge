@@ -1379,7 +1379,12 @@ tts_engines_param_volume = Volume
 tts_engines_voices_header_prefix = VOICES
 tts_engines_voices_available = { $count } available
 tts_engines_voices_empty = No voices found
-tts_engines_voice_preview_sample = This is my voice.
+tts_voice_test_text_default = Hello, this is how I sound. I can read 25 words in a row and still keep a steady pace.
+tts_voice_test_label = TEXT READ WHEN TESTING A VOICE
+tts_voice_test_hint = Used by every engine and by voice aliases. Clear the box to go back to the default.
+tts_voice_test_too_long = Only the first { $limit } characters are read and saved.
+tts_voice_test_load_failed = Could not load the voice test text: { $reason }
+tts_voice_test_save_failed = Could not save the voice test text
 tts_engines_toggle_failed = Failed to change engine state
 tts_dashboard_queue_unavailable = The speech queue did not accept the command.
 tts_engines_persist_disabled_failed_reason = Could not save which engines are enabled: { $reason }
@@ -1628,7 +1633,6 @@ common_undo = Undo
 
 ## Voice Aliases - preview
 
-tts_aliases_preview_text = This is a voice preview.
 
 ## Voice Aliases - footer caption
 

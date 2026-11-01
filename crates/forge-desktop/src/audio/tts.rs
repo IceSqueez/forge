@@ -90,7 +90,7 @@ impl TtsView {
             TtsEnginesView::new(
                 cloud_gateways,
                 Arc::clone(&credentials),
-                settings,
+                Arc::clone(&settings),
                 speak.clone(),
                 rt_handle.clone(),
                 cx,
@@ -110,6 +110,7 @@ impl TtsView {
             VoiceAliasesView::new(
                 backend.voice_alias_repo(),
                 backend.viewer_repo(),
+                settings,
                 speak.clone(),
                 rt_handle.clone(),
                 cx,

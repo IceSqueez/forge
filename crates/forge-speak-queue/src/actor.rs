@@ -147,6 +147,18 @@ enum SynthOutcome {
     },
 }
 
+enum Reading {
+    Filtered { recent_messages: Vec<String> },
+    Verbatim,
+}
+
+struct ResolvedVoice {
+    voice_id: VoiceId,
+    engine_id: EngineId,
+    pitch: f32,
+    rate: f32,
+}
+
 struct SynthTaskDeps {
     resolver: Arc<VoiceAliasResolver>,
     pipeline: PipelineConfigHandle,
@@ -197,22 +209,9 @@ async fn run_synthesis(
             .resolve(&req, detected.as_ref().map(|d| d.code), &deps.voice_catalog)
     };
 
-    let (voice_id, engine_id, pitch, rate) = match resolve_result {
-        ResolveResult::Speak {
-            voice_id,
-            engine_id,
-            pitch,
-            rate,
-        } => (voice_id, engine_id, pitch, rate),
-        ResolveResult::Skip { reason } => {
-            return SynthTaskResult::new(
-                req,
-                SynthOutcome::Skipped {
-                    reason: reason.into(),
-                    detail: None,
-                },
-            );
-        }
+    let voice = match voice_or_skip(resolve_result) {
+        Ok(voice) => voice,
+        Err(skipped) => return SynthTaskResult::new(req, skipped),
     };
 
     let text_to_speak = match voiced_text(
@@ -220,7 +219,7 @@ async fn run_synthesis(
         text_for_pipeline,
         &pipeline_cfg,
         &context,
-        voice_language(&deps.voice_catalog, &voice_id, &engine_id),
+        voice_language(&deps.voice_catalog, &voice.voice_id, &voice.engine_id),
     ) {
         PipelineResult::Speak(text) => text,
         PipelineResult::Skip { reason } => {
@@ -229,6 +228,52 @@ async fn run_synthesis(
         }
     };
 
+    synthesize(req, &deps, text_to_speak, voice, detected).await
+}
+
+async fn run_verbatim_synthesis(req: SpeakRequest, deps: SynthTaskDeps) -> SynthTaskResult {
+    match voice_or_skip(deps.resolver.resolve(&req, None, &deps.voice_catalog)) {
+        Ok(voice) => {
+            let text = req.text.clone();
+            synthesize(req, &deps, text, voice, None).await
+        }
+        Err(skipped) => SynthTaskResult::new(req, skipped),
+    }
+}
+
+fn voice_or_skip(result: ResolveResult) -> Result<ResolvedVoice, SynthOutcome> {
+    match result {
+        ResolveResult::Speak {
+            voice_id,
+            engine_id,
+            pitch,
+            rate,
+        } => Ok(ResolvedVoice {
+            voice_id,
+            engine_id,
+            pitch,
+            rate,
+        }),
+        ResolveResult::Skip { reason } => Err(SynthOutcome::Skipped {
+            reason: reason.into(),
+            detail: None,
+        }),
+    }
+}
+
+async fn synthesize(
+    req: SpeakRequest,
+    deps: &SynthTaskDeps,
+    text: String,
+    voice: ResolvedVoice,
+    language: Option<DetectedLanguage>,
+) -> SynthTaskResult {
+    let ResolvedVoice {
+        voice_id,
+        engine_id,
+        pitch,
+        rate,
+    } = voice;
     let slot = deps.registry.slot(&engine_id);
     let slot = match slot {
         Some(slot) => slot,
@@ -245,19 +290,15 @@ async fn run_synthesis(
         }
     };
 
-    let synthesis_req = SynthesisRequest::new(
-        SpeechText::plain(text_to_speak),
-        voice_id.clone(),
-        pitch,
-        rate,
-    );
+    let synthesis_req =
+        SynthesisRequest::new(SpeechText::plain(text), voice_id.clone(), pitch, rate);
 
     let outcome = match engine.synthesize(synthesis_req).await {
         Ok(pcm) => SynthOutcome::Speak {
             pcm,
             voice_id,
             engine_id,
-            language: detected,
+            language,
         },
         Err(e) => engine_failure(messages::tts_failure(&e)),
     };
@@ -302,11 +343,19 @@ fn engine_failure(message: MessageRef) -> SynthOutcome {
 async fn run_synthesis_bounded(
     req: SpeakRequest,
     deps: SynthTaskDeps,
-    recent_messages: Vec<String>,
+    reading: Reading,
     timeout: Duration,
 ) -> SynthTaskResult {
     let fallback = req.clone();
-    match tokio::time::timeout(timeout, run_synthesis(req, deps, recent_messages)).await {
+    let synthesis = async move {
+        match reading {
+            Reading::Filtered { recent_messages } => {
+                run_synthesis(req, deps, recent_messages).await
+            }
+            Reading::Verbatim => run_verbatim_synthesis(req, deps).await,
+        }
+    };
+    match tokio::time::timeout(timeout, synthesis).await {
         Ok(result) => result,
         Err(_) => SynthTaskResult::new(
             fallback,
@@ -381,6 +430,7 @@ struct QueueActor {
     voicegate_active: bool,
     active_request_id: Option<RequestId>,
     last_successful: Option<SpeakRequest>,
+    voice_preview: Option<RequestId>,
     current_playback: Option<CurrentPlayback>,
     progress_ticker: Option<tokio::time::Interval>,
     recent_messages: VecDeque<String>,
@@ -453,6 +503,7 @@ impl QueueActor {
             voicegate_active: false,
             active_request_id: None,
             last_successful: None,
+            voice_preview: None,
             current_playback: None,
             progress_ticker: None,
             recent_messages: VecDeque::new(),
@@ -564,11 +615,17 @@ impl QueueActor {
         }
     }
 
+    fn is_voice_preview(&self, request_id: &RequestId) -> bool {
+        self.voice_preview.as_ref() == Some(request_id)
+    }
+
     fn start_next_synthesis(&mut self) {
+        let held = self.paused || self.voicegate_active;
         let ready = self.active_request_id.is_none()
-            && !self.paused
-            && !self.voicegate_active
             && self.queues.next().is_some_and(|request| {
+                if held && !self.is_voice_preview(&request.request_id) {
+                    return false;
+                }
                 let resolver = self.deps.resolver.load();
                 self.catalog.serves(
                     request,
@@ -594,24 +651,35 @@ impl QueueActor {
             voice_catalog: self.task_deps.voice_catalog.clone(),
             detector: self.task_deps.detector.clone(),
         };
-        let window = self.config.repeat_window.get();
-        while self.recent_messages.len() > window {
-            self.recent_messages.pop_front();
-        }
-        let recent_snapshot: Vec<String> = self.recent_messages.iter().cloned().collect();
-        while self.recent_messages.len() >= window {
-            self.recent_messages.pop_front();
-        }
-        self.recent_messages.push_back(request.text.clone());
+        let reading = if self.is_voice_preview(&request.request_id) {
+            Reading::Verbatim
+        } else {
+            Reading::Filtered {
+                recent_messages: self.remember_recent(&request.text),
+            }
+        };
         let timeout = self.config.timeout_per_item;
         let request_id = request.request_id.clone();
         let task = self.deps.tasks.spawn_until_stopped(async move {
-            let result = run_synthesis_bounded(request, task_deps, recent_snapshot, timeout).await;
+            let result = run_synthesis_bounded(request, task_deps, reading, timeout).await;
             if tx.send(result).await.is_err() {
                 tracing::debug!("speak queue stopped before the synthesis result arrived");
             }
         });
         self.synthesis_task = Some((request_id, task));
+    }
+
+    fn remember_recent(&mut self, text: &str) -> Vec<String> {
+        let window = self.config.repeat_window.get();
+        while self.recent_messages.len() > window {
+            self.recent_messages.pop_front();
+        }
+        let earlier = self.recent_messages.iter().cloned().collect();
+        while self.recent_messages.len() >= window {
+            self.recent_messages.pop_front();
+        }
+        self.recent_messages.push_back(text.to_owned());
+        earlier
     }
 
     fn adopt_detector(&mut self, build: DetectorBuild) {
@@ -658,7 +726,7 @@ impl QueueActor {
             started.unwrap_or_else(|e| Err(device_failure(&AudioError::JoinFailed(e.to_string()))));
         match started {
             Ok(playback) => {
-                if self.paused {
+                if self.paused && !self.is_voice_preview(&clip.request_id) {
                     playback.pause();
                 }
                 let mut ticker = tokio::time::interval(PLAYBACK_PROGRESS_TICK);
@@ -684,7 +752,9 @@ impl QueueActor {
         match result {
             Ok(()) => {
                 self.emitter().outcome(&clip.request, Outcome::Finished);
-                self.last_successful = Some(clip.request);
+                if !self.is_voice_preview(&clip.request_id) {
+                    self.last_successful = Some(clip.request);
+                }
             }
             Err(e) => {
                 tracing::warn!(request_id = %clip.request_id.0, error = %e, "audio playback failed");
@@ -716,7 +786,10 @@ impl QueueActor {
                 engine_id,
                 language,
             } => {
-                if let Some(cap_secs) = self.deps.pipeline.load().output.max_duration_secs {
+                let preview = self.is_voice_preview(&result.request.request_id);
+                if !preview
+                    && let Some(cap_secs) = self.deps.pipeline.load().output.max_duration_secs
+                {
                     pcm.truncate_to_secs(cap_secs);
                 }
                 let clip = ReadyClip {
@@ -727,7 +800,7 @@ impl QueueActor {
                     engine_id,
                     language,
                 };
-                if self.paused {
+                if self.paused && !preview {
                     self.current_playback = Some(CurrentPlayback::Held(clip));
                 } else {
                     self.start_clip(clip);
@@ -828,6 +901,7 @@ impl QueueActor {
         match command {
             SpeakCommand::Shutdown => return ControlFlow::Break(()),
             SpeakCommand::Enqueue(request) => self.admit_request(request),
+            SpeakCommand::Preview(request) => self.admit_voice_preview(request),
             SpeakCommand::Skip => self.stop_active(SkipReason::UserSkip),
             SpeakCommand::PlayNow(request_id) => {
                 if self.queues.promote(&request_id) {
@@ -993,10 +1067,32 @@ impl QueueActor {
             );
             return;
         }
-        let preview = enqueue_preview(&request, &self.deps, &self.task_deps.voice_catalog);
+        let cap_secs = self.deps.pipeline.load().output.max_duration_secs;
+        let preview = enqueue_preview(
+            &request,
+            &self.deps,
+            &self.task_deps.voice_catalog,
+            cap_secs,
+        );
         emit.enqueued(&request, total + 1, preview);
         self.queues.push(request);
         emit.feed(self.queues.changed_event());
+    }
+
+    fn admit_voice_preview(&mut self, request: SpeakRequest) {
+        if let Some(replaced) = self.voice_preview.take() {
+            if self.active_request_id.as_ref() == Some(&replaced) {
+                self.stop_active(SkipReason::Cancelled);
+            } else {
+                self.remove_queued(&replaced);
+            }
+        }
+        let preview = enqueue_preview(&request, &self.deps, &self.task_deps.voice_catalog, None);
+        self.emitter()
+            .enqueued(&request, self.queues.len() + 1, preview);
+        self.voice_preview = Some(request.request_id.clone());
+        self.queues.push_next(request);
+        self.emitter().feed(self.queues.changed_event());
     }
 
     fn remove_queued(&mut self, request_id: &RequestId) {
@@ -1059,9 +1155,14 @@ fn stop_when_started(tasks: &TaskOwner, start: PlaybackStart) {
     });
 }
 
-fn enqueue_preview(req: &SpeakRequest, deps: &ActorDeps, catalog: &[TtsVoice]) -> EnqueuePreview {
+fn enqueue_preview(
+    req: &SpeakRequest,
+    deps: &ActorDeps,
+    catalog: &[TtsVoice],
+    cap_secs: Option<u32>,
+) -> EnqueuePreview {
     let spoken_secs = ((req.text.chars().count() as u32) / 15).max(1);
-    let estimated_secs = match deps.pipeline.load().output.max_duration_secs {
+    let estimated_secs = match cap_secs {
         Some(cap_secs) => spoken_secs.min(cap_secs),
         None => spoken_secs,
     };
@@ -1530,7 +1631,13 @@ mod tests {
             deps.pipeline.swap(cfg);
             let req = request("nova", text, Priority::Normal);
 
-            let estimated_secs = enqueue_preview(&req, &deps, &[]).estimated_secs;
+            let estimated_secs = enqueue_preview(
+                &req,
+                &deps,
+                &[],
+                deps.pipeline.load().output.max_duration_secs,
+            )
+            .estimated_secs;
 
             assert_eq!(estimated_secs, expected, "len {} cap {cap:?}", text.len());
         }

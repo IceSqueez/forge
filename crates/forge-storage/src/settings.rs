@@ -182,6 +182,17 @@ pub async fn set_disabled_tts_engines(
     .await
 }
 
+pub async fn voice_test_text(repo: &dyn SettingsRepo) -> Result<Option<String>, StorageError> {
+    read_setting(repo, &core_settings::TTS_VOICE_TEST_TEXT).await
+}
+
+pub async fn set_voice_test_text(
+    repo: &dyn SettingsRepo,
+    text: Option<String>,
+) -> Result<(), StorageError> {
+    write_setting(repo, &core_settings::TTS_VOICE_TEST_TEXT, &text).await
+}
+
 pub async fn synthesis_defaults(
     repo: &dyn SettingsRepo,
 ) -> Result<SynthesisDefaults, StorageError> {

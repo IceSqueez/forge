@@ -1,4 +1,5 @@
 mod panes;
+mod test_text;
 
 use forge_components::FONT_LABEL;
 use forge_components::FONT_META;
@@ -9,13 +10,11 @@ use std::sync::Arc;
 use forge_components::OverflowRevealingFocus;
 use forge_components::{
     ActivePresentation, BORDER_THIN, DISABLED_OPACITY, Density, FONT_MD, FONT_XS, FONT_XXS,
-    ForgePalette, Icon, KeyActivated, PushToast, Radius, Spacing, ToastKind, avatar_tile, card,
-    empty_state, error_row_with_retry, hash_accent, icon, radius, section_label, slider, spacing,
-    status_dot, toggle, tr,
+    ForgePalette, Icon, InputEvent, KeyActivated, PushToast, Radius, Spacing, TextArea, ToastKind,
+    avatar_tile, card, empty_state, error_row_with_retry, hash_accent, icon, radius, section_label,
+    slider, spacing, status_dot, toggle, tr,
 };
-use forge_speak_queue::{
-    EmoteTokenSet, Priority, RequestId, SpeakCommand, SpeakQueueHandle, SpeakRequest,
-};
+use forge_speak_queue::{SpeakCommand, SpeakQueueHandle};
 use forge_speech_types::SynthesisDefaults;
 use forge_speech_types::{EngineId, TtsVoice, VoiceId};
 use forge_storage::{CredentialsRepo, EngineParams, SettingsRepo, StorageError};
@@ -27,13 +26,17 @@ use gpui::{
 };
 
 use crate::app::async_bridge::{
-    self, ErrorSink, Generation, Loadable, SLIDER_PERSIST_DEBOUNCE, SnapshotWriter, WriteOutcome,
+    self, Debounced, ErrorSink, Generation, Loadable, SLIDER_PERSIST_DEBOUNCE, SnapshotWriter,
+    WriteOutcome,
 };
 use crate::audio::cloud_credentials::{
     CloudCredentialsView, CloudEngineKind, CloudEngineRegistered, stored_region,
 };
 use crate::audio::tts_engine_roster::{
     RosterEngine, engine_class_label, load_engine_roster, voice_descriptor_label,
+};
+use crate::audio::voice_test_text::{
+    default_voice_test_text, spoken_voice_test_text, voice_preview_request,
 };
 use crate::shared::repo_failure::RepoFailure;
 
@@ -82,6 +85,9 @@ pub(crate) struct TtsEnginesView {
     add_open: bool,
     regions: HashMap<String, String>,
     cloud: Entity<CloudCredentialsView>,
+    test_text: Entity<TextArea>,
+    test_text_load: Loadable<()>,
+    test_text_debounce: Debounced,
     _subs: Vec<Subscription>,
 }
 
@@ -109,6 +115,12 @@ impl TtsEnginesView {
                 this.on_engine_registered(&event.0, cx);
             },
         );
+        let test_text = test_text::new_input(cx);
+        let test_text_sub = cx.subscribe(&test_text, |this, _input, event: &InputEvent, cx| {
+            if let InputEvent::Changed(_) = event {
+                this.save_test_text(cx);
+            }
+        });
 
         let mut view = Self {
             engines: load_engine_roster(speak.as_ref()),
@@ -125,9 +137,13 @@ impl TtsEnginesView {
             add_open: false,
             regions: HashMap::new(),
             cloud,
-            _subs: vec![sub],
+            test_text,
+            test_text_load: Loadable::Loading,
+            test_text_debounce: Debounced::new(SLIDER_PERSIST_DEBOUNCE),
+            _subs: vec![sub, test_text_sub],
         };
         view.load_disabled(cx);
+        view.load_test_text(cx);
         view
     }
 
@@ -471,24 +487,17 @@ impl TtsEnginesView {
             tracing::warn!("voice preview dropped - speak queue unavailable");
             return;
         };
-        let request = SpeakRequest {
-            request_id: RequestId::new(),
-            viewer_id: String::new(),
-            viewer_name: String::new(),
-            text: tr!("tts_engines_voice_preview_sample"),
-            priority: Priority::Normal,
-            engine_override: Some(EngineId(engine_id)),
-            voice_override: Some(VoiceId(voice_id)),
-            source_event_id: None,
-            is_reward: false,
-            target: None,
-            message_emotes: EmoteTokenSet::default(),
-        };
+        let text = spoken_voice_test_text(
+            self.test_text.read(cx).content(),
+            &default_voice_test_text(),
+        );
+        let voice = (EngineId(engine_id), VoiceId(voice_id));
+        let request = voice_preview_request(text, String::new(), String::new(), Some(voice));
         async_bridge::report_failure(
             &self.rt_handle,
-            async move { speak.send(SpeakCommand::Enqueue(request)).await },
-            ErrorSink::Silent,
-            "voice preview enqueue",
+            async move { speak.send(SpeakCommand::Preview(request)).await },
+            ErrorSink::Toast,
+            tr!("tts_aliases_preview_failed"),
             cx,
         );
     }
@@ -605,7 +614,9 @@ mod tests {
 
     use forge_components::Toasts;
     use forge_storage::Language;
-    use forge_storage::settings::core_settings::{TTS_DISABLED_ENGINES, TTS_ENGINE_PARAMS};
+    use forge_storage::settings::core_settings::{
+        TTS_DISABLED_ENGINES, TTS_ENGINE_PARAMS, TTS_VOICE_TEST_TEXT,
+    };
     use forge_tts_core::{
         ENGINE_ID_ESPEAK_NG, ENGINE_ID_PIPER, TtsEngine, TtsEngineFactory, TtsError, TtsRegistry,
     };
@@ -614,9 +625,11 @@ mod tests {
 
     use super::*;
     use crate::app::i18n::install_language;
+    use crate::audio::voice_test_text::VOICE_TEST_TEXT_MAX_CHARS;
     use crate::test_support::{
         ReadFault, SETTINGS_READ_FAILED, SettingWrite, TestBackend, error_toasts,
-        install_presentation, runtime, spawn_speak_queue_with_registry, test_backend, writes_to,
+        install_presentation, runtime, spawn_speak_queue, spawn_speak_queue_with_registry,
+        test_backend, writes_to,
     };
 
     const ESPEAK: usize = 0;
@@ -1042,6 +1055,122 @@ mod tests {
                 "{case}"
             );
         }
+    }
+
+    fn test_text(view: &Entity<TtsEnginesView>, cx: &mut TestAppContext) -> String {
+        view.read_with(cx, |v, cx| v.test_text.read(cx).content().to_owned())
+    }
+
+    fn stored_test_text(rig: &EnginesRig) -> Option<String> {
+        let settings = rig.backend.settings_repo();
+        rig.rt
+            .block_on(forge_storage::voice_test_text(settings.as_ref()))
+            .unwrap()
+    }
+
+    fn type_test_text(view: &Entity<TtsEnginesView>, text: &str, cx: &mut TestAppContext) {
+        view.update(cx, |v, cx| {
+            v.test_text.update(cx, |input, cx| {
+                input.clear(cx);
+                input.insert_at_caret(text, cx);
+            });
+        });
+    }
+
+    #[gpui::test]
+    fn the_test_text_shows_the_default_until_one_is_stored(cx: &mut TestAppContext) {
+        let rig = EnginesRig::new(cx);
+        assert_eq!(
+            test_text(&rig.open(None, cx), cx),
+            default_voice_test_text()
+        );
+
+        rig.backend
+            .seed_raw(&TTS_VOICE_TEST_TEXT, "Стара збережена фраза.");
+
+        assert_eq!(test_text(&rig.open(None, cx), cx), "Стара збережена фраза.");
+    }
+
+    #[gpui::test]
+    fn an_edit_is_stored_once_after_the_debounce_and_a_cleared_box_forgets_it(
+        cx: &mut TestAppContext,
+    ) {
+        let rig = EnginesRig::new(cx);
+        let _runtime = rig.rt.enter();
+        let view = rig.open(None, cx);
+
+        type_test_text(&view, "Пер", cx);
+        type_test_text(&view, "Перша фраза.", cx);
+        rig.past_the_save_debounce(cx);
+
+        assert_eq!(
+            rig.writes_to(TTS_VOICE_TEST_TEXT.name()),
+            vec!["Перша фраза."]
+        );
+        assert_eq!(stored_test_text(&rig).as_deref(), Some("Перша фраза."));
+
+        type_test_text(&view, "   ", cx);
+        rig.past_the_save_debounce(cx);
+
+        assert_eq!(stored_test_text(&rig), None);
+    }
+
+    #[gpui::test]
+    fn a_failed_test_text_write_toasts_and_keeps_the_typed_text(cx: &mut TestAppContext) {
+        let rig = EnginesRig::new(cx);
+        let _runtime = rig.rt.enter();
+        rig.backend.fail_writes(TTS_VOICE_TEST_TEXT.name());
+        let view = rig.open(None, cx);
+
+        type_test_text(&view, "Не збережеться.", cx);
+        rig.past_the_save_debounce(cx);
+
+        assert_eq!(cx.update(|cx| error_toasts(cx)), 1);
+        assert_eq!(test_text(&view, cx), "Не збережеться.");
+    }
+
+    #[gpui::test]
+    fn no_test_text_edit_writes_until_the_stored_text_loads(cx: &mut TestAppContext) {
+        let rig = EnginesRig::new(cx);
+        let _runtime = rig.rt.enter();
+        rig.backend
+            .fault_reads(TTS_VOICE_TEST_TEXT.name(), ReadFault::Fails);
+        let view = rig.open(None, cx);
+
+        type_test_text(&view, "Затре збережене.", cx);
+        rig.past_the_save_debounce(cx);
+
+        let failure = view.read_with(cx, |v, _| v.test_text_load.failure());
+        assert_eq!(
+            (rig.writes_to(TTS_VOICE_TEST_TEXT.name()), failure),
+            (Vec::<String>::new(), Some(unreachable()))
+        );
+    }
+
+    #[gpui::test]
+    fn a_voice_preview_sends_the_box_text_bounded_by_the_limit(cx: &mut TestAppContext) {
+        let rig = EnginesRig::new(cx);
+        let _runtime = rig.rt.enter();
+        let (speak, mut events, _aliases) = spawn_speak_queue(Vec::new());
+        let view = rig.open(Some(speak), cx);
+        let at_limit = "є".repeat(VOICE_TEST_TEXT_MAX_CHARS);
+
+        type_test_text(&view, &format!("{at_limit}є"), cx);
+        view.update(cx, |v, cx| {
+            v.preview_voice(ENGINE_ID_PIPER.to_owned(), "any-voice".to_owned(), cx);
+        });
+        rig.settle(cx);
+
+        let enqueued = rig.rt.block_on(async {
+            loop {
+                if let forge_speak_queue::SpeakEvent::Enqueued { text, .. } =
+                    events.recv().await.unwrap()
+                {
+                    return text;
+                }
+            }
+        });
+        assert_eq!(enqueued, at_limit);
     }
 
     #[gpui::test]

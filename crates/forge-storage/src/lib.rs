@@ -108,15 +108,15 @@ pub use settings::{
     record_credentials_key_loss, set_chat_history_display_limit, set_chat_history_per_viewer_limit,
     set_diagnostic_log_level, set_disabled_tts_engines, set_engine_params, set_master_volume,
     set_voice_gate_enabled, set_voice_gate_hold_ms, set_voice_gate_input_device_id,
-    set_voice_gate_threshold, stored_display_formats, synthesis_defaults,
-    take_credentials_key_loss, voice_gate_settings,
+    set_voice_gate_threshold, set_voice_test_text, stored_display_formats, synthesis_defaults,
+    take_credentials_key_loss, voice_gate_settings, voice_test_text,
 };
 pub use soundboard::{CLIP_SOURCE_SLOT, SoundboardClipsRepo, StoredClip, clip_source_referrer};
 pub use transit::{GlobalTransit, GlobalsExport};
 pub use trigger_instance::{TriggerChanges, TriggerInstanceRepo, TriggerWiring};
 pub use tts_filters::{
-    BlocklistMode, FilterRule, FilterRuleKind, LanguageAwareVoice, SkipRegex, TtsFiltersRepo,
-    TtsPipelineSettings, UrlMode,
+    BlocklistMode, DEFAULT_LONGER_THAN_MAX_CHARS, FilterRule, FilterRuleKind, LanguageAwareVoice,
+    SkipRegex, TtsFiltersRepo, TtsPipelineSettings, UrlMode,
 };
 pub use unit_of_work::StoreChange;
 pub use user_globals::{UserGlobalEntry, UserGlobalKey, UserGlobalsRepo};

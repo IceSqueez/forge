@@ -1412,7 +1412,12 @@ tts_engines_param_volume = Гучність
 tts_engines_voices_header_prefix = ГОЛОСИ
 tts_engines_voices_available = доступно: { $count }
 tts_engines_voices_empty = Голосів не знайдено
-tts_engines_voice_preview_sample = Це мій голос.
+tts_voice_test_text_default = Привіт, ось так я звучу. Я можу прочитати 25 слів поспіль і не збитися з темпу.
+tts_voice_test_label = ТЕКСТ ДЛЯ ПЕРЕВІРКИ ГОЛОСУ
+tts_voice_test_hint = Спільний для всіх рушіїв і псевдонімів голосів. Очистьте поле, щоб повернути типовий текст.
+tts_voice_test_too_long = Прочитано й збережено буде лише перші { $limit } символів.
+tts_voice_test_load_failed = Не вдалося завантажити текст для перевірки голосу: { $reason }
+tts_voice_test_save_failed = Не вдалося зберегти текст для перевірки голосу
 tts_dashboard_queue_unavailable = Черга мовлення не прийняла команду.
 tts_engines_toggle_failed = Не вдалося змінити стан рушія
 tts_engines_persist_disabled_failed_reason = Не вдалося зберегти, які рушії увімкнено: { $reason }
@@ -1663,7 +1668,6 @@ common_undo = Відмінити
 
 ## Голосові аліаси - попереднє прослуховування
 
-tts_aliases_preview_text = Це попереднє прослуховування голосу.
 
 ## Голосові аліаси - підпис під таблицею
 

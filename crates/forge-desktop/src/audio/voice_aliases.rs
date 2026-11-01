@@ -17,12 +17,10 @@ use forge_components::{
     icon, overlay, primary_button_with_icon, radius, scaled, segment, segmented, spacing,
     status_dot, toolbar_row, tr, virtual_table, with_alpha,
 };
-use forge_speak_queue::{
-    AliasKey, EmoteTokenSet, Priority, RequestId, SpeakCommand, SpeakQueueHandle, SpeakRequest,
-};
+use forge_speak_queue::{AliasKey, SpeakCommand, SpeakQueueHandle};
 use forge_speech_types::AliasState;
 use forge_speech_types::{AliasId, AssignmentStrategy, EngineId, TtsVoice, VoiceAlias, VoiceId};
-use forge_storage::{StorageError, ViewerRepo, VoiceAliasRepo};
+use forge_storage::{SettingsRepo, StorageError, ViewerRepo, VoiceAliasRepo};
 use forge_tts_core::engine_display_name;
 use gpui::{
     AnyElement, App, ClickEvent, Context, Entity, FontWeight, Pixels, Rgba, SharedString,
@@ -36,6 +34,9 @@ use crate::audio::voice_alias_form::{
     format_optional_number,
 };
 use crate::audio::voice_alias_store::save_alias;
+use crate::audio::voice_test_text::{
+    default_voice_test_text, spoken_voice_test_text, voice_preview_request,
+};
 use crate::shared::load_notice::{LoadNotice, NoticeWidth, load_notice};
 use forge_components::PushToast;
 
@@ -129,6 +130,7 @@ struct AliasRow {
 pub(crate) struct VoiceAliasesView {
     repo: Arc<dyn VoiceAliasRepo>,
     viewer_repo: Arc<dyn ViewerRepo>,
+    settings: Arc<dyn SettingsRepo>,
     speak: Option<SpeakQueueHandle>,
     rt_handle: tokio::runtime::Handle,
     list_load: Loadable<()>,
@@ -153,6 +155,7 @@ impl VoiceAliasesView {
     pub(crate) fn new(
         repo: Arc<dyn VoiceAliasRepo>,
         viewer_repo: Arc<dyn ViewerRepo>,
+        settings: Arc<dyn SettingsRepo>,
         speak: Option<SpeakQueueHandle>,
         rt_handle: tokio::runtime::Handle,
         cx: &mut Context<Self>,
@@ -169,6 +172,7 @@ impl VoiceAliasesView {
         let mut view = Self {
             repo,
             viewer_repo,
+            settings,
             speak,
             rt_handle,
             list_load: Loadable::Loading,
@@ -553,24 +557,20 @@ impl VoiceAliasesView {
         };
         let viewer_id = row.viewer_id.clone();
         let viewer_name = row.viewer_name.clone();
-        let text = tr!("tts_aliases_preview_text");
+        let default_text = default_voice_test_text();
+        let settings = Arc::clone(&self.settings);
         async_bridge::report_failure(
             &self.rt_handle,
             async move {
-                let request = SpeakRequest {
-                    request_id: RequestId::new(),
-                    viewer_id,
-                    viewer_name,
-                    text,
-                    priority: Priority::Normal,
-                    engine_override: None,
-                    voice_override: None,
-                    source_event_id: None,
-                    is_reward: false,
-                    target: None,
-                    message_emotes: EmoteTokenSet::default(),
-                };
-                handle.send(SpeakCommand::Enqueue(request)).await
+                let stored = forge_storage::voice_test_text(settings.as_ref())
+                    .await
+                    .map_err(RepoFailure::from)?;
+                let text = spoken_voice_test_text(stored.as_deref().unwrap_or(""), &default_text);
+                let request = voice_preview_request(text, viewer_id, viewer_name, None);
+                handle
+                    .send(SpeakCommand::Preview(request))
+                    .await
+                    .map_err(RepoFailure::from)
             },
             async_bridge::ErrorSink::Toast,
             tr!("tts_aliases_preview_failed"),
@@ -680,6 +680,8 @@ mod tests {
 
     use super::*;
     use crate::app::i18n::install_language;
+    use forge_storage::settings::core_settings::TTS_VOICE_TEST_TEXT;
+
     use crate::test_support::{
         LiveAliases, Sandboxed, alias_shape, error_toasts, live_alias, runtime,
         sandboxed_backend_at, settle_until, spawn_speak_queue,
@@ -688,6 +690,10 @@ mod tests {
     use forge_components::Toasts;
 
     const TEST_KEY: [u8; 32] = [0x5a; 32];
+
+    fn test_settings() -> Arc<dyn SettingsRepo> {
+        crate::test_support::test_backend().0.settings_repo()
+    }
 
     struct Fixture {
         backend: Sandboxed<forge_storage_sqlite::SqliteBackend>,
@@ -710,6 +716,7 @@ mod tests {
             VoiceAliasesView::new(
                 self.backend.voice_alias_repo(),
                 self.backend.viewer_repo(),
+                self.backend.settings_repo(),
                 Some(self.speak.clone()),
                 rt.handle().clone(),
                 cx,
@@ -1164,7 +1171,16 @@ mod tests {
             let repo = Arc::clone(&self.repo) as Arc<dyn VoiceAliasRepo>;
             let handle = self.rt.handle().clone();
             let view = cx.update(|cx| {
-                cx.new(|cx| VoiceAliasesView::new(repo, Arc::new(viewers), None, handle, cx))
+                cx.new(|cx| {
+                    VoiceAliasesView::new(
+                        repo,
+                        Arc::new(viewers),
+                        test_settings(),
+                        None,
+                        handle,
+                        cx,
+                    )
+                })
             });
             self.settle(cx);
             view
@@ -1323,7 +1339,7 @@ mod tests {
             let repo = Arc::clone(&self.repo) as Arc<dyn VoiceAliasRepo>;
             let handle = self.rt.handle().clone();
             let (view, vcx) = cx.add_window_view(|_window, cx| {
-                VoiceAliasesView::new(repo, Arc::new(viewers), speak, handle, cx)
+                VoiceAliasesView::new(repo, Arc::new(viewers), test_settings(), speak, handle, cx)
             });
             self.settle(vcx);
             (view, vcx)
@@ -1544,6 +1560,16 @@ mod tests {
         speak: Option<SpeakQueueHandle>,
         rt: tokio::runtime::Runtime,
     ) -> FlakyAliases {
+        aliases_listing_over(cx, lists_fail, test_settings(), speak, rt)
+    }
+
+    fn aliases_listing_over(
+        cx: &mut TestAppContext,
+        lists_fail: bool,
+        settings: Arc<dyn SettingsRepo>,
+        speak: Option<SpeakQueueHandle>,
+        rt: tokio::runtime::Runtime,
+    ) -> FlakyAliases {
         use std::sync::atomic::{AtomicBool, Ordering};
 
         install_language(Language::En);
@@ -1569,7 +1595,16 @@ mod tests {
         viewers.expect_count().returning(|| Ok(0));
         let handle = rt.handle().clone();
         let view = cx.update(|cx| {
-            cx.new(|cx| VoiceAliasesView::new(Arc::new(repo), Arc::new(viewers), speak, handle, cx))
+            cx.new(|cx| {
+                VoiceAliasesView::new(
+                    Arc::new(repo),
+                    Arc::new(viewers),
+                    settings,
+                    speak,
+                    handle,
+                    cx,
+                )
+            })
         });
         FlakyAliases {
             view,
@@ -1659,5 +1694,36 @@ mod tests {
 
         let message = cx.update(|cx| cx.global::<Toasts>().items()[0].message.to_string());
         assert_eq!(message, tr!("tts_aliases_preview_failed"));
+    }
+
+    #[gpui::test]
+    fn a_preview_reads_the_stored_test_text_or_the_default(cx: &mut TestAppContext) {
+        for stored in [Some("Стара збережена фраза."), None] {
+            let rt = runtime();
+            let (speak, mut events, _resolver) =
+                rt.block_on(async { spawn_speak_queue(Vec::new()) });
+            let (backend, _writes) = crate::test_support::test_backend();
+            if let Some(stored) = stored {
+                backend.seed_raw(&TTS_VOICE_TEST_TEXT, stored);
+            }
+            let listing = aliases_listing_over(cx, false, backend.settings_repo(), Some(speak), rt);
+            listing.wait_for(cx, |cx| listing.rows(cx) == 1);
+            let expected = stored.map_or_else(default_voice_test_text, str::to_owned);
+
+            listing.view.update(cx, |view, cx| {
+                view.preview(&AliasId::from_string("a".to_owned()), cx);
+            });
+            let enqueued = listing.rt.block_on(async {
+                loop {
+                    if let forge_speak_queue::SpeakEvent::Enqueued { text, .. } =
+                        events.recv().await.unwrap()
+                    {
+                        return text;
+                    }
+                }
+            });
+
+            assert_eq!(enqueued, expected);
+        }
     }
 }

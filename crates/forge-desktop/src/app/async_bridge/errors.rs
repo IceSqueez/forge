@@ -10,13 +10,12 @@ use super::tasks::on_runtime;
 #[derive(Clone, Copy, PartialEq, Eq)]
 pub(crate) enum ErrorSink {
     Toast,
-    Silent,
 }
 
 impl ErrorSink {
     pub(crate) fn report(self, message: String, cx: &mut App) {
-        if self == ErrorSink::Toast {
-            cx.push_toast(ToastKind::Error, message);
+        match self {
+            ErrorSink::Toast => cx.push_toast(ToastKind::Error, message),
         }
     }
 }

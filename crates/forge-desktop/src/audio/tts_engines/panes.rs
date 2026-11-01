@@ -511,6 +511,7 @@ impl TtsEnginesView {
             .flex()
             .flex_col()
             .gap(spacing(Spacing::Xs, density))
+            .child(self.test_text_section(palette, density, cx))
             .child(header)
             .child(body)
             .into_any_element()

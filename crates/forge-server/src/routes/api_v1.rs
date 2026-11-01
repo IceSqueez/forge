@@ -1,6 +1,3 @@
-use std::sync::Arc;
-use std::sync::atomic::AtomicU64;
-
 use axum::Json;
 use axum::Router;
 use axum::extract::{Path, Query, State};
@@ -10,48 +7,18 @@ use axum::routing::{get, post};
 use serde::Deserialize;
 
 use crate::protocol::{
-    DispatchContext, WsResponse, handle_do_action, handle_get_actions, handle_get_active_viewers,
+    WsErrorCode, WsResponse, handle_do_action, handle_get_actions, handle_get_active_viewers,
     handle_get_events, handle_get_global, handle_get_globals, handle_get_info,
     handle_get_overlay_files, handle_get_user_globals, handle_replay_event, handle_set_global,
     handle_trigger_code_event, merge_payload,
 };
 use crate::server::AppState;
-use crate::ws_client::WsClient;
-
-fn ephemeral_ctx(state: &AppState) -> DispatchContext {
-    let drop_counter = Arc::new(AtomicU64::new(0));
-    let client = Arc::new(WsClient::new(
-        state.bus_adapter.allocate_client_id(),
-        std::net::SocketAddr::from(([127, 0, 0, 1], 0)),
-        drop_counter,
-    ));
-    client.mark_bearer_authenticated(state.auth.token_generation());
-    DispatchContext {
-        bus: Arc::clone(&state.bus),
-        bus_adapter: Arc::clone(&state.bus_adapter),
-        actions: Arc::clone(&state.actions),
-        globals: Arc::clone(&state.globals),
-        user_globals: Arc::clone(&state.user_globals),
-        overlays: Arc::clone(&state.overlays),
-        auth_state: Arc::clone(&state.auth),
-        client,
-        credentials: Arc::clone(&state.credentials),
-        server_info: Arc::clone(&state.server_info),
-        action_engine: Arc::clone(&state.action_engine),
-        overlay_root: Arc::clone(&state.overlay_root),
-        overlay_channel_swap: tokio::sync::Mutex::new(None),
-        close_after_auth_failure: std::sync::atomic::AtomicBool::new(false),
-    }
-}
 
 const ACTION_VERB_SUFFIX: &str = ":do";
 const REPLAY_VERB_SUFFIX: &str = ":replay";
 
 fn not_found() -> Response {
-    ws_response_to_http(WsResponse::Error {
-        code: Some("NOT_FOUND".to_owned()),
-        message: "no such route".to_owned(),
-    })
+    ws_response_to_http(WsResponse::error(WsErrorCode::NotFound, "no such route"))
 }
 
 fn ws_response_to_http(resp: WsResponse) -> Response {
@@ -63,16 +30,18 @@ fn ws_response_to_http(resp: WsResponse) -> Response {
             (StatusCode::OK, Json(serde_json::Value::Object(body))).into_response()
         }
         WsResponse::Error { code, message } => {
-            let status = match code.as_deref() {
-                Some("UNAUTHENTICATED") | Some("AUTH_FAILED") => StatusCode::UNAUTHORIZED,
-                Some("NOT_FOUND") | Some("UNKNOWN_METHOD") => StatusCode::NOT_FOUND,
-                Some("INVALID_PAYLOAD") => StatusCode::BAD_REQUEST,
-                _ => StatusCode::INTERNAL_SERVER_ERROR,
+            let status = match code {
+                WsErrorCode::Unauthenticated | WsErrorCode::AuthFailed => StatusCode::UNAUTHORIZED,
+                WsErrorCode::NotFound => StatusCode::NOT_FOUND,
+                WsErrorCode::InvalidPayload => StatusCode::BAD_REQUEST,
+                WsErrorCode::RuntimeError | WsErrorCode::TooManySubscriptions => {
+                    StatusCode::INTERNAL_SERVER_ERROR
+                }
             };
             let body = serde_json::json!({
                 "status": "error",
                 "error": {
-                    "code": code.unwrap_or_else(|| "RUNTIME_ERROR".to_owned()),
+                    "code": code.as_str(),
                     "message": message,
                 }
             });
@@ -82,13 +51,13 @@ fn ws_response_to_http(resp: WsResponse) -> Response {
 }
 
 async fn get_info(State(state): State<AppState>) -> Response {
-    let ctx = ephemeral_ctx(&state);
-    ws_response_to_http(handle_get_info(&ctx).await)
+    let services = state.services();
+    ws_response_to_http(handle_get_info(&services).await)
 }
 
 async fn get_actions(State(state): State<AppState>) -> Response {
-    let ctx = ephemeral_ctx(&state);
-    ws_response_to_http(handle_get_actions(&ctx).await)
+    let services = state.services();
+    ws_response_to_http(handle_get_actions(&services).await)
 }
 
 #[derive(Deserialize)]
@@ -105,19 +74,19 @@ async fn do_action_wildcard(
     let Some(id) = id_do.strip_suffix(ACTION_VERB_SUFFIX).map(str::to_owned) else {
         return not_found();
     };
-    let ctx = ephemeral_ctx(&state);
+    let services = state.services();
     let args = body.map(|b| b.0.args).unwrap_or(serde_json::Value::Null);
-    ws_response_to_http(handle_do_action(id, args, &ctx).await)
+    ws_response_to_http(handle_do_action(id, args, &services).await)
 }
 
 async fn get_globals(State(state): State<AppState>) -> Response {
-    let ctx = ephemeral_ctx(&state);
-    ws_response_to_http(handle_get_globals(&ctx).await)
+    let services = state.services();
+    ws_response_to_http(handle_get_globals(&services).await)
 }
 
 async fn get_global(State(state): State<AppState>, Path(name): Path<String>) -> Response {
-    let ctx = ephemeral_ctx(&state);
-    ws_response_to_http(handle_get_global(name, &ctx).await)
+    let services = state.services();
+    ws_response_to_http(handle_get_global(name, &services).await)
 }
 
 #[derive(Deserialize)]
@@ -132,8 +101,8 @@ async fn set_global(
     Path(name): Path<String>,
     Json(body): Json<SetGlobalBody>,
 ) -> Response {
-    let ctx = ephemeral_ctx(&state);
-    ws_response_to_http(handle_set_global(name, body.value, body.persisted, &ctx).await)
+    let services = state.services();
+    ws_response_to_http(handle_set_global(name, body.value, body.persisted, &services).await)
 }
 
 #[derive(Deserialize)]
@@ -148,8 +117,8 @@ async fn get_user_globals(
     State(state): State<AppState>,
     Query(q): Query<UserGlobalsQuery>,
 ) -> Response {
-    let ctx = ephemeral_ctx(&state);
-    ws_response_to_http(handle_get_user_globals(q.broadcaster_id, q.user_id, &ctx).await)
+    let services = state.services();
+    ws_response_to_http(handle_get_user_globals(q.broadcaster_id, q.user_id, &services).await)
 }
 
 #[derive(Deserialize)]
@@ -163,9 +132,9 @@ async fn trigger_code_event(
     Path(name): Path<String>,
     body: Option<Json<TriggerCodeEventBody>>,
 ) -> Response {
-    let ctx = ephemeral_ctx(&state);
+    let services = state.services();
     let args = body.map(|b| b.0.args).unwrap_or(serde_json::Value::Null);
-    ws_response_to_http(handle_trigger_code_event(name, args, &ctx).await)
+    ws_response_to_http(handle_trigger_code_event(name, args, &services).await)
 }
 
 #[derive(Deserialize)]
@@ -175,8 +144,8 @@ struct GetEventsQuery {
 }
 
 async fn get_events(State(state): State<AppState>, Query(q): Query<GetEventsQuery>) -> Response {
-    let ctx = ephemeral_ctx(&state);
-    ws_response_to_http(handle_get_events(q.limit, q.since, &ctx).await)
+    let services = state.services();
+    ws_response_to_http(handle_get_events(q.limit, q.since, &services).await)
 }
 
 async fn replay_event_wildcard(
@@ -189,13 +158,13 @@ async fn replay_event_wildcard(
     else {
         return not_found();
     };
-    let ctx = ephemeral_ctx(&state);
-    ws_response_to_http(handle_replay_event(id, &ctx).await)
+    let services = state.services();
+    ws_response_to_http(handle_replay_event(id, &services).await)
 }
 
 async fn get_viewers(State(state): State<AppState>) -> Response {
-    let ctx = ephemeral_ctx(&state);
-    ws_response_to_http(handle_get_active_viewers(&ctx).await)
+    let services = state.services();
+    ws_response_to_http(handle_get_active_viewers(&services).await)
 }
 
 #[derive(Deserialize)]
@@ -207,8 +176,8 @@ async fn get_overlay_files(
     State(state): State<AppState>,
     Query(q): Query<OverlayFilesQuery>,
 ) -> Response {
-    let ctx = ephemeral_ctx(&state);
-    ws_response_to_http(handle_get_overlay_files(q.recursive.unwrap_or(false), &ctx).await)
+    let services = state.services();
+    ws_response_to_http(handle_get_overlay_files(q.recursive.unwrap_or(false), &services).await)
 }
 
 pub(crate) fn router() -> Router<AppState> {

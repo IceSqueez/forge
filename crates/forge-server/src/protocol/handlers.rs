@@ -5,8 +5,8 @@ use forge_types::{EventId, PlatformId, Variant};
 use time::OffsetDateTime;
 use time::format_description::well_known::Rfc3339;
 
-use super::context::DispatchContext;
-use super::envelope::WsResponse;
+use super::context::Services;
+use super::envelope::{WsErrorCode, WsResponse};
 use super::helpers::{
     MAX_CODE_EVENT_NAME_LEN, build_arg_stack, parse_id, runtime_failure, valid_code_event_name,
 };
@@ -33,15 +33,15 @@ fn global_wire_row(
     row
 }
 
-pub(crate) async fn handle_get_info(ctx: &DispatchContext) -> WsResponse {
-    let connected_accounts = build_connected_accounts(ctx.credentials.as_ref()).await;
-    let connected_clients = build_connected_clients(&ctx.bus_adapter).await;
-    let bw = &ctx.server_info.bandwidth;
+pub(crate) async fn handle_get_info(services: &Services) -> WsResponse {
+    let connected_accounts = build_connected_accounts(services.credentials.as_ref()).await;
+    let connected_clients = build_connected_clients(&services.bus_adapter).await;
+    let bw = &services.server_info.bandwidth;
     WsResponse::Ok(serde_json::json!({
-        "version": ctx.server_info.version,
-        "uptime_seconds": ctx.server_info.uptime_seconds(),
+        "version": services.server_info.version,
+        "uptime_seconds": services.server_info.uptime_seconds(),
         "connected_accounts": connected_accounts,
-        "available_platforms": ctx.server_info.available_platforms,
+        "available_platforms": services.server_info.available_platforms,
         "connected_clients": connected_clients,
         "bandwidth": {
             "outbound_bytes_per_second": bw.current_bytes_per_second(),
@@ -51,8 +51,8 @@ pub(crate) async fn handle_get_info(ctx: &DispatchContext) -> WsResponse {
     }))
 }
 
-pub(crate) async fn handle_get_globals(ctx: &DispatchContext) -> WsResponse {
-    let globals_repo: &dyn GlobalsRepo = ctx.globals.as_ref();
+pub(crate) async fn handle_get_globals(services: &Services) -> WsResponse {
+    let globals_repo: &dyn GlobalsRepo = services.globals.as_ref();
     let globals = match globals_repo.list().await {
         Ok(list) => list,
         Err(e) => {
@@ -73,18 +73,15 @@ pub(crate) async fn handle_get_globals(ctx: &DispatchContext) -> WsResponse {
     WsResponse::Ok(serde_json::json!({ "globals": wire_globals }))
 }
 
-pub(crate) async fn handle_get_global(name: String, ctx: &DispatchContext) -> WsResponse {
-    let globals_repo: &dyn GlobalsRepo = ctx.globals.as_ref();
+pub(crate) async fn handle_get_global(name: String, services: &Services) -> WsResponse {
+    let globals_repo: &dyn GlobalsRepo = services.globals.as_ref();
     match globals_repo.get(&name).await {
         Ok(Some(value)) => {
             let mut row = global_wire_row(&value, None);
             row.insert("name".to_owned(), name.into());
             WsResponse::Ok(serde_json::Value::Object(row))
         }
-        Ok(None) => WsResponse::Error {
-            code: Some("NOT_FOUND".to_owned()),
-            message: format!("global '{name}' not found"),
-        },
+        Ok(None) => WsResponse::error(WsErrorCode::NotFound, format!("global '{name}' not found")),
         Err(e) => runtime_failure(&e),
     }
 }
@@ -93,18 +90,18 @@ pub(crate) async fn handle_set_global(
     name: String,
     value: serde_json::Value,
     persisted: bool,
-    ctx: &DispatchContext,
+    services: &Services,
 ) -> WsResponse {
     let variant = match Variant::from_plain_json(value) {
         Ok(v) => v,
         Err(_) => {
-            return WsResponse::Error {
-                code: Some("INVALID_PAYLOAD".to_owned()),
-                message: "value must be a non-null JSON scalar, array, or object".to_owned(),
-            };
+            return WsResponse::error(
+                WsErrorCode::InvalidPayload,
+                "value must be a non-null JSON scalar, array, or object",
+            );
         }
     };
-    let globals_repo: &dyn GlobalsRepo = ctx.globals.as_ref();
+    let globals_repo: &dyn GlobalsRepo = services.globals.as_ref();
     let prev_value = globals_repo
         .get(&name)
         .await
@@ -125,7 +122,8 @@ pub(crate) async fn handle_set_global(
     };
     match globals_repo.set(&name, variant, persisted).await {
         Ok(()) => {
-            ctx.bus
+            services
+                .bus
                 .publish(changed.into_event(EventSource::Server, None));
             WsResponse::Ok(serde_json::json!({ "ok": true }))
         }
@@ -136,9 +134,9 @@ pub(crate) async fn handle_set_global(
 pub(crate) async fn handle_get_user_globals(
     broadcaster_id: String,
     user_id: Option<String>,
-    ctx: &DispatchContext,
+    services: &Services,
 ) -> WsResponse {
-    let user_globals_repo: &dyn UserGlobalsRepo = ctx.user_globals.as_ref();
+    let user_globals_repo: &dyn UserGlobalsRepo = services.user_globals.as_ref();
     let result = match user_id {
         Some(ref uid) => user_globals_repo.list_for_user(&broadcaster_id, uid).await,
         None => {
@@ -167,22 +165,23 @@ pub(crate) async fn handle_get_user_globals(
 pub(crate) async fn handle_trigger_code_event(
     name: String,
     args: serde_json::Value,
-    ctx: &DispatchContext,
+    services: &Services,
 ) -> WsResponse {
     if !valid_code_event_name(&name) {
-        return WsResponse::Error {
-            code: Some("INVALID_PAYLOAD".to_owned()),
-            message: format!("name must match [a-z0-9_]{{1,{MAX_CODE_EVENT_NAME_LEN}}}"),
-        };
+        return WsResponse::error(
+            WsErrorCode::InvalidPayload,
+            format!("name must match [a-z0-9_]{{1,{MAX_CODE_EVENT_NAME_LEN}}}"),
+        );
     }
     let kind = format!("{CUSTOM_EVENT_PREFIX}{name}");
-    ctx.bus
+    services
+        .bus
         .publish(Event::new(EventSource::Server, &kind, args));
     WsResponse::Ok(serde_json::json!({ "ok": true }))
 }
 
-pub(crate) async fn handle_get_actions(ctx: &DispatchContext) -> WsResponse {
-    let actions = match ctx.actions.list().await {
+pub(crate) async fn handle_get_actions(services: &Services) -> WsResponse {
+    let actions = match services.actions.list().await {
         Ok(list) => list,
         Err(e) => {
             return runtime_failure(&e);
@@ -210,19 +209,16 @@ pub(crate) async fn handle_get_actions(ctx: &DispatchContext) -> WsResponse {
 pub(crate) async fn handle_do_action(
     action_id: String,
     args: serde_json::Value,
-    ctx: &DispatchContext,
+    services: &Services,
 ) -> WsResponse {
     let aid = match parse_id(&action_id, "invalid action id format") {
         Ok(id) => id,
         Err(refusal) => return refusal,
     };
 
-    match ctx.actions.get(aid).await {
+    match services.actions.get(aid).await {
         Ok(None) => {
-            return WsResponse::Error {
-                code: Some("NOT_FOUND".to_owned()),
-                message: "action not found".to_owned(),
-            };
+            return WsResponse::error(WsErrorCode::NotFound, "action not found");
         }
         Ok(Some(_)) => {}
         Err(e) => {
@@ -234,7 +230,7 @@ pub(crate) async fn handle_do_action(
 
     let initial_args = build_arg_stack(args);
 
-    match ctx
+    match services
         .action_engine
         .dispatch(ExecutionRequest {
             action_id: aid,
@@ -256,7 +252,7 @@ pub(crate) async fn handle_do_action(
 pub(crate) async fn handle_get_events(
     limit: Option<u32>,
     since: Option<String>,
-    ctx: &DispatchContext,
+    services: &Services,
 ) -> WsResponse {
     let limit = limit.unwrap_or(DEFAULT_EVENTS_LIMIT).min(MAX_EVENTS_LIMIT) as usize;
     let since_id: Option<EventId> = match since {
@@ -266,7 +262,7 @@ pub(crate) async fn handle_get_events(
             Err(refusal) => return refusal,
         },
     };
-    let events = ctx.bus.recent_since(limit, since_id).await;
+    let events = services.bus.recent_since(limit, since_id).await;
     let wire: Vec<serde_json::Value> = events
         .iter()
         .filter_map(|event| {
@@ -281,8 +277,8 @@ pub(crate) async fn handle_get_events(
 const ACTIVE_VIEWER_WINDOW_SECS: i64 = 300;
 const ACTIVE_VIEWER_LOOKBACK_LIMIT: usize = 500;
 
-pub(crate) async fn handle_get_active_viewers(ctx: &DispatchContext) -> WsResponse {
-    let events = ctx
+pub(crate) async fn handle_get_active_viewers(services: &Services) -> WsResponse {
+    let events = services
         .bus
         .recent_since(ACTIVE_VIEWER_LOOKBACK_LIMIT, None)
         .await;
@@ -331,10 +327,10 @@ fn active_viewers(events: &[Event], now: OffsetDateTime) -> Vec<serde_json::Valu
 
 const MAX_OVERLAY_FILE_ENTRIES: usize = 5_000;
 
-pub(crate) async fn handle_get_overlay_files(recursive: bool, ctx: &DispatchContext) -> WsResponse {
+pub(crate) async fn handle_get_overlay_files(recursive: bool, services: &Services) -> WsResponse {
     use std::path::{Path, PathBuf};
 
-    let root: &Path = ctx.overlay_root.as_path();
+    let root: &Path = services.overlay_root.as_path();
 
     let canon_root = match tokio::fs::canonicalize(root).await {
         Ok(p) => p,
@@ -401,17 +397,16 @@ pub(crate) async fn handle_get_overlay_files(recursive: bool, ctx: &DispatchCont
     WsResponse::Ok(serde_json::json!({ "files": files }))
 }
 
-pub(crate) async fn handle_replay_event(event_id: String, ctx: &DispatchContext) -> WsResponse {
+pub(crate) async fn handle_replay_event(event_id: String, services: &Services) -> WsResponse {
     let eid = match parse_id(&event_id, "invalid event id format") {
         Ok(id) => id,
         Err(refusal) => return refusal,
     };
-    match ctx.bus.replay_and_publish(eid).await {
+    match services.bus.replay_and_publish(eid).await {
         Ok(()) => WsResponse::Ok(serde_json::json!({ "ok": true })),
-        Err(RuntimeError::EventNotFound(_)) => WsResponse::Error {
-            code: Some("NOT_FOUND".to_owned()),
-            message: "event not found".to_owned(),
-        },
+        Err(RuntimeError::EventNotFound(_)) => {
+            WsResponse::error(WsErrorCode::NotFound, "event not found")
+        }
         Err(error) => runtime_failure(&error),
     }
 }

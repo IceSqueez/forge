@@ -189,10 +189,13 @@ fn replacements_traced(
             ReplacementRule::Regex {
                 compiled,
                 replacement,
-            } => regex_replace_logged(&current, compiled, replacement, &mut edits),
-            ReplacementRule::LinkWord { compiled } => {
-                regex_replace_logged(&current, compiled, spoken_words(language).link, &mut edits)
-            }
+            } => regex_replace_logged(&current, compiled.regex(), replacement, &mut edits),
+            ReplacementRule::LinkWord { compiled } => regex_replace_logged(
+                &current,
+                compiled.regex(),
+                spoken_words(language).link,
+                &mut edits,
+            ),
         };
         carried = carry_through_pass(carried, edits.0, |_| {
             Some(ReplacementOrigin::ReplacementRuleIndex(index))

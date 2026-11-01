@@ -23,6 +23,7 @@ use crate::bus_adapter::BusAdapter;
 use crate::delivery_hub::DeliveryHub;
 use crate::listener::{GuardedListener, PeerInfo};
 use crate::origin::{accepts_host, build_allowed_origins};
+use crate::protocol::Services;
 use crate::routes::refusal::{RefusalCode, refusal_response};
 use crate::routes::{api_v1, audio, overlays, ws};
 use crate::server_info::ServerInfo;
@@ -51,6 +52,24 @@ pub(crate) struct AppState {
     pub bind_addr: std::net::SocketAddr,
     pub allowed_origins: Arc<HashSet<String>>,
     pub timing: ServerTiming,
+}
+
+impl AppState {
+    pub(crate) fn services(&self) -> Services {
+        Services {
+            bus: Arc::clone(&self.bus),
+            bus_adapter: Arc::clone(&self.bus_adapter),
+            actions: Arc::clone(&self.actions),
+            globals: Arc::clone(&self.globals),
+            user_globals: Arc::clone(&self.user_globals),
+            overlays: Arc::clone(&self.overlays),
+            auth_state: Arc::clone(&self.auth),
+            credentials: Arc::clone(&self.credentials),
+            server_info: Arc::clone(&self.server_info),
+            action_engine: Arc::clone(&self.action_engine),
+            overlay_root: Arc::clone(&self.overlay_root),
+        }
+    }
 }
 
 async fn build_state(config: ServerConfig, bind_addr: SocketAddr) -> Result<AppState, ServerError> {

@@ -5,8 +5,8 @@ use forge_storage::{
     FilterRule, FilterRuleKind, SkipRegex, TtsPipelineSettings, UrlMode as StorageUrlMode,
 };
 use forge_tts_pipeline::{
-    BlocklistMode, EmoteTokenSet, EmoteTreatment, OutputConfig, PipelineConfig, ReplacementRule,
-    SkipRulesConfig,
+    BlocklistMode, CompiledPattern, EmoteTokenSet, EmoteTreatment, OutputConfig, PatternError,
+    PipelineConfig, ReplacementRule, SkipRulesConfig,
 };
 use forge_types::Shared;
 
@@ -17,19 +17,19 @@ pub enum FilterMappingError {
         index: usize,
         name: String,
         pattern: String,
-        source: regex::Error,
+        source: PatternError,
     },
     #[error("skip rule custom regex #{index} has invalid pattern `{pattern}`: {source}")]
     InvalidSkipRegex {
         index: usize,
         pattern: String,
-        source: regex::Error,
+        source: PatternError,
     },
 }
 
 #[expect(clippy::expect_used, reason = "literal pattern is a valid regex")]
-static MIGRATED_URL_REGEX: LazyLock<regex::Regex> =
-    LazyLock::new(|| regex::Regex::new(r"https?://\S+").expect("static regex"));
+static MIGRATED_URL_REGEX: LazyLock<CompiledPattern> =
+    LazyLock::new(|| CompiledPattern::new(r"https?://\S+").expect("static regex"));
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ReplacementSource {
@@ -159,14 +159,14 @@ fn apply_url_mode(
     }
 }
 
-fn compile_skip_regexes(regexes: &[SkipRegex]) -> (Vec<regex::Regex>, Vec<FilterMappingError>) {
+fn compile_skip_regexes(regexes: &[SkipRegex]) -> (Vec<CompiledPattern>, Vec<FilterMappingError>) {
     let mut compiled = Vec::with_capacity(regexes.len());
     let mut rejected = Vec::new();
     for (index, SkipRegex { pattern, enabled }) in regexes.iter().enumerate() {
         if !enabled {
             continue;
         }
-        match regex::Regex::new(pattern) {
+        match CompiledPattern::new(pattern) {
             Ok(regex) => compiled.push(regex),
             Err(source) => rejected.push(FilterMappingError::InvalidSkipRegex {
                 index,
@@ -229,13 +229,14 @@ fn map_replacement_rule(
             pattern,
             replacement,
         } => {
-            let compiled =
-                regex::Regex::new(pattern).map_err(|source| FilterMappingError::InvalidRegex {
+            let compiled = CompiledPattern::new(pattern).map_err(|source| {
+                FilterMappingError::InvalidRegex {
                     index,
                     name: rule.name.clone(),
                     pattern: pattern.clone(),
                     source,
-                })?;
+                }
+            })?;
             Ok(Some(ReplacementRule::Regex {
                 compiled,
                 replacement: replacement.clone(),

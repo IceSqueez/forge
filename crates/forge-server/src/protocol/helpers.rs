@@ -5,7 +5,7 @@ use forge_types::{ArgStack, Variant};
 
 use crate::bus_adapter::EventFilter;
 
-use super::envelope::{WireEventFilter, WsResponse};
+use super::envelope::{WireEventFilter, WsErrorCode, WsResponse};
 
 const RUNTIME_FAILURE_MESSAGE: &str = "the request could not be completed";
 
@@ -87,17 +87,15 @@ pub(crate) fn build_arg_stack(args: serde_json::Value) -> ArgStack {
 
 pub(super) fn runtime_failure(error: &impl std::fmt::Display) -> WsResponse {
     tracing::warn!(%error, "websocket request failed");
-    WsResponse::Error {
-        code: Some("RUNTIME_ERROR".to_owned()),
-        message: RUNTIME_FAILURE_MESSAGE.to_owned(),
-    }
+    WsResponse::error(
+        WsErrorCode::RuntimeError,
+        RUNTIME_FAILURE_MESSAGE.to_owned(),
+    )
 }
 
 pub(super) fn parse_id<T: FromStr>(raw: &str, refusal: &str) -> Result<T, WsResponse> {
-    raw.parse().map_err(|_| WsResponse::Error {
-        code: Some("INVALID_PAYLOAD".to_owned()),
-        message: refusal.to_owned(),
-    })
+    raw.parse()
+        .map_err(|_| WsResponse::error(WsErrorCode::InvalidPayload, refusal.to_owned()))
 }
 
 #[cfg(test)]

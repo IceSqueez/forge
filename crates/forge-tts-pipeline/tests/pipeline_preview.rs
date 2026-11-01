@@ -206,7 +206,7 @@ fn text_rule(pattern: &str, replacement: &str) -> ReplacementRule {
 
 fn url_rule() -> ReplacementRule {
     ReplacementRule::Regex {
-        compiled: regex::Regex::new(r"https?://\S+").unwrap(),
+        compiled: forge_tts_pipeline::CompiledPattern::new(r"https?://\S+").unwrap(),
         replacement: "link".into(),
     }
 }

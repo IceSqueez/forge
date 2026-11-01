@@ -89,7 +89,7 @@ fn non_latin_rule() -> SkipRulesConfig {
 
 fn regex_rule(pattern: &str) -> SkipRulesConfig {
     SkipRulesConfig {
-        custom_regexes: vec![regex::Regex::new(pattern).unwrap()],
+        custom_regexes: vec![forge_tts_pipeline::CompiledPattern::new(pattern).unwrap()],
         ..SkipRulesConfig::default()
     }
 }

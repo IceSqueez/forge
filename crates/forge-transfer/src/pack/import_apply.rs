@@ -11,7 +11,6 @@ use forge_storage::{
 };
 use forge_types::{ActionId, ClipId, OutputDevice, QueueId, ScriptId, TriggerInstanceId};
 use time::OffsetDateTime;
-use ulid::Ulid;
 
 use crate::bundle::naming::fresh_pre_pack_stem;
 use crate::documents::closure::ClosureRegistries;
@@ -178,9 +177,8 @@ fn key(kind: PackItemKind, id: impl Into<String>) -> PackItemKey {
     }
 }
 
-fn ulid_id<T: From<Ulid>>(raw: &str) -> Result<T, TransferError> {
-    raw.parse::<Ulid>()
-        .map(T::from)
+fn ulid_id<T: std::str::FromStr>(raw: &str) -> Result<T, TransferError> {
+    raw.parse::<T>()
         .map_err(|_| TransferError::damaged(format!("'{raw}' is not a valid id")))
 }
 

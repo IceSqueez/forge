@@ -1,5 +1,6 @@
 use std::collections::HashSet;
 use std::net::SocketAddr;
+use std::ops::ControlFlow;
 use std::sync::Arc;
 use std::sync::atomic::Ordering;
 use std::time::Duration;
@@ -9,6 +10,7 @@ use axum::extract::ws::{CloseFrame, Message, WebSocket, close_code};
 use axum::extract::{ConnectInfo, State, WebSocketUpgrade};
 use axum::http::{HeaderMap, StatusCode, header};
 use axum::response::Response;
+use tokio::sync::broadcast;
 use tokio::sync::broadcast::error::RecvError;
 use tokio::sync::watch;
 
@@ -17,7 +19,8 @@ use crate::bus_adapter::{ClientFilterSet, WsFrame, dropped_notification};
 use crate::listener::PeerInfo;
 use crate::origin::{accepts_origin, is_well_formed_origin};
 use crate::protocol::{
-    DispatchContext, WsEnvelope, WsRequest, WsResponse, dispatch, serialize_response_frame,
+    DispatchContext, Session, WsEnvelope, WsErrorCode, WsRequest, WsResponse, dispatch,
+    serialize_response_frame,
 };
 use crate::routes::refusal::{RefusalCode, refusal_response};
 use crate::server::AppState;
@@ -79,200 +82,224 @@ fn origin_rejected_response() -> Response {
     )
 }
 
-#[expect(
-    clippy::let_underscore_must_use,
-    reason = "the peer may already be gone; the session ends either way"
-)]
-async fn handle_socket(
-    mut socket: WebSocket,
+const CLOSE_REASON_REVOKED: &str = "authentication revoked";
+const CLOSE_REASON_PRE_AUTH: &str = "no authentication within the pre-auth window";
+const CLOSE_REASON_TOO_LARGE: &str = "message too large";
+const CLOSE_REASON_BINARY: &str = "binary frames not supported";
+
+struct Connection {
+    socket: WebSocket,
     state: AppState,
-    mut shutdown: watch::Receiver<bool>,
+    ctx: DispatchContext,
+    event_rx: broadcast::Receiver<WsFrame>,
+    overlay_session: bool,
+    has_sent_any_message: bool,
+}
+
+async fn handle_socket(
+    socket: WebSocket,
+    state: AppState,
+    shutdown: watch::Receiver<bool>,
     addr: SocketAddr,
     user_agent: Option<String>,
 ) {
-    let (handle, mut event_rx) = state
+    let (handle, event_rx) = state
         .bus_adapter
         .register_client(ClientFilterSet::new(HashSet::new()))
         .await;
-
     let client = Arc::new(WsClient::new(
         handle.id,
         addr,
         Arc::clone(&handle.drop_counter),
     ));
-
     if let Some(ua) = &user_agent {
         let client_type = detect_from_user_agent(Some(ua.as_str()));
         client.client_type.store(Arc::new(client_type));
     }
-
     state
         .bus_adapter
         .attach_session(client.id, Arc::clone(&client))
         .await;
 
     let ctx = DispatchContext {
-        bus: Arc::clone(&state.bus),
-        bus_adapter: Arc::clone(&state.bus_adapter),
-        actions: Arc::clone(&state.actions),
-        globals: Arc::clone(&state.globals),
-        user_globals: Arc::clone(&state.user_globals),
-        overlays: Arc::clone(&state.overlays),
-        auth_state: Arc::clone(&state.auth),
-        client: Arc::clone(&client),
-        credentials: Arc::clone(&state.credentials),
-        server_info: Arc::clone(&state.server_info),
-        action_engine: Arc::clone(&state.action_engine),
-        overlay_root: Arc::clone(&state.overlay_root),
-        overlay_channel_swap: tokio::sync::Mutex::new(None),
-        close_after_auth_failure: std::sync::atomic::AtomicBool::new(false),
+        services: state.services(),
+        session: Session::new(client),
     };
+    let mut connection = Connection {
+        socket,
+        state,
+        ctx,
+        event_rx,
+        overlay_session: false,
+        has_sent_any_message: false,
+    };
+    connection.run(shutdown).await;
+    connection
+        .state
+        .bus_adapter
+        .unregister_client(handle.id)
+        .await;
+}
 
-    let mut policy_changes = state.auth.policy_changes();
-    let mut overlay_session = false;
-    let mut has_sent_any_message = false;
-    let mut pre_auth_window_open = true;
-    let pre_auth_deadline = tokio::time::sleep(state.timing.pre_auth_window);
-    tokio::pin!(pre_auth_deadline);
+impl Connection {
+    fn client(&self) -> &Arc<WsClient> {
+        &self.ctx.session.client
+    }
 
-    loop {
-        tokio::select! {
-            () = shutdown_signalled(&mut shutdown) => {
-                let _ = socket.send(Message::Close(None)).await;
+    async fn run(&mut self, mut shutdown: watch::Receiver<bool>) {
+        let mut policy_changes = self.state.auth.policy_changes();
+        let mut pre_auth_window_open = true;
+        let pre_auth_deadline = tokio::time::sleep(self.state.timing.pre_auth_window);
+        tokio::pin!(pre_auth_deadline);
+
+        loop {
+            let flow = tokio::select! {
+                () = shutdown_signalled(&mut shutdown) => {
+                    self.close(None).await;
+                    ControlFlow::Break(())
+                }
+                Ok(()) = policy_changes.changed() => self.on_policy_change().await,
+                () = &mut pre_auth_deadline, if pre_auth_window_open => {
+                    pre_auth_window_open = false;
+                    self.on_pre_auth_deadline().await
+                }
+                incoming = self.socket.recv() => self.on_incoming(incoming).await,
+                event = self.event_rx.recv() => self.on_bus_event(event).await,
+            };
+            if flow.is_break() {
                 break;
-            }
-
-            Ok(()) = policy_changes.changed() => {
-                if !state.auth.admits_session(client.bearer_generation(), overlay_session) {
-                    let _ = socket
-                        .send(Message::Close(Some(CloseFrame {
-                            code: close_code::POLICY,
-                            reason: "authentication revoked".into(),
-                        })))
-                        .await;
-                    break;
-                }
-            }
-
-            () = &mut pre_auth_deadline, if pre_auth_window_open => {
-                pre_auth_window_open = false;
-                let authenticated = client.bearer_generation().is_some() || overlay_session;
-                let stays_open = authenticated
-                    || (!state.auth.reads_required() && has_sent_any_message);
-                if !stays_open {
-                    let _ = socket
-                        .send(Message::Close(Some(CloseFrame {
-                            code: close_code::POLICY,
-                            reason: "no authentication within the pre-auth window".into(),
-                        })))
-                        .await;
-                    break;
-                }
-            }
-
-            msg = socket.recv() => {
-                let msg = match msg {
-                    Some(Ok(m)) => m,
-                    _ => break,
-                };
-                has_sent_any_message = true;
-                match msg {
-                    Message::Text(text) => {
-                        if text.len() > message_limit(&client, &state.auth) {
-                            let _ = socket
-                                .send(Message::Close(Some(CloseFrame {
-                                    code: close_code::SIZE,
-                                    reason: "message too large".into(),
-                                })))
-                                .await;
-                            break;
-                        }
-                        let response_json =
-                            match serde_json::from_str::<WsEnvelope<WsRequest>>(&text) {
-                                Ok(req) => {
-                                    let resp = dispatch(req, &ctx).await;
-                                    serialize_response_frame(&resp).to_string()
-                                }
-                                Err(e) => {
-                                    let err_env = WsEnvelope {
-                                        id: None,
-                                        inner: WsResponse::Error {
-                                            code: Some("INVALID_PAYLOAD".to_owned()),
-                                            message: e.to_string(),
-                                        },
-                                    };
-                                    serialize_response_frame(&err_env).to_string()
-                                }
-                            };
-                        if let Some(promoted) = ctx.overlay_channel_swap.lock().await.take() {
-                            event_rx = promoted;
-                            overlay_session = true;
-                        }
-                        let response_bytes = response_json.len() as u64;
-                        if socket
-                            .send(Message::Text(response_json.into()))
-                            .await
-                            .is_err()
-                        {
-                            break;
-                        }
-                        client.bytes_sent_session.fetch_add(response_bytes, Ordering::Relaxed);
-                        state.server_info.bandwidth.record(response_bytes);
-                        if ctx.close_after_auth_failure.swap(false, Ordering::SeqCst) {
-                            let _ = socket.send(Message::Close(None)).await;
-                            break;
-                        }
-                    }
-                    Message::Binary(_) => {
-                        let _ = socket
-                            .send(Message::Close(Some(CloseFrame {
-                                code: close_code::UNSUPPORTED,
-                                reason: "binary frames not supported".into(),
-                            })))
-                            .await;
-                        break;
-                    }
-                    Message::Close(_) => break,
-                    Message::Ping(_) | Message::Pong(_) => {}
-                }
-            }
-
-            event = event_rx.recv() => {
-                match event {
-                    Ok(WsFrame::Text(json)) => {
-                        let len = json.len() as u64;
-                        if socket.send(Message::Text(json.into())).await.is_err() {
-                            break;
-                        }
-                        client.bytes_sent_session.fetch_add(len, Ordering::Relaxed);
-                        state.server_info.bandwidth.record(len);
-                        state.server_info.record_event_out();
-                        client.record_event();
-                    }
-                    Ok(WsFrame::Close) => {
-                        let _ = socket.send(Message::Close(None)).await;
-                        break;
-                    }
-                    Err(RecvError::Closed) => break,
-                    Err(RecvError::Lagged(n)) => {
-                        client.drop_counter.fetch_add(n, Ordering::Relaxed);
-                        state.server_info.record_dropped_events(n);
-                        let notice = dropped_notification(n);
-                        let len = notice.len() as u64;
-                        if socket.send(Message::Text(notice.into())).await.is_err() {
-                            break;
-                        }
-                        client.bytes_sent_session.fetch_add(len, Ordering::Relaxed);
-                        state.server_info.bandwidth.record(len);
-                    }
-                }
             }
         }
     }
 
-    state.bus_adapter.unregister_client(handle.id).await;
-}
+    #[expect(
+        clippy::let_underscore_must_use,
+        reason = "the peer may already be gone; the session ends either way"
+    )]
+    async fn close(&mut self, frame: Option<CloseFrame>) {
+        let _ = self.socket.send(Message::Close(frame)).await;
+    }
 
+    async fn close_with(&mut self, code: u16, reason: &'static str) -> ControlFlow<()> {
+        self.close(Some(CloseFrame {
+            code,
+            reason: reason.into(),
+        }))
+        .await;
+        ControlFlow::Break(())
+    }
+
+    async fn on_policy_change(&mut self) -> ControlFlow<()> {
+        let admitted = self
+            .state
+            .auth
+            .admits_session(self.client().bearer_generation(), self.overlay_session);
+        if admitted {
+            ControlFlow::Continue(())
+        } else {
+            self.close_with(close_code::POLICY, CLOSE_REASON_REVOKED)
+                .await
+        }
+    }
+
+    async fn on_pre_auth_deadline(&mut self) -> ControlFlow<()> {
+        let authenticated = self.client().bearer_generation().is_some() || self.overlay_session;
+        let stays_open =
+            authenticated || (!self.state.auth.reads_required() && self.has_sent_any_message);
+        if stays_open {
+            ControlFlow::Continue(())
+        } else {
+            self.close_with(close_code::POLICY, CLOSE_REASON_PRE_AUTH)
+                .await
+        }
+    }
+
+    async fn on_incoming(
+        &mut self,
+        incoming: Option<Result<Message, axum::Error>>,
+    ) -> ControlFlow<()> {
+        let Some(Ok(message)) = incoming else {
+            return ControlFlow::Break(());
+        };
+        self.has_sent_any_message = true;
+        match message {
+            Message::Text(text) => self.on_text(text.as_str()).await,
+            Message::Binary(_) => {
+                self.close_with(close_code::UNSUPPORTED, CLOSE_REASON_BINARY)
+                    .await
+            }
+            Message::Close(_) => ControlFlow::Break(()),
+            Message::Ping(_) | Message::Pong(_) => ControlFlow::Continue(()),
+        }
+    }
+
+    async fn on_text(&mut self, text: &str) -> ControlFlow<()> {
+        if text.len() > message_limit(self.client(), &self.state.auth) {
+            return self
+                .close_with(close_code::SIZE, CLOSE_REASON_TOO_LARGE)
+                .await;
+        }
+        let response = match serde_json::from_str::<WsEnvelope<WsRequest>>(text) {
+            Ok(request) => dispatch(request, &self.ctx).await,
+            Err(error) => WsEnvelope {
+                id: None,
+                inner: WsResponse::error(WsErrorCode::InvalidPayload, error.to_string()),
+            },
+        };
+        let response_json = serialize_response_frame(&response).to_string();
+        let promoted = self.ctx.session.overlay_channel_swap.lock().await.take();
+        if let Some(promoted) = promoted {
+            self.event_rx = promoted;
+            self.overlay_session = true;
+        }
+        self.send_counted(response_json).await?;
+        if self
+            .ctx
+            .session
+            .close_after_auth_failure
+            .swap(false, Ordering::SeqCst)
+        {
+            self.close(None).await;
+            return ControlFlow::Break(());
+        }
+        ControlFlow::Continue(())
+    }
+
+    async fn on_bus_event(&mut self, event: Result<WsFrame, RecvError>) -> ControlFlow<()> {
+        match event {
+            Ok(WsFrame::Text(json)) => {
+                self.send_counted(json).await?;
+                self.state.server_info.record_event_out();
+                self.client().record_event();
+                ControlFlow::Continue(())
+            }
+            Ok(WsFrame::Close) => {
+                self.close(None).await;
+                ControlFlow::Break(())
+            }
+            Err(RecvError::Closed) => ControlFlow::Break(()),
+            Err(RecvError::Lagged(skipped)) => {
+                self.client()
+                    .drop_counter
+                    .fetch_add(skipped, Ordering::Relaxed);
+                self.state.server_info.record_dropped_events(skipped);
+                self.send_counted(dropped_notification(skipped)).await
+            }
+        }
+    }
+
+    async fn send_counted(&mut self, text: String) -> ControlFlow<()> {
+        let bytes = text.len() as u64;
+        if self.socket.send(Message::Text(text.into())).await.is_err() {
+            return ControlFlow::Break(());
+        }
+        self.client()
+            .bytes_sent_session
+            .fetch_add(bytes, Ordering::Relaxed);
+        self.state.server_info.bandwidth.record(bytes);
+        ControlFlow::Continue(())
+    }
+}
 pub(crate) async fn shutdown_signalled(shutdown: &mut watch::Receiver<bool>) {
     #[expect(
         clippy::let_underscore_must_use,

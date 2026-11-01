@@ -129,7 +129,6 @@ pub(crate) fn failure_of(error: &UpdateError) -> UpdateFailure {
         | UpdateError::InvalidVersion(_)
         | UpdateError::Cancelled
         | UpdateError::Io(_)
-        | UpdateError::MalformedJournal(_)
         | UpdateError::MalformedRecord(_)
         | UpdateError::NoPendingUpdate
         | UpdateError::SupervisorBusy

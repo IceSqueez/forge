@@ -6,10 +6,11 @@ mod introspect;
 
 use crate::bus_adapter::ClientFilterSet;
 
-pub(crate) use context::DispatchContext;
+pub(crate) use context::{DispatchContext, Services, Session};
+use envelope::RequestAccess;
 pub(crate) use envelope::merge_payload;
 pub use envelope::{WireEventFilter, WsEnvelope, WsRequest};
-pub(crate) use envelope::{WsResponse, serialize_response_frame};
+pub(crate) use envelope::{WsErrorCode, WsResponse, serialize_response_frame};
 pub(crate) use handlers::{
     handle_do_action, handle_get_actions, handle_get_active_viewers, handle_get_events,
     handle_get_global, handle_get_globals, handle_get_info, handle_get_overlay_files,
@@ -22,17 +23,14 @@ use helpers::parse_wire_filters;
 const MAX_SUBSCRIPTIONS_PER_CLIENT: usize = 256;
 
 fn too_many_subscriptions() -> WsResponse {
-    WsResponse::Error {
-        code: Some("TOO_MANY_SUBSCRIPTIONS".to_owned()),
-        message: format!("a connection holds at most {MAX_SUBSCRIPTIONS_PER_CLIENT} event filters"),
-    }
+    WsResponse::error(
+        WsErrorCode::TooManySubscriptions,
+        format!("a connection holds at most {MAX_SUBSCRIPTIONS_PER_CLIENT} event filters"),
+    )
 }
 
 fn invalid_filter(refusal: helpers::UnknownEventSource) -> WsResponse {
-    WsResponse::Error {
-        code: Some("INVALID_PAYLOAD".to_owned()),
-        message: refusal.to_string(),
-    }
+    WsResponse::error(WsErrorCode::InvalidPayload, refusal.to_string())
 }
 
 pub(crate) async fn dispatch(
@@ -45,139 +43,85 @@ pub(crate) async fn dispatch(
 }
 
 async fn route(req: WsRequest, ctx: &DispatchContext) -> WsResponse {
+    if access_refused(req.access(), ctx) {
+        return unauthenticated();
+    }
+    let services = &ctx.services;
     match req {
         WsRequest::Auth {
             token,
             overlay_credential,
             preview_connection,
         } => handle_authenticate(token, overlay_credential, preview_connection, ctx).await,
-
-        WsRequest::Subscribe { events } => {
-            if read_refused(ctx) {
-                return unauthenticated();
-            }
-            let new_filters = match parse_wire_filters(&events) {
-                Ok(filters) => filters,
-                Err(message) => return invalid_filter(message),
-            };
-            let mut current = ctx.bus_adapter.current_subscriptions(ctx.client.id).await;
-            current.extend(new_filters);
-            if current.len() > MAX_SUBSCRIPTIONS_PER_CLIENT {
-                return too_many_subscriptions();
-            }
-            ctx.bus_adapter
-                .update_subscriptions(ctx.client.id, ClientFilterSet::new(current))
-                .await;
-            WsResponse::Ok(serde_json::json!({ "subscribed": events }))
-        }
-
-        WsRequest::Unsubscribe { events } => {
-            if read_refused(ctx) {
-                return unauthenticated();
-            }
-            let to_remove = match parse_wire_filters(&events) {
-                Ok(filters) => filters,
-                Err(message) => return invalid_filter(message),
-            };
-            let mut current = ctx.bus_adapter.current_subscriptions(ctx.client.id).await;
-            current.retain(|f| !to_remove.contains(f));
-            ctx.bus_adapter
-                .update_subscriptions(ctx.client.id, ClientFilterSet::new(current))
-                .await;
-            WsResponse::Ok(serde_json::json!({ "unsubscribed": events }))
-        }
-
-        WsRequest::GetInfo => {
-            if read_refused(ctx) {
-                return unauthenticated();
-            }
-            handle_get_info(ctx).await
-        }
-
-        WsRequest::GetActions => {
-            if read_refused(ctx) {
-                return unauthenticated();
-            }
-            handle_get_actions(ctx).await
-        }
-
+        WsRequest::Subscribe { events } => handle_subscribe(events, ctx).await,
+        WsRequest::Unsubscribe { events } => handle_unsubscribe(events, ctx).await,
+        WsRequest::GetInfo => handle_get_info(services).await,
+        WsRequest::GetActions => handle_get_actions(services).await,
         WsRequest::DoAction { action_id, args } => {
-            if !is_authenticated(ctx) {
-                return unauthenticated();
-            }
-            handle_do_action(action_id, args, ctx).await
+            handle_do_action(action_id, args, services).await
         }
-
-        WsRequest::GetGlobals => {
-            if read_refused(ctx) {
-                return unauthenticated();
-            }
-            handle_get_globals(ctx).await
-        }
-
-        WsRequest::GetGlobal { name } => {
-            if read_refused(ctx) {
-                return unauthenticated();
-            }
-            handle_get_global(name, ctx).await
-        }
-
+        WsRequest::GetGlobals => handle_get_globals(services).await,
+        WsRequest::GetGlobal { name } => handle_get_global(name, services).await,
         WsRequest::SetGlobal {
             name,
             value,
             persisted,
-        } => {
-            if !is_authenticated(ctx) {
-                return unauthenticated();
-            }
-            handle_set_global(name, value, persisted, ctx).await
-        }
-
+        } => handle_set_global(name, value, persisted, services).await,
         WsRequest::GetUserGlobals {
             broadcaster_id,
             user_id,
-        } => {
-            if read_refused(ctx) {
-                return unauthenticated();
-            }
-            handle_get_user_globals(broadcaster_id, user_id, ctx).await
-        }
-
+        } => handle_get_user_globals(broadcaster_id, user_id, services).await,
         WsRequest::TriggerCodeEvent { name, args } => {
-            if !is_authenticated(ctx) {
-                return unauthenticated();
-            }
-            handle_trigger_code_event(name, args, ctx).await
+            handle_trigger_code_event(name, args, services).await
         }
-
-        WsRequest::GetEvents { limit, since } => {
-            if read_refused(ctx) {
-                return unauthenticated();
-            }
-            handle_get_events(limit, since, ctx).await
-        }
-
-        WsRequest::ReplayEvent { event_id } => {
-            if !is_authenticated(ctx) {
-                return unauthenticated();
-            }
-            handle_replay_event(event_id, ctx).await
-        }
-
-        WsRequest::GetActiveViewers => {
-            if read_refused(ctx) {
-                return unauthenticated();
-            }
-            handle_get_active_viewers(ctx).await
-        }
-
+        WsRequest::GetEvents { limit, since } => handle_get_events(limit, since, services).await,
+        WsRequest::ReplayEvent { event_id } => handle_replay_event(event_id, services).await,
+        WsRequest::GetActiveViewers => handle_get_active_viewers(services).await,
         WsRequest::GetOverlayFiles { recursive } => {
-            if read_refused(ctx) {
-                return unauthenticated();
-            }
-            handle_get_overlay_files(recursive, ctx).await
+            handle_get_overlay_files(recursive, services).await
         }
     }
+}
+
+fn access_refused(access: RequestAccess, ctx: &DispatchContext) -> bool {
+    match access {
+        RequestAccess::Open => false,
+        RequestAccess::Read => read_refused(ctx),
+        RequestAccess::Write => !is_authenticated(ctx),
+    }
+}
+
+async fn handle_subscribe(events: Vec<WireEventFilter>, ctx: &DispatchContext) -> WsResponse {
+    let new_filters = match parse_wire_filters(&events) {
+        Ok(filters) => filters,
+        Err(message) => return invalid_filter(message),
+    };
+    let adapter = &ctx.services.bus_adapter;
+    let client_id = ctx.session.client.id;
+    let mut current = adapter.current_subscriptions(client_id).await;
+    current.extend(new_filters);
+    if current.len() > MAX_SUBSCRIPTIONS_PER_CLIENT {
+        return too_many_subscriptions();
+    }
+    adapter
+        .update_subscriptions(client_id, ClientFilterSet::new(current))
+        .await;
+    WsResponse::Ok(serde_json::json!({ "subscribed": events }))
+}
+
+async fn handle_unsubscribe(events: Vec<WireEventFilter>, ctx: &DispatchContext) -> WsResponse {
+    let to_remove = match parse_wire_filters(&events) {
+        Ok(filters) => filters,
+        Err(message) => return invalid_filter(message),
+    };
+    let adapter = &ctx.services.bus_adapter;
+    let client_id = ctx.session.client.id;
+    let mut current = adapter.current_subscriptions(client_id).await;
+    current.retain(|f| !to_remove.contains(f));
+    adapter
+        .update_subscriptions(client_id, ClientFilterSet::new(current))
+        .await;
+    WsResponse::Ok(serde_json::json!({ "unsubscribed": events }))
 }
 
 #[cfg(test)]
@@ -215,8 +159,9 @@ mod tests {
             .returning(|_| Ok(vec![]));
         let ctx = dispatch_ctx(Arc::new(tdp), auth_required_for_reads);
         if authenticated {
-            ctx.client
-                .mark_bearer_authenticated(ctx.auth_state.token_generation());
+            ctx.session
+                .client
+                .mark_bearer_authenticated(ctx.services.auth_state.token_generation());
         }
         ctx
     }
@@ -224,8 +169,9 @@ mod tests {
     fn make_ctx_with_dp(authenticated: bool, dp: Arc<dyn DataProvider>) -> DispatchContext {
         let ctx = dispatch_ctx(dp, false);
         if authenticated {
-            ctx.client
-                .mark_bearer_authenticated(ctx.auth_state.token_generation());
+            ctx.session
+                .client
+                .mark_bearer_authenticated(ctx.services.auth_state.token_generation());
         }
         ctx
     }
@@ -236,8 +182,9 @@ mod tests {
     ) -> DispatchContext {
         let ctx = registered_dispatch_ctx(test_dp(), auth_required_for_reads).await;
         if authenticated {
-            ctx.client
-                .mark_bearer_authenticated(ctx.auth_state.token_generation());
+            ctx.session
+                .client
+                .mark_bearer_authenticated(ctx.services.auth_state.token_generation());
         }
         ctx
     }
@@ -315,7 +262,7 @@ mod tests {
         let env = WsEnvelope {
             id: Some("2".into()),
             inner: WsResponse::Error {
-                code: Some("NOT_FOUND".to_owned()),
+                code: WsErrorCode::NotFound,
                 message: "action not found".to_owned(),
             },
         };
@@ -362,9 +309,9 @@ mod tests {
             let label = format!("{:?}", req.inner);
             let resp = dispatch(req, &ctx).await;
             match resp.inner {
-                WsResponse::Error {
-                    code: Some(code), ..
-                } => assert_eq!(code, "UNAUTHENTICATED", "for {label}"),
+                WsResponse::Error { code, .. } => {
+                    assert_eq!(code.as_str(), "UNAUTHENTICATED", "for {label}")
+                }
                 other => panic!("expected UNAUTHENTICATED for {label}, got {other:?}"),
             }
         }
@@ -456,11 +403,8 @@ mod tests {
         let resp = dispatch(req, &ctx).await;
         assert_eq!(resp.id, Some("7".into()));
         match &resp.inner {
-            WsResponse::Error {
-                code: Some(code),
-                message,
-            } => {
-                assert_eq!(code, "NOT_FOUND");
+            WsResponse::Error { code, message } => {
+                assert_eq!(code.as_str(), "NOT_FOUND");
                 assert!(!message.is_empty());
             }
             other => panic!("expected NOT_FOUND error, got {other:?}"),
@@ -486,7 +430,7 @@ mod tests {
         tdp.history().expect_save().returning(|_| Ok(()));
         let dp: Arc<dyn DataProvider> = Arc::new(tdp);
         let ctx = make_ctx_with_dp(true, dp);
-        let mut sub = ctx.bus.observe("ws_dispatch_test");
+        let mut sub = ctx.services.bus.observe("ws_dispatch_test");
 
         let req = WsEnvelope {
             id: Some("9".into()),
@@ -543,9 +487,7 @@ mod tests {
         };
         let resp = dispatch(req, &ctx).await;
         match resp.inner {
-            WsResponse::Error {
-                code: Some(code), ..
-            } => assert_eq!(code, "UNAUTHENTICATED"),
+            WsResponse::Error { code, .. } => assert_eq!(code.as_str(), "UNAUTHENTICATED"),
             other => panic!("expected UNAUTHENTICATED, got {other:?}"),
         }
     }
@@ -570,7 +512,7 @@ mod tests {
     async fn get_events_with_three_events_returns_all_in_shape() {
         let ctx = make_ctx(false, false);
         for i in 0u32..3 {
-            ctx.bus.publish(Event::new(
+            ctx.services.bus.publish(Event::new(
                 EventSource::Core,
                 "test.event",
                 serde_json::json!({ "i": i }),
@@ -644,10 +586,9 @@ mod tests {
     }
 
     fn ctx_over(history: Arc<ScriptedHistory>) -> DispatchContext {
-        DispatchContext {
-            bus: history,
-            ..make_ctx(true, false)
-        }
+        let mut ctx = make_ctx(true, false);
+        ctx.services.bus = history;
+        ctx
     }
 
     fn get_events(limit: Option<u32>, since: Option<String>) -> WsEnvelope<WsRequest> {
@@ -803,9 +744,9 @@ mod tests {
         let ctx = make_ctx(true, false);
         let original = Event::new(EventSource::Core, "test.original", serde_json::json!({}));
         let original_id = original.id.to_string();
-        ctx.bus.publish(original);
+        ctx.services.bus.publish(original);
 
-        let mut bus_sub = ctx.bus.observe("ws_dispatch_test");
+        let mut bus_sub = ctx.services.bus.observe("ws_dispatch_test");
 
         let req = WsEnvelope {
             id: Some("14".into()),
@@ -847,7 +788,11 @@ mod tests {
             serde_json::json!([{ "source": "twitch", "type": "chat.message" }])
         );
 
-        let subs = ctx.bus_adapter.current_subscriptions(ctx.client.id).await;
+        let subs = ctx
+            .services
+            .bus_adapter
+            .current_subscriptions(ctx.session.client.id)
+            .await;
         assert!(subs.contains(&EventFilter::new(
             Some(EventSource::Twitch),
             Some("chat.message".to_owned()),
@@ -858,9 +803,10 @@ mod tests {
     async fn unsubscribe_removes_filter_from_client() {
         let ctx = make_registered_ctx(false, false).await;
         let filter = EventFilter::new(Some(EventSource::Twitch), Some("chat.message".to_owned()));
-        ctx.bus_adapter
+        ctx.services
+            .bus_adapter
             .update_subscriptions(
-                ctx.client.id,
+                ctx.session.client.id,
                 ClientFilterSet::new(HashSet::from([filter.clone()])),
             )
             .await;
@@ -883,7 +829,11 @@ mod tests {
             serde_json::json!([{ "source": "twitch", "type": "chat.message" }])
         );
 
-        let subs = ctx.bus_adapter.current_subscriptions(ctx.client.id).await;
+        let subs = ctx
+            .services
+            .bus_adapter
+            .current_subscriptions(ctx.session.client.id)
+            .await;
         assert!(!subs.contains(&filter));
     }
 
@@ -912,7 +862,11 @@ mod tests {
         };
         dispatch(req2, &ctx).await;
 
-        let subs = ctx.bus_adapter.current_subscriptions(ctx.client.id).await;
+        let subs = ctx
+            .services
+            .bus_adapter
+            .current_subscriptions(ctx.session.client.id)
+            .await;
         assert_eq!(subs.len(), 2);
     }
 
@@ -959,7 +913,11 @@ mod tests {
                 "{json}"
             );
         }
-        let subs = ctx.bus_adapter.current_subscriptions(ctx.client.id).await;
+        let subs = ctx
+            .services
+            .bus_adapter
+            .current_subscriptions(ctx.session.client.id)
+            .await;
         assert!(subs.is_empty(), "the refused frame left {subs:?}");
     }
 
@@ -979,7 +937,11 @@ mod tests {
         let json = serialize_response_frame(&resp);
         assert_eq!(json["status"], "ok");
 
-        let subs = ctx.bus_adapter.current_subscriptions(ctx.client.id).await;
+        let subs = ctx
+            .services
+            .bus_adapter
+            .current_subscriptions(ctx.session.client.id)
+            .await;
         assert!(subs.contains(&EventFilter::new(Some(EventSource::Twitch), None)));
     }
 
@@ -1005,8 +967,9 @@ mod tests {
     #[tokio::test]
     async fn get_info_with_connected_client_returns_telemetry() {
         let ctx = make_registered_ctx(false, false).await;
-        ctx.bus_adapter
-            .attach_session(ctx.client.id, Arc::clone(&ctx.client))
+        ctx.services
+            .bus_adapter
+            .attach_session(ctx.session.client.id, Arc::clone(&ctx.session.client))
             .await;
 
         let req = WsEnvelope {
@@ -1099,9 +1062,7 @@ mod tests {
         };
         let resp = dispatch(req, &ctx).await;
         match resp.inner {
-            WsResponse::Error {
-                code: Some(code), ..
-            } => assert_eq!(code, "NOT_FOUND"),
+            WsResponse::Error { code, .. } => assert_eq!(code.as_str(), "NOT_FOUND"),
             other => panic!("expected NOT_FOUND error, got {other:?}"),
         }
     }
@@ -1134,7 +1095,7 @@ mod tests {
         tdp.globals().expect_set().returning(|_, _, _| Ok(()));
         let dp: Arc<dyn DataProvider> = Arc::new(tdp);
         let ctx = make_ctx_with_dp(true, dp);
-        let mut bus_sub = ctx.bus.observe("ws_dispatch_test");
+        let mut bus_sub = ctx.services.bus.observe("ws_dispatch_test");
         for (value, persisted) in [
             (serde_json::json!(99), false),
             (serde_json::json!("ninety"), true),
@@ -1176,9 +1137,7 @@ mod tests {
         };
         let resp = dispatch(req, &ctx).await;
         match resp.inner {
-            WsResponse::Error {
-                code: Some(code), ..
-            } => assert_eq!(code, "INVALID_PAYLOAD"),
+            WsResponse::Error { code, .. } => assert_eq!(code.as_str(), "INVALID_PAYLOAD"),
             other => panic!("expected INVALID_PAYLOAD error, got {other:?}"),
         }
     }
@@ -1285,7 +1244,7 @@ mod tests {
     #[tokio::test]
     async fn trigger_code_event_with_auth_publishes_bus_event() {
         let ctx = make_ctx(true, false);
-        let mut bus_sub = ctx.bus.observe("ws_dispatch_test");
+        let mut bus_sub = ctx.services.bus.observe("ws_dispatch_test");
         let req = WsEnvelope {
             id: Some("12".into()),
             inner: WsRequest::TriggerCodeEvent {
@@ -1319,9 +1278,7 @@ mod tests {
         };
         let resp = dispatch(req, &ctx).await;
         match resp.inner {
-            WsResponse::Error {
-                code: Some(code), ..
-            } => assert_eq!(code, "INVALID_PAYLOAD"),
+            WsResponse::Error { code, .. } => assert_eq!(code.as_str(), "INVALID_PAYLOAD"),
             other => panic!("expected INVALID_PAYLOAD error, got {other:?}"),
         }
     }
@@ -1338,9 +1295,7 @@ mod tests {
         };
         let resp = dispatch(req, &ctx).await;
         match resp.inner {
-            WsResponse::Error {
-                code: Some(code), ..
-            } => assert_eq!(code, "INVALID_PAYLOAD"),
+            WsResponse::Error { code, .. } => assert_eq!(code.as_str(), "INVALID_PAYLOAD"),
             other => panic!("expected INVALID_PAYLOAD error, got {other:?}"),
         }
     }
@@ -1364,8 +1319,8 @@ mod tests {
             other => panic!("expected ok response, got {other:?}"),
         }
         assert_eq!(
-            ctx.client.bearer_generation(),
-            Some(ctx.auth_state.token_generation()),
+            ctx.session.client.bearer_generation(),
+            Some(ctx.services.auth_state.token_generation()),
             "the session must record the generation of the token it presented"
         );
     }
@@ -1383,12 +1338,10 @@ mod tests {
         };
         let resp = dispatch(req, &ctx).await;
         match resp.inner {
-            WsResponse::Error {
-                code: Some(code), ..
-            } => assert_eq!(code, "AUTH_FAILED"),
+            WsResponse::Error { code, .. } => assert_eq!(code.as_str(), "AUTH_FAILED"),
             other => panic!("expected AUTH_FAILED error, got {other:?}"),
         }
-        assert!(ctx.client.bearer_generation().is_none());
+        assert!(ctx.session.client.bearer_generation().is_none());
     }
 
     #[tokio::test]
@@ -1451,10 +1404,10 @@ mod tests {
                 None,
             )
         };
-        ctx.bus.publish(twitch("111", "alice"));
-        ctx.bus.publish(twitch("111", "alice"));
-        ctx.bus.publish(twitch("222", "bob"));
-        ctx.bus.publish(chat_event(
+        ctx.services.bus.publish(twitch("111", "alice"));
+        ctx.services.bus.publish(twitch("111", "alice"));
+        ctx.services.bus.publish(twitch("222", "bob"));
+        ctx.services.bus.publish(chat_event(
             EventSource::Kick,
             "kick.chat.message.sent",
             Some(("111", "alice")),
@@ -1472,13 +1425,13 @@ mod tests {
     #[tokio::test]
     async fn get_active_viewers_serves_youtube_and_kick_chatters_by_envelope_name() {
         let ctx = make_ctx(false, false);
-        ctx.bus.publish(chat_event(
+        ctx.services.bus.publish(chat_event(
             EventSource::YouTube,
             "youtube.chat.message",
             Some(("UCyt", "Yuliia")),
             None,
         ));
-        ctx.bus.publish(chat_event(
+        ctx.services.bus.publish(chat_event(
             EventSource::Kick,
             "kick.chat.message.sent",
             Some(("77", "kicker")),
@@ -1494,13 +1447,13 @@ mod tests {
     #[tokio::test]
     async fn get_active_viewers_keeps_the_twitch_login_over_the_envelope_name() {
         let ctx = make_ctx(false, false);
-        ctx.bus.publish(chat_event(
+        ctx.services.bus.publish(chat_event(
             EventSource::Twitch,
             "twitch.channel.chat.message",
             Some(("111", "Alice_Display")),
             Some(serde_json::json!({ "login": "alice", "roles": ["moderator", "vip"] })),
         ));
-        ctx.bus.publish(chat_event(
+        ctx.services.bus.publish(chat_event(
             EventSource::Twitch,
             "twitch.channel.chat.message",
             Some(("222", "Bob_Display")),
@@ -1518,13 +1471,13 @@ mod tests {
     #[tokio::test]
     async fn get_active_viewers_skips_chat_lines_without_a_viewer_envelope() {
         let ctx = make_ctx(false, false);
-        ctx.bus.publish(chat_event(
+        ctx.services.bus.publish(chat_event(
             EventSource::Twitch,
             "twitch.channel.chat.message",
             None,
             Some(serde_json::json!({ "login": "legacy", "id": "9", "roles": [] })),
         ));
-        ctx.bus.publish(chat_event(
+        ctx.services.bus.publish(chat_event(
             EventSource::Twitch,
             "twitch.channel.chat.message",
             Some(("", "nameless")),
@@ -1537,19 +1490,19 @@ mod tests {
     #[tokio::test]
     async fn get_active_viewers_counts_only_events_from_chat_platform_sources() {
         let ctx = make_ctx(false, false);
-        ctx.bus.publish(chat_event(
+        ctx.services.bus.publish(chat_event(
             EventSource::Server,
             "server.chat.relay",
             Some(("1", "relayed")),
             None,
         ));
-        ctx.bus.publish(chat_event(
+        ctx.services.bus.publish(chat_event(
             EventSource::Core,
             "core.chat.echo",
             Some(("2", "echoed")),
             None,
         ));
-        ctx.bus.publish(chat_event(
+        ctx.services.bus.publish(chat_event(
             EventSource::Kick,
             "kick.chat.message.sent",
             Some(("3", "kicker")),
@@ -1579,8 +1532,8 @@ mod tests {
             None,
         );
         fresh.timestamp = OffsetDateTime::now_utc() - time::Duration::seconds(290);
-        ctx.bus.publish(stale);
-        ctx.bus.publish(fresh);
+        ctx.services.bus.publish(stale);
+        ctx.services.bus.publish(fresh);
 
         let viewers = active_viewers(&ctx).await;
 
@@ -1591,7 +1544,7 @@ mod tests {
     #[tokio::test]
     async fn get_info_reports_the_platforms_the_server_was_configured_with() {
         let mut ctx = make_ctx(false, false);
-        ctx.server_info = ServerInfo::serving(BTreeSet::from([
+        ctx.services.server_info = ServerInfo::serving(BTreeSet::from([
             forge_types::PlatformId::Kick,
             forge_types::PlatformId::Twitch,
         ]));
@@ -1624,12 +1577,12 @@ mod tests {
     #[tokio::test]
     async fn get_active_viewers_ignores_non_chat_events() {
         let ctx = make_ctx(false, false);
-        ctx.bus.publish(Event::new(
+        ctx.services.bus.publish(Event::new(
             EventSource::Twitch,
             "platform.connection.changed",
             serde_json::json!({ "state": "connected" }),
         ));
-        ctx.bus.publish(Event::new(
+        ctx.services.bus.publish(Event::new(
             EventSource::Core,
             "action.start",
             serde_json::json!({}),
@@ -1705,13 +1658,13 @@ mod tests {
             let resp = dispatch(auth_frame(token, overlay_credential, false), &ctx).await;
 
             match resp.inner {
-                WsResponse::Error {
-                    code: Some(code), ..
-                } => assert_eq!(code, "AUTH_FAILED", "{label}"),
+                WsResponse::Error { code, .. } => {
+                    assert_eq!(code.as_str(), "AUTH_FAILED", "{label}")
+                }
                 other => panic!("{label} produced {other:?} instead of AUTH_FAILED"),
             }
             assert!(
-                ctx.client.bearer_generation().is_none(),
+                ctx.session.client.bearer_generation().is_none(),
                 "{label} still marked the session authenticated"
             );
         }
@@ -1729,11 +1682,11 @@ mod tests {
             resp.inner
         );
         assert!(
-            ctx.overlay_channel_swap.lock().await.is_some(),
+            ctx.session.overlay_channel_swap.lock().await.is_some(),
             "the connection was never promoted, so this proves nothing about what it grants"
         );
         assert!(
-            ctx.client.bearer_generation().is_none(),
+            ctx.session.client.bearer_generation().is_none(),
             "a read-scoped overlay credential unlocked every authenticated method"
         );
     }
@@ -1770,7 +1723,8 @@ mod tests {
                 resp.inner
             );
             assert_eq!(
-                ctx.bus_adapter
+                ctx.services
+                    .bus_adapter
                     .deliver_overlay_content(
                         &forge_storage::OverlayId::new("goal-box"),
                         &serde_json::json!({ "value": "42" }),
@@ -1781,10 +1735,11 @@ mod tests {
                 "previewConnection={preview_connection} was tallied as the other class"
             );
             assert_eq!(
-                ctx.bus_adapter
+                ctx.services
+                    .bus_adapter
                     .preview_tabs()
                     .await
-                    .contains(&ctx.client.id),
+                    .contains(&ctx.session.client.id),
                 preview_connection,
                 "previewConnection={preview_connection} put the wrong row in front of the console"
             );
@@ -1798,13 +1753,11 @@ mod tests {
         let resp = dispatch(auth_frame(None, Some(OVERLAY_PAGE_CREDENTIAL), false), &ctx).await;
 
         match resp.inner {
-            WsResponse::Error {
-                code: Some(code), ..
-            } => assert_eq!(code, "AUTH_FAILED"),
+            WsResponse::Error { code, .. } => assert_eq!(code.as_str(), "AUTH_FAILED"),
             other => panic!("expected AUTH_FAILED, got {other:?}"),
         }
         assert!(
-            ctx.overlay_channel_swap.lock().await.is_none(),
+            ctx.session.overlay_channel_swap.lock().await.is_none(),
             "an unknown credential still put the connection onto the overlay delivery channel"
         );
     }
@@ -1822,17 +1775,15 @@ mod tests {
         };
         let resp = dispatch(req, &ctx).await;
         match resp.inner {
-            WsResponse::Error {
-                code: Some(code), ..
-            } => assert_eq!(code, "AUTH_FAILED"),
+            WsResponse::Error { code, .. } => assert_eq!(code.as_str(), "AUTH_FAILED"),
             other => panic!("expected AUTH_FAILED error, got {other:?}"),
         }
-        assert!(ctx.client.bearer_generation().is_none());
+        assert!(ctx.session.client.bearer_generation().is_none());
     }
 
     fn make_ctx_with_overlay_root(root: std::path::PathBuf) -> DispatchContext {
         let mut ctx = make_ctx(false, false);
-        ctx.overlay_root = Arc::new(root);
+        ctx.services.overlay_root = Arc::new(root);
         ctx
     }
 
@@ -1920,7 +1871,7 @@ mod tests {
 
     fn error_code(resp: &WsEnvelope<WsResponse>) -> Option<&str> {
         match &resp.inner {
-            WsResponse::Error { code, .. } => code.as_deref(),
+            WsResponse::Error { code, .. } => Some(code.as_str()),
             WsResponse::Ok(_) => None,
         }
     }
@@ -1949,8 +1900,9 @@ mod tests {
         let over = dispatch(subscribe_to(["kind.one-too-many".to_owned()]), &ctx).await;
         assert_eq!(error_code(&over), Some("TOO_MANY_SUBSCRIPTIONS"));
         assert_eq!(
-            ctx.bus_adapter
-                .current_subscriptions(ctx.client.id)
+            ctx.services
+                .bus_adapter
+                .current_subscriptions(ctx.session.client.id)
                 .await
                 .len(),
             MAX_SUBSCRIPTIONS_PER_CLIENT,
@@ -1976,7 +1928,7 @@ mod tests {
         assert_eq!(error_code(&auth), None, "the session never authenticated");
         let mut creds = forge_storage::credentials::MockCredentialsRepo::new();
         creds.expect_store().returning(|_, _| Ok(()));
-        ctx.auth_state.regenerate(&creds).await.unwrap();
+        ctx.services.auth_state.regenerate(&creds).await.unwrap();
 
         let resp = dispatch(
             WsEnvelope {

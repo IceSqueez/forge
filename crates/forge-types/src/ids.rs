@@ -3,6 +3,17 @@ use std::fmt;
 use std::str::FromStr;
 use ulid::Ulid;
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct IdParseError;
+
+impl fmt::Display for IdParseError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str("not a valid id")
+    }
+}
+
+impl std::error::Error for IdParseError {}
+
 macro_rules! define_id {
     ($(#[$attr:meta])* $name:ident) => {
         $(#[$attr])*
@@ -18,22 +29,16 @@ macro_rules! define_id {
         }
 
         impl FromStr for $name {
-            type Err = ulid::DecodeError;
+            type Err = IdParseError;
 
             fn from_str(s: &str) -> Result<Self, Self::Err> {
-                s.parse::<Ulid>().map(Self)
+                s.parse::<Ulid>().map(Self).map_err(|_| IdParseError)
             }
         }
 
         impl fmt::Display for $name {
             fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
                 write!(f, "{}", self.0)
-            }
-        }
-
-        impl From<Ulid> for $name {
-            fn from(ulid: Ulid) -> Self {
-                Self(ulid)
             }
         }
     };

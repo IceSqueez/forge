@@ -691,8 +691,8 @@ mod tests {
         forge_storage::OverlayId::new("overlay-1")
     }
 
-    fn regex_error(pattern: &str) -> regex::Error {
-        regex::Regex::new(pattern).unwrap_err()
+    fn regex_error(pattern: &str) -> forge_tts_pipeline::PatternError {
+        forge_tts_pipeline::CompiledPattern::new(pattern).unwrap_err()
     }
 
     #[test]

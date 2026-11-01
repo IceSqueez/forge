@@ -17,7 +17,6 @@ use forge_types::{
 };
 use tempfile::TempDir;
 use time::OffsetDateTime;
-use ulid::Ulid;
 
 use super::every_registry_entry;
 
@@ -338,7 +337,9 @@ pub fn trigger(name: &str, enabled: bool) -> TriggerInstance {
 }
 
 pub fn last_action_id() -> ActionId {
-    ActionId::from(Ulid::from_parts((1 << 48) - 1, u128::MAX >> 48))
+    "7ZZZZZZZZZZZZZZZZZZZZZZZZZ"
+        .parse()
+        .expect("the largest representable id")
 }
 
 pub struct Fixture {

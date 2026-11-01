@@ -19,11 +19,11 @@ fn replacement_rule_order_hides_original_text_from_later_rules() {
     let config = PipelineConfig {
         replacement_rules: vec![
             ReplacementRule::Regex {
-                compiled: regex::Regex::new(r"https?://\S+").unwrap(),
+                compiled: forge_tts_pipeline::CompiledPattern::new(r"https?://\S+").unwrap(),
                 replacement: "link".into(),
             },
             ReplacementRule::Regex {
-                compiled: regex::Regex::new(r"https").unwrap(),
+                compiled: forge_tts_pipeline::CompiledPattern::new(r"https").unwrap(),
                 replacement: "SHOULD_NOT_APPEAR".into(),
             },
         ],

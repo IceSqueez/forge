@@ -46,7 +46,9 @@ pub use execution::{
     integration_disabled_message, whispers_unsupported_message,
 };
 pub use hex::to_lower_hex;
-pub use ids::{ActionId, ClipId, DEFAULT_QUEUE_ID, EventId, QueueId, ScriptId, TriggerInstanceId};
+pub use ids::{
+    ActionId, ClipId, DEFAULT_QUEUE_ID, EventId, IdParseError, QueueId, ScriptId, TriggerInstanceId,
+};
 pub use integration::{IntegrationAvailability, IntegrationId};
 pub use latest::{
     LATEST_DONATION_SLOT, LatestScope, LatestValue, LatestValueReader, NOW_PLAYING_SLOT,

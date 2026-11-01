@@ -1,7 +1,9 @@
 mod actor;
 mod catalog;
+mod detector_builds;
 mod emitter;
 mod filters;
+mod queues;
 pub mod vocabulary;
 mod voice;
 
@@ -367,29 +369,23 @@ pub fn spawn(config: QueueConfig, deps: QueueDeps) -> (SpeakQueueHandle, SpeakEv
         tasks: tasks.clone(),
     };
 
-    let event_tx_clone = event_tx.clone();
-    let depth_clone = depth.clone();
-    let voices_clone = voices.clone();
-    let disabled_engines_clone = disabled_engines.clone();
-    let master_volume_bits_clone = master_volume_bits.clone();
-    let engine_gains_clone = engine_gains.clone();
-    let targeted_legs_clone = targeted_legs.clone();
-    tasks.spawn(async move {
-        actor::run_actor(
-            config,
-            actor_deps,
-            cmd_rx,
-            event_tx_clone,
-            depth_clone,
-            voices_clone,
-            disabled_engines_clone,
-            master_volume_bits_clone,
-            engine_gains_clone,
-            targeted_legs_clone,
-            detector_ready_tx,
-        )
-        .await;
-    });
+    let actor_handles = actor::ActorHandles {
+        depth: depth.clone(),
+        voices: voices.clone(),
+        disabled_engines: disabled_engines.clone(),
+        master_volume_bits: master_volume_bits.clone(),
+        engine_gains: engine_gains.clone(),
+        targeted_legs: targeted_legs.clone(),
+    };
+    let actor_event_tx = event_tx.clone();
+    tasks.spawn(actor::run_actor(
+        config,
+        actor_deps,
+        actor_handles,
+        cmd_rx,
+        actor_event_tx,
+        detector_ready_tx,
+    ));
 
     (
         SpeakQueueHandle {

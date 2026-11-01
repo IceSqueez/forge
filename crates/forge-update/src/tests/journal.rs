@@ -114,7 +114,7 @@ fn a_corrupt_or_foreign_journal_is_reported_as_malformed() {
         let result = UpdateJournal::read_blocking(data.path());
 
         assert!(
-            matches!(result, Err(UpdateError::MalformedJournal(_))),
+            matches!(result, Err(UpdateError::MalformedRecord(_))),
             "{label}: {result:?}",
         );
     }

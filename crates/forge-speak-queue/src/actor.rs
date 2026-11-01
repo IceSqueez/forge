@@ -1,4 +1,5 @@
 use std::collections::{HashMap, HashSet, VecDeque};
+use std::ops::ControlFlow;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicU32, AtomicUsize, Ordering};
 use std::time::Duration;
@@ -15,16 +16,18 @@ use forge_tts_pipeline::{DetectionOutcome, LanguageDetector, PipelineResult, spo
 use forge_types::{MessageRef, Shared};
 
 use crate::catalog::{CATALOG_UPDATE_CAPACITY, CatalogUpdate, VoiceCatalogState};
+use crate::detector_builds::{DetectorBuild, DetectorBuilds};
 use crate::emitter::{
     DetectedLanguage, EnqueuePreview, Outcome, ResolvedPlayback, SpeakEmitter, pipeline_skip,
 };
+use crate::queues::PendingQueues;
 use crate::vocabulary::messages;
 use crate::vocabulary::{FailureReason, HoldReason, RejectReason, SkipReason};
-use crate::voice::{ResolveResult, VoiceAliasResolver, candidate_languages, voice_speaks_language};
+use crate::voice::{ResolveResult, VoiceAliasResolver, voice_speaks_language};
 
 use crate::{
-    PipelineConfigHandle, Priority, QueueConfig, QueuedOrderEntry, RequestId, SpeakCommand,
-    SpeakEvent, SpeakRequest, TargetedLegs, UNITY_GAIN, clamp_gain,
+    PipelineConfigHandle, Priority, QueueConfig, RequestId, SpeakCommand, SpeakEvent, SpeakRequest,
+    TargetedLegs, UNITY_GAIN, clamp_gain,
 };
 
 pub(crate) struct ActorDeps {
@@ -365,494 +368,676 @@ async fn detect_language(
         })
 }
 
-fn queue_changed_event(
-    high_queue: &VecDeque<SpeakRequest>,
-    normal_queue: &VecDeque<SpeakRequest>,
-) -> SpeakEvent {
-    let order: Vec<QueuedOrderEntry> = high_queue
-        .iter()
-        .map(|r| QueuedOrderEntry {
-            request_id: r.request_id.clone(),
-            is_high_priority: true,
-        })
-        .chain(normal_queue.iter().map(|r| QueuedOrderEntry {
-            request_id: r.request_id.clone(),
-            is_high_priority: false,
-        }))
-        .collect();
-    SpeakEvent::QueueChanged {
-        queue_len: order.len(),
-        order,
-    }
+pub(crate) struct ActorHandles {
+    pub(crate) depth: Arc<AtomicUsize>,
+    pub(crate) voices: Shared<Vec<TtsVoice>>,
+    pub(crate) disabled_engines: Shared<HashSet<EngineId>>,
+    pub(crate) master_volume_bits: Arc<AtomicU32>,
+    pub(crate) engine_gains: Shared<HashMap<EngineId, f32>>,
+    pub(crate) targeted_legs: TargetedLegs,
 }
 
-#[expect(
-    clippy::too_many_arguments,
-    reason = "actor state is passed as separate borrows"
-)]
-pub(crate) async fn run_actor(
-    mut config: QueueConfig,
+struct ActorInbox {
+    commands: tokio::sync::mpsc::Receiver<SpeakCommand>,
+    synth_results: tokio::sync::mpsc::Receiver<SynthTaskResult>,
+    catalog_updates: tokio::sync::mpsc::Receiver<CatalogUpdate>,
+    detector_builds: tokio::sync::mpsc::Receiver<DetectorBuild>,
+}
+
+struct QueueActor {
+    config: QueueConfig,
     deps: ActorDeps,
-    mut cmd_rx: tokio::sync::mpsc::Receiver<SpeakCommand>,
+    handles: ActorHandles,
     event_tx: tokio::sync::broadcast::Sender<SpeakEvent>,
-    depth: Arc<AtomicUsize>,
-    voices: Shared<Vec<TtsVoice>>,
-    disabled_engines: Shared<HashSet<EngineId>>,
-    master_volume_bits: Arc<AtomicU32>,
-    engine_gains: Shared<HashMap<EngineId, f32>>,
-    targeted_legs: TargetedLegs,
+    queues: PendingQueues,
+    paused: bool,
+    voicegate_active: bool,
+    active_request_id: Option<RequestId>,
+    last_successful: Option<SpeakRequest>,
+    current_playback: Option<CurrentPlayback>,
+    progress_ticker: Option<tokio::time::Interval>,
+    recent_messages: VecDeque<String>,
+    synthesis_task: Option<(RequestId, tokio::task::AbortHandle)>,
+    synth_tx: tokio::sync::mpsc::Sender<SynthTaskResult>,
+    catalog_tx: tokio::sync::mpsc::Sender<CatalogUpdate>,
+    catalog: VoiceCatalogState,
+    task_deps: SynthTaskDeps,
+    language_aware: bool,
+    detector_builds: DetectorBuilds,
+}
+
+pub(crate) async fn run_actor(
+    config: QueueConfig,
+    deps: ActorDeps,
+    handles: ActorHandles,
+    commands: tokio::sync::mpsc::Receiver<SpeakCommand>,
+    event_tx: tokio::sync::broadcast::Sender<SpeakEvent>,
     detector_ready: tokio::sync::watch::Sender<bool>,
 ) {
-    let mut high_queue: VecDeque<SpeakRequest> = VecDeque::new();
-    let mut normal_queue: VecDeque<SpeakRequest> = VecDeque::new();
-    let mut per_user_counts: HashMap<String, usize> = HashMap::new();
-    let mut paused = false;
-    let mut voicegate_active = false;
-    let mut active_request_id: Option<RequestId> = None;
-    let mut last_successful: Option<SpeakRequest> = None;
-    let mut current_playback: Option<CurrentPlayback> = None;
-    let mut progress_ticker: Option<tokio::time::Interval> = None;
-    let mut recent_messages: VecDeque<String> = VecDeque::new();
-    let mut synthesis_task: Option<(RequestId, tokio::task::AbortHandle)> = None;
-
-    let (synth_tx, mut synth_rx) = tokio::sync::mpsc::channel::<SynthTaskResult>(8);
-    let (catalog_tx, mut catalog_rx) =
-        tokio::sync::mpsc::channel::<CatalogUpdate>(CATALOG_UPDATE_CAPACITY);
-    let (detector_tx, mut detector_rx) = tokio::sync::mpsc::channel::<DetectorBuild>(1);
-    let mut detector_builds = DetectorBuilds::new(detector_tx, detector_ready, deps.tasks.clone());
-
-    update_registry(&deps.registry, |registry| {
-        for engine_id in &deps.disabled_engines {
-            registry.invalidate(engine_id);
-        }
-    });
-    disabled_engines.store(deps.disabled_engines.clone());
-    engine_gains.store(deps.engine_gains.clone());
-    let mut catalog = VoiceCatalogState::owned_by(deps.tasks.clone());
-    let initial_catalog =
-        catalog.rebuild(&deps.registry.load(), &deps.disabled_engines, &catalog_tx);
-    voices.store_arc(initial_catalog.clone());
-    let mut task_deps = SynthTaskDeps {
-        resolver: deps.resolver.load(),
-        pipeline: deps.pipeline.clone(),
-        registry: deps.registry.load(),
-        voice_catalog: initial_catalog,
-        detector: None,
-    };
-
-    let mut language_aware = deps.pipeline.load().output.language_aware_voice;
-
-    loop {
-        depth.store(high_queue.len() + normal_queue.len(), Ordering::Relaxed);
-
-        if let Some((request_id, task)) = &synthesis_task
-            && active_request_id.as_ref() != Some(request_id)
-        {
-            task.abort();
-            synthesis_task = None;
-        }
-
-        let language_aware_now = deps.pipeline.load().output.language_aware_voice;
-        if language_aware_now != language_aware {
-            language_aware = language_aware_now;
-            if language_aware {
-                detector_builds.rebuild(&task_deps.voice_catalog);
-            } else {
-                detector_builds.invalidate();
-                task_deps.detector = None;
-            }
-        }
-
-        if !paused
-            && is_held(&current_playback)
-            && let Some(CurrentPlayback::Held(clip)) = current_playback.take()
-        {
-            let gains = engine_gains.load();
-            start_clip(
-                clip,
-                &config,
-                &deps,
-                &event_tx,
-                &mut active_request_id,
-                &mut current_playback,
-                high_queue.len() + normal_queue.len(),
-                gains.as_ref(),
-                &targeted_legs,
-            );
-        }
-
-        if active_request_id.is_none()
-            && !paused
-            && !voicegate_active
-            && next_request(&high_queue, &normal_queue).is_some_and(|req| {
-                let resolver = deps.resolver.load();
-                catalog.serves(
-                    req,
-                    resolver.active_alias_engine(&req.viewer_id, &req.viewer_name),
-                )
-            })
-            && let Some(req) = pop_next(&mut high_queue, &mut normal_queue, &mut per_user_counts)
-        {
-            let queue_len = high_queue.len() + normal_queue.len();
-            let emit = SpeakEmitter::new(&event_tx, deps.event_bus.as_ref());
-            emit.feed(queue_changed_event(&high_queue, &normal_queue));
-            emit.started(&req, None, queue_len);
-            active_request_id = Some(req.request_id.clone());
-            let tx = synth_tx.clone();
-            let task_deps_clone = SynthTaskDeps {
-                resolver: deps.resolver.load(),
-                pipeline: task_deps.pipeline.clone(),
-                registry: deps.registry.load(),
-                voice_catalog: task_deps.voice_catalog.clone(),
-                detector: task_deps.detector.clone(),
-            };
-            while recent_messages.len() > config.repeat_window.get() {
-                recent_messages.pop_front();
-            }
-            let recent_snapshot: Vec<String> = recent_messages.iter().cloned().collect();
-            while recent_messages.len() >= config.repeat_window.get() {
-                recent_messages.pop_front();
-            }
-            recent_messages.push_back(req.text.clone());
-            let timeout = config.timeout_per_item;
-            let request_id = req.request_id.clone();
-            let task = deps.tasks.spawn_until_stopped(async move {
-                let result =
-                    run_synthesis_bounded(req, task_deps_clone, recent_snapshot, timeout).await;
-                if tx.send(result).await.is_err() {
-                    tracing::debug!("speak queue stopped before the synthesis result arrived");
-                }
-            });
-            synthesis_task = Some((request_id, task));
-        }
-
-        tokio::select! {
-            cmd = cmd_rx.recv() => {
-                match cmd {
-                    None | Some(SpeakCommand::Shutdown) => break,
-                    Some(SpeakCommand::RefreshVoiceCatalog) => {
-                        update_registry(&deps.registry, TtsRegistry::invalidate_all);
-                        let rebuilt = catalog.rebuild(
-                            &deps.registry.load(),
-                            &disabled_engines.load(),
-                            &catalog_tx,
-                        );
-                        publish_catalog(
-                            rebuilt,
-                            &voices,
-                            &SpeakEmitter::new(&event_tx, deps.event_bus.as_ref()),
-                            &mut task_deps,
-                            language_aware,
-                            &mut detector_builds,
-                        );
-                    }
-                    Some(SpeakCommand::RegisterEngine(registration)) => {
-                        update_registry(&deps.registry, |registry| {
-                            registry.register(registration.id, registration.factory);
-                        });
-                        let rebuilt = catalog.rebuild(
-                            &deps.registry.load(),
-                            &disabled_engines.load(),
-                            &catalog_tx,
-                        );
-                        publish_catalog(
-                            rebuilt,
-                            &voices,
-                            &SpeakEmitter::new(&event_tx, deps.event_bus.as_ref()),
-                            &mut task_deps,
-                            language_aware,
-                            &mut detector_builds,
-                        );
-                    }
-                    Some(SpeakCommand::SetEngineEnabled(engine_id, enabled)) => {
-                        let mut next = (*disabled_engines.load()).clone();
-                        let changed = if enabled {
-                            next.remove(&engine_id)
-                        } else {
-                            next.insert(engine_id.clone())
-                        };
-                        if changed {
-                            update_registry(&deps.registry, |registry| {
-                                registry.invalidate(&engine_id);
-                            });
-                        }
-                        let rebuilt = catalog.rebuild(&deps.registry.load(), &next, &catalog_tx);
-                        disabled_engines.store(next);
-                        publish_catalog(
-                            rebuilt,
-                            &voices,
-                            &SpeakEmitter::new(&event_tx, deps.event_bus.as_ref()),
-                            &mut task_deps,
-                            language_aware,
-                            &mut detector_builds,
-                        );
-                    }
-                    Some(SpeakCommand::SetVolume(volume)) => {
-                        handle_command(
-                            SpeakCommand::SetVolume(volume),
-                            &mut config,
-                            &deps,
-                            &event_tx,
-                            &mut high_queue,
-                            &mut normal_queue,
-                            &mut per_user_counts,
-                            &mut paused,
-                            &mut voicegate_active,
-                            &mut active_request_id,
-                            &last_successful,
-                            &mut current_playback,
-                            &mut progress_ticker,
-                            &task_deps.voice_catalog,
-                        );
-                        master_volume_bits.store(config.master_volume.to_bits(), Ordering::Relaxed);
-                    }
-                    Some(SpeakCommand::SetEngineParams(engine_id, defaults, gain)) => {
-                        update_resolver(&deps.resolver, |resolver| {
-                            resolver.set_engine_default(engine_id.clone(), defaults);
-                        });
-                        let mut next = (*engine_gains.load()).clone();
-                        next.insert(engine_id, clamp_gain(gain));
-                        engine_gains.store(next);
-                    }
-                    Some(c) => handle_command(
-                        c,
-                        &mut config,
-                        &deps,
-                        &event_tx,
-                        &mut high_queue,
-                        &mut normal_queue,
-                        &mut per_user_counts,
-                        &mut paused,
-                        &mut voicegate_active,
-                        &mut active_request_id,
-                        &last_successful,
-                        &mut current_playback,
-                        &mut progress_ticker,
-                        &task_deps.voice_catalog,
-                    ),
-                }
-            }
-            result = synth_rx.recv() => {
-                if let Some(r) = result {
-                    let gains = engine_gains.load();
-                    handle_synth_result(
-                        r,
-                        &config,
-                        &deps,
-                        &event_tx,
-                        &mut active_request_id,
-                        &mut current_playback,
-                        paused,
-                        high_queue.len() + normal_queue.len(),
-                        gains.as_ref(),
-                        &targeted_legs,
-                    ).await;
-                }
-            }
-            result = catalog_rx.recv() => {
-                if let Some(merged) = result.and_then(|update| catalog.apply(update)) {
-                    publish_catalog(
-                        merged,
-                        &voices,
-                        &SpeakEmitter::new(&event_tx, deps.event_bus.as_ref()),
-                        &mut task_deps,
-                        language_aware,
-                        &mut detector_builds,
-                    );
-                }
-            }
-            result = detector_rx.recv() => {
-                if let Some(build) = result
-                    && detector_builds.is_current(build.generation)
-                {
-                    task_deps.detector = build.detector.filter(|_| language_aware);
-                    detector_builds.settle(task_deps.detector.is_some());
-                }
-            }
-            _ = tick_progress(&mut progress_ticker), if progress_ticker.is_some() => {
-                if !paused && let Some(CurrentPlayback::Playing(c)) = current_playback.as_mut() {
-                    c.elapsed_secs += 1;
-                    SpeakEmitter::new(&event_tx, deps.event_bus.as_ref()).feed(SpeakEvent::Progress {
-                        request_id: c.request_id.clone(),
-                        elapsed_secs: c.elapsed_secs,
-                    });
-                }
-            }
-            step = poll_active(&mut current_playback), if is_active(&current_playback) => {
-                match (step, current_playback.take()) {
-                    (ActiveStep::Started(started), Some(CurrentPlayback::Starting(clip))) => {
-                        let started = started.unwrap_or_else(|e| {
-                            Err(device_failure(&AudioError::JoinFailed(e.to_string())))
-                        });
-                        match started {
-                            Ok(playback) => {
-                                if paused {
-                                    playback.pause();
-                                }
-                                let mut ticker = tokio::time::interval(PLAYBACK_PROGRESS_TICK);
-                                ticker.tick().await;
-                                progress_ticker = Some(ticker);
-                                current_playback = Some(CurrentPlayback::Playing(PlayingClip {
-                                    request_id: clip.request_id,
-                                    request: clip.request,
-                                    playback,
-                                    elapsed_secs: 0,
-                                }));
-                            }
-                            Err(failure) => {
-                                active_request_id = None;
-                                tracing::warn!(request_id = %clip.request_id.0, ?failure, "audio playback failed to start");
-                                SpeakEmitter::new(&event_tx, deps.event_bus.as_ref())
-                                    .outcome(&clip.request, failure);
-                            }
-                        }
-                    }
-                    (ActiveStep::Finished(play_result), Some(CurrentPlayback::Playing(current))) => {
-                        progress_ticker = None;
-                        finish_playback(
-                            play_result,
-                            &deps,
-                            &event_tx,
-                            &mut active_request_id,
-                            &mut last_successful,
-                            current,
-                        ).await;
-                    }
-                    (_, unchanged) => current_playback = unchanged,
-                }
-            }
-        }
-    }
+    let (mut actor, mut inbox) =
+        QueueActor::new(config, deps, handles, commands, event_tx, detector_ready);
+    actor.run(&mut inbox).await;
 }
 
-#[expect(
-    clippy::too_many_arguments,
-    reason = "actor state is passed as separate borrows"
-)]
-async fn handle_synth_result(
-    result: SynthTaskResult,
-    config: &QueueConfig,
-    deps: &ActorDeps,
-    event_tx: &tokio::sync::broadcast::Sender<SpeakEvent>,
-    active_request_id: &mut Option<RequestId>,
-    current_playback: &mut Option<CurrentPlayback>,
-    paused: bool,
-    queue_len: usize,
-    engine_gains: &HashMap<EngineId, f32>,
-    targeted_legs: &TargetedLegs,
-) {
-    if active_request_id.as_ref() != Some(&result.request.request_id) {
-        return;
+impl QueueActor {
+    fn new(
+        config: QueueConfig,
+        deps: ActorDeps,
+        handles: ActorHandles,
+        commands: tokio::sync::mpsc::Receiver<SpeakCommand>,
+        event_tx: tokio::sync::broadcast::Sender<SpeakEvent>,
+        detector_ready: tokio::sync::watch::Sender<bool>,
+    ) -> (Self, ActorInbox) {
+        let (synth_tx, synth_results) = tokio::sync::mpsc::channel::<SynthTaskResult>(8);
+        let (catalog_tx, catalog_updates) =
+            tokio::sync::mpsc::channel::<CatalogUpdate>(CATALOG_UPDATE_CAPACITY);
+        let (detector_tx, detector_builds_rx) = tokio::sync::mpsc::channel::<DetectorBuild>(1);
+        let detector_builds = DetectorBuilds::new(detector_tx, detector_ready, deps.tasks.clone());
+
+        update_registry(&deps.registry, |registry| {
+            for engine_id in &deps.disabled_engines {
+                registry.invalidate(engine_id);
+            }
+        });
+        handles
+            .disabled_engines
+            .store(deps.disabled_engines.clone());
+        handles.engine_gains.store(deps.engine_gains.clone());
+        let mut catalog = VoiceCatalogState::owned_by(deps.tasks.clone());
+        let initial_catalog =
+            catalog.rebuild(&deps.registry.load(), &deps.disabled_engines, &catalog_tx);
+        handles.voices.store_arc(initial_catalog.clone());
+        let task_deps = SynthTaskDeps {
+            resolver: deps.resolver.load(),
+            pipeline: deps.pipeline.clone(),
+            registry: deps.registry.load(),
+            voice_catalog: initial_catalog,
+            detector: None,
+        };
+        let language_aware = deps.pipeline.load().output.language_aware_voice;
+
+        let actor = Self {
+            config,
+            deps,
+            handles,
+            event_tx,
+            queues: PendingQueues::default(),
+            paused: false,
+            voicegate_active: false,
+            active_request_id: None,
+            last_successful: None,
+            current_playback: None,
+            progress_ticker: None,
+            recent_messages: VecDeque::new(),
+            synthesis_task: None,
+            synth_tx,
+            catalog_tx,
+            catalog,
+            task_deps,
+            language_aware,
+            detector_builds,
+        };
+        let inbox = ActorInbox {
+            commands,
+            synth_results,
+            catalog_updates,
+            detector_builds: detector_builds_rx,
+        };
+        (actor, inbox)
     }
 
-    match result.outcome {
-        SynthOutcome::Skipped { reason, detail } => {
-            *active_request_id = None;
-            tracing::debug!(request_id = %result.request.request_id.0, ?reason, "speak skipped");
-            SpeakEmitter::new(event_tx, deps.event_bus.as_ref())
-                .outcome(&result.request, Outcome::Skipped { reason, detail });
+    fn emitter(&self) -> SpeakEmitter<'_> {
+        SpeakEmitter::new(&self.event_tx, self.deps.event_bus.as_ref())
+    }
+
+    async fn run(&mut self, inbox: &mut ActorInbox) {
+        loop {
+            self.prepare_cycle();
+            tokio::select! {
+                command = inbox.commands.recv() => {
+                    match command {
+                        None => break,
+                        Some(command) => {
+                            if self.handle_command(command).is_break() {
+                                break;
+                            }
+                        }
+                    }
+                }
+                result = inbox.synth_results.recv() => {
+                    if let Some(result) = result {
+                        self.handle_synth_result(result);
+                    }
+                }
+                update = inbox.catalog_updates.recv() => {
+                    if let Some(merged) = update.and_then(|update| self.catalog.apply(update)) {
+                        self.publish_catalog(merged);
+                    }
+                }
+                build = inbox.detector_builds.recv() => {
+                    if let Some(build) = build {
+                        self.adopt_detector(build);
+                    }
+                }
+                () = tick_progress(&mut self.progress_ticker), if self.progress_ticker.is_some() => {
+                    self.on_progress_tick();
+                }
+                step = poll_active(&mut self.current_playback), if is_active(&self.current_playback) => {
+                    self.on_active_step(step).await;
+                }
+            }
         }
-        SynthOutcome::Failed { reason, message } => {
-            *active_request_id = None;
-            tracing::warn!(request_id = %result.request.request_id.0, code = %message.code(), detail = message.detail().map(|detail| detail.as_str()), "speak failed");
-            SpeakEmitter::new(event_tx, deps.event_bus.as_ref())
-                .outcome(&result.request, Outcome::Failed { reason, message });
+        self.abort_synthesis();
+    }
+
+    fn prepare_cycle(&mut self) {
+        self.handles
+            .depth
+            .store(self.queues.len(), Ordering::Relaxed);
+        self.reap_stale_synthesis();
+        self.follow_language_setting();
+        self.resume_held_clip();
+        self.start_next_synthesis();
+    }
+
+    fn abort_synthesis(&mut self) {
+        if let Some((_, task)) = self.synthesis_task.take() {
+            task.abort();
         }
-        SynthOutcome::Speak {
+    }
+
+    fn reap_stale_synthesis(&mut self) {
+        if let Some((request_id, _)) = &self.synthesis_task
+            && self.active_request_id.as_ref() != Some(request_id)
+        {
+            self.abort_synthesis();
+        }
+    }
+
+    fn follow_language_setting(&mut self) {
+        let language_aware_now = self.deps.pipeline.load().output.language_aware_voice;
+        if language_aware_now == self.language_aware {
+            return;
+        }
+        self.language_aware = language_aware_now;
+        if self.language_aware {
+            self.detector_builds.rebuild(&self.task_deps.voice_catalog);
+        } else {
+            self.detector_builds.invalidate();
+            self.task_deps.detector = None;
+        }
+    }
+
+    fn resume_held_clip(&mut self) {
+        if !self.paused
+            && is_held(&self.current_playback)
+            && let Some(CurrentPlayback::Held(clip)) = self.current_playback.take()
+        {
+            self.start_clip(clip);
+        }
+    }
+
+    fn start_next_synthesis(&mut self) {
+        let ready = self.active_request_id.is_none()
+            && !self.paused
+            && !self.voicegate_active
+            && self.queues.next().is_some_and(|request| {
+                let resolver = self.deps.resolver.load();
+                self.catalog.serves(
+                    request,
+                    resolver.active_alias_engine(&request.viewer_id, &request.viewer_name),
+                )
+            });
+        if !ready {
+            return;
+        }
+        let Some(request) = self.queues.pop_next() else {
+            return;
+        };
+        let queue_len = self.queues.len();
+        let emit = self.emitter();
+        emit.feed(self.queues.changed_event());
+        emit.started(&request, None, queue_len);
+        self.active_request_id = Some(request.request_id.clone());
+        let tx = self.synth_tx.clone();
+        let task_deps = SynthTaskDeps {
+            resolver: self.deps.resolver.load(),
+            pipeline: self.task_deps.pipeline.clone(),
+            registry: self.deps.registry.load(),
+            voice_catalog: self.task_deps.voice_catalog.clone(),
+            detector: self.task_deps.detector.clone(),
+        };
+        let window = self.config.repeat_window.get();
+        while self.recent_messages.len() > window {
+            self.recent_messages.pop_front();
+        }
+        let recent_snapshot: Vec<String> = self.recent_messages.iter().cloned().collect();
+        while self.recent_messages.len() >= window {
+            self.recent_messages.pop_front();
+        }
+        self.recent_messages.push_back(request.text.clone());
+        let timeout = self.config.timeout_per_item;
+        let request_id = request.request_id.clone();
+        let task = self.deps.tasks.spawn_until_stopped(async move {
+            let result = run_synthesis_bounded(request, task_deps, recent_snapshot, timeout).await;
+            if tx.send(result).await.is_err() {
+                tracing::debug!("speak queue stopped before the synthesis result arrived");
+            }
+        });
+        self.synthesis_task = Some((request_id, task));
+    }
+
+    fn adopt_detector(&mut self, build: DetectorBuild) {
+        if self.detector_builds.is_current(build.generation) {
+            self.task_deps.detector = build.detector.filter(|_| self.language_aware);
+            self.detector_builds
+                .settle(self.task_deps.detector.is_some());
+        }
+    }
+
+    fn on_progress_tick(&mut self) {
+        if self.paused {
+            return;
+        }
+        if let Some(CurrentPlayback::Playing(clip)) = self.current_playback.as_mut() {
+            clip.elapsed_secs += 1;
+            let event = SpeakEvent::Progress {
+                request_id: clip.request_id.clone(),
+                elapsed_secs: clip.elapsed_secs,
+            };
+            self.emitter().feed(event);
+        }
+    }
+
+    async fn on_active_step(&mut self, step: ActiveStep) {
+        match (step, self.current_playback.take()) {
+            (ActiveStep::Started(started), Some(CurrentPlayback::Starting(clip))) => {
+                self.on_playback_started(started, clip).await;
+            }
+            (ActiveStep::Finished(result), Some(CurrentPlayback::Playing(clip))) => {
+                self.progress_ticker = None;
+                self.finish_playback(result, clip);
+            }
+            (_, unchanged) => self.current_playback = unchanged,
+        }
+    }
+
+    async fn on_playback_started(
+        &mut self,
+        started: Result<Result<forge_audio::ControlledPlayback, Outcome>, tokio::task::JoinError>,
+        clip: StartingClip,
+    ) {
+        let started =
+            started.unwrap_or_else(|e| Err(device_failure(&AudioError::JoinFailed(e.to_string()))));
+        match started {
+            Ok(playback) => {
+                if self.paused {
+                    playback.pause();
+                }
+                let mut ticker = tokio::time::interval(PLAYBACK_PROGRESS_TICK);
+                ticker.tick().await;
+                self.progress_ticker = Some(ticker);
+                self.current_playback = Some(CurrentPlayback::Playing(PlayingClip {
+                    request_id: clip.request_id,
+                    request: clip.request,
+                    playback,
+                    elapsed_secs: 0,
+                }));
+            }
+            Err(failure) => {
+                self.active_request_id = None;
+                tracing::warn!(request_id = %clip.request_id.0, ?failure, "audio playback failed to start");
+                self.emitter().outcome(&clip.request, failure);
+            }
+        }
+    }
+
+    fn finish_playback(&mut self, result: Result<(), AudioError>, clip: PlayingClip) {
+        self.active_request_id = None;
+        match result {
+            Ok(()) => {
+                self.emitter().outcome(&clip.request, Outcome::Finished);
+                self.last_successful = Some(clip.request);
+            }
+            Err(e) => {
+                tracing::warn!(request_id = %clip.request_id.0, error = %e, "audio playback failed");
+                self.emitter().outcome(&clip.request, device_failure(&e));
+            }
+        }
+    }
+
+    fn handle_synth_result(&mut self, result: SynthTaskResult) {
+        if self.active_request_id.as_ref() != Some(&result.request.request_id) {
+            return;
+        }
+        match result.outcome {
+            SynthOutcome::Skipped { reason, detail } => {
+                self.active_request_id = None;
+                tracing::debug!(request_id = %result.request.request_id.0, ?reason, "speak skipped");
+                self.emitter()
+                    .outcome(&result.request, Outcome::Skipped { reason, detail });
+            }
+            SynthOutcome::Failed { reason, message } => {
+                self.active_request_id = None;
+                tracing::warn!(request_id = %result.request.request_id.0, code = %message.code(), detail = message.detail().map(|detail| detail.as_str()), "speak failed");
+                self.emitter()
+                    .outcome(&result.request, Outcome::Failed { reason, message });
+            }
+            SynthOutcome::Speak {
+                mut pcm,
+                voice_id,
+                engine_id,
+                language,
+            } => {
+                if let Some(cap_secs) = self.deps.pipeline.load().output.max_duration_secs {
+                    pcm.truncate_to_secs(cap_secs);
+                }
+                let clip = ReadyClip {
+                    request_id: result.request.request_id.clone(),
+                    request: result.request,
+                    pcm,
+                    voice_id,
+                    engine_id,
+                    language,
+                };
+                if self.paused {
+                    self.current_playback = Some(CurrentPlayback::Held(clip));
+                } else {
+                    self.start_clip(clip);
+                }
+            }
+        }
+    }
+
+    fn start_clip(&mut self, clip: ReadyClip) {
+        let ReadyClip {
+            request_id,
+            request,
             mut pcm,
             voice_id,
             engine_id,
             language,
-        } => {
-            if let Some(cap_secs) = deps.pipeline.load().output.max_duration_secs {
-                pcm.truncate_to_secs(cap_secs);
+        } = clip;
+        let duration_secs = u32::try_from(pcm.duration_ms() / 1000).unwrap_or(u32::MAX);
+        let emit = SpeakEmitter::new(&self.event_tx, self.deps.event_bus.as_ref());
+        emit.started(
+            &request,
+            Some(ResolvedPlayback {
+                voice_id: &voice_id,
+                engine_id: &engine_id,
+                duration_secs,
+                language: language.as_ref(),
+            }),
+            self.queues.len(),
+        );
+        let engine_gain = self
+            .handles
+            .engine_gains
+            .load()
+            .get(&engine_id)
+            .copied()
+            .unwrap_or(UNITY_GAIN);
+        pcm.apply_gain(self.config.master_volume * engine_gain);
+        match sink_for(&request, &self.deps, &self.handles.targeted_legs) {
+            Ok(sink) => {
+                let start = tokio::spawn(async move {
+                    match tokio::time::timeout(PLAYBACK_START_BOUND, sink.play_controlled(pcm))
+                        .await
+                    {
+                        Ok(started) => started.map_err(|e| device_failure(&e)),
+                        Err(_) => Err(Outcome::Failed {
+                            reason: FailureReason::DeviceError,
+                            message: messages::audio_start_timed_out(
+                                PLAYBACK_START_BOUND.as_secs(),
+                            ),
+                        }),
+                    }
+                });
+                self.current_playback = Some(CurrentPlayback::Starting(StartingClip {
+                    request_id,
+                    request,
+                    start,
+                }));
             }
-            let clip = ReadyClip {
-                request_id: result.request.request_id.clone(),
-                request: result.request,
-                pcm,
-                voice_id,
-                engine_id,
-                language,
-            };
-            if paused {
-                *current_playback = Some(CurrentPlayback::Held(clip));
-                return;
+            Err(e) => {
+                self.active_request_id = None;
+                tracing::warn!(request_id = %request_id.0, error = %e, "audio playback failed to start");
+                emit.outcome(&request, device_failure(&e));
             }
-            start_clip(
-                clip,
-                config,
-                deps,
-                event_tx,
-                active_request_id,
-                current_playback,
-                queue_len,
-                engine_gains,
-                targeted_legs,
-            );
         }
     }
-}
 
-#[expect(
-    clippy::too_many_arguments,
-    reason = "actor state is passed as separate borrows"
-)]
-fn start_clip(
-    clip: ReadyClip,
-    config: &QueueConfig,
-    deps: &ActorDeps,
-    event_tx: &tokio::sync::broadcast::Sender<SpeakEvent>,
-    active_request_id: &mut Option<RequestId>,
-    current_playback: &mut Option<CurrentPlayback>,
-    queue_len: usize,
-    engine_gains: &HashMap<EngineId, f32>,
-    targeted_legs: &TargetedLegs,
-) {
-    let ReadyClip {
-        request_id,
-        request,
-        mut pcm,
-        voice_id,
-        engine_id,
-        language,
-    } = clip;
-    let duration_secs = u32::try_from(pcm.duration_ms() / 1000).unwrap_or(u32::MAX);
-    let emit = SpeakEmitter::new(event_tx, deps.event_bus.as_ref());
-    emit.started(
-        &request,
-        Some(ResolvedPlayback {
-            voice_id: &voice_id,
-            engine_id: &engine_id,
-            duration_secs,
-            language: language.as_ref(),
-        }),
-        queue_len,
-    );
-    let engine_gain = engine_gains.get(&engine_id).copied().unwrap_or(UNITY_GAIN);
-    pcm.apply_gain(config.master_volume * engine_gain);
-    match sink_for(&request, deps, targeted_legs) {
-        Ok(sink) => {
-            let start = tokio::spawn(async move {
-                match tokio::time::timeout(PLAYBACK_START_BOUND, sink.play_controlled(pcm)).await {
-                    Ok(started) => started.map_err(|e| device_failure(&e)),
-                    Err(_) => Err(Outcome::Failed {
-                        reason: FailureReason::DeviceError,
-                        message: messages::audio_start_timed_out(PLAYBACK_START_BOUND.as_secs()),
-                    }),
+    fn stop_active(&mut self, reason: SkipReason) {
+        let Some(request_id) = self.active_request_id.take() else {
+            return;
+        };
+        let stopped_request = match self.current_playback.take() {
+            Some(CurrentPlayback::Playing(current)) => {
+                current.playback.stop();
+                Some(current.request)
+            }
+            Some(CurrentPlayback::Starting(clip)) => {
+                stop_when_started(&self.deps.tasks, clip.start);
+                Some(clip.request)
+            }
+            Some(CurrentPlayback::Held(held)) => Some(held.request),
+            None => None,
+        };
+        self.progress_ticker = None;
+        let emit = self.emitter();
+        match stopped_request {
+            Some(request) => emit.outcome(
+                &request,
+                Outcome::Skipped {
+                    reason,
+                    detail: None,
+                },
+            ),
+            None => emit.skipped_in_flight(request_id, reason),
+        }
+    }
+
+    fn handle_command(&mut self, command: SpeakCommand) -> ControlFlow<()> {
+        match command {
+            SpeakCommand::Shutdown => return ControlFlow::Break(()),
+            SpeakCommand::Enqueue(request) => self.admit_request(request),
+            SpeakCommand::Skip => self.stop_active(SkipReason::UserSkip),
+            SpeakCommand::PlayNow(request_id) => {
+                if self.queues.promote(&request_id) {
+                    self.stop_active(SkipReason::Promoted);
+                    self.emitter().feed(self.queues.changed_event());
                 }
+            }
+            SpeakCommand::RemoveQueued(request_id) => self.remove_queued(&request_id),
+            SpeakCommand::Cancel(request_id) => {
+                if self.active_request_id.as_ref() == Some(&request_id) {
+                    self.stop_active(SkipReason::Cancelled);
+                } else {
+                    self.remove_queued(&request_id);
+                }
+            }
+            SpeakCommand::Reorder { request_id, before } => {
+                self.reorder(&request_id, before);
+            }
+            SpeakCommand::Clear => {
+                self.stop_active(SkipReason::Cleared);
+                self.clear_pending(false);
+            }
+            SpeakCommand::ClearPending => self.clear_pending(true),
+            SpeakCommand::SetAlias(alias) => {
+                update_resolver(&self.deps.resolver, |resolver| resolver.set_alias(alias));
+            }
+            SpeakCommand::SwitchAlias {
+                viewer_id,
+                engine_id,
+                voice_id,
+            } => {
+                update_resolver(&self.deps.resolver, |resolver| {
+                    resolver.switch_alias(&viewer_id, engine_id, voice_id);
+                });
+            }
+            SpeakCommand::SetStrategy(strategy) => {
+                update_resolver(&self.deps.resolver, |resolver| {
+                    resolver.set_strategy(strategy);
+                });
+            }
+            SpeakCommand::RemoveAlias(id) => {
+                update_resolver(&self.deps.resolver, |resolver| resolver.remove_alias(&id));
+            }
+            SpeakCommand::SetVolume(volume) => {
+                self.config.master_volume = clamp_gain(volume);
+                self.handles
+                    .master_volume_bits
+                    .store(self.config.master_volume.to_bits(), Ordering::Relaxed);
+            }
+            SpeakCommand::SetRepeatWindow(window) => self.config.repeat_window = window,
+            SpeakCommand::SetEngineParams(engine_id, defaults, gain) => {
+                update_resolver(&self.deps.resolver, |resolver| {
+                    resolver.set_engine_default(engine_id.clone(), defaults);
+                });
+                let mut next = (*self.handles.engine_gains.load()).clone();
+                next.insert(engine_id, clamp_gain(gain));
+                self.handles.engine_gains.store(next);
+            }
+            SpeakCommand::RefreshVoiceCatalog => {
+                update_registry(&self.deps.registry, TtsRegistry::invalidate_all);
+                let disabled = self.handles.disabled_engines.load();
+                self.rebuild_catalog(&disabled);
+            }
+            SpeakCommand::RegisterEngine(registration) => {
+                update_registry(&self.deps.registry, |registry| {
+                    registry.register(registration.id, registration.factory);
+                });
+                let disabled = self.handles.disabled_engines.load();
+                self.rebuild_catalog(&disabled);
+            }
+            SpeakCommand::SetEngineEnabled(engine_id, enabled) => {
+                self.set_engine_enabled(&engine_id, enabled);
+            }
+            SpeakCommand::Pause => {
+                self.paused = true;
+                if let Some(CurrentPlayback::Playing(clip)) = self.current_playback.as_ref() {
+                    clip.playback.pause();
+                }
+                self.emitter().paused(HoldReason::User);
+            }
+            SpeakCommand::Resume => {
+                self.paused = false;
+                if let Some(CurrentPlayback::Playing(clip)) = self.current_playback.as_ref() {
+                    clip.playback.resume();
+                }
+                self.emitter().resumed(HoldReason::User);
+            }
+            SpeakCommand::Replay => {
+                if let Some(last) = &self.last_successful {
+                    let mut replay = last.clone();
+                    replay.request_id = RequestId::new();
+                    replay.priority = Priority::High;
+                    self.admit_request(replay);
+                }
+            }
+            SpeakCommand::VoiceGateActivated => {
+                self.voicegate_active = true;
+                self.emitter().paused(HoldReason::VoiceGate);
+            }
+            SpeakCommand::VoiceGateDeactivated => {
+                self.voicegate_active = false;
+                self.emitter().resumed(HoldReason::VoiceGate);
+            }
+        }
+        ControlFlow::Continue(())
+    }
+
+    fn set_engine_enabled(&mut self, engine_id: &EngineId, enabled: bool) {
+        let mut next = (*self.handles.disabled_engines.load()).clone();
+        let changed = if enabled {
+            next.remove(engine_id)
+        } else {
+            next.insert(engine_id.clone())
+        };
+        if changed {
+            update_registry(&self.deps.registry, |registry| {
+                registry.invalidate(engine_id);
             });
-            *current_playback = Some(CurrentPlayback::Starting(StartingClip {
-                request_id,
-                request,
-                start,
-            }));
         }
-        Err(e) => {
-            *active_request_id = None;
-            tracing::warn!(request_id = %request_id.0, error = %e, "audio playback failed to start");
-            emit.outcome(&request, device_failure(&e));
+        let rebuilt = self
+            .catalog
+            .rebuild(&self.deps.registry.load(), &next, &self.catalog_tx);
+        self.handles.disabled_engines.store(next);
+        self.publish_catalog(rebuilt);
+    }
+
+    fn rebuild_catalog(&mut self, disabled: &HashSet<EngineId>) {
+        let rebuilt = self
+            .catalog
+            .rebuild(&self.deps.registry.load(), disabled, &self.catalog_tx);
+        self.publish_catalog(rebuilt);
+    }
+
+    fn publish_catalog(&mut self, merged: Arc<Vec<TtsVoice>>) {
+        self.handles.voices.store_arc(merged.clone());
+        if self.language_aware {
+            self.detector_builds.rebuild(&merged);
         }
+        self.task_deps.voice_catalog = merged;
+        self.emitter().feed(SpeakEvent::VoiceCatalogChanged);
+    }
+
+    fn admit_request(&mut self, request: SpeakRequest) {
+        let total = self.queues.len();
+        let rejection = if total >= self.config.max_queue_len {
+            tracing::debug!(request_id = %request.request_id.0, "queue full, rejecting");
+            Some((RejectReason::QueueFull, self.config.max_queue_len))
+        } else if self.queues.user_count(&request.viewer_id) >= self.config.per_user_limit {
+            tracing::debug!(viewer_id = %request.viewer_id, "per-user limit reached");
+            Some((RejectReason::PerUserLimit, self.config.per_user_limit))
+        } else {
+            None
+        };
+        let emit = SpeakEmitter::new(&self.event_tx, self.deps.event_bus.as_ref());
+        if let Some((reason, limit)) = rejection {
+            emit.outcome(
+                &request,
+                Outcome::Rejected {
+                    reason,
+                    limit,
+                    queue_len: total,
+                },
+            );
+            return;
+        }
+        let preview = enqueue_preview(&request, &self.deps, &self.task_deps.voice_catalog);
+        emit.enqueued(&request, total + 1, preview);
+        self.queues.push(request);
+        emit.feed(self.queues.changed_event());
+    }
+
+    fn remove_queued(&mut self, request_id: &RequestId) {
+        let Some(request) = self.queues.remove(request_id) else {
+            return;
+        };
+        let emit = self.emitter();
+        emit.outcome(&request, Outcome::Removed);
+        emit.feed(self.queues.changed_event());
+    }
+
+    fn reorder(&mut self, request_id: &RequestId, before: Option<RequestId>) {
+        let Some(moved) = self.queues.reorder(request_id, before.as_ref()) else {
+            return;
+        };
+        let emit = self.emitter();
+        emit.reordered(&moved, before);
+        emit.feed(self.queues.changed_event());
+    }
+
+    fn clear_pending(&mut self, keep_current: bool) {
+        let drained = self.queues.drain_all();
+        let emit = self.emitter();
+        for request in drained {
+            emit.outcome(&request, Outcome::Removed);
+        }
+        emit.cleared(keep_current);
+        emit.feed(self.queues.changed_event());
     }
 }
 
@@ -872,29 +1057,6 @@ fn sink_for(
         .ok_or(AudioError::NoRoute)
 }
 
-async fn finish_playback(
-    play_result: Result<(), forge_audio::AudioError>,
-    deps: &ActorDeps,
-    event_tx: &tokio::sync::broadcast::Sender<SpeakEvent>,
-    active_request_id: &mut Option<RequestId>,
-    last_successful: &mut Option<SpeakRequest>,
-    current: PlayingClip,
-) {
-    *active_request_id = None;
-    let emit = SpeakEmitter::new(event_tx, deps.event_bus.as_ref());
-
-    match play_result {
-        Ok(()) => {
-            emit.outcome(&current.request, Outcome::Finished);
-            *last_successful = Some(current.request);
-        }
-        Err(e) => {
-            tracing::warn!(request_id = %current.request_id.0, error = %e, "audio playback failed");
-            emit.outcome(&current.request, device_failure(&e));
-        }
-    }
-}
-
 fn device_failure(error: &AudioError) -> Outcome {
     Outcome::Failed {
         reason: FailureReason::DeviceError,
@@ -908,60 +1070,6 @@ fn stop_when_started(tasks: &TaskOwner, start: PlaybackStart) {
             playback.stop();
         }
     });
-}
-
-fn stop_active(
-    reason: SkipReason,
-    deps: &ActorDeps,
-    event_tx: &tokio::sync::broadcast::Sender<SpeakEvent>,
-    active_request_id: &mut Option<RequestId>,
-    current_playback: &mut Option<CurrentPlayback>,
-    progress_ticker: &mut Option<tokio::time::Interval>,
-) {
-    let Some(request_id) = active_request_id.take() else {
-        return;
-    };
-    let stopped_request = match current_playback.take() {
-        Some(CurrentPlayback::Playing(current)) => {
-            current.playback.stop();
-            Some(current.request)
-        }
-        Some(CurrentPlayback::Starting(clip)) => {
-            stop_when_started(&deps.tasks, clip.start);
-            Some(clip.request)
-        }
-        Some(CurrentPlayback::Held(held)) => Some(held.request),
-        None => None,
-    };
-    *progress_ticker = None;
-    let emit = SpeakEmitter::new(event_tx, deps.event_bus.as_ref());
-    match stopped_request {
-        Some(request) => emit.outcome(
-            &request,
-            Outcome::Skipped {
-                reason,
-                detail: None,
-            },
-        ),
-        None => emit.skipped_in_flight(request_id, reason),
-    }
-}
-
-fn take_from_queues(
-    high_queue: &mut VecDeque<SpeakRequest>,
-    normal_queue: &mut VecDeque<SpeakRequest>,
-    request_id: &RequestId,
-) -> Option<SpeakRequest> {
-    if let Some(pos) = high_queue.iter().position(|r| &r.request_id == request_id) {
-        return high_queue.remove(pos);
-    }
-    if let Some(pos) = normal_queue
-        .iter()
-        .position(|r| &r.request_id == request_id)
-    {
-        return normal_queue.remove(pos);
-    }
-    None
 }
 
 fn enqueue_preview(req: &SpeakRequest, deps: &ActorDeps, catalog: &[TtsVoice]) -> EnqueuePreview {
@@ -990,439 +1098,6 @@ fn enqueue_preview(req: &SpeakRequest, deps: &ActorDeps, catalog: &[TtsVoice]) -
         voice_preview: preview,
         estimated_secs,
     }
-}
-
-#[expect(
-    clippy::too_many_arguments,
-    reason = "actor state is passed as separate borrows"
-)]
-fn admit_request(
-    req: SpeakRequest,
-    config: &QueueConfig,
-    deps: &ActorDeps,
-    event_tx: &tokio::sync::broadcast::Sender<SpeakEvent>,
-    high_queue: &mut VecDeque<SpeakRequest>,
-    normal_queue: &mut VecDeque<SpeakRequest>,
-    per_user_counts: &mut HashMap<String, usize>,
-    voice_catalog: &[TtsVoice],
-) {
-    let emit = SpeakEmitter::new(event_tx, deps.event_bus.as_ref());
-    let total = high_queue.len() + normal_queue.len();
-    let user_count = per_user_counts.get(&req.viewer_id).copied().unwrap_or(0);
-    let rejection = if total >= config.max_queue_len {
-        tracing::debug!(request_id = %req.request_id.0, "queue full, rejecting");
-        Some((RejectReason::QueueFull, config.max_queue_len))
-    } else if user_count >= config.per_user_limit {
-        tracing::debug!(viewer_id = %req.viewer_id, "per-user limit reached");
-        Some((RejectReason::PerUserLimit, config.per_user_limit))
-    } else {
-        None
-    };
-    if let Some((reason, limit)) = rejection {
-        emit.outcome(
-            &req,
-            Outcome::Rejected {
-                reason,
-                limit,
-                queue_len: total,
-            },
-        );
-        return;
-    }
-    *per_user_counts.entry(req.viewer_id.clone()).or_insert(0) += 1;
-    let preview = enqueue_preview(&req, deps, voice_catalog);
-    emit.enqueued(&req, total + 1, preview);
-    match req.priority {
-        Priority::High => high_queue.push_back(req),
-        Priority::Normal => normal_queue.push_back(req),
-    }
-    emit.feed(queue_changed_event(high_queue, normal_queue));
-}
-
-#[expect(
-    clippy::too_many_arguments,
-    reason = "actor state is passed as separate borrows"
-)]
-fn handle_command(
-    cmd: SpeakCommand,
-    config: &mut QueueConfig,
-    deps: &ActorDeps,
-    event_tx: &tokio::sync::broadcast::Sender<SpeakEvent>,
-    high_queue: &mut VecDeque<SpeakRequest>,
-    normal_queue: &mut VecDeque<SpeakRequest>,
-    per_user_counts: &mut HashMap<String, usize>,
-    paused: &mut bool,
-    voicegate_active: &mut bool,
-    active_request_id: &mut Option<RequestId>,
-    last_successful: &Option<SpeakRequest>,
-    current_playback: &mut Option<CurrentPlayback>,
-    progress_ticker: &mut Option<tokio::time::Interval>,
-    voice_catalog: &[TtsVoice],
-) {
-    match cmd {
-        SpeakCommand::Shutdown => {}
-        SpeakCommand::Enqueue(req) => {
-            admit_request(
-                req,
-                config,
-                deps,
-                event_tx,
-                high_queue,
-                normal_queue,
-                per_user_counts,
-                voice_catalog,
-            );
-        }
-        SpeakCommand::Skip => {
-            stop_active(
-                SkipReason::UserSkip,
-                deps,
-                event_tx,
-                active_request_id,
-                current_playback,
-                progress_ticker,
-            );
-        }
-        SpeakCommand::PlayNow(request_id) => {
-            if let Some(req) = take_from_queues(high_queue, normal_queue, &request_id) {
-                high_queue.push_front(req);
-                stop_active(
-                    SkipReason::Promoted,
-                    deps,
-                    event_tx,
-                    active_request_id,
-                    current_playback,
-                    progress_ticker,
-                );
-                SpeakEmitter::new(event_tx, deps.event_bus.as_ref())
-                    .feed(queue_changed_event(high_queue, normal_queue));
-            }
-        }
-        SpeakCommand::RemoveQueued(request_id) => {
-            remove_queued(
-                &request_id,
-                deps,
-                event_tx,
-                high_queue,
-                normal_queue,
-                per_user_counts,
-            );
-        }
-        SpeakCommand::Cancel(request_id) => {
-            if active_request_id.as_ref() == Some(&request_id) {
-                stop_active(
-                    SkipReason::Cancelled,
-                    deps,
-                    event_tx,
-                    active_request_id,
-                    current_playback,
-                    progress_ticker,
-                );
-            } else {
-                remove_queued(
-                    &request_id,
-                    deps,
-                    event_tx,
-                    high_queue,
-                    normal_queue,
-                    per_user_counts,
-                );
-            }
-        }
-        SpeakCommand::Reorder { request_id, before } => {
-            let anchor_in_high = match &before {
-                Some(anchor_id) => {
-                    if anchor_id == &request_id {
-                        return;
-                    }
-                    if high_queue.iter().any(|r| &r.request_id == anchor_id) {
-                        true
-                    } else if normal_queue.iter().any(|r| &r.request_id == anchor_id) {
-                        false
-                    } else {
-                        return;
-                    }
-                }
-                None => false,
-            };
-            let was_high = high_queue.iter().any(|r| r.request_id == request_id);
-            let Some(req) = take_from_queues(high_queue, normal_queue, &request_id) else {
-                return;
-            };
-            let emit = SpeakEmitter::new(event_tx, deps.event_bus.as_ref());
-            emit.reordered(&req, before.clone());
-            match &before {
-                None if was_high => high_queue.push_back(req),
-                None => normal_queue.push_back(req),
-                Some(anchor_id) => {
-                    let queue = if anchor_in_high {
-                        &mut *high_queue
-                    } else {
-                        &mut *normal_queue
-                    };
-                    let pos = queue
-                        .iter()
-                        .position(|r| &r.request_id == anchor_id)
-                        .unwrap_or(queue.len());
-                    queue.insert(pos, req);
-                }
-            }
-            emit.feed(queue_changed_event(high_queue, normal_queue));
-        }
-        SpeakCommand::Clear => {
-            stop_active(
-                SkipReason::Cleared,
-                deps,
-                event_tx,
-                active_request_id,
-                current_playback,
-                progress_ticker,
-            );
-            clear_pending(
-                false,
-                deps,
-                event_tx,
-                high_queue,
-                normal_queue,
-                per_user_counts,
-            );
-        }
-        SpeakCommand::ClearPending => {
-            clear_pending(
-                true,
-                deps,
-                event_tx,
-                high_queue,
-                normal_queue,
-                per_user_counts,
-            );
-        }
-        SpeakCommand::SetAlias(alias) => {
-            update_resolver(&deps.resolver, |resolver| {
-                resolver.set_alias(alias);
-            });
-        }
-        SpeakCommand::SwitchAlias {
-            viewer_id,
-            engine_id,
-            voice_id,
-        } => {
-            update_resolver(&deps.resolver, |resolver| {
-                resolver.switch_alias(&viewer_id, engine_id, voice_id);
-            });
-        }
-        SpeakCommand::SetStrategy(strategy) => {
-            update_resolver(&deps.resolver, |resolver| {
-                resolver.set_strategy(strategy);
-            });
-        }
-        SpeakCommand::SetVolume(volume) => {
-            config.master_volume = clamp_gain(volume);
-        }
-        SpeakCommand::SetRepeatWindow(window) => {
-            config.repeat_window = window;
-        }
-        SpeakCommand::RemoveAlias(id) => {
-            update_resolver(&deps.resolver, |resolver| {
-                resolver.remove_alias(&id);
-            });
-        }
-        SpeakCommand::RefreshVoiceCatalog
-        | SpeakCommand::RegisterEngine(_)
-        | SpeakCommand::SetEngineEnabled(_, _)
-        | SpeakCommand::SetEngineParams(_, _, _) => {}
-        SpeakCommand::Pause => {
-            *paused = true;
-            if let Some(CurrentPlayback::Playing(c)) = current_playback.as_ref() {
-                c.playback.pause();
-            }
-            SpeakEmitter::new(event_tx, deps.event_bus.as_ref()).paused(HoldReason::User);
-        }
-        SpeakCommand::Resume => {
-            *paused = false;
-            if let Some(CurrentPlayback::Playing(c)) = current_playback.as_ref() {
-                c.playback.resume();
-            }
-            SpeakEmitter::new(event_tx, deps.event_bus.as_ref()).resumed(HoldReason::User);
-        }
-        SpeakCommand::Replay => {
-            if let Some(last) = last_successful {
-                let mut replay = last.clone();
-                replay.request_id = RequestId::new();
-                replay.priority = Priority::High;
-                admit_request(
-                    replay,
-                    config,
-                    deps,
-                    event_tx,
-                    high_queue,
-                    normal_queue,
-                    per_user_counts,
-                    voice_catalog,
-                );
-            }
-        }
-        SpeakCommand::VoiceGateActivated => {
-            *voicegate_active = true;
-            SpeakEmitter::new(event_tx, deps.event_bus.as_ref()).paused(HoldReason::VoiceGate);
-        }
-        SpeakCommand::VoiceGateDeactivated => {
-            *voicegate_active = false;
-            SpeakEmitter::new(event_tx, deps.event_bus.as_ref()).resumed(HoldReason::VoiceGate);
-        }
-    }
-}
-
-fn remove_queued(
-    request_id: &RequestId,
-    deps: &ActorDeps,
-    event_tx: &tokio::sync::broadcast::Sender<SpeakEvent>,
-    high_queue: &mut VecDeque<SpeakRequest>,
-    normal_queue: &mut VecDeque<SpeakRequest>,
-    per_user_counts: &mut HashMap<String, usize>,
-) {
-    let Some(req) = take_from_queues(high_queue, normal_queue, request_id) else {
-        return;
-    };
-    if let Some(count) = per_user_counts.get_mut(&req.viewer_id) {
-        *count = count.saturating_sub(1);
-        if *count == 0 {
-            per_user_counts.remove(&req.viewer_id);
-        }
-    }
-    let emit = SpeakEmitter::new(event_tx, deps.event_bus.as_ref());
-    emit.outcome(&req, Outcome::Removed);
-    emit.feed(queue_changed_event(high_queue, normal_queue));
-}
-
-fn clear_pending(
-    keep_current: bool,
-    deps: &ActorDeps,
-    event_tx: &tokio::sync::broadcast::Sender<SpeakEvent>,
-    high_queue: &mut VecDeque<SpeakRequest>,
-    normal_queue: &mut VecDeque<SpeakRequest>,
-    per_user_counts: &mut HashMap<String, usize>,
-) {
-    let emit = SpeakEmitter::new(event_tx, deps.event_bus.as_ref());
-    for req in high_queue.drain(..).chain(normal_queue.drain(..)) {
-        emit.outcome(&req, Outcome::Removed);
-    }
-    per_user_counts.clear();
-    emit.cleared(keep_current);
-    emit.feed(queue_changed_event(high_queue, normal_queue));
-}
-
-fn pop_next(
-    high_queue: &mut VecDeque<SpeakRequest>,
-    normal_queue: &mut VecDeque<SpeakRequest>,
-    per_user_counts: &mut HashMap<String, usize>,
-) -> Option<SpeakRequest> {
-    let req = if !high_queue.is_empty() {
-        high_queue.pop_front()
-    } else {
-        normal_queue.pop_front()
-    };
-    if let Some(ref r) = req {
-        let count = per_user_counts.entry(r.viewer_id.clone()).or_insert(0);
-        *count = count.saturating_sub(1);
-        if *count == 0 {
-            per_user_counts.remove(&r.viewer_id);
-        }
-    }
-    req
-}
-
-struct DetectorBuild {
-    generation: u64,
-    detector: Option<Arc<LanguageDetector>>,
-}
-
-struct DetectorBuilds {
-    generation: u64,
-    tx: tokio::sync::mpsc::Sender<DetectorBuild>,
-    ready: tokio::sync::watch::Sender<bool>,
-    tasks: TaskOwner,
-}
-
-impl DetectorBuilds {
-    fn new(
-        tx: tokio::sync::mpsc::Sender<DetectorBuild>,
-        ready: tokio::sync::watch::Sender<bool>,
-        tasks: TaskOwner,
-    ) -> Self {
-        Self {
-            generation: 0,
-            tx,
-            ready,
-            tasks,
-        }
-    }
-
-    fn invalidate(&mut self) {
-        self.generation = self.generation.wrapping_add(1);
-        self.ready.send_replace(false);
-    }
-
-    fn settle(&self, ready: bool) {
-        self.ready.send_replace(ready);
-    }
-
-    fn is_current(&self, generation: u64) -> bool {
-        self.generation == generation
-    }
-
-    fn rebuild(&mut self, catalog: &[TtsVoice]) {
-        self.invalidate();
-        let generation = self.generation;
-        let candidates = candidate_languages(catalog);
-        let tx = self.tx.clone();
-        self.tasks.spawn_until_stopped(async move {
-            let built = tokio::task::spawn_blocking(move || {
-                LanguageDetector::new(&candidates).map(Arc::new)
-            })
-            .await;
-            let detector = match built {
-                Ok(detector) => detector,
-                Err(e) => {
-                    tracing::warn!(error = %e, "language detector build failed");
-                    None
-                }
-            };
-            if tx
-                .send(DetectorBuild {
-                    generation,
-                    detector,
-                })
-                .await
-                .is_err()
-            {
-                tracing::debug!("speak queue stopped before the language detector was rebuilt");
-            }
-        });
-    }
-}
-
-fn publish_catalog(
-    merged: Arc<Vec<TtsVoice>>,
-    voices: &Shared<Vec<TtsVoice>>,
-    emitter: &SpeakEmitter<'_>,
-    task_deps: &mut SynthTaskDeps,
-    language_aware: bool,
-    detector_builds: &mut DetectorBuilds,
-) {
-    voices.store_arc(merged.clone());
-    if language_aware {
-        detector_builds.rebuild(&merged);
-    }
-    task_deps.voice_catalog = merged;
-    emitter.feed(SpeakEvent::VoiceCatalogChanged);
-}
-
-fn next_request<'a>(
-    high_queue: &'a VecDeque<SpeakRequest>,
-    normal_queue: &'a VecDeque<SpeakRequest>,
-) -> Option<&'a SpeakRequest> {
-    high_queue.front().or_else(|| normal_queue.front())
 }
 
 #[cfg(test)]
@@ -1509,61 +1184,32 @@ mod tests {
     }
 
     struct Harness {
-        config: QueueConfig,
-        deps: ActorDeps,
+        actor: QueueActor,
         events: Arc<CapturingPublisher>,
-        tx: tokio::sync::broadcast::Sender<SpeakEvent>,
         rx: tokio::sync::broadcast::Receiver<SpeakEvent>,
-        high: VecDeque<SpeakRequest>,
-        normal: VecDeque<SpeakRequest>,
-        counts: HashMap<String, usize>,
-        paused: bool,
-        voicegate: bool,
-        active: Option<RequestId>,
-        last: Option<SpeakRequest>,
-        current_playback: Option<CurrentPlayback>,
-        progress_ticker: Option<tokio::time::Interval>,
     }
 
     impl Harness {
         fn new() -> Self {
             let (deps, events) = recording_deps();
             let (tx, rx) = tokio::sync::broadcast::channel::<SpeakEvent>(32);
-            Self {
-                config: QueueConfig::default(),
-                deps,
-                events,
-                tx,
-                rx,
-                high: VecDeque::new(),
-                normal: VecDeque::new(),
-                counts: HashMap::new(),
-                paused: false,
-                voicegate: false,
-                active: None,
-                last: None,
-                current_playback: None,
-                progress_ticker: None,
-            }
+            let config = QueueConfig::default();
+            let handles = ActorHandles {
+                depth: Arc::new(AtomicUsize::new(0)),
+                voices: Shared::new(Vec::new()),
+                disabled_engines: Shared::new(HashSet::new()),
+                master_volume_bits: Arc::new(AtomicU32::new(config.master_volume.to_bits())),
+                engine_gains: Shared::new(HashMap::new()),
+                targeted_legs: TargetedLegs::new(None),
+            };
+            let (_command_tx, commands) = tokio::sync::mpsc::channel(1);
+            let (ready_tx, _ready_rx) = tokio::sync::watch::channel(false);
+            let (actor, _inbox) = QueueActor::new(config, deps, handles, commands, tx, ready_tx);
+            Self { actor, events, rx }
         }
 
         fn run(&mut self, cmd: SpeakCommand) {
-            handle_command(
-                cmd,
-                &mut self.config,
-                &self.deps,
-                &self.tx,
-                &mut self.high,
-                &mut self.normal,
-                &mut self.counts,
-                &mut self.paused,
-                &mut self.voicegate,
-                &mut self.active,
-                &self.last,
-                &mut self.current_playback,
-                &mut self.progress_ticker,
-                &[],
-            );
+            assert!(self.actor.handle_command(cmd).is_continue());
         }
 
         fn bus(&self, kind: &str) -> Event {
@@ -1617,7 +1263,7 @@ mod tests {
             before: Some(ids[2].clone()),
         });
 
-        assert_eq!(texts(&h.normal), vec!["b", "a", "c"]);
+        assert_eq!(texts(&h.actor.queues.normal), vec!["b", "a", "c"]);
     }
 
     #[test]
@@ -1637,7 +1283,7 @@ mod tests {
             before: None,
         });
 
-        assert_eq!(texts(&h.normal), vec!["b", "c", "a"]);
+        assert_eq!(texts(&h.actor.queues.normal), vec!["b", "c", "a"]);
     }
 
     #[test]
@@ -1658,8 +1304,8 @@ mod tests {
             before: Some(ids[1].clone()),
         });
 
-        assert_eq!(texts(&h.high), vec!["h1", "n2", "h2"]);
-        assert_eq!(texts(&h.normal), vec!["n1"]);
+        assert_eq!(texts(&h.actor.queues.high), vec!["h1", "n2", "h2"]);
+        assert_eq!(texts(&h.actor.queues.normal), vec!["n1"]);
     }
 
     #[test]
@@ -1684,8 +1330,8 @@ mod tests {
 
             h.run(SpeakCommand::Reorder { request_id, before });
 
-            assert_eq!(texts(&h.normal), vec!["a", "b", "c"], "{case}");
-            assert!(h.high.is_empty(), "{case}");
+            assert_eq!(texts(&h.actor.queues.normal), vec!["a", "b", "c"], "{case}");
+            assert!(h.actor.queues.high.is_empty(), "{case}");
             assert!(
                 !h.drain_events()
                     .iter()
@@ -1736,7 +1382,7 @@ mod tests {
             let mut h = Harness::new();
             h.run(SpeakCommand::SetVolume(input));
             assert_eq!(
-                h.config.master_volume, expected,
+                h.actor.config.master_volume, expected,
                 "SetVolume({input}) must set master_volume to {expected}",
             );
         }
@@ -2047,7 +1693,7 @@ mod tests {
             ),
         ] {
             let mut h = Harness::new();
-            h.config = config;
+            h.actor.config = config;
             h.run(SpeakCommand::Enqueue(request(
                 first_viewer,
                 "accepted",
@@ -2111,7 +1757,7 @@ mod tests {
         let src = forge_types::EventId::new();
         let mut last = request("nova", "again please", Priority::Normal);
         last.source_event_id = Some(src);
-        h.last = Some(last);
+        h.actor.last_successful = Some(last);
 
         h.run(SpeakCommand::Replay);
 
@@ -2157,9 +1803,11 @@ mod tests {
     }
 
     fn source_of(h: &Harness, text: &str) -> Option<forge_types::EventId> {
-        h.high
+        h.actor
+            .queues
+            .high
             .iter()
-            .chain(h.normal.iter())
+            .chain(h.actor.queues.normal.iter())
             .find(|r| r.text == text)
             .and_then(|r| r.source_event_id)
     }
@@ -2219,19 +1867,19 @@ mod tests {
     fn clear_pending_keeps_the_in_flight_message() {
         let mut h = Harness::new();
         let current = RequestId::new();
-        h.active = Some(current.clone());
+        h.actor.active_request_id = Some(current.clone());
         stage_mixed_pending(&mut h);
 
         h.run(SpeakCommand::ClearPending);
 
-        assert_eq!(h.active, Some(current));
+        assert_eq!(h.actor.active_request_id, Some(current));
         assert!(!h.published("speak.skipped"));
     }
 
     #[test]
     fn clear_stops_the_in_flight_message_then_reports_each_pending_removed_then_cleared() {
         let mut h = Harness::new();
-        h.active = Some(RequestId::new());
+        h.actor.active_request_id = Some(RequestId::new());
         let [b, a, c] = stage_mixed_pending(&mut h);
 
         h.run(SpeakCommand::Clear);
@@ -2254,7 +1902,7 @@ mod tests {
             h.bus("speak.cleared").payload,
             serde_json::json!({ "keep_current": false })
         );
-        assert!(h.active.is_none());
+        assert!(h.actor.active_request_id.is_none());
     }
 
     #[test]
@@ -2280,7 +1928,7 @@ mod tests {
     fn stopping_a_message_still_synthesizing_publishes_skipped_without_viewer_or_text() {
         let mut h = Harness::new();
         let in_flight = RequestId::new();
-        h.active = Some(in_flight.clone());
+        h.actor.active_request_id = Some(in_flight.clone());
 
         h.run(SpeakCommand::Skip);
 

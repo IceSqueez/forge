@@ -50,7 +50,7 @@ use crate::auth::AuthState;
 use crate::bus_adapter::{BusAdapter, ClientFilterSet};
 use crate::config::ServerConfig;
 use crate::origin::build_allowed_origins;
-use crate::protocol::DispatchContext;
+use crate::protocol::{DispatchContext, Services, Session};
 use crate::server::AppState;
 use crate::server_info::ServerInfo;
 use crate::ws_client::WsClient;
@@ -677,20 +677,20 @@ fn context_for(
 ) -> DispatchContext {
     let action_engine = test_engine(&bus, &*dp);
     DispatchContext {
-        bus,
-        bus_adapter,
-        actions: dp.action_repo(),
-        globals: Arc::clone(&dp) as Arc<dyn GlobalsRepo>,
-        user_globals: Arc::clone(&dp) as Arc<dyn UserGlobalsRepo>,
-        overlays: dp.overlay_repo(),
-        auth_state: AuthState::for_test(auth_required_for_reads, TEST_BEARER_TOKEN),
-        client,
-        credentials: test_creds(),
-        server_info: ServerInfo::serving(BTreeSet::new()),
-        action_engine,
-        overlay_root: Arc::new(PathBuf::new()),
-        overlay_channel_swap: tokio::sync::Mutex::new(None),
-        close_after_auth_failure: AtomicBool::new(false),
+        services: Services {
+            bus,
+            bus_adapter,
+            actions: dp.action_repo(),
+            globals: Arc::clone(&dp) as Arc<dyn GlobalsRepo>,
+            user_globals: Arc::clone(&dp) as Arc<dyn UserGlobalsRepo>,
+            overlays: dp.overlay_repo(),
+            auth_state: AuthState::for_test(auth_required_for_reads, TEST_BEARER_TOKEN),
+            credentials: test_creds(),
+            server_info: ServerInfo::serving(BTreeSet::new()),
+            action_engine,
+            overlay_root: Arc::new(PathBuf::new()),
+        },
+        session: Session::new(client),
     }
 }
 

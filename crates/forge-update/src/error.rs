@@ -45,8 +45,6 @@ pub enum UpdateError {
     Cancelled,
     #[error("an update file operation failed: {0}")]
     Io(#[from] std::io::Error),
-    #[error("the update journal is malformed: {0}")]
-    MalformedJournal(String),
     #[error("an update record is malformed: {0}")]
     MalformedRecord(String),
     #[error("no update is waiting to be applied")]

@@ -72,13 +72,71 @@ pub enum WsRequest {
     },
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum RequestAccess {
+    Open,
+    Read,
+    Write,
+}
+
+impl WsRequest {
+    pub(crate) const fn access(&self) -> RequestAccess {
+        match self {
+            Self::Auth { .. } => RequestAccess::Open,
+            Self::Subscribe { .. }
+            | Self::Unsubscribe { .. }
+            | Self::GetInfo
+            | Self::GetActions
+            | Self::GetGlobals
+            | Self::GetGlobal { .. }
+            | Self::GetUserGlobals { .. }
+            | Self::GetEvents { .. }
+            | Self::GetActiveViewers
+            | Self::GetOverlayFiles { .. } => RequestAccess::Read,
+            Self::DoAction { .. }
+            | Self::SetGlobal { .. }
+            | Self::TriggerCodeEvent { .. }
+            | Self::ReplayEvent { .. } => RequestAccess::Write,
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum WsErrorCode {
+    Unauthenticated,
+    AuthFailed,
+    NotFound,
+    InvalidPayload,
+    RuntimeError,
+    TooManySubscriptions,
+}
+
+impl WsErrorCode {
+    pub(crate) const fn as_str(self) -> &'static str {
+        match self {
+            Self::Unauthenticated => "UNAUTHENTICATED",
+            Self::AuthFailed => "AUTH_FAILED",
+            Self::NotFound => "NOT_FOUND",
+            Self::InvalidPayload => "INVALID_PAYLOAD",
+            Self::RuntimeError => "RUNTIME_ERROR",
+            Self::TooManySubscriptions => "TOO_MANY_SUBSCRIPTIONS",
+        }
+    }
+}
+
 #[derive(Debug)]
 pub(crate) enum WsResponse {
     Ok(serde_json::Value),
-    Error {
-        code: Option<String>,
-        message: String,
-    },
+    Error { code: WsErrorCode, message: String },
+}
+
+impl WsResponse {
+    pub(crate) fn error(code: WsErrorCode, message: impl Into<String>) -> Self {
+        Self::Error {
+            code,
+            message: message.into(),
+        }
+    }
 }
 
 #[derive(Debug)]
@@ -133,9 +191,7 @@ pub(crate) fn serialize_response_frame(envelope: &WsEnvelope<WsResponse>) -> ser
         WsResponse::Error { code, message } => {
             map.insert("status".into(), "error".into());
             let mut err = serde_json::Map::new();
-            if let Some(c) = code {
-                err.insert("code".into(), c.clone().into());
-            }
+            err.insert("code".into(), code.as_str().into());
             err.insert("message".into(), message.clone().into());
             map.insert("error".into(), serde_json::Value::Object(err));
         }

@@ -11,40 +11,57 @@ use crate::bus_adapter::{BusAdapter, OverlayClientClass, WsFrame};
 use crate::server_info::ServerInfo;
 use crate::ws_client::WsClient;
 
-use super::envelope::WsResponse;
+use super::envelope::{WsErrorCode, WsResponse};
 
-pub(crate) struct DispatchContext {
+#[derive(Clone)]
+pub(crate) struct Services {
     pub bus: Arc<dyn EventHistory>,
     pub bus_adapter: Arc<BusAdapter>,
     pub actions: Arc<dyn ActionRepo>,
     pub globals: Arc<dyn GlobalsRepo>,
     pub user_globals: Arc<dyn UserGlobalsRepo>,
     pub overlays: Arc<dyn OverlayRepo>,
-    pub(crate) auth_state: Arc<AuthState>,
-    pub client: Arc<WsClient>,
+    pub auth_state: Arc<AuthState>,
     pub credentials: Arc<dyn CredentialsRepo>,
     pub server_info: Arc<ServerInfo>,
     pub action_engine: Arc<ActionEngineHandle>,
     pub overlay_root: Arc<std::path::PathBuf>,
+}
+
+pub(crate) struct Session {
+    pub client: Arc<WsClient>,
     pub overlay_channel_swap: Mutex<Option<broadcast::Receiver<WsFrame>>>,
     pub close_after_auth_failure: AtomicBool,
 }
 
+impl Session {
+    pub(crate) fn new(client: Arc<WsClient>) -> Self {
+        Self {
+            client,
+            overlay_channel_swap: Mutex::new(None),
+            close_after_auth_failure: AtomicBool::new(false),
+        }
+    }
+}
+
+pub(crate) struct DispatchContext {
+    pub services: Services,
+    pub session: Session,
+}
+
 pub(super) fn is_authenticated(ctx: &DispatchContext) -> bool {
-    ctx.client
+    ctx.session
+        .client
         .bearer_generation()
-        .is_some_and(|generation| generation == ctx.auth_state.token_generation())
+        .is_some_and(|generation| generation == ctx.services.auth_state.token_generation())
 }
 
 pub(super) fn read_refused(ctx: &DispatchContext) -> bool {
-    ctx.auth_state.reads_required() && !is_authenticated(ctx)
+    ctx.services.auth_state.reads_required() && !is_authenticated(ctx)
 }
 
 pub(super) fn unauthenticated() -> WsResponse {
-    WsResponse::Error {
-        code: Some("UNAUTHENTICATED".to_owned()),
-        message: "authentication required".to_owned(),
-    }
+    WsResponse::error(WsErrorCode::Unauthenticated, "authentication required")
 }
 
 pub(super) async fn handle_authenticate(
@@ -62,8 +79,13 @@ pub(super) async fn handle_authenticate(
 }
 
 async fn authenticate_bearer(token: Secret, ctx: &DispatchContext) -> WsResponse {
-    if let Some(generation) = ctx.auth_state.verify_generation(token.expose()).await {
-        ctx.client.mark_bearer_authenticated(generation);
+    if let Some(generation) = ctx
+        .services
+        .auth_state
+        .verify_generation(token.expose())
+        .await
+    {
+        ctx.session.client.mark_bearer_authenticated(generation);
         WsResponse::Ok(serde_json::json!({ "authenticated": true }))
     } else {
         auth_failed("invalid token")
@@ -76,30 +98,36 @@ async fn authenticate_overlay(
     ctx: &DispatchContext,
 ) -> WsResponse {
     let lookup = ctx
+        .services
         .overlays
         .get_by_credential(&credential)
         .await
         .inspect_err(|error| tracing::warn!(%error, "overlay credential lookup failed"));
     let Ok(Some(definition)) = lookup else {
-        ctx.close_after_auth_failure.store(true, Ordering::SeqCst);
+        ctx.session
+            .close_after_auth_failure
+            .store(true, Ordering::SeqCst);
         return auth_failed("invalid credential");
     };
     if !definition.enabled {
-        ctx.close_after_auth_failure.store(true, Ordering::SeqCst);
+        ctx.session
+            .close_after_auth_failure
+            .store(true, Ordering::SeqCst);
         return auth_failed("invalid credential");
     }
     let identity = definition.id;
     if let Some(receiver) = ctx
+        .services
         .bus_adapter
         .promote_to_overlay(
-            ctx.client.id,
+            ctx.session.client.id,
             identity.clone(),
             OverlayClientClass::from_frame_flag(preview_connection),
         )
         .await
     {
-        *ctx.overlay_channel_swap.lock().await = Some(receiver);
-        if let Some(listener) = ctx.bus_adapter.overlay_connect_listener() {
+        *ctx.session.overlay_channel_swap.lock().await = Some(receiver);
+        if let Some(listener) = ctx.services.bus_adapter.overlay_connect_listener() {
             listener.overlay_connected(&identity).await;
         }
     }
@@ -107,8 +135,5 @@ async fn authenticate_overlay(
 }
 
 fn auth_failed(message: &str) -> WsResponse {
-    WsResponse::Error {
-        code: Some("AUTH_FAILED".to_owned()),
-        message: message.to_owned(),
-    }
+    WsResponse::error(WsErrorCode::AuthFailed, message)
 }

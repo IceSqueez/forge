@@ -3,7 +3,7 @@ use std::path::{Path, PathBuf};
 use serde::{Deserialize, Serialize};
 
 use crate::UpdateError;
-use crate::record::remove_record;
+use crate::record::{read_record, remove_record, require_format, write_record};
 
 const JOURNAL_FILE: &str = "update-journal.json";
 pub(crate) const JOURNAL_FORMAT: u32 = 1;
@@ -25,38 +25,18 @@ impl UpdateJournal {
     }
 
     pub(crate) fn write_blocking(&self, data_dir: &Path) -> Result<(), UpdateError> {
-        Ok(forge_durable::write_atomically(
-            &Self::path_in(data_dir),
-            &self.encode()?,
-        )?)
+        write_record(&Self::path_in(data_dir), self)
     }
 
     pub(crate) fn read_blocking(data_dir: &Path) -> Result<Option<Self>, UpdateError> {
-        match std::fs::read(Self::path_in(data_dir)) {
-            Ok(bytes) => Self::decode(&bytes).map(Some),
-            Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(None),
-            Err(error) => Err(error.into()),
+        let journal = read_record::<Self>(&Self::path_in(data_dir))?;
+        if let Some(journal) = &journal {
+            require_format(journal.format, JOURNAL_FORMAT)?;
         }
+        Ok(journal)
     }
 
     pub(crate) fn clear_blocking(data_dir: &Path) -> Result<(), UpdateError> {
         remove_record(&Self::path_in(data_dir))
-    }
-
-    fn encode(&self) -> Result<Vec<u8>, UpdateError> {
-        serde_json::to_vec_pretty(self)
-            .map_err(|error| UpdateError::MalformedJournal(error.to_string()))
-    }
-
-    fn decode(bytes: &[u8]) -> Result<Self, UpdateError> {
-        let journal: Self = serde_json::from_slice(bytes)
-            .map_err(|error| UpdateError::MalformedJournal(error.to_string()))?;
-        if journal.format != JOURNAL_FORMAT {
-            return Err(UpdateError::MalformedJournal(format!(
-                "unsupported journal format {}",
-                journal.format
-            )));
-        }
-        Ok(journal)
     }
 }

@@ -6,10 +6,12 @@ use forge_speech_types::LanguageCode;
 use forge_types::is_bot_account;
 
 mod language;
+mod pattern;
 mod spoken_words;
 mod trace;
 
 pub use language::{DetectionOutcome, LanguageDetector};
+pub use pattern::{CompiledPattern, PatternError};
 pub use spoken_words::spoken_words;
 pub use trace::{AppliedReplacement, ReplacementOrigin};
 
@@ -117,11 +119,11 @@ pub enum ReplacementRule {
         replacement: String,
     },
     Regex {
-        compiled: regex::Regex,
+        compiled: CompiledPattern,
         replacement: String,
     },
     LinkWord {
-        compiled: regex::Regex,
+        compiled: CompiledPattern,
     },
 }
 
@@ -141,7 +143,7 @@ pub struct SkipRulesConfig {
     pub repeat_of_recent: bool,
     pub emote_only: bool,
     pub mostly_non_latin: bool,
-    pub custom_regexes: Vec<regex::Regex>,
+    pub custom_regexes: Vec<CompiledPattern>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -507,11 +509,13 @@ fn stage_text_replacements(
                 replacement,
             } => {
                 current = compiled
+                    .regex()
                     .replace_all(&current, replacement.as_str())
                     .into_owned();
             }
             ReplacementRule::LinkWord { compiled } => {
                 current = compiled
+                    .regex()
                     .replace_all(&current, spoken_words(language).link)
                     .into_owned();
             }
@@ -1152,7 +1156,7 @@ mod tests {
             (
                 "regex",
                 SkipRulesConfig {
-                    custom_regexes: vec![regex::Regex::new("spam+").unwrap()],
+                    custom_regexes: vec![CompiledPattern::new("spam+").unwrap()],
                     ..SkipRulesConfig::default()
                 },
                 "so spamm",
@@ -1490,7 +1494,7 @@ mod tests {
     fn link_word_rule_speaks_the_voice_language_link_word_for_each_language() {
         let config = PipelineConfig {
             replacement_rules: vec![ReplacementRule::LinkWord {
-                compiled: regex::Regex::new(r"https?://\S+").unwrap(),
+                compiled: CompiledPattern::new(r"https?://\S+").unwrap(),
             }],
             ..neutral_config()
         };
@@ -1519,7 +1523,7 @@ mod tests {
     fn traced_link_word_rule_records_the_voice_language_link_word() {
         let config = PipelineConfig {
             replacement_rules: vec![ReplacementRule::LinkWord {
-                compiled: regex::Regex::new(r"https?://\S+").unwrap(),
+                compiled: CompiledPattern::new(r"https?://\S+").unwrap(),
             }],
             ..neutral_config()
         };
@@ -1691,7 +1695,7 @@ mod tests {
     fn regex_rule_replaces_every_match() {
         let config = PipelineConfig {
             replacement_rules: vec![ReplacementRule::Regex {
-                compiled: regex::Regex::new(r"\d+").unwrap(),
+                compiled: CompiledPattern::new(r"\d+").unwrap(),
                 replacement: "#".into(),
             }],
             ..neutral_config()

@@ -1,8 +1,8 @@
 use async_trait::async_trait;
 use forge_registry::{
-    ChoiceField, ConfigChoice, ConfigProblem, ConfigSpec, ProducedVariable, RunContext, StepTimer,
-    SubActionCategory, SubActionIo, SubActionRunner, TextEditor, TextField, TypedField,
-    VariableField,
+    ChoiceField, ConfigChoice, ConfigProblem, ConfigSpec, ProducedVariable, RunContext,
+    StepCatalogEntry, StepTimer, SubActionCategory, SubActionIo, SubActionRunner, TextEditor,
+    TextField, TypedField, VariableField,
 };
 use forge_types::{ArgStack, SubActionConfig, SubActionTelemetry, Variant, VariantKind};
 
@@ -84,30 +84,28 @@ fn read_config(
 
 pub struct CoreStringTrimRunner;
 
+impl StepCatalogEntry for CoreStringTrimRunner {
+    fn category(&self) -> SubActionCategory {
+        SubActionCategory::Util
+    }
+    fn label(&self) -> &str {
+        "String - Trim Whitespace"
+    }
+    fn summary(&self) -> &str {
+        "Remove leading and/or trailing whitespace from a string"
+    }
+    fn search_text(&self) -> &str {
+        "string trim strip whitespace leading trailing both"
+    }
+    fn icon_name(&self) -> &str {
+        "text-wrap"
+    }
+}
+
 #[async_trait]
 impl SubActionRunner for CoreStringTrimRunner {
     fn id(&self) -> &str {
         "core.string.trim"
-    }
-
-    fn category(&self) -> SubActionCategory {
-        SubActionCategory::Util
-    }
-
-    fn label(&self) -> &str {
-        "String - Trim Whitespace"
-    }
-
-    fn summary(&self) -> &str {
-        "Remove leading and/or trailing whitespace from a string"
-    }
-
-    fn search_text(&self) -> &str {
-        "string trim strip whitespace leading trailing both"
-    }
-
-    fn icon_name(&self) -> &str {
-        "text-wrap"
     }
 
     fn config_spec(&self) -> Option<ConfigSpec> {

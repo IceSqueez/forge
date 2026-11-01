@@ -3,7 +3,8 @@ use std::sync::Arc;
 use async_trait::async_trait;
 use forge_registry::SubActionConfig;
 use forge_registry::{
-    ConfigSpec, RunContext, StepTimer, SubActionCategory, SubActionRunner, TypedField,
+    ConfigSpec, RunContext, StepCatalogEntry, StepTimer, SubActionCategory, SubActionRunner,
+    TypedField,
 };
 use forge_types::{ArgStack, SubActionOutcome, SubActionTelemetry};
 
@@ -24,30 +25,28 @@ impl SwitchCurrentSceneRunner {
     }
 }
 
+impl StepCatalogEntry for SwitchCurrentSceneRunner {
+    fn category(&self) -> SubActionCategory {
+        SubActionCategory::Integration
+    }
+    fn label(&self) -> &str {
+        "Switch Scene"
+    }
+    fn summary(&self) -> &str {
+        "Sets the current OBS program scene."
+    }
+    fn search_text(&self) -> &str {
+        "obs switch scene current program set"
+    }
+    fn icon_name(&self) -> &str {
+        "arrows-shuffle"
+    }
+}
+
 #[async_trait]
 impl SubActionRunner for SwitchCurrentSceneRunner {
     fn id(&self) -> &str {
         sub_action_ids::SCENE_SWITCH_CURRENT
-    }
-
-    fn category(&self) -> SubActionCategory {
-        SubActionCategory::Integration
-    }
-
-    fn label(&self) -> &str {
-        "Switch Scene"
-    }
-
-    fn summary(&self) -> &str {
-        "Sets the current OBS program scene."
-    }
-
-    fn search_text(&self) -> &str {
-        "obs switch scene current program set"
-    }
-
-    fn icon_name(&self) -> &str {
-        "arrows-shuffle"
     }
 
     fn config_spec(&self) -> Option<ConfigSpec> {

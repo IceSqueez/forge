@@ -3,13 +3,13 @@ use std::sync::Arc;
 use async_trait::async_trait;
 use forge_registry::SubActionConfig;
 use forge_registry::{
-    ConfigProblem, ConfigReason, ConfigSpec, DurationBounds, DurationField, RunContext, StepTimer,
-    SubActionCategory, SubActionRunner, TypedField, ValueBounds,
+    ConfigProblem, ConfigReason, ConfigSpec, DurationBounds, DurationField, RunContext,
+    StepCatalogEntry, StepTimer, SubActionCategory, SubActionRunner, TypedField, ValueBounds,
 };
 use forge_types::{ArgStack, SubActionTelemetry};
 
 use super::step_failure;
-use crate::ad_break::YoutubeAdBreak;
+use crate::broadcast::ad_break::YoutubeAdBreak;
 use crate::vocabulary::{config_keys, sub_action_ids};
 
 const MIN_DURATION_SECS: i64 = 1;
@@ -44,30 +44,28 @@ impl InsertAdBreakRunner {
     }
 }
 
+impl StepCatalogEntry for InsertAdBreakRunner {
+    fn category(&self) -> SubActionCategory {
+        SubActionCategory::Integration
+    }
+    fn label(&self) -> &str {
+        "Insert Ad Break"
+    }
+    fn summary(&self) -> &str {
+        "Triggers a mid-roll ad cuepoint on the active YouTube broadcast."
+    }
+    fn search_text(&self) -> &str {
+        "youtube ad break cuepoint mid-roll monetization broadcast live"
+    }
+    fn icon_name(&self) -> &str {
+        "player-skip-forward"
+    }
+}
+
 #[async_trait]
 impl SubActionRunner for InsertAdBreakRunner {
     fn id(&self) -> &str {
         sub_action_ids::STREAM_INSERT_AD_BREAK
-    }
-
-    fn category(&self) -> SubActionCategory {
-        SubActionCategory::Integration
-    }
-
-    fn label(&self) -> &str {
-        "Insert Ad Break"
-    }
-
-    fn summary(&self) -> &str {
-        "Triggers a mid-roll ad cuepoint on the active YouTube broadcast."
-    }
-
-    fn search_text(&self) -> &str {
-        "youtube ad break cuepoint mid-roll monetization broadcast live"
-    }
-
-    fn icon_name(&self) -> &str {
-        "player-skip-forward"
     }
 
     fn config_spec(&self) -> Option<ConfigSpec> {
@@ -101,7 +99,7 @@ mod tests {
     use wiremock::{Mock, MockServer, ResponseTemplate};
 
     use super::*;
-    use crate::active_broadcast_id::ActiveBroadcastIdHandle;
+    use crate::broadcast::active_broadcast_id::ActiveBroadcastIdHandle;
     use forge_types::SubActionOutcome;
     use forge_types::Variant;
     use std::collections::BTreeMap;

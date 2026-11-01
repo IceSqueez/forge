@@ -1,8 +1,8 @@
 use async_trait::async_trait;
 use forge_registry::{
     ConfigProblem, ConfigSpec, IntegerEditor, IntegerField, ProducedVariable, RunContext,
-    StepTimer, SubActionCategory, SubActionIo, SubActionRunner, TextEditor, TextField, ToggleField,
-    TypedField, ValueBounds, VariableField,
+    StepCatalogEntry, StepTimer, SubActionCategory, SubActionIo, SubActionRunner, TextEditor,
+    TextField, ToggleField, TypedField, ValueBounds, VariableField,
 };
 use forge_types::{ArgStack, SubActionConfig, SubActionTelemetry, Variant, VariantKind};
 
@@ -70,30 +70,28 @@ fn read_config(config: &SubActionConfig, args: &ArgStack) -> Result<SplitConfig,
 
 pub struct CoreStringSplitRunner;
 
+impl StepCatalogEntry for CoreStringSplitRunner {
+    fn category(&self) -> SubActionCategory {
+        SubActionCategory::Util
+    }
+    fn label(&self) -> &str {
+        "String - Split"
+    }
+    fn summary(&self) -> &str {
+        "Split a string into an array of parts by a separator"
+    }
+    fn search_text(&self) -> &str {
+        "string split array parts separator delimiter"
+    }
+    fn icon_name(&self) -> &str {
+        "scissors"
+    }
+}
+
 #[async_trait]
 impl SubActionRunner for CoreStringSplitRunner {
     fn id(&self) -> &str {
         "core.string.split"
-    }
-
-    fn category(&self) -> SubActionCategory {
-        SubActionCategory::Util
-    }
-
-    fn label(&self) -> &str {
-        "String - Split"
-    }
-
-    fn summary(&self) -> &str {
-        "Split a string into an array of parts by a separator"
-    }
-
-    fn search_text(&self) -> &str {
-        "string split array parts separator delimiter"
-    }
-
-    fn icon_name(&self) -> &str {
-        "scissors"
     }
 
     fn config_spec(&self) -> Option<ConfigSpec> {

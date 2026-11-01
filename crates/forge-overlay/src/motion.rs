@@ -3,8 +3,8 @@ use std::time::Duration;
 use forge_registry::FormField;
 use forge_types::Variant;
 
+use crate::catalog::descriptor::{ConfigSection, OverlayConfig, SectionedField};
 use crate::config::{read_str, text};
-use crate::descriptor::{ConfigSection, OverlayConfig, SectionedField};
 
 pub const ENTRANCE: &str = "entrance";
 pub const ENTRANCE_MS: &str = "entrance_ms";

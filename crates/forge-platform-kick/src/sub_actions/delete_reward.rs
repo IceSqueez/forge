@@ -4,7 +4,8 @@ use async_trait::async_trait;
 use forge_platform_core::PlatformError;
 use forge_registry::SubActionConfig;
 use forge_registry::{
-    ConfigSpec, RunContext, StepTimer, SubActionCategory, SubActionRunner, TypedField,
+    ConfigSpec, RunContext, StepCatalogEntry, StepTimer, SubActionCategory, SubActionRunner,
+    TypedField,
 };
 use forge_types::{ArgStack, SubActionOutcome, SubActionTelemetry};
 use futures::future::BoxFuture;
@@ -35,30 +36,28 @@ impl DeleteRewardRunner {
     }
 }
 
+impl StepCatalogEntry for DeleteRewardRunner {
+    fn category(&self) -> SubActionCategory {
+        SubActionCategory::ChannelPoints
+    }
+    fn label(&self) -> &str {
+        "Delete Channel Reward"
+    }
+    fn summary(&self) -> &str {
+        "Permanently deletes a Kick channel reward. Requires channel:rewards:write scope and reward ownership."
+    }
+    fn search_text(&self) -> &str {
+        "kick channel reward delete remove points"
+    }
+    fn icon_name(&self) -> &str {
+        "trash"
+    }
+}
+
 #[async_trait]
 impl SubActionRunner for DeleteRewardRunner {
     fn id(&self) -> &str {
         sub_action_ids::REWARD_DELETE
-    }
-
-    fn category(&self) -> SubActionCategory {
-        SubActionCategory::ChannelPoints
-    }
-
-    fn label(&self) -> &str {
-        "Delete Channel Reward"
-    }
-
-    fn summary(&self) -> &str {
-        "Permanently deletes a Kick channel reward. Requires channel:rewards:write scope and reward ownership."
-    }
-
-    fn search_text(&self) -> &str {
-        "kick channel reward delete remove points"
-    }
-
-    fn icon_name(&self) -> &str {
-        "trash"
     }
 
     fn config_spec(&self) -> Option<ConfigSpec> {

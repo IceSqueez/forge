@@ -2,8 +2,8 @@ use std::sync::Arc;
 
 use async_trait::async_trait;
 use forge_registry::{
-    ConfigSpec, RunContext, StepTimer, SubActionCategory, SubActionRunner, TextEditor, TextField,
-    TypedField,
+    ConfigSpec, RunContext, StepCatalogEntry, StepTimer, SubActionCategory, SubActionRunner,
+    TextEditor, TextField, TypedField,
 };
 use forge_types::{ArgStack, SubActionConfig, SubActionOutcome, SubActionTelemetry};
 
@@ -30,30 +30,28 @@ impl CoreClipboardCopyRunner {
     }
 }
 
+impl StepCatalogEntry for CoreClipboardCopyRunner {
+    fn category(&self) -> SubActionCategory {
+        SubActionCategory::Util
+    }
+    fn label(&self) -> &str {
+        "Copy to Clipboard"
+    }
+    fn summary(&self) -> &str {
+        "Copy text to the system clipboard"
+    }
+    fn search_text(&self) -> &str {
+        "clipboard copy text paste system"
+    }
+    fn icon_name(&self) -> &str {
+        "clipboard"
+    }
+}
+
 #[async_trait]
 impl SubActionRunner for CoreClipboardCopyRunner {
     fn id(&self) -> &str {
         "core.clipboard.copy"
-    }
-
-    fn category(&self) -> SubActionCategory {
-        SubActionCategory::Util
-    }
-
-    fn label(&self) -> &str {
-        "Copy to Clipboard"
-    }
-
-    fn summary(&self) -> &str {
-        "Copy text to the system clipboard"
-    }
-
-    fn search_text(&self) -> &str {
-        "clipboard copy text paste system"
-    }
-
-    fn icon_name(&self) -> &str {
-        "clipboard"
     }
 
     fn config_spec(&self) -> Option<ConfigSpec> {

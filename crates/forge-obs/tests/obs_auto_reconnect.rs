@@ -284,7 +284,7 @@ async fn a_successful_reconnect_clears_the_connection_lost_failure() {
     let client = connect_to(&fake, &recorder).await;
     connected(&client).await;
     let lost = client.set_scene(SCENE).await;
-    assert!(matches!(lost, Err(ObsError::Disconnected)), "got {lost:?}");
+    assert!(matches!(lost, Err(ObsError::NotConnected)), "got {lost:?}");
     settle_until("the lost session was recorded", || {
         failure_code(&client).as_deref() == Some("connection_lost")
     })
@@ -337,7 +337,7 @@ async fn a_live_session_lost_with_auto_reconnect_off_shows_why_and_is_not_redial
     client.set_auto_reconnect(false);
 
     let lost = client.set_scene(SCENE).await;
-    assert!(matches!(lost, Err(ObsError::Disconnected)), "got {lost:?}");
+    assert!(matches!(lost, Err(ObsError::NotConnected)), "got {lost:?}");
     disconnected(&client).await;
     let shown_failure = failure_code(&client);
     client.disconnect().await.unwrap();

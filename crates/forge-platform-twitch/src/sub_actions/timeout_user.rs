@@ -3,8 +3,8 @@ use std::sync::Arc;
 use async_trait::async_trait;
 use forge_registry::SubActionConfig;
 use forge_registry::{
-    ConfigProblem, ConfigSpec, DurationBounds, DurationField, Interpolation, RunContext, StepTimer,
-    SubActionCategory, SubActionRunner, TypedField,
+    ConfigProblem, ConfigSpec, DurationBounds, DurationField, Interpolation, RunContext,
+    StepCatalogEntry, StepTimer, SubActionCategory, SubActionRunner, TypedField,
 };
 use forge_types::{ArgStack, SubActionOutcome, SubActionTelemetry};
 
@@ -88,30 +88,28 @@ impl TimeoutUserRunner {
     }
 }
 
+impl StepCatalogEntry for TimeoutUserRunner {
+    fn category(&self) -> SubActionCategory {
+        SubActionCategory::Moderation
+    }
+    fn label(&self) -> &str {
+        "Timeout User"
+    }
+    fn summary(&self) -> &str {
+        "Temporarily times out a user from the channel chat."
+    }
+    fn search_text(&self) -> &str {
+        "twitch moderation timeout mute silence user temporary"
+    }
+    fn icon_name(&self) -> &str {
+        "clock-off"
+    }
+}
+
 #[async_trait]
 impl SubActionRunner for TimeoutUserRunner {
     fn id(&self) -> &str {
         sub_action_ids::MODERATION_TIMEOUT_USER
-    }
-
-    fn category(&self) -> SubActionCategory {
-        SubActionCategory::Moderation
-    }
-
-    fn label(&self) -> &str {
-        "Timeout User"
-    }
-
-    fn summary(&self) -> &str {
-        "Temporarily times out a user from the channel chat."
-    }
-
-    fn search_text(&self) -> &str {
-        "twitch moderation timeout mute silence user temporary"
-    }
-
-    fn icon_name(&self) -> &str {
-        "clock-off"
     }
 
     fn config_spec(&self) -> Option<ConfigSpec> {

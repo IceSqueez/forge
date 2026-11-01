@@ -34,7 +34,7 @@ const SCENE_COLLECTION_ICON: &str = "layout-2";
 
 fn listing_failure(error: &ObsError) -> CollectionFailure {
     match error {
-        ObsError::Disconnected | ObsError::Connect(_) | ObsError::NotStored => {
+        ObsError::NotConnected | ObsError::Connect(_) | ObsError::NotStored => {
             CollectionFailure::NotConnected
         }
         ObsError::Authentication => CollectionFailure::Unauthorized,
@@ -642,7 +642,7 @@ mod tests {
     #[test]
     fn obs_request_failures_map_to_collection_failures_without_protocol_text() {
         let cases = [
-            (ObsError::Disconnected, CollectionFailure::NotConnected),
+            (ObsError::NotConnected, CollectionFailure::NotConnected),
             (
                 ObsError::Connect("connection refused".to_owned()),
                 CollectionFailure::NotConnected,

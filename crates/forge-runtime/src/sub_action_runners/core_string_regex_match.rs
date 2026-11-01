@@ -1,8 +1,8 @@
 use async_trait::async_trait;
 use forge_registry::{
-    ConfigProblem, ConfigSpec, Interpolation, ProducedVariable, RunContext, StepTimer,
-    SubActionCategory, SubActionIo, SubActionRunner, TemplateField, TextField, TypedField,
-    VariableField,
+    ConfigProblem, ConfigSpec, Interpolation, ProducedVariable, RunContext, StepCatalogEntry,
+    StepTimer, SubActionCategory, SubActionIo, SubActionRunner, TemplateField, TextField,
+    TypedField, VariableField,
 };
 use forge_types::{ArgStack, SubActionConfig, SubActionTelemetry, Variant, VariantKind};
 use regex::Regex;
@@ -58,30 +58,28 @@ fn read_config(config: &SubActionConfig, args: &ArgStack) -> Result<MatchConfig,
 
 pub struct CoreStringRegexMatchRunner;
 
+impl StepCatalogEntry for CoreStringRegexMatchRunner {
+    fn category(&self) -> SubActionCategory {
+        SubActionCategory::Util
+    }
+    fn label(&self) -> &str {
+        "String - Regex Match"
+    }
+    fn summary(&self) -> &str {
+        "Test a string against a regex pattern and optionally capture groups"
+    }
+    fn search_text(&self) -> &str {
+        "string regex match pattern test capture groups"
+    }
+    fn icon_name(&self) -> &str {
+        "regex"
+    }
+}
+
 #[async_trait]
 impl SubActionRunner for CoreStringRegexMatchRunner {
     fn id(&self) -> &str {
         "core.string.regex_match"
-    }
-
-    fn category(&self) -> SubActionCategory {
-        SubActionCategory::Util
-    }
-
-    fn label(&self) -> &str {
-        "String - Regex Match"
-    }
-
-    fn summary(&self) -> &str {
-        "Test a string against a regex pattern and optionally capture groups"
-    }
-
-    fn search_text(&self) -> &str {
-        "string regex match pattern test capture groups"
-    }
-
-    fn icon_name(&self) -> &str {
-        "regex"
     }
 
     fn config_spec(&self) -> Option<ConfigSpec> {

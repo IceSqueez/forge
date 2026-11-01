@@ -3,8 +3,8 @@ use std::sync::Arc;
 use async_trait::async_trait;
 use forge_registry::SubActionConfig;
 use forge_registry::{
-    ConfigProblem, ConfigSpec, Interpolation, RunContext, StepTimer, SubActionCategory,
-    SubActionRunner, TypedField,
+    ConfigProblem, ConfigSpec, Interpolation, RunContext, StepCatalogEntry, StepTimer,
+    SubActionCategory, SubActionRunner, TypedField,
 };
 use forge_types::{ArgStack, SubActionOutcome, SubActionTelemetry};
 
@@ -64,30 +64,28 @@ impl BanUserRunner {
     }
 }
 
+impl StepCatalogEntry for BanUserRunner {
+    fn category(&self) -> SubActionCategory {
+        SubActionCategory::Moderation
+    }
+    fn label(&self) -> &str {
+        "Ban User"
+    }
+    fn summary(&self) -> &str {
+        "Permanently bans a user from the channel."
+    }
+    fn search_text(&self) -> &str {
+        "twitch moderation ban user permanent remove"
+    }
+    fn icon_name(&self) -> &str {
+        "ban"
+    }
+}
+
 #[async_trait]
 impl SubActionRunner for BanUserRunner {
     fn id(&self) -> &str {
         sub_action_ids::MODERATION_BAN_USER
-    }
-
-    fn category(&self) -> SubActionCategory {
-        SubActionCategory::Moderation
-    }
-
-    fn label(&self) -> &str {
-        "Ban User"
-    }
-
-    fn summary(&self) -> &str {
-        "Permanently bans a user from the channel."
-    }
-
-    fn search_text(&self) -> &str {
-        "twitch moderation ban user permanent remove"
-    }
-
-    fn icon_name(&self) -> &str {
-        "ban"
     }
 
     fn config_spec(&self) -> Option<ConfigSpec> {

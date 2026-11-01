@@ -29,8 +29,8 @@ use forge_storage::{
     DonationRepo, EventLogRepo, ExecutionStatus, GlobalEntry, GlobalsRepo, HistoryRepo,
     LatestValueRepo, MediaRepo, QueueRepo, RowClasses, RowGate, ScheduledRunRepo, ScriptRecord,
     ScriptReferences, ScriptRepo, ScriptTelemetry, SettingRow, SettingsRepo, SoundboardClipsRepo,
-    StorageError, TriggerInstanceRepo, TtsFiltersRepo, UserGlobalEntry, UserGlobalsRepo,
-    ViewerRepo, VoiceAliasRepo,
+    StorageError, TriggerInstanceRepo, TtsFiltersRepo, UserGlobalEntry, UserGlobalKey,
+    UserGlobalsRepo, ViewerRepo, VoiceAliasRepo,
 };
 use forge_storage::{MockOverlayRepo, OverlayRepo};
 use forge_types::{ScriptId, TriggerInstanceId, Variant};
@@ -284,38 +284,16 @@ impl GlobalsRepo for StubProvider {
 
 #[async_trait]
 impl UserGlobalsRepo for StubProvider {
-    async fn get(
-        &self,
-        broadcaster_id: &str,
-        user_id: &str,
-        name: &str,
-    ) -> Result<Option<Variant>, StorageError> {
-        self.user_globals_repo
-            .get(broadcaster_id, user_id, name)
-            .await
+    async fn get(&self, key: &UserGlobalKey) -> Result<Option<Variant>, StorageError> {
+        self.user_globals_repo.get(key).await
     }
 
-    async fn set(
-        &self,
-        broadcaster_id: &str,
-        user_id: &str,
-        name: &str,
-        value: Variant,
-    ) -> Result<(), StorageError> {
-        self.user_globals_repo
-            .set(broadcaster_id, user_id, name, value)
-            .await
+    async fn set(&self, key: &UserGlobalKey, value: Variant) -> Result<(), StorageError> {
+        self.user_globals_repo.set(key, value).await
     }
 
-    async fn delete(
-        &self,
-        broadcaster_id: &str,
-        user_id: &str,
-        name: &str,
-    ) -> Result<bool, StorageError> {
-        self.user_globals_repo
-            .delete(broadcaster_id, user_id, name)
-            .await
+    async fn delete(&self, key: &UserGlobalKey) -> Result<bool, StorageError> {
+        self.user_globals_repo.delete(key).await
     }
 
     async fn list_for_user(
@@ -339,16 +317,12 @@ impl UserGlobalsRepo for StubProvider {
 
     async fn incr(
         &self,
-        broadcaster_id: &str,
-        user_id: &str,
-        name: &str,
+        key: &UserGlobalKey,
         amount: i64,
     ) -> Result<forge_types::Variant, forge_storage::StorageError> {
-        let current =
-            forge_storage::UserGlobalsRepo::get(self, broadcaster_id, user_id, name).await?;
-        let next = forge_storage::incremented(name, current, amount)?;
-        forge_storage::UserGlobalsRepo::set(self, broadcaster_id, user_id, name, next.clone())
-            .await?;
+        let current = forge_storage::UserGlobalsRepo::get(self, key).await?;
+        let next = forge_storage::incremented(&key.name, current, amount)?;
+        forge_storage::UserGlobalsRepo::set(self, key, next.clone()).await?;
         Ok(next)
     }
 }

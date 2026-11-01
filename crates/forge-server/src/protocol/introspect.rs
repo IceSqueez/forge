@@ -2,7 +2,7 @@ use forge_events::EventSource;
 use forge_storage::CredentialsRepo;
 use forge_types::PlatformId;
 
-use crate::bus_adapter::BusAdapter;
+use crate::delivery::bus_adapter::BusAdapter;
 
 const CREDENTIAL_ID_SEPARATOR: char = ':';
 const WILDCARD: &str = "*";
@@ -68,9 +68,11 @@ mod tests {
     use forge_runtime::{EventBus, NullEventLogRepo};
 
     use super::{EventSource, build_connected_accounts, build_connected_clients};
-    use crate::bus_adapter::{BusAdapter, ClientFilterSet, EventFilter, OverlayClientClass};
+    use crate::delivery::bus_adapter::{
+        BusAdapter, ClientFilterSet, EventFilter, OverlayClientClass,
+    };
+    use crate::delivery::ws_client::WsClient;
     use crate::test_helpers::TestDataProvider;
-    use crate::ws_client::WsClient;
 
     async fn accounts_for(ids: &[&'static str]) -> Vec<serde_json::Value> {
         let ids: Vec<forge_storage::CredentialId> = ids

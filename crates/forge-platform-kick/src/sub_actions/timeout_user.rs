@@ -4,8 +4,8 @@ use async_trait::async_trait;
 use forge_platform_core::PlatformError;
 use forge_registry::SubActionConfig;
 use forge_registry::{
-    ConfigProblem, ConfigReason, ConfigSpec, DurationBounds, DurationField, RunContext, StepTimer,
-    SubActionCategory, SubActionRunner, TypedField, ValueBounds,
+    ConfigProblem, ConfigReason, ConfigSpec, DurationBounds, DurationField, RunContext,
+    StepCatalogEntry, StepTimer, SubActionCategory, SubActionRunner, TypedField, ValueBounds,
 };
 use forge_types::{ArgStack, SubActionOutcome, SubActionTelemetry};
 use futures::future::BoxFuture;
@@ -81,30 +81,28 @@ impl TimeoutUserRunner {
     }
 }
 
+impl StepCatalogEntry for TimeoutUserRunner {
+    fn category(&self) -> SubActionCategory {
+        SubActionCategory::Moderation
+    }
+    fn label(&self) -> &str {
+        "Timeout User"
+    }
+    fn summary(&self) -> &str {
+        "Temporarily bans a user from the Kick channel. Duration 1-10080 minutes. Requires moderation:ban scope."
+    }
+    fn search_text(&self) -> &str {
+        "kick timeout user moderation temporary ban"
+    }
+    fn icon_name(&self) -> &str {
+        "timeout"
+    }
+}
+
 #[async_trait]
 impl SubActionRunner for TimeoutUserRunner {
     fn id(&self) -> &str {
         sub_action_ids::MODERATION_TIMEOUT
-    }
-
-    fn category(&self) -> SubActionCategory {
-        SubActionCategory::Moderation
-    }
-
-    fn label(&self) -> &str {
-        "Timeout User"
-    }
-
-    fn summary(&self) -> &str {
-        "Temporarily bans a user from the Kick channel. Duration 1-10080 minutes. Requires moderation:ban scope."
-    }
-
-    fn search_text(&self) -> &str {
-        "kick timeout user moderation temporary ban"
-    }
-
-    fn icon_name(&self) -> &str {
-        "timeout"
     }
 
     fn config_spec(&self) -> Option<ConfigSpec> {

@@ -444,7 +444,7 @@ mod tests {
             let (telemetry, extra) = runner.execute(&config, &make_ctx(&stack)).await;
             assert_eq!(
                 telemetry.outcome,
-                step_failure::failed(&ObsError::Disconnected),
+                step_failure::failed(&ObsError::NotConnected),
                 "{id} did not report the sink failure as a catalogued code",
             );
             assert_eq!(telemetry.kind, id);

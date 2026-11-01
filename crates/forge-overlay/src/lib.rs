@@ -1,92 +1,77 @@
-mod assets;
-mod audio_transport;
-mod base;
-mod browser_preview;
+mod catalog;
 pub mod config;
-mod content;
-mod descriptor;
-mod document;
 mod error;
-mod icons;
-mod instance;
+mod files;
 pub mod kinds;
-mod latest;
-mod materialize;
-mod media;
 mod messages;
 pub mod metrics;
 pub mod motion;
-mod motion_scan;
-mod page_contract;
-mod preview;
-mod registry;
-mod sample;
-mod source;
-mod source_box;
-mod wiring;
+mod render;
 
-pub use assets::{
-    BEHAVIOR_FILE, CONFIG_FILE, MARKUP_FILE, MOTION_ASSET, MOTION_SOURCE, OVERRIDABLE_FILES,
-    PageAssets, RESERVED_DIRECTORY, RUNTIME_ASSET, RUNTIME_SOURCE, SAMPLE_FILE, STYLE_FILE,
-};
-pub use audio_transport::{
-    AudioAnnouncement, AudioCommand, announcement_content, command_content, joined_to_show,
-    silent_reveal_content,
-};
-pub use base::{
-    DEFAULT_DISPLAY_SECS, ShowTiming, SpeechProgram, display_window, exit_tail, show_timing,
-    take_speech,
-};
-pub use browser_preview::{
-    PREVIEW_CONNECTION_FIELD, PREVIEW_PARAM, PREVIEW_VALUE, preview_page_url,
-};
-pub use config::{effective_overlay_config, validate_overlay_config};
-pub use content::delivered_content;
-pub use descriptor::{
+pub use catalog::descriptor::{
     ConfigSection, ContentFeed, DeliveryDisposition, OverlayConfig, OverlayKindDescriptor,
     SectionedField,
 };
-pub use document::{ICON_FILE_FIELD, ICON_TINTABLE_FIELD, config_document, sample_document};
-pub use error::OverlayError;
-pub use icons::{CURATED_ICONS, CuratedIcon, IconCategory, curated_icon};
-pub use instance::OverlayInstance;
-pub use kinds::register_builtin_kinds;
-pub use latest::{
+pub use catalog::instance::OverlayInstance;
+pub use catalog::latest::{
     LatestBinding, SLOT_OPTIONS, latest_binding, latest_content, sample_latest_value,
 };
-pub use materialize::{
-    GENERATOR_VERSION, MaterializeReport, ensure_shared_directory, materialize_overlay,
-    refresh_config_credential, remove_overlay_directory,
+pub use catalog::registry::OverlayKindRegistry;
+pub use catalog::source::{read_overlay_source, write_overlay_source};
+pub use catalog::source_box::{ContentMargins, DesignSize};
+pub use catalog::wiring::{
+    EventWiringTrigger, accepts_event_wiring, is_curated, order_curated_first, suggested_content,
 };
-pub use media::{
+pub use config::{effective_overlay_config, validate_overlay_config};
+pub use error::OverlayError;
+pub use files::assets::{
+    BEHAVIOR_FILE, CONFIG_FILE, MARKUP_FILE, MOTION_ASSET, MOTION_SOURCE, OVERRIDABLE_FILES,
+    PageAssets, RESERVED_DIRECTORY, RUNTIME_ASSET, RUNTIME_SOURCE, SAMPLE_FILE, STYLE_FILE,
+};
+pub use files::audio_transport::{
+    AudioAnnouncement, AudioCommand, announcement_content, command_content, joined_to_show,
+    silent_reveal_content,
+};
+pub use files::icons::{CURATED_ICONS, CuratedIcon, IconCategory, curated_icon};
+pub use files::media::{
     CLIP_REFERENCE_PREFIX, ClipReference, EmittedIcon, GENERATED_MEDIA_DIRECTORY,
     IMAGE_REFERENCE_PREFIX, IconValue, ImageReference, MEDIA_KEYS, MediaIssue, MediaSlot,
     MediaValue, OverlayMedia, ResolvedMedia, clip_reference, clip_references, emitted_icon,
     emitted_media_value, glyph_media, image_reference, image_references, media_slot,
     read_icon_value, read_media_value,
 };
+pub use kinds::register_builtin_kinds;
 pub use messages::OVERLAY_MESSAGES;
 pub use metrics::{AxisBound, ElementSizing, StyleGuard};
-pub use motion_scan::{MotionIssue, OverriddenSources, motion_issues};
-pub use page_contract::{
+pub use render::base::{
+    DEFAULT_DISPLAY_SECS, ShowTiming, SpeechProgram, display_window, exit_tail, show_timing,
+    take_speech,
+};
+pub use render::browser_preview::{
+    PREVIEW_CONNECTION_FIELD, PREVIEW_PARAM, PREVIEW_VALUE, preview_page_url,
+};
+pub use render::content::delivered_content;
+pub use render::document::{
+    ICON_FILE_FIELD, ICON_TINTABLE_FIELD, config_document, sample_document,
+};
+pub use render::materialize::{
+    GENERATOR_VERSION, MaterializeReport, ensure_shared_directory, materialize_overlay,
+    refresh_config_credential, remove_overlay_directory,
+};
+pub use render::motion_scan::{MotionIssue, OverriddenSources, motion_issues};
+pub use render::page_contract::{
     LookConfigKey, LookContract, PAGE_CONTRACT, PageContract, PageFunction, look_contract,
 };
-pub use preview::{
+pub use render::preview::{
     PreviewAccent, PreviewCanvas, PreviewComposition, PreviewElement, PreviewFont, PreviewLineRole,
     PreviewMark, PreviewPosition, PreviewShape,
 };
-pub use registry::OverlayKindRegistry;
-pub use sample::{SampleContext, SampleTrigger, sample_content, sample_context};
-pub use source::{read_overlay_source, write_overlay_source};
-pub use source_box::{ContentMargins, DesignSize};
-pub use wiring::{
-    EventWiringTrigger, accepts_event_wiring, is_curated, order_curated_first, suggested_content,
-};
+pub use render::sample::{SampleContext, SampleTrigger, sample_content, sample_context};
 
-pub use page_contract::BindRule;
-pub use page_contract::RuntimeAttribute;
-pub use page_contract::RuntimeProperty;
-pub use page_contract::{
+pub use render::page_contract::BindRule;
+pub use render::page_contract::RuntimeAttribute;
+pub use render::page_contract::RuntimeProperty;
+pub use render::page_contract::{
     CONTENT_FUNCTION, READY_FUNCTION, SET_FUNCTION, SHOW_FUNCTION, SOUND_FUNCTION,
 };
-pub use preview::PreviewLine;
+pub use render::preview::PreviewLine;

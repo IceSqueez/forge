@@ -3,8 +3,8 @@ use std::sync::Arc;
 use async_trait::async_trait;
 use forge_events::{EventSource, GlobalDecremented, TypedEvent};
 use forge_registry::{
-    ConfigProblem, ConfigSpec, RunContext, StepTimer, SubActionCategory, SubActionRunner,
-    TypedField,
+    ConfigProblem, ConfigSpec, RunContext, StepCatalogEntry, StepTimer, SubActionCategory,
+    SubActionRunner, TypedField,
 };
 use forge_storage::GlobalsRepo;
 use forge_types::{ArgStack, SubActionConfig, SubActionOutcome, SubActionTelemetry};
@@ -31,30 +31,28 @@ impl CoreGlobalsDecrementRunner {
     }
 }
 
+impl StepCatalogEntry for CoreGlobalsDecrementRunner {
+    fn category(&self) -> SubActionCategory {
+        SubActionCategory::Globals
+    }
+    fn label(&self) -> &str {
+        "Decrement Global"
+    }
+    fn summary(&self) -> &str {
+        "Decrement a numeric global variable by an amount"
+    }
+    fn search_text(&self) -> &str {
+        "decrement global variable counter subtract minus"
+    }
+    fn icon_name(&self) -> &str {
+        "minus"
+    }
+}
+
 #[async_trait]
 impl SubActionRunner for CoreGlobalsDecrementRunner {
     fn id(&self) -> &str {
         "core.globals.decrement"
-    }
-
-    fn category(&self) -> SubActionCategory {
-        SubActionCategory::Globals
-    }
-
-    fn label(&self) -> &str {
-        "Decrement Global"
-    }
-
-    fn summary(&self) -> &str {
-        "Decrement a numeric global variable by an amount"
-    }
-
-    fn search_text(&self) -> &str {
-        "decrement global variable counter subtract minus"
-    }
-
-    fn icon_name(&self) -> &str {
-        "minus"
     }
 
     fn config_spec(&self) -> Option<ConfigSpec> {

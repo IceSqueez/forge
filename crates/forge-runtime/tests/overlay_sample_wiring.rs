@@ -23,7 +23,7 @@ use forge_runtime::ActionsService;
 use forge_runtime::{
     EventBus, NullEventLogRepo, OVERLAY_SEND_KIND_ID, OVERLAY_TARGET_KEY, OverlayDispatch,
     OverlayFrameSink, OverlayReceivers, OverlaySampleSource, OverlaySamples, OverlayServiceHandle,
-    OverlayServiceParts, ShowSpeech, SpeakDispatcher, SpeechOrigin, SpeechStartSignal,
+    OverlayServiceParts, ShowSpeaker, ShowSpeech, SpeechStartSignal,
 };
 use forge_storage::MockActionRepo;
 use forge_storage::MockHistoryRepo;
@@ -156,11 +156,7 @@ impl ListeningSpeaker {
 }
 
 #[async_trait]
-impl SpeakDispatcher for ListeningSpeaker {
-    async fn speak(&self, _: String, _: Option<String>, _: SpeechOrigin) -> Result<(), MessageRef> {
-        panic!("show speech took the global speak path")
-    }
-
+impl ShowSpeaker for ListeningSpeaker {
     fn check_voice(&self, _: &str) -> Result<(), MessageRef> {
         Ok(())
     }
@@ -336,7 +332,7 @@ fn wired(catalog: Catalog) -> Wired {
         bus: EventBus::new(Arc::new(NullEventLogRepo)),
         frames: Arc::clone(&page) as Arc<dyn OverlayFrameSink>,
         media: None,
-        speaker: Some(Arc::clone(&speaker) as Arc<dyn SpeakDispatcher>),
+        speaker: Some(Arc::clone(&speaker) as Arc<dyn ShowSpeaker>),
         latest: None,
     });
     let samples = Arc::new(OverlaySamples::new(

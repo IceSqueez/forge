@@ -4,8 +4,8 @@ use async_trait::async_trait;
 use forge_registry::SubActionConfig;
 use forge_registry::{
     BoundedTextField, ConfigProblem, ConfigSpec, DurationBounds, DurationField, IntegerEditor,
-    IntegerField, RunContext, StepTimer, SubActionCategory, SubActionRunner, TextEditor,
-    ToggleField, TypedField, ValueBounds,
+    IntegerField, RunContext, StepCatalogEntry, StepTimer, SubActionCategory, SubActionRunner,
+    TextEditor, ToggleField, TypedField, ValueBounds,
 };
 use forge_types::{ArgStack, SubActionOutcome, SubActionTelemetry, Variant};
 
@@ -202,30 +202,28 @@ impl CreateRewardRunner {
     }
 }
 
+impl StepCatalogEntry for CreateRewardRunner {
+    fn category(&self) -> SubActionCategory {
+        SubActionCategory::ChannelPoints
+    }
+    fn label(&self) -> &str {
+        "Create Channel Point Reward"
+    }
+    fn summary(&self) -> &str {
+        "Creates a new custom channel point reward on the broadcaster's channel."
+    }
+    fn search_text(&self) -> &str {
+        "twitch channel points custom reward create redemption"
+    }
+    fn icon_name(&self) -> &str {
+        "star"
+    }
+}
+
 #[async_trait]
 impl SubActionRunner for CreateRewardRunner {
     fn id(&self) -> &str {
         sub_action_ids::CHANNEL_POINTS_CREATE_REWARD
-    }
-
-    fn category(&self) -> SubActionCategory {
-        SubActionCategory::ChannelPoints
-    }
-
-    fn label(&self) -> &str {
-        "Create Channel Point Reward"
-    }
-
-    fn summary(&self) -> &str {
-        "Creates a new custom channel point reward on the broadcaster's channel."
-    }
-
-    fn search_text(&self) -> &str {
-        "twitch channel points custom reward create redemption"
-    }
-
-    fn icon_name(&self) -> &str {
-        "star"
     }
 
     fn config_spec(&self) -> Option<ConfigSpec> {

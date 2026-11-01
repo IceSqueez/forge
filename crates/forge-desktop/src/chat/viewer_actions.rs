@@ -248,7 +248,7 @@ mod tests {
 
     use std::sync::Arc;
 
-    use forge_runtime::{SpeakDispatcher, SpeechOrigin};
+    use forge_runtime::{SpeakDispatcher, SpeechOrigin, SpeechRequest};
     use forge_speak_queue::SpeakEvent;
     use forge_speech_types::{AliasId, AliasState, EngineId, VoiceAlias, VoiceId};
     use forge_types::ArgStack;
@@ -611,9 +611,11 @@ mod tests {
 
             SpeakDispatcher::speak(
                 &bridge,
-                "hello chat".to_owned(),
-                None,
-                SpeechOrigin::from_args(&args, None),
+                SpeechRequest::chosen_voice(
+                    "hello chat".to_owned(),
+                    None,
+                    SpeechOrigin::from_args(&args, None),
+                ),
             )
             .await
             .expect("dispatch");

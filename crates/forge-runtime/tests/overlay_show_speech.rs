@@ -22,7 +22,7 @@ use forge_runtime::{
     OVERLAY_SPEECH_FAILED_KIND, OVERLAY_TARGET_KEY, OverlayDispatch, OverlayFrameSink,
     OverlayReceivers, OverlayServiceHandle, OverlayServiceParts, RuntimeWiringParts, SHOW_CEILING,
     SHOW_SPEECH_START_WAIT, SPEECH_FAILURE_ERROR_KEY, SPEECH_FAILURE_MESSAGE_KEY, ShowEnd,
-    ShowSpeech, ShowTicket, SpeakDispatcher, SpeakingViewer, SpeechOrigin, SpeechStartSignal,
+    ShowSpeaker, ShowSpeech, ShowTicket, SpeakingViewer, SpeechOrigin, SpeechStartSignal,
 };
 use forge_storage::test_support::MemorySettings;
 use forge_storage::{
@@ -151,11 +151,7 @@ impl ScriptedSpeaker {
 }
 
 #[async_trait]
-impl SpeakDispatcher for ScriptedSpeaker {
-    async fn speak(&self, _: String, _: Option<String>, _: SpeechOrigin) -> Result<(), MessageRef> {
-        panic!("show speech took the global speak path")
-    }
-
+impl ShowSpeaker for ScriptedSpeaker {
     fn check_voice(&self, _: &str) -> Result<(), MessageRef> {
         self.voice_check.clone().map_or(Ok(()), Err)
     }
@@ -285,7 +281,7 @@ fn harness_checking_voice(
         bus: Arc::clone(&bus),
         frames: Arc::clone(&page) as Arc<dyn OverlayFrameSink>,
         media: None,
-        speaker: Some(Arc::clone(&speaker) as Arc<dyn SpeakDispatcher>),
+        speaker: Some(Arc::clone(&speaker) as Arc<dyn ShowSpeaker>),
         latest: None,
     });
     Harness {
@@ -327,7 +323,7 @@ async fn wired_stage(kind_id: &str, speaks: Speaks) -> (Harness, FrozenRuntime) 
         paths: forge_paths::AppPaths::at(std::env::temp_dir().join("forge-tests")),
         config: forge_runtime::Config::default(),
         date_names: forge_runtime::DateNamesHandle::default(),
-        overlay_speech: Some(Arc::clone(&speaker) as Arc<dyn SpeakDispatcher>),
+        overlay_speech: Some(Arc::clone(&speaker) as Arc<dyn ShowSpeaker>),
         overlay_frames: Arc::clone(&page) as Arc<dyn OverlayFrameSink>,
         ..common::wiring_parts(Arc::new(provider), Arc::clone(&bus)).await
     })

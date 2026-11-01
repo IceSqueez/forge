@@ -5,8 +5,8 @@ use forge_events::EventPublisher;
 use forge_platform_core::SenderPreference;
 use forge_registry::SubActionConfig;
 use forge_registry::{
-    ConfigProblem, ConfigSpec, Interpolation, RunContext, StepTimer, SubActionCategory,
-    SubActionRunner, TextEditor, TextField, TypedField,
+    ConfigProblem, ConfigSpec, Interpolation, RunContext, StepCatalogEntry, StepTimer,
+    SubActionCategory, SubActionRunner, TextEditor, TextField, TypedField,
 };
 use forge_types::{ArgStack, SubActionTelemetry};
 
@@ -89,30 +89,28 @@ impl SendWhisperRunner {
     }
 }
 
+impl StepCatalogEntry for SendWhisperRunner {
+    fn category(&self) -> SubActionCategory {
+        SubActionCategory::Chat
+    }
+    fn label(&self) -> &str {
+        "Send Whisper"
+    }
+    fn summary(&self) -> &str {
+        "Sends a private whisper to another user."
+    }
+    fn search_text(&self) -> &str {
+        "twitch whisper private message dm direct"
+    }
+    fn icon_name(&self) -> &str {
+        "message"
+    }
+}
+
 #[async_trait]
 impl SubActionRunner for SendWhisperRunner {
     fn id(&self) -> &str {
         sub_action_ids::CHAT_SEND_WHISPER
-    }
-
-    fn category(&self) -> SubActionCategory {
-        SubActionCategory::Chat
-    }
-
-    fn label(&self) -> &str {
-        "Send Whisper"
-    }
-
-    fn summary(&self) -> &str {
-        "Sends a private whisper to another user."
-    }
-
-    fn search_text(&self) -> &str {
-        "twitch whisper private message dm direct"
-    }
-
-    fn icon_name(&self) -> &str {
-        "message"
     }
 
     fn config_spec(&self) -> Option<ConfigSpec> {

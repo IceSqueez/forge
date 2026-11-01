@@ -3,8 +3,8 @@ use std::sync::Arc;
 use async_trait::async_trait;
 use forge_registry::SubActionConfig;
 use forge_registry::{
-    ConfigProblem, ConfigSpec, RunContext, StepTimer, SubActionCategory, SubActionRunner,
-    ToggleField, TypedField,
+    ConfigProblem, ConfigSpec, RunContext, StepCatalogEntry, StepTimer, SubActionCategory,
+    SubActionRunner, ToggleField, TypedField,
 };
 use forge_types::{ArgStack, SubActionTelemetry};
 
@@ -42,30 +42,28 @@ impl SetLockedRunner {
     }
 }
 
+impl StepCatalogEntry for SetLockedRunner {
+    fn category(&self) -> SubActionCategory {
+        SubActionCategory::Integration
+    }
+    fn label(&self) -> &str {
+        "Set Source Locked"
+    }
+    fn summary(&self) -> &str {
+        "Locks or unlocks a source within an OBS scene."
+    }
+    fn search_text(&self) -> &str {
+        "obs source lock locked unlock scene item"
+    }
+    fn icon_name(&self) -> &str {
+        "lock"
+    }
+}
+
 #[async_trait]
 impl SubActionRunner for SetLockedRunner {
     fn id(&self) -> &str {
         sub_action_ids::SOURCE_SET_LOCKED
-    }
-
-    fn category(&self) -> SubActionCategory {
-        SubActionCategory::Integration
-    }
-
-    fn label(&self) -> &str {
-        "Set Source Locked"
-    }
-
-    fn summary(&self) -> &str {
-        "Locks or unlocks a source within an OBS scene."
-    }
-
-    fn search_text(&self) -> &str {
-        "obs source lock locked unlock scene item"
-    }
-
-    fn icon_name(&self) -> &str {
-        "lock"
     }
 
     fn config_spec(&self) -> Option<ConfigSpec> {

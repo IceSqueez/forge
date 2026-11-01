@@ -3,8 +3,8 @@ use std::sync::Arc;
 use async_trait::async_trait;
 use forge_registry::SubActionConfig;
 use forge_registry::{
-    ConfigProblem, ConfigSpec, RunContext, StepTimer, SubActionCategory, SubActionRunner,
-    TypedField,
+    ConfigProblem, ConfigSpec, RunContext, StepCatalogEntry, StepTimer, SubActionCategory,
+    SubActionRunner, TypedField,
 };
 use forge_types::{ArgStack, SubActionOutcome, SubActionTelemetry};
 
@@ -61,30 +61,28 @@ impl GuestStarInviteRunner {
     }
 }
 
+impl StepCatalogEntry for GuestStarInviteRunner {
+    fn category(&self) -> SubActionCategory {
+        SubActionCategory::Integration
+    }
+    fn label(&self) -> &str {
+        "Send Guest Star Invite"
+    }
+    fn summary(&self) -> &str {
+        "Invites a viewer to join the active Guest Star session."
+    }
+    fn search_text(&self) -> &str {
+        "twitch guest star invite collab session viewer join"
+    }
+    fn icon_name(&self) -> &str {
+        "user-plus"
+    }
+}
+
 #[async_trait]
 impl SubActionRunner for GuestStarInviteRunner {
     fn id(&self) -> &str {
         sub_action_ids::GUEST_STAR_INVITE
-    }
-
-    fn category(&self) -> SubActionCategory {
-        SubActionCategory::Integration
-    }
-
-    fn label(&self) -> &str {
-        "Send Guest Star Invite"
-    }
-
-    fn summary(&self) -> &str {
-        "Invites a viewer to join the active Guest Star session."
-    }
-
-    fn search_text(&self) -> &str {
-        "twitch guest star invite collab session viewer join"
-    }
-
-    fn icon_name(&self) -> &str {
-        "user-plus"
     }
 
     fn config_spec(&self) -> Option<ConfigSpec> {

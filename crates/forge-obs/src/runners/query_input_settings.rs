@@ -3,8 +3,8 @@ use std::sync::Arc;
 use async_trait::async_trait;
 use forge_registry::SubActionConfig;
 use forge_registry::{
-    ConfigSpec, RunContext, StepTimer, SubActionCategory, SubActionIo, SubActionRunner, TextEditor,
-    TextField, TypedField,
+    ConfigSpec, RunContext, StepCatalogEntry, StepTimer, SubActionCategory, SubActionIo,
+    SubActionRunner, TextEditor, TextField, TypedField,
 };
 use forge_types::{ArgStack, SubActionTelemetry, Variant};
 
@@ -34,30 +34,28 @@ impl QueryInputSettingsRunner {
     }
 }
 
+impl StepCatalogEntry for QueryInputSettingsRunner {
+    fn category(&self) -> SubActionCategory {
+        SubActionCategory::Integration
+    }
+    fn label(&self) -> &str {
+        "Get Input Settings"
+    }
+    fn summary(&self) -> &str {
+        "Queries OBS for the current settings object of a named input source."
+    }
+    fn search_text(&self) -> &str {
+        "obs source input get settings properties kind"
+    }
+    fn icon_name(&self) -> &str {
+        "settings"
+    }
+}
+
 #[async_trait]
 impl SubActionRunner for QueryInputSettingsRunner {
     fn id(&self) -> &str {
         sub_action_ids::SOURCE_GET_INPUT_SETTINGS
-    }
-
-    fn category(&self) -> SubActionCategory {
-        SubActionCategory::Integration
-    }
-
-    fn label(&self) -> &str {
-        "Get Input Settings"
-    }
-
-    fn summary(&self) -> &str {
-        "Queries OBS for the current settings object of a named input source."
-    }
-
-    fn search_text(&self) -> &str {
-        "obs source input get settings properties kind"
-    }
-
-    fn icon_name(&self) -> &str {
-        "settings"
     }
 
     fn config_spec(&self) -> Option<ConfigSpec> {

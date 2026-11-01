@@ -14,17 +14,17 @@ use tokio::sync::broadcast;
 use tokio::sync::broadcast::error::RecvError;
 use tokio::sync::watch;
 
-use crate::auth::AuthState;
-use crate::bus_adapter::{ClientFilterSet, WsFrame, dropped_notification};
-use crate::listener::PeerInfo;
-use crate::origin::{accepts_origin, is_well_formed_origin};
+use crate::access::auth::AuthState;
+use crate::access::origin::{accepts_origin, is_well_formed_origin};
+use crate::delivery::bus_adapter::{ClientFilterSet, WsFrame, dropped_notification};
+use crate::delivery::ws_client::{WsClient, detect_from_user_agent};
+use crate::lifecycle::listener::PeerInfo;
+use crate::lifecycle::server::AppState;
 use crate::protocol::{
     DispatchContext, Session, WsEnvelope, WsErrorCode, WsRequest, WsResponse, dispatch,
     serialize_response_frame,
 };
 use crate::routes::refusal::{RefusalCode, refusal_response};
-use crate::server::AppState;
-use crate::ws_client::{WsClient, detect_from_user_agent};
 
 const HEADER_LOG_PLACEHOLDER: &str = "<absent-or-invalid>";
 pub(crate) const MAX_MESSAGE_BYTES: usize = 256 * 1024;

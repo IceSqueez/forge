@@ -5,8 +5,8 @@ use async_trait::async_trait;
 use forge_net::status::BAD_REQUEST;
 use forge_registry::SubActionConfig;
 use forge_registry::{
-    ConfigProblem, ConfigSpec, Interpolation, RunContext, StepTimer, SubActionCategory,
-    SubActionRunner,
+    ConfigProblem, ConfigSpec, Interpolation, RunContext, StepCatalogEntry, StepTimer,
+    SubActionCategory, SubActionRunner,
 };
 use forge_types::{ArgStack, SubActionOutcome, SubActionTelemetry};
 
@@ -67,30 +67,28 @@ impl UnbanUserRunner {
     }
 }
 
+impl StepCatalogEntry for UnbanUserRunner {
+    fn category(&self) -> SubActionCategory {
+        SubActionCategory::Moderation
+    }
+    fn label(&self) -> &str {
+        "Unban User"
+    }
+    fn summary(&self) -> &str {
+        "Removes a ban or active timeout from a user."
+    }
+    fn search_text(&self) -> &str {
+        "twitch moderation unban untimeout lift remove ban user"
+    }
+    fn icon_name(&self) -> &str {
+        "shield-check"
+    }
+}
+
 #[async_trait]
 impl SubActionRunner for UnbanUserRunner {
     fn id(&self) -> &str {
         sub_action_ids::MODERATION_UNBAN_USER
-    }
-
-    fn category(&self) -> SubActionCategory {
-        SubActionCategory::Moderation
-    }
-
-    fn label(&self) -> &str {
-        "Unban User"
-    }
-
-    fn summary(&self) -> &str {
-        "Removes a ban or active timeout from a user."
-    }
-
-    fn search_text(&self) -> &str {
-        "twitch moderation unban untimeout lift remove ban user"
-    }
-
-    fn icon_name(&self) -> &str {
-        "shield-check"
     }
 
     fn config_spec(&self) -> Option<ConfigSpec> {

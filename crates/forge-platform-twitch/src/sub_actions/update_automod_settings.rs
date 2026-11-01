@@ -4,8 +4,8 @@ use std::sync::Arc;
 use async_trait::async_trait;
 use forge_registry::SubActionConfig;
 use forge_registry::{
-    ChoiceField, ConfigChoice, ConfigProblem, ConfigSpec, RunContext, StepTimer, SubActionCategory,
-    SubActionRunner, TypedField,
+    ChoiceField, ConfigChoice, ConfigProblem, ConfigSpec, RunContext, StepCatalogEntry, StepTimer,
+    SubActionCategory, SubActionRunner, TypedField,
 };
 use forge_types::{ArgStack, SubActionOutcome, SubActionTelemetry};
 
@@ -188,30 +188,28 @@ fn current_level(current: &serde_json::Value, key: &str) -> Option<u8> {
         .filter(|n| *n <= MAX_LEVEL)
 }
 
+impl StepCatalogEntry for UpdateAutomodSettingsRunner {
+    fn category(&self) -> SubActionCategory {
+        SubActionCategory::Moderation
+    }
+    fn label(&self) -> &str {
+        "Update AutoMod Settings"
+    }
+    fn summary(&self) -> &str {
+        "Sets the overall AutoMod level or individual filter category levels."
+    }
+    fn search_text(&self) -> &str {
+        "twitch automod settings level filter aggression bullying swearing moderation"
+    }
+    fn icon_name(&self) -> &str {
+        "shield-check"
+    }
+}
+
 #[async_trait]
 impl SubActionRunner for UpdateAutomodSettingsRunner {
     fn id(&self) -> &str {
         sub_action_ids::AUTOMOD_UPDATE_SETTINGS
-    }
-
-    fn category(&self) -> SubActionCategory {
-        SubActionCategory::Moderation
-    }
-
-    fn label(&self) -> &str {
-        "Update AutoMod Settings"
-    }
-
-    fn summary(&self) -> &str {
-        "Sets the overall AutoMod level or individual filter category levels."
-    }
-
-    fn search_text(&self) -> &str {
-        "twitch automod settings level filter aggression bullying swearing moderation"
-    }
-
-    fn icon_name(&self) -> &str {
-        "shield-check"
     }
 
     fn config_spec(&self) -> Option<ConfigSpec> {

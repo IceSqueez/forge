@@ -4,8 +4,8 @@ use std::time::Duration;
 use async_trait::async_trait;
 use forge_registry::SubActionConfig;
 use forge_registry::{
-    ConfigProblem, ConfigSpec, NumberField, RunContext, StepTimer, StoredNumber, SubActionCategory,
-    SubActionRunner, TextEditor, TextField, TypedField, ValueBounds,
+    ConfigProblem, ConfigSpec, NumberField, RunContext, StepCatalogEntry, StepTimer, StoredNumber,
+    SubActionCategory, SubActionRunner, TextEditor, TextField, TypedField, ValueBounds,
 };
 use forge_types::{ArgStack, SubActionTelemetry};
 
@@ -85,30 +85,28 @@ impl ParamSetRunner {
     }
 }
 
+impl StepCatalogEntry for ParamSetRunner {
+    fn category(&self) -> SubActionCategory {
+        SubActionCategory::Integration
+    }
+    fn label(&self) -> &str {
+        "Set Parameter"
+    }
+    fn summary(&self) -> &str {
+        "Injects a value into a VTube Studio parameter, optionally held for a duration."
+    }
+    fn search_text(&self) -> &str {
+        "vtube parameter inject set value hold face tracking vts"
+    }
+    fn icon_name(&self) -> &str {
+        "sliders"
+    }
+}
+
 #[async_trait]
 impl SubActionRunner for ParamSetRunner {
     fn id(&self) -> &str {
         sub_action_ids::PARAM_SET
-    }
-
-    fn category(&self) -> SubActionCategory {
-        SubActionCategory::Integration
-    }
-
-    fn label(&self) -> &str {
-        "Set Parameter"
-    }
-
-    fn summary(&self) -> &str {
-        "Injects a value into a VTube Studio parameter, optionally held for a duration."
-    }
-
-    fn search_text(&self) -> &str {
-        "vtube parameter inject set value hold face tracking vts"
-    }
-
-    fn icon_name(&self) -> &str {
-        "sliders"
     }
 
     fn config_spec(&self) -> Option<ConfigSpec> {

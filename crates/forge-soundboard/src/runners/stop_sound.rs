@@ -2,7 +2,8 @@ use std::sync::Arc;
 
 use async_trait::async_trait;
 use forge_registry::{
-    ConfigSpec, RunContext, StepTimer, SubActionCategory, SubActionRunner, TypedField,
+    ConfigSpec, RunContext, StepCatalogEntry, StepTimer, SubActionCategory, SubActionRunner,
+    TypedField,
 };
 use forge_types::{ArgStack, SubActionConfig, SubActionTelemetry};
 
@@ -24,30 +25,28 @@ impl StopSoundRunner {
     }
 }
 
+impl StepCatalogEntry for StopSoundRunner {
+    fn category(&self) -> SubActionCategory {
+        SubActionCategory::Audio
+    }
+    fn label(&self) -> &str {
+        "Stop Sound"
+    }
+    fn summary(&self) -> &str {
+        "Stop a soundboard clip (leave the clip empty to stop everything)"
+    }
+    fn search_text(&self) -> &str {
+        "stop sound clip audio soundboard halt"
+    }
+    fn icon_name(&self) -> &str {
+        "stop-circle"
+    }
+}
+
 #[async_trait]
 impl SubActionRunner for StopSoundRunner {
     fn id(&self) -> &str {
         sub_action_ids::SOUND_STOP
-    }
-
-    fn category(&self) -> SubActionCategory {
-        SubActionCategory::Audio
-    }
-
-    fn label(&self) -> &str {
-        "Stop Sound"
-    }
-
-    fn summary(&self) -> &str {
-        "Stop a soundboard clip (leave the clip empty to stop everything)"
-    }
-
-    fn search_text(&self) -> &str {
-        "stop sound clip audio soundboard halt"
-    }
-
-    fn icon_name(&self) -> &str {
-        "stop-circle"
     }
 
     fn config_spec(&self) -> Option<ConfigSpec> {

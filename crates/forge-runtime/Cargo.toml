@@ -20,11 +20,8 @@ forge-script = { path = "../forge-script" }
 forge-overlay = { path = "../forge-overlay" }
 forge-net = { path = "../forge-net" }
 forge-platform-core = { path = "../forge-platform-core" }
-arboard = { workspace = true }
 arc-swap = { workspace = true }
 base64 = { workspace = true }
-notify-rust = { workspace = true }
-open = { workspace = true }
 rand = { workspace = true }
 regex = { workspace = true }
 sha2 = { workspace = true }
@@ -47,6 +44,7 @@ test-support = []
 forge-test-support = { path = "../forge-test-support" }
 reqwest = { workspace = true }
 forge-runtime = { path = ".", features = ["test-support"] }
+forge-script = { path = "../forge-script", features = ["test-support"] }
 forge-events = { path = "../forge-events", features = ["test-support"] }
 forge-storage = { path = "../forge-storage", features = ["test-mocks", "settings-test-support"] }
 forge-storage-sqlite = { path = "../forge-storage-sqlite", features = ["test-support"] }

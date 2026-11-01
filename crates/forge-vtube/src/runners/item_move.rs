@@ -3,8 +3,8 @@ use std::sync::Arc;
 use async_trait::async_trait;
 use forge_registry::SubActionConfig;
 use forge_registry::{
-    ChoiceField, ConfigProblem, ConfigSpec, IntegerField, OptionalField, RunContext, StepTimer,
-    SubActionCategory, SubActionRunner, TypedField, ValueBounds,
+    ChoiceField, ConfigProblem, ConfigSpec, IntegerField, OptionalField, RunContext,
+    StepCatalogEntry, StepTimer, SubActionCategory, SubActionRunner, TypedField, ValueBounds,
 };
 use forge_types::{ArgStack, SubActionTelemetry};
 
@@ -87,30 +87,28 @@ impl ItemMoveRunner {
     }
 }
 
+impl StepCatalogEntry for ItemMoveRunner {
+    fn category(&self) -> SubActionCategory {
+        SubActionCategory::Integration
+    }
+    fn label(&self) -> &str {
+        "Move Item"
+    }
+    fn summary(&self) -> &str {
+        "Moves, resizes, or rotates a loaded VTube Studio item on screen."
+    }
+    fn search_text(&self) -> &str {
+        "vtube item move position size rotate order fade vts"
+    }
+    fn icon_name(&self) -> &str {
+        "arrows-move"
+    }
+}
+
 #[async_trait]
 impl SubActionRunner for ItemMoveRunner {
     fn id(&self) -> &str {
         sub_action_ids::ITEM_MOVE
-    }
-
-    fn category(&self) -> SubActionCategory {
-        SubActionCategory::Integration
-    }
-
-    fn label(&self) -> &str {
-        "Move Item"
-    }
-
-    fn summary(&self) -> &str {
-        "Moves, resizes, or rotates a loaded VTube Studio item on screen."
-    }
-
-    fn search_text(&self) -> &str {
-        "vtube item move position size rotate order fade vts"
-    }
-
-    fn icon_name(&self) -> &str {
-        "arrows-move"
     }
 
     fn config_spec(&self) -> Option<ConfigSpec> {

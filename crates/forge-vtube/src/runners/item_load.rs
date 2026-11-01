@@ -3,8 +3,9 @@ use std::sync::Arc;
 use async_trait::async_trait;
 use forge_registry::SubActionConfig;
 use forge_registry::{
-    ConfigProblem, ConfigSpec, IntegerField, NumberField, OptionalField, RunContext, StepTimer,
-    SubActionCategory, SubActionRunner, ToggleField, TypedField, ValueBounds,
+    ConfigProblem, ConfigSpec, IntegerField, NumberField, OptionalField, RunContext,
+    StepCatalogEntry, StepTimer, SubActionCategory, SubActionRunner, ToggleField, TypedField,
+    ValueBounds,
 };
 use forge_types::{ArgStack, SubActionTelemetry, Variant};
 
@@ -79,30 +80,28 @@ impl ItemLoadRunner {
     }
 }
 
+impl StepCatalogEntry for ItemLoadRunner {
+    fn category(&self) -> SubActionCategory {
+        SubActionCategory::Integration
+    }
+    fn label(&self) -> &str {
+        "Load Item"
+    }
+    fn summary(&self) -> &str {
+        "Loads an item file into the VTube Studio scene."
+    }
+    fn search_text(&self) -> &str {
+        "vtube item load spawn png image sprite vts"
+    }
+    fn icon_name(&self) -> &str {
+        "image"
+    }
+}
+
 #[async_trait]
 impl SubActionRunner for ItemLoadRunner {
     fn id(&self) -> &str {
         sub_action_ids::ITEM_LOAD
-    }
-
-    fn category(&self) -> SubActionCategory {
-        SubActionCategory::Integration
-    }
-
-    fn label(&self) -> &str {
-        "Load Item"
-    }
-
-    fn summary(&self) -> &str {
-        "Loads an item file into the VTube Studio scene."
-    }
-
-    fn search_text(&self) -> &str {
-        "vtube item load spawn png image sprite vts"
-    }
-
-    fn icon_name(&self) -> &str {
-        "image"
     }
 
     fn config_spec(&self) -> Option<ConfigSpec> {

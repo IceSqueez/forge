@@ -1,0 +1,1236 @@
+use crate::chat::first_chat_ledger::FirstChatLedger;
+use crate::config::Config;
+use crate::delivery::{
+    CriticalSink, CriticalSinks, CriticalSubscription, EVENT_LOG, LaneTable, UNNAMED_OBSERVER,
+};
+use crate::error::RuntimeError;
+use crate::event_flow::delivery_loss::{
+    ConsumerLoss, ConsumerLossCounters, DeliveryTier, LossLedger, LossWatch,
+};
+use crate::event_flow::event_log_writer::EventLogSink;
+use crate::event_flow::event_ring::EventRing;
+use crate::event_flow::persist_batch::{BatchPolicy, FlushTicket, run_batched};
+use arc_swap::ArcSwap;
+use async_trait::async_trait;
+use forge_events::{
+    DeliveryLane, Event, EventChannel, EventObserver, EventPublisher, EventSubscription,
+    LagRecorder,
+};
+use forge_registry::TriggerRegistry;
+use forge_storage::EventLogRepo;
+use forge_types::{EventId, RecoverMutex};
+use futures_util::FutureExt;
+use futures_util::future::Shared;
+use std::collections::HashMap;
+use std::sync::{
+    Arc, Mutex,
+    atomic::{AtomicU64, Ordering},
+};
+use time::OffsetDateTime;
+use tokio::sync::{oneshot, watch};
+
+pub struct EventBus {
+    observers: EventChannel,
+    ring: Mutex<EventRing>,
+    lanes: ArcSwap<LaneTable>,
+    critical: CriticalSinks,
+    loss: Arc<LossLedger>,
+    priority_capacity: usize,
+    bulk_capacity: usize,
+    total_published: AtomicU64,
+    event_log: Arc<dyn EventLogRepo>,
+    batch_policy: BatchPolicy,
+    run_history_capacity: usize,
+    flush_stop: watch::Sender<bool>,
+    flush_abandon: watch::Sender<bool>,
+    abandoned_rows: Arc<AtomicU64>,
+    flushes: Mutex<Vec<Shared<oneshot::Receiver<()>>>>,
+    first_chats: Option<FirstChatLedger>,
+    held_lineages: Mutex<HashMap<EventId, Lineage>>,
+}
+
+#[derive(Clone, Copy, Default)]
+struct Lineage {
+    depth: u16,
+    replay: bool,
+}
+
+impl Lineage {
+    fn of(event: &Event) -> Self {
+        Self {
+            depth: event.causation_depth,
+            replay: event.replay,
+        }
+    }
+
+    fn inheriting(self, parent: Self) -> Self {
+        Self {
+            depth: self.depth.max(parent.depth),
+            replay: self.replay || parent.replay,
+        }
+    }
+}
+
+pub(crate) struct LineageHold<'a> {
+    bus: &'a EventBus,
+    event_id: EventId,
+}
+
+impl Drop for LineageHold<'_> {
+    fn drop(&mut self) {
+        self.bus.held_lineages.lock_recover().remove(&self.event_id);
+    }
+}
+
+impl EventObserver for EventBus {
+    fn observe(&self, consumer: &'static str) -> EventSubscription {
+        self.subscribe_observer(consumer)
+    }
+}
+
+impl EventBus {
+    pub fn new(event_log: Arc<dyn EventLogRepo>) -> Arc<Self> {
+        Self::with_config(event_log, &Config::default())
+    }
+
+    pub fn with_first_chats(
+        event_log: Arc<dyn EventLogRepo>,
+        ledger: Option<FirstChatLedger>,
+    ) -> Arc<Self> {
+        Self::build(event_log, &Config::default(), ledger)
+    }
+
+    pub fn with_config(event_log: Arc<dyn EventLogRepo>, config: &Config) -> Arc<Self> {
+        Self::build(event_log, config, None)
+    }
+
+    fn build(
+        event_log: Arc<dyn EventLogRepo>,
+        config: &Config,
+        first_chats: Option<FirstChatLedger>,
+    ) -> Arc<Self> {
+        Arc::new(Self {
+            observers: EventChannel::new(config.bus_observer_capacity),
+            ring: Mutex::new(EventRing::new(config.bus_ring_retention)),
+            lanes: ArcSwap::from_pointee(LaneTable::default()),
+            critical: CriticalSinks::new(),
+            loss: LossLedger::new(),
+            priority_capacity: config.critical_priority_capacity,
+            bulk_capacity: config.critical_bulk_capacity,
+            total_published: AtomicU64::new(0),
+            event_log,
+            batch_policy: BatchPolicy::from_config(config),
+            run_history_capacity: config.run_history_capacity.max(1),
+            flush_stop: watch::channel(false).0,
+            flush_abandon: watch::channel(false).0,
+            abandoned_rows: Arc::new(AtomicU64::new(0)),
+            flushes: Mutex::new(Vec::new()),
+            first_chats,
+            held_lineages: Mutex::new(HashMap::new()),
+        })
+    }
+
+    pub fn publish(&self, event: Event) {
+        self.publish_tracked(event, false);
+    }
+
+    pub(crate) fn publish_held(&self, event: Event) -> LineageHold<'_> {
+        let event_id = event.id;
+        self.publish_tracked(event, true);
+        LineageHold {
+            bus: self,
+            event_id,
+        }
+    }
+
+    fn publish_tracked(&self, mut event: Event, hold_lineage: bool) {
+        let lanes = self.lanes.load();
+        let (event, transient) = {
+            let mut ring = self.ring.lock_recover();
+            let lineage = self.lineage_with_parent(&event, &ring);
+            event.causation_depth = lineage.depth;
+            event.replay = lineage.replay;
+            if let Some(ledger) = &self.first_chats {
+                ledger.stamp(&mut event);
+            }
+            if hold_lineage {
+                self.held_lineages.lock_recover().insert(event.id, lineage);
+            }
+            let event = Arc::new(event);
+            let transient = lanes.is_transient(&event, &ring);
+            ring.push(Arc::clone(&event));
+            (event, transient)
+        };
+        let lane = lanes.lane_of(&event);
+        self.critical.deliver(&event, lane, transient);
+        self.observers.send(event);
+        self.total_published.fetch_add(1, Ordering::Relaxed);
+    }
+
+    pub fn record(&self, mut event: Event) {
+        let mut ring = self.ring.lock_recover();
+        event.replay = self.lineage_with_parent(&event, &ring).replay;
+        ring.push(Arc::new(event));
+    }
+
+    pub fn declare_lanes(&self, registry: &TriggerRegistry) {
+        self.lanes
+            .store(Arc::new(LaneTable::from_registry(registry)));
+    }
+
+    pub fn lane_of(&self, event: &Event) -> DeliveryLane {
+        self.lanes.load().lane_of(event)
+    }
+
+    pub fn subscribe(&self) -> EventSubscription {
+        self.subscribe_observer(UNNAMED_OBSERVER)
+    }
+
+    pub fn subscribe_observer(&self, consumer: &'static str) -> EventSubscription {
+        self.observers
+            .subscribe_recording(self.loss.counters(consumer, DeliveryTier::Observer))
+    }
+
+    pub fn relay_lag(&self, consumer: &'static str) -> Arc<dyn LagRecorder> {
+        self.loss.counters(consumer, DeliveryTier::Observer)
+    }
+
+    pub fn subscribe_critical(&self, consumer: &'static str) -> CriticalSubscription {
+        let (sink, subscription) = self.open_critical(consumer);
+        self.critical.add(sink);
+        subscription
+    }
+
+    fn subscribe_critical_durable(&self, consumer: &'static str) -> CriticalSubscription {
+        let (sink, subscription) = self.open_critical(consumer);
+        self.critical.add(sink.durable_only());
+        subscription
+    }
+
+    fn open_critical(&self, consumer: &'static str) -> (CriticalSink, CriticalSubscription) {
+        CriticalSink::open(
+            self.priority_capacity,
+            self.bulk_capacity,
+            self.loss.counters(consumer, DeliveryTier::Critical),
+        )
+    }
+
+    pub fn loss_report(&self) -> Vec<ConsumerLoss> {
+        self.loss.report()
+    }
+
+    pub fn watch_loss(&self) -> LossWatch {
+        self.loss.watch()
+    }
+
+    pub fn lookup(&self, event_id: EventId) -> Option<Event> {
+        self.ring
+            .lock_recover()
+            .get(event_id)
+            .map(|event| Event::clone(event))
+    }
+
+    pub(crate) fn causation_depth(&self, event_id: EventId) -> u16 {
+        let ring = self.ring.lock_recover();
+        self.lineage_of(event_id, &ring).depth
+    }
+
+    pub(crate) fn is_replay(&self, event_id: EventId) -> bool {
+        let ring = self.ring.lock_recover();
+        self.lineage_of(event_id, &ring).replay
+    }
+
+    pub(crate) fn hold_lineage(&self, event: &Event) -> LineageHold<'_> {
+        let ring = self.ring.lock_recover();
+        let lineage = self.lineage_with_parent(event, &ring);
+        self.held_lineages.lock_recover().insert(event.id, lineage);
+        LineageHold {
+            bus: self,
+            event_id: event.id,
+        }
+    }
+
+    fn lineage_with_parent(&self, event: &Event, ring: &EventRing) -> Lineage {
+        let own = Lineage::of(event);
+        match event.caused_by {
+            Some(parent) => own.inheriting(self.lineage_of(parent, ring)),
+            None => own,
+        }
+    }
+
+    fn lineage_of(&self, event_id: EventId, ring: &EventRing) -> Lineage {
+        let held = self.held_lineages.lock_recover().get(&event_id).copied();
+        held.or_else(|| ring.get(event_id).map(|event| Lineage::of(event)))
+            .unwrap_or_default()
+    }
+
+    pub fn recent(&self, limit: usize) -> Vec<Event> {
+        self.ring
+            .lock_recover()
+            .iter()
+            .rev()
+            .take(limit)
+            .map(|event| Event::clone(event))
+            .collect()
+    }
+
+    pub async fn recent_since(&self, limit: usize, since: Option<EventId>) -> Vec<Event> {
+        let since_id = match since {
+            None => return self.recent(limit),
+            Some(id) => id,
+        };
+
+        let ring_result = {
+            let ring = self.ring.lock_recover();
+            ring.position(since_id).map(|pos| {
+                ring.after(pos)
+                    .rev()
+                    .take(limit)
+                    .map(|event| Event::clone(event))
+                    .collect::<Vec<Event>>()
+            })
+        };
+
+        if let Some(events) = ring_result {
+            return events;
+        }
+
+        match self.event_log.recent_since(limit, Some(since_id)).await {
+            Ok(events) => events,
+            Err(error) => {
+                tracing::warn!(%error, "event log read failed; returning no older events");
+                Vec::new()
+            }
+        }
+    }
+
+    pub async fn replay_and_publish(&self, event_id: EventId) -> Result<(), RuntimeError> {
+        let original = match self.lookup(event_id) {
+            Some(e) => e,
+            None => self
+                .event_log
+                .get(event_id)
+                .await
+                .map_err(RuntimeError::Storage)?
+                .ok_or(RuntimeError::EventNotFound(event_id))?,
+        };
+
+        let replayed = Event {
+            id: EventId::new(),
+            source: original.source,
+            kind: original.kind,
+            timestamp: OffsetDateTime::now_utc(),
+            payload: original.payload,
+            caused_by: original.caused_by,
+            replay: true,
+            causation_depth: 0,
+        };
+
+        self.publish(replayed);
+        Ok(())
+    }
+
+    pub fn spawn_flush_task(bus: Arc<Self>) {
+        let subscription = bus.subscribe_critical_durable(EVENT_LOG);
+        let sink = EventLogSink::new(
+            Arc::clone(&bus.event_log),
+            bus.loss.counters(EVENT_LOG, DeliveryTier::Critical),
+        );
+        tokio::spawn(run_batched(
+            subscription,
+            sink,
+            bus.batch_policy,
+            bus.flush_ticket(),
+        ));
+    }
+
+    pub(crate) fn batch_policy(&self) -> BatchPolicy {
+        self.batch_policy
+    }
+
+    pub(crate) fn run_history_capacity(&self) -> usize {
+        self.run_history_capacity
+    }
+
+    pub(crate) fn loss_counters(
+        &self,
+        consumer: &'static str,
+        tier: DeliveryTier,
+    ) -> Arc<ConsumerLossCounters> {
+        self.loss.counters(consumer, tier)
+    }
+
+    pub(crate) fn flush_ticket(&self) -> FlushTicket {
+        let (done, finished) = oneshot::channel();
+        self.flushes.lock_recover().push(finished.shared());
+        FlushTicket::new(self.flush_stop.subscribe(), done).abandonable(
+            self.flush_abandon.subscribe(),
+            Arc::clone(&self.abandoned_rows),
+        )
+    }
+
+    pub fn shutdown(&self) {
+        self.flush_stop.send_replace(true);
+        for entry in self.loss.report() {
+            if entry.loss.total() > 0 {
+                tracing::warn!(
+                    consumer = entry.consumer,
+                    tier = ?entry.tier,
+                    priority_dropped = entry.loss.priority_dropped,
+                    bulk_dropped = entry.loss.bulk_dropped,
+                    skipped = entry.loss.skipped,
+                    unwritten = entry.loss.unwritten,
+                    "event loss since start"
+                );
+            }
+        }
+    }
+
+    pub async fn await_flush(&self) {
+        let pending: Vec<Shared<oneshot::Receiver<()>>> = self.flushes.lock_recover().clone();
+        futures_util::future::join_all(pending).await;
+    }
+
+    pub async fn abandon_flush(&self) -> u64 {
+        self.flush_abandon.send_replace(true);
+        self.await_flush().await;
+        self.abandoned_rows.load(Ordering::Relaxed)
+    }
+}
+
+impl EventPublisher for EventBus {
+    fn publish(&self, event: Event) {
+        EventBus::publish(self, event);
+    }
+}
+
+#[async_trait]
+pub trait EventHistory: EventPublisher + EventObserver {
+    async fn recent_since(&self, limit: usize, since: Option<EventId>) -> Vec<Event>;
+    async fn replay_and_publish(&self, event_id: EventId) -> Result<(), RuntimeError>;
+}
+
+#[async_trait]
+impl EventHistory for EventBus {
+    async fn recent_since(&self, limit: usize, since: Option<EventId>) -> Vec<Event> {
+        EventBus::recent_since(self, limit, since).await
+    }
+
+    async fn replay_and_publish(&self, event_id: EventId) -> Result<(), RuntimeError> {
+        EventBus::replay_and_publish(self, event_id).await
+    }
+}
+
+const _: () = {
+    fn assert_send_sync<T: Send + Sync>() {}
+    let _ = assert_send_sync::<EventBus>;
+};
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::NullEventLogRepo;
+    use crate::test_support::{Sandboxed, sandboxed_backend};
+    use forge_events::{Delivery, EventSource};
+    use forge_storage::DataProvider;
+    use forge_storage::StorageError;
+    use forge_storage_sqlite::SqliteBackend;
+    use std::sync::Arc;
+    use std::time::Duration;
+
+    const CHANNEL_CAP: usize = 16;
+    const RING_CAP: usize = 64;
+
+    fn null_bus() -> Arc<EventBus> {
+        bus_with_caps(Arc::new(NullEventLogRepo), CHANNEL_CAP, RING_CAP)
+    }
+
+    fn bus_with_caps(
+        event_log: Arc<dyn EventLogRepo>,
+        observer_capacity: usize,
+        ring_retention: usize,
+    ) -> Arc<EventBus> {
+        let config = Config {
+            bus_observer_capacity: observer_capacity,
+            bus_ring_retention: ring_retention,
+            ..Config::default()
+        };
+        EventBus::with_config(event_log, &config)
+    }
+
+    fn core_event(kind: &str) -> Event {
+        Event::new(EventSource::Core, kind, serde_json::Value::Null)
+    }
+
+    struct BackedEventLog(Arc<SqliteBackend>);
+
+    #[async_trait]
+    impl EventLogRepo for BackedEventLog {
+        async fn insert(&self, event: &Event) -> Result<(), StorageError> {
+            self.0.event_log_repo().insert(event).await
+        }
+
+        async fn insert_batch(&self, events: &[Arc<Event>]) -> Result<(), StorageError> {
+            self.0.event_log_repo().insert_batch(events).await
+        }
+
+        async fn get(&self, id: EventId) -> Result<Option<Event>, StorageError> {
+            self.0.event_log_repo().get(id).await
+        }
+
+        async fn recent(&self, limit: usize) -> Result<Vec<Event>, StorageError> {
+            self.0.event_log_repo().recent(limit).await
+        }
+
+        async fn recent_since(
+            &self,
+            limit: usize,
+            since: Option<EventId>,
+        ) -> Result<Vec<Event>, StorageError> {
+            self.0.event_log_repo().recent_since(limit, since).await
+        }
+    }
+
+    async fn backed_bus_with_caps(
+        channel_cap: usize,
+        ring_cap: usize,
+    ) -> (Arc<EventBus>, Sandboxed<Arc<SqliteBackend>>) {
+        let backend = sandboxed_backend([0xab; 32]).await.map(Arc::new);
+        let event_log: Arc<dyn EventLogRepo> = Arc::new(BackedEventLog(Arc::clone(&backend)));
+        let bus = bus_with_caps(event_log, channel_cap, ring_cap);
+        (bus, backend)
+    }
+
+    #[tokio::test]
+    async fn a_subscriber_receives_the_published_event() {
+        let bus = null_bus();
+        let mut sub = bus.subscribe();
+        let ev = core_event("action.start");
+        let expected_id = ev.id;
+        bus.publish(ev);
+        let received = sub.recv().await.unwrap();
+        assert_eq!(received.id, expected_id);
+    }
+
+    #[tokio::test]
+    async fn multiple_subscribers_each_receive_same_event() {
+        let bus = null_bus();
+        let mut sub_a = bus.subscribe();
+        let mut sub_b = bus.subscribe();
+        let ev = core_event("queue.paused");
+        let expected_id = ev.id;
+        bus.publish(ev);
+        assert_eq!(sub_a.recv().await.unwrap().id, expected_id);
+        assert_eq!(sub_b.recv().await.unwrap().id, expected_id);
+    }
+
+    #[test]
+    fn ring_buffer_fills_and_evicts_oldest() {
+        let bus = null_bus();
+        for i in 0..RING_CAP + 5 {
+            bus.publish(core_event(&format!("tick.{i}")));
+        }
+        assert_eq!(bus.recent(RING_CAP + 5).len(), RING_CAP);
+    }
+
+    #[test]
+    fn lookup_returns_stored_event_by_id() {
+        let bus = null_bus();
+        let ev = core_event("action.done");
+        let id = ev.id;
+        bus.publish(ev);
+        let found = bus.lookup(id);
+        assert!(found.is_some());
+        assert_eq!(found.unwrap().id, id);
+    }
+
+    #[test]
+    fn lookup_returns_none_for_missing_id() {
+        let bus = null_bus();
+        let ghost_id = EventId::new();
+        assert!(bus.lookup(ghost_id).is_none());
+    }
+
+    #[test]
+    fn record_does_not_broadcast_to_subscribers() {
+        let bus = null_bus();
+        let mut sub = bus.subscribe();
+        bus.record(core_event("silent.record"));
+        assert!(matches!(sub.try_recv(), Ok(None)));
+    }
+
+    #[test]
+    fn record_retains_event_in_ring_for_replay() {
+        let bus = null_bus();
+        let ev = core_event("recorded.candidate");
+        let id = ev.id;
+        bus.record(ev);
+        assert_eq!(bus.lookup(id).map(|e| e.id), Some(id));
+    }
+
+    #[tokio::test]
+    async fn record_then_replay_delivers_event_exactly_once() {
+        let bus = null_bus();
+        let mut rx = bus.subscribe();
+
+        let ev = core_event("trigger.candidate");
+        let id = ev.id;
+        bus.record(ev);
+        bus.replay_and_publish(id).await.unwrap();
+
+        let first = rx.try_recv().unwrap().unwrap();
+        assert!(
+            first.replay,
+            "the single delivery must be the replayed event"
+        );
+        assert_eq!(first.kind, "trigger.candidate");
+        assert!(
+            matches!(rx.try_recv(), Ok(None)),
+            "record must not broadcast; only replay delivers, so exactly one event arrives"
+        );
+    }
+
+    #[test]
+    fn recent_returns_newest_first_up_to_limit() {
+        let bus = null_bus();
+        let mut ids = Vec::new();
+        for i in 0..5 {
+            let ev = core_event(&format!("ev.{i}"));
+            ids.push(ev.id);
+            bus.publish(ev);
+        }
+        let recent = bus.recent(3);
+        assert_eq!(recent.len(), 3);
+        assert_eq!(recent[0].id, ids[4]);
+        assert_eq!(recent[1].id, ids[3]);
+        assert_eq!(recent[2].id, ids[2]);
+    }
+
+    #[tokio::test]
+    async fn replay_of_a_ring_held_event_republishes_it_with_a_fresh_id() {
+        let bus = null_bus();
+        let mut sub = bus.subscribe();
+
+        let original = core_event("action.start");
+        let original_id = original.id;
+        bus.publish(original);
+        let _ = sub.recv().await.unwrap();
+
+        bus.replay_and_publish(original_id).await.unwrap();
+        let replayed = sub.recv().await.unwrap();
+
+        assert!(replayed.replay, "replayed event must have replay=true");
+        assert_ne!(
+            replayed.id, original_id,
+            "replayed event must have a fresh id"
+        );
+        assert_eq!(replayed.kind, "action.start");
+    }
+
+    #[tokio::test]
+    async fn replay_of_an_evicted_event_is_read_back_from_the_event_log() {
+        let (bus, backend) = backed_bus_with_caps(64, 2).await;
+        let mut sub = bus.subscribe();
+
+        let ev1 = core_event("ev.first");
+        let ev1_id = ev1.id;
+        backend.event_log_repo().insert(&ev1).await.unwrap();
+        bus.publish(ev1);
+        let _ = sub.recv().await.unwrap();
+
+        let ev2 = core_event("ev.second");
+        backend.event_log_repo().insert(&ev2).await.unwrap();
+        bus.publish(ev2);
+        let _ = sub.recv().await.unwrap();
+
+        let ev3 = core_event("ev.third");
+        backend.event_log_repo().insert(&ev3).await.unwrap();
+        bus.publish(ev3);
+        let _ = sub.recv().await.unwrap();
+
+        assert!(
+            bus.lookup(ev1_id).is_none(),
+            "ev1 must be evicted from the 2-slot ring"
+        );
+
+        bus.replay_and_publish(ev1_id).await.unwrap();
+        let replayed = sub.recv().await.unwrap();
+
+        assert!(replayed.replay);
+        assert_ne!(replayed.id, ev1_id);
+        assert_eq!(replayed.kind, "ev.first");
+    }
+
+    #[tokio::test]
+    async fn replay_and_publish_not_found_returns_error() {
+        let bus = null_bus();
+        let ghost_id = EventId::new();
+        let result = bus.replay_and_publish(ghost_id).await;
+        assert!(
+            matches!(result, Err(RuntimeError::EventNotFound(id)) if id == ghost_id),
+            "must return EventNotFound for unknown id"
+        );
+    }
+
+    struct FailFirstRepo {
+        call_count: AtomicU64,
+        stored: Mutex<Vec<Event>>,
+    }
+
+    impl FailFirstRepo {
+        fn new() -> Self {
+            Self {
+                call_count: AtomicU64::new(0),
+                stored: Mutex::new(Vec::new()),
+            }
+        }
+    }
+
+    #[async_trait]
+    impl EventLogRepo for FailFirstRepo {
+        async fn insert(&self, event: &Event) -> Result<(), StorageError> {
+            self.stored.lock().unwrap().push(event.clone());
+            Ok(())
+        }
+
+        async fn insert_batch(&self, events: &[Arc<Event>]) -> Result<(), StorageError> {
+            if self.call_count.fetch_add(1, Ordering::SeqCst) == 0 {
+                return Err(StorageError::NotReady);
+            }
+            for event in events {
+                self.insert(event).await?;
+            }
+            Ok(())
+        }
+
+        async fn get(&self, _id: EventId) -> Result<Option<Event>, StorageError> {
+            Ok(None)
+        }
+
+        async fn recent(&self, _limit: usize) -> Result<Vec<Event>, StorageError> {
+            Ok(self.stored.lock().unwrap().clone())
+        }
+
+        async fn recent_since(
+            &self,
+            limit: usize,
+            _since: Option<EventId>,
+        ) -> Result<Vec<Event>, StorageError> {
+            Ok(self
+                .stored
+                .lock()
+                .unwrap()
+                .iter()
+                .rev()
+                .take(limit)
+                .cloned()
+                .collect())
+        }
+    }
+
+    #[tokio::test]
+    async fn flush_task_persists_published_events_while_running() {
+        let (bus, backend) = backed_bus_with_caps(CHANNEL_CAP, RING_CAP).await;
+        EventBus::spawn_flush_task(Arc::clone(&bus));
+
+        let events = [
+            core_event("flush.a"),
+            core_event("flush.b"),
+            core_event("flush.c"),
+        ];
+        let mut expected: Vec<EventId> = events.iter().map(|event| event.id).collect();
+        for event in events {
+            bus.publish(event);
+        }
+
+        let mut persisted = Vec::new();
+        for _ in 0..3_000 {
+            persisted = backend
+                .event_log_repo()
+                .recent(100)
+                .await
+                .unwrap()
+                .iter()
+                .map(|event| event.id)
+                .collect::<Vec<_>>();
+            if persisted.len() >= expected.len() {
+                break;
+            }
+            tokio::time::sleep(Duration::from_millis(10)).await;
+        }
+        persisted.sort();
+        expected.sort();
+        assert_eq!(persisted, expected);
+    }
+
+    #[tokio::test]
+    async fn a_failed_event_log_batch_is_counted_unwritten_and_later_batches_are_stored() {
+        let repo: Arc<FailFirstRepo> = Arc::new(FailFirstRepo::new());
+        let bus = bus_with_caps(
+            Arc::clone(&repo) as Arc<dyn EventLogRepo>,
+            CHANNEL_CAP,
+            RING_CAP,
+        );
+        EventBus::spawn_flush_task(Arc::clone(&bus));
+
+        bus.publish(core_event("err.first"));
+        bus.publish(core_event("err.second"));
+        bus.publish(core_event("err.third"));
+        tokio::task::yield_now().await;
+        bus.publish(core_event("ok.fourth"));
+        bus.shutdown();
+        bus.await_flush().await;
+
+        let unwritten: u64 = bus
+            .loss_report()
+            .iter()
+            .filter(|entry| entry.consumer == EVENT_LOG)
+            .map(|entry| entry.loss.unwritten)
+            .sum();
+        let stored: Vec<String> = repo
+            .stored
+            .lock()
+            .unwrap()
+            .iter()
+            .map(|event| event.kind.clone())
+            .collect();
+        assert_eq!((unwritten, stored), (3, vec!["ok.fourth".to_string()]));
+    }
+
+    #[tokio::test]
+    async fn recent_since_none_returns_newest_first() {
+        let bus = null_bus();
+        let mut ids = Vec::new();
+        for i in 0..7 {
+            let ev = core_event(&format!("ev.{i}"));
+            ids.push(ev.id);
+            bus.publish(ev);
+        }
+        let result = bus.recent_since(5, None).await;
+        assert_eq!(result.len(), 5);
+        assert_eq!(result[0].id, ids[6]);
+        assert_eq!(result[1].id, ids[5]);
+        assert_eq!(result[4].id, ids[2]);
+    }
+
+    #[tokio::test]
+    async fn recent_since_anchor_in_ring_returns_newer_events() {
+        let bus = null_bus();
+        let mut ids = Vec::new();
+        for i in 0..5 {
+            let ev = core_event(&format!("ev.{i}"));
+            ids.push(ev.id);
+            bus.publish(ev);
+        }
+        let result = bus.recent_since(100, Some(ids[2])).await;
+        assert_eq!(result.len(), 2);
+        assert_eq!(result[0].id, ids[4]);
+        assert_eq!(result[1].id, ids[3]);
+    }
+
+    #[tokio::test]
+    async fn recent_since_anchor_at_end_returns_empty() {
+        let bus = null_bus();
+        let mut ids = Vec::new();
+        for i in 0..3 {
+            let ev = core_event(&format!("ev.{i}"));
+            ids.push(ev.id);
+            bus.publish(ev);
+        }
+        let result = bus.recent_since(100, Some(ids[2])).await;
+        assert!(result.is_empty());
+    }
+
+    #[tokio::test]
+    async fn recent_since_limit_respected_within_ring() {
+        let bus = null_bus();
+        let mut ids = Vec::new();
+        for i in 0..6 {
+            let ev = core_event(&format!("ev.{i}"));
+            ids.push(ev.id);
+            bus.publish(ev);
+        }
+        let result = bus.recent_since(2, Some(ids[0])).await;
+        assert_eq!(result.len(), 2);
+        assert_eq!(result[0].id, ids[5]);
+        assert_eq!(result[1].id, ids[4]);
+    }
+
+    #[tokio::test]
+    async fn recent_since_evicted_anchor_falls_back_to_db() {
+        let (bus, backend) = backed_bus_with_caps(64, 2).await;
+
+        let mut ev1 = core_event("ev.first");
+        ev1.timestamp = time::OffsetDateTime::from_unix_timestamp(1_000_000).unwrap();
+        let mut ev2 = core_event("ev.second");
+        ev2.timestamp = time::OffsetDateTime::from_unix_timestamp(1_000_001).unwrap();
+        let mut ev3 = core_event("ev.third");
+        ev3.timestamp = time::OffsetDateTime::from_unix_timestamp(1_000_002).unwrap();
+
+        let ev1_id = ev1.id;
+        let ev2_id = ev2.id;
+        let ev3_id = ev3.id;
+
+        backend.event_log_repo().insert(&ev1).await.unwrap();
+        backend.event_log_repo().insert(&ev2).await.unwrap();
+        backend.event_log_repo().insert(&ev3).await.unwrap();
+
+        bus.publish(ev1);
+        bus.publish(ev2);
+        bus.publish(ev3);
+
+        assert!(
+            bus.lookup(ev1_id).is_none(),
+            "ev1 must be evicted from the 2-slot ring"
+        );
+
+        let result = bus.recent_since(100, Some(ev1_id)).await;
+        assert_eq!(result.len(), 2);
+        assert_eq!(result[0].id, ev3_id);
+        assert_eq!(result[1].id, ev2_id);
+    }
+
+    struct RecordingRepo {
+        stored: Mutex<Vec<EventId>>,
+    }
+
+    impl RecordingRepo {
+        fn new() -> Self {
+            Self {
+                stored: Mutex::new(Vec::new()),
+            }
+        }
+
+        fn stored_ids(&self) -> Vec<EventId> {
+            self.stored.lock().unwrap().clone()
+        }
+    }
+
+    #[async_trait]
+    impl EventLogRepo for RecordingRepo {
+        async fn insert(&self, event: &Event) -> Result<(), StorageError> {
+            tokio::task::yield_now().await;
+            self.stored.lock().unwrap().push(event.id);
+            Ok(())
+        }
+
+        async fn get(&self, _id: EventId) -> Result<Option<Event>, StorageError> {
+            Ok(None)
+        }
+
+        async fn recent(&self, _limit: usize) -> Result<Vec<Event>, StorageError> {
+            Ok(Vec::new())
+        }
+
+        async fn recent_since(
+            &self,
+            _limit: usize,
+            _since: Option<EventId>,
+        ) -> Result<Vec<Event>, StorageError> {
+            Ok(Vec::new())
+        }
+    }
+
+    fn recording_bus() -> (Arc<EventBus>, Arc<RecordingRepo>) {
+        let repo = Arc::new(RecordingRepo::new());
+        let bus = bus_with_caps(
+            Arc::clone(&repo) as Arc<dyn EventLogRepo>,
+            CHANNEL_CAP,
+            RING_CAP,
+        );
+        (bus, repo)
+    }
+
+    #[tokio::test]
+    async fn await_flush_resolves_only_after_shutdown_drain_persists_pending_events() {
+        let (bus, repo) = recording_bus();
+        EventBus::spawn_flush_task(Arc::clone(&bus));
+
+        let ev1 = core_event("drain.a");
+        let ev2 = core_event("drain.b");
+        let ev3 = core_event("drain.c");
+        let ids = [ev1.id, ev2.id, ev3.id];
+
+        bus.publish(ev1);
+        bus.publish(ev2);
+        bus.publish(ev3);
+        bus.shutdown();
+
+        let completed = tokio::time::timeout(Duration::from_secs(30), bus.await_flush()).await;
+        assert!(
+            completed.is_ok(),
+            "await_flush must resolve after the shutdown drain"
+        );
+
+        let stored = repo.stored_ids();
+        for id in ids {
+            assert!(
+                stored.contains(&id),
+                "event {id} must reach the repo before await_flush resolves"
+            );
+        }
+    }
+
+    #[tokio::test]
+    async fn await_flush_returns_immediately_when_flush_task_never_spawned() {
+        let bus = null_bus();
+        let completed = tokio::time::timeout(Duration::from_secs(30), bus.await_flush()).await;
+        assert!(
+            completed.is_ok(),
+            "await_flush must not hang when no flush task was ever spawned"
+        );
+    }
+
+    #[tokio::test]
+    async fn second_await_flush_returns_immediately_after_receiver_consumed() {
+        let (bus, _repo) = recording_bus();
+        EventBus::spawn_flush_task(Arc::clone(&bus));
+
+        bus.publish(core_event("second.a"));
+        bus.shutdown();
+
+        let first = tokio::time::timeout(Duration::from_secs(30), bus.await_flush()).await;
+        assert!(
+            first.is_ok(),
+            "first await_flush must resolve after the shutdown drain"
+        );
+
+        let second = tokio::time::timeout(Duration::from_secs(30), bus.await_flush()).await;
+        assert!(
+            second.is_ok(),
+            "second await_flush must return immediately once the receiver is consumed"
+        );
+    }
+
+    #[test]
+    fn published_event_is_in_the_ring_before_any_subscriber_can_receive_it() {
+        let bus = null_bus();
+        let mut rx = bus.subscribe();
+        let ring_guard = bus.ring.lock().unwrap();
+        let publisher = {
+            let bus = Arc::clone(&bus);
+            std::thread::spawn(move || bus.publish(core_event("ordering.probe")))
+        };
+
+        let deadline = std::time::Instant::now() + Duration::from_millis(50);
+        let mut received_before_ring = false;
+        while std::time::Instant::now() < deadline {
+            if matches!(rx.try_recv(), Ok(Some(_))) {
+                received_before_ring = true;
+                break;
+            }
+            std::thread::yield_now();
+        }
+        drop(ring_guard);
+        publisher.join().unwrap();
+
+        assert!(
+            !received_before_ring,
+            "a subscriber received the event while the ring did not hold it yet"
+        );
+    }
+
+    fn observer_loss(bus: &EventBus, consumer: &str) -> Option<u64> {
+        bus.loss_report()
+            .into_iter()
+            .find(|entry| entry.consumer == consumer && entry.tier == DeliveryTier::Observer)
+            .map(|entry| entry.loss.skipped)
+    }
+
+    #[tokio::test]
+    async fn each_lagging_observer_counts_only_the_events_it_skipped_itself() {
+        let bus = null_bus();
+        let observer: &dyn EventObserver = bus.as_ref();
+        let mut lagging = observer.observe("lagging");
+        let mut keeping_up = bus.subscribe_observer("keeping_up");
+        let overflow = 6;
+        for i in 0..CHANNEL_CAP / 2 {
+            bus.publish(core_event(&format!("early.{i}")));
+        }
+        while let Ok(Some(_)) = keeping_up.try_recv() {}
+        for i in 0..CHANNEL_CAP / 2 + overflow {
+            bus.publish(core_event(&format!("late.{i}")));
+        }
+
+        let lagging_saw = lagging.next().await;
+        let keeping_up_saw = keeping_up.next().await;
+
+        assert!(matches!(lagging_saw, Delivery::Skipped(n) if n == overflow as u64));
+        assert!(matches!(keeping_up_saw, Delivery::Event(_)));
+        assert_eq!(
+            (
+                observer_loss(&bus, "lagging"),
+                observer_loss(&bus, "keeping_up")
+            ),
+            (Some(overflow as u64), Some(0))
+        );
+    }
+
+    #[tokio::test]
+    async fn watch_loss_wakes_with_the_totals_of_a_critical_consumer_that_dropped() {
+        let config = Config {
+            critical_bulk_capacity: 1,
+            ..Config::default()
+        };
+        let bus = EventBus::with_config(Arc::new(NullEventLogRepo), &config);
+        let _critical = bus.subscribe_critical("probe");
+        let mut watch = bus.watch_loss();
+        for _ in 0..3 {
+            bus.publish(core_event("action.start"));
+        }
+
+        let report = tokio::time::timeout(Duration::from_secs(30), watch.changed())
+            .await
+            .ok()
+            .flatten()
+            .unwrap_or_default();
+
+        let dropped = report
+            .iter()
+            .find(|entry| entry.consumer == "probe")
+            .map(|entry| entry.loss.bulk_dropped);
+        assert_eq!(dropped, Some(2));
+    }
+
+    fn child_of(parent: &Event, kind: &str, own_depth: u16) -> Event {
+        let mut child =
+            Event::child_of(EventSource::Core, kind, serde_json::Value::Null, parent.id);
+        child.causation_depth = own_depth;
+        child
+    }
+
+    fn published_depth(bus: &EventBus, event: Event) -> u16 {
+        let id = event.id;
+        bus.publish(event);
+        bus.causation_depth(id)
+    }
+
+    #[test]
+    fn publish_carries_the_deepest_of_own_and_parent_depth_down_each_branch() {
+        let bus = null_bus();
+        let root = Event::new(EventSource::Twitch, "twitch.chat", serde_json::Value::Null);
+        let first = child_of(&root, "action.start", 1);
+        let first_run = child_of(&first, "subaction.run", 0);
+        let left = child_of(&first_run, "action.start", 2);
+        let left_leaf = child_of(&left, "action.start", 3);
+        let left_leaf_run = child_of(&left_leaf, "subaction.run", 0);
+        let right = child_of(&first_run, "action.start", 2);
+        let right_run = child_of(&right, "subaction.run", 0);
+        for event in [root, first, first_run, left, left_leaf, right] {
+            bus.publish(event);
+        }
+
+        let depths = (
+            published_depth(&bus, left_leaf_run),
+            published_depth(&bus, right_run),
+        );
+
+        assert_eq!(depths, (3, 2));
+    }
+
+    #[test]
+    fn uncaused_event_after_a_deep_chain_stays_at_depth_zero() {
+        let bus = null_bus();
+        let mut parent = core_event("action.start");
+        bus.publish(parent.clone());
+        for depth in 1..=20 {
+            let next = child_of(&parent, "action.start", depth);
+            bus.publish(next.clone());
+            parent = next;
+        }
+        let platform = Event::new(EventSource::Twitch, "twitch.chat", serde_json::Value::Null);
+
+        assert_eq!(published_depth(&bus, platform), 0);
+    }
+
+    #[test]
+    fn held_parent_evicted_from_the_ring_still_hands_its_depth_to_a_child() {
+        let bus = bus_with_caps(Arc::new(NullEventLogRepo), CHANNEL_CAP, 2);
+        let start = child_of(&core_event("twitch.chat"), "action.start", 5);
+        let _held = bus.hold_lineage(&start);
+        bus.publish(start.clone());
+        for i in 0..3 {
+            bus.publish(core_event(&format!("filler.{i}")));
+        }
+        assert!(bus.lookup(start.id).is_none(), "the start must be evicted");
+
+        assert_eq!(
+            published_depth(&bus, child_of(&start, "test.loop_event", 0)),
+            5
+        );
+    }
+
+    #[test]
+    fn released_hold_leaves_no_depth_behind_for_an_evicted_parent() {
+        let bus = bus_with_caps(Arc::new(NullEventLogRepo), CHANNEL_CAP, 2);
+        let start = child_of(&core_event("twitch.chat"), "action.start", 5);
+        drop(bus.hold_lineage(&start));
+        bus.publish(start.clone());
+        for i in 0..3 {
+            bus.publish(core_event(&format!("filler.{i}")));
+        }
+
+        assert_eq!(
+            published_depth(&bus, child_of(&start, "test.loop_event", 0)),
+            0
+        );
+    }
+
+    #[tokio::test]
+    async fn replayed_event_takes_its_parents_depth_not_its_own() {
+        let bus = null_bus();
+        let mut sub = bus.subscribe();
+        let trigger = child_of(&core_event("twitch.chat"), "subaction.run", 2);
+        let start = child_of(&trigger, "action.start", 3);
+        let start_id = start.id;
+        bus.publish(trigger);
+        bus.publish(start);
+        while let Ok(Some(_)) = sub.try_recv() {}
+
+        bus.replay_and_publish(start_id).await.unwrap();
+        let replayed = sub.recv().await.unwrap();
+
+        assert_eq!(replayed.causation_depth, 2);
+    }
+
+    fn replayed_root(kind: &str) -> Event {
+        let mut root = Event::new(EventSource::Twitch, kind, serde_json::Value::Null);
+        root.replay = true;
+        root
+    }
+
+    #[test]
+    fn recorded_child_of_a_replayed_parent_takes_the_mark_but_not_the_depth() {
+        let bus = null_bus();
+        let mut parent = replayed_root("twitch.chat");
+        parent.causation_depth = 5;
+        bus.publish(parent.clone());
+        let due = child_of(&parent, "scheduled.run.due", 0);
+        let due_id = due.id;
+
+        bus.record(due);
+
+        let recorded = bus.lookup(due_id).unwrap();
+        assert_eq!((recorded.replay, recorded.causation_depth), (true, 0));
+    }
+
+    #[test]
+    fn held_start_evicted_from_the_ring_still_hands_the_replay_mark_to_its_steps() {
+        let bus = bus_with_caps(Arc::new(NullEventLogRepo), CHANNEL_CAP, 2);
+        let root = replayed_root("twitch.chat");
+        let start = child_of(&root, "action.start", 1);
+        bus.publish(root.clone());
+        let _held = bus.hold_lineage(&start);
+        bus.publish(start.clone());
+        for i in 0..3 {
+            bus.publish(core_event(&format!("filler.{i}")));
+        }
+        assert!(bus.lookup(root.id).is_none() && bus.lookup(start.id).is_none());
+        let step = child_of(&start, "subaction.run", 0);
+        let step_id = step.id;
+
+        bus.publish(step);
+
+        assert!(bus.lookup(step_id).unwrap().replay);
+    }
+}

@@ -39,7 +39,7 @@ impl From<SqliteStorageError> for forge_storage::StorageError {
             }
             SqliteStorageError::PreBaselineSchema { found } => Self::PreBaselineSchema { found },
             SqliteStorageError::UnrecognizedJournal { reason } => Self::Migration {
-                migration: crate::migrations::JOURNAL_CHECK.to_owned(),
+                migration: crate::schema::migrations::JOURNAL_CHECK.to_owned(),
                 reason,
             },
             SqliteStorageError::Sqlx(inner) => {

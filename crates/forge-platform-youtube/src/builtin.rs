@@ -9,54 +9,22 @@ use forge_platform_core::{
     HealthText, HealthValue, HeroBadge, HeroBadgeTone, LiveViewerSource, PlatformError,
     ViewerReport,
 };
-use forge_registry::{RegistryError, TriggerRegistry};
 use futures::future::BoxFuture;
 use tokio::sync::{broadcast, watch};
 use tokio_stream::StreamExt;
 use tokio_stream::wrappers::BroadcastStream;
 use tokio_util::sync::CancellationToken;
 
-use crate::chat_platform::YoutubePlatform;
-use crate::credentials_manager::YoutubeCredentialsManager;
-use crate::follow_lookup::YoutubeFollowLookup;
-use crate::quota_state::{QUOTA_DAILY_LIMIT, SharedQuota, today_pacific};
-use crate::triggers::channel_member::SupportNewMemberDescriptor;
-use crate::triggers::channel_member_milestone::SupportMemberMilestoneDescriptor;
-use crate::triggers::channel_user_banned::ChannelUserBannedDescriptor;
-use crate::triggers::chat_command::ChatCommandDescriptor;
-use crate::triggers::chat_message::ChatMessageDescriptor;
-use crate::triggers::chat_super_chat::SupportSuperChatDescriptor;
-use crate::triggers::chat_super_sticker::SupportSuperStickerDescriptor;
-use crate::triggers::member_gift::ChannelMemberGiftDescriptor;
-use crate::triggers::member_gift_received::ChannelMemberGiftReceivedDescriptor;
-use crate::triggers::message_deleted::ChatMessageDeletedDescriptor;
-use crate::triggers::stream_offline::ChannelBroadcastEndedDescriptor;
-use crate::triggers::stream_online::ChannelBroadcastStartedDescriptor;
-use crate::triggers::title_changed::ChannelBroadcastTitleChangedDescriptor;
-use crate::viewer_poll::{YoutubeViewerPoll, YoutubeViewerSource};
+use crate::account::credentials_manager::YoutubeCredentialsManager;
+use crate::api::quota_state::{QUOTA_DAILY_LIMIT, SharedQuota, today_pacific};
+use crate::broadcast::follow_lookup::YoutubeFollowLookup;
+use crate::broadcast::viewer_poll::{YoutubeViewerPoll, YoutubeViewerSource};
+use crate::chat::chat_platform::YoutubePlatform;
 use crate::vocabulary::messages;
 
 const LIVE_CHAT_METRIC: HealthMetricId = HealthMetricId::new(messages::HEALTH_LIVE_CHAT);
 const EVENTS_METRIC: HealthMetricId = HealthMetricId::new(messages::HEALTH_EVENTS);
 const API_CALLS_METRIC: HealthMetricId = HealthMetricId::new(messages::HEALTH_API_CALLS);
-
-pub fn register_youtube_triggers(registry: &mut TriggerRegistry) -> Result<(), RegistryError> {
-    let mut registry = registry.owned_by(crate::YOUTUBE_INTEGRATION.id);
-    registry.register(Box::new(ChatMessageDescriptor))?;
-    registry.register(Box::new(ChatCommandDescriptor))?;
-    registry.register(Box::new(SupportSuperChatDescriptor))?;
-    registry.register(Box::new(SupportSuperStickerDescriptor))?;
-    registry.register(Box::new(SupportNewMemberDescriptor))?;
-    registry.register(Box::new(SupportMemberMilestoneDescriptor))?;
-    registry.register(Box::new(ChannelUserBannedDescriptor))?;
-    registry.register(Box::new(ChatMessageDeletedDescriptor))?;
-    registry.register(Box::new(ChannelMemberGiftDescriptor))?;
-    registry.register(Box::new(ChannelMemberGiftReceivedDescriptor))?;
-    registry.register(Box::new(ChannelBroadcastStartedDescriptor))?;
-    registry.register(Box::new(ChannelBroadcastEndedDescriptor))?;
-    registry.register(Box::new(ChannelBroadcastTitleChangedDescriptor))?;
-    Ok(())
-}
 
 pub struct YoutubeIntegrationBundle {
     id: IntegrationId,
@@ -447,6 +415,8 @@ impl BuiltinContent for YoutubeIntegrationBundle {
 
 #[cfg(test)]
 mod tests {
+    use crate::register_youtube_triggers;
+    use forge_registry::TriggerRegistry;
     use forge_storage::test_support::MemoryCredentials;
     use forge_types::OAuthToken;
     use std::collections::{BTreeMap, BTreeSet};
@@ -458,12 +428,12 @@ mod tests {
     use tokio_stream::StreamExt;
 
     use super::*;
-    use crate::active_broadcast_id::ActiveBroadcastIdHandle;
-    use crate::credentials::YoutubeCredentials;
-    use crate::live_chat_id::LiveChatIdHandle;
-    use crate::moderation::YoutubeModeration;
-    use crate::send_chat::YoutubeSendChat;
-    use crate::stream_metadata::YoutubeStreamMetadata;
+    use crate::account::credentials::YoutubeCredentials;
+    use crate::broadcast::active_broadcast_id::ActiveBroadcastIdHandle;
+    use crate::broadcast::live_chat_id::LiveChatIdHandle;
+    use crate::broadcast::stream_metadata::YoutubeStreamMetadata;
+    use crate::chat::moderation::YoutubeModeration;
+    use crate::chat::send_chat::YoutubeSendChat;
     use crate::sub_actions::register_youtube_sub_actions;
     use crate::vocabulary::labels;
     use forge_platform_core::{
@@ -497,7 +467,7 @@ mod tests {
             Arc::clone(&manager),
             LiveChatIdHandle::new(),
             ActiveBroadcastIdHandle::new(),
-            crate::ban_ledger_test_support::MemoryBanLedger::shared(),
+            crate::chat::ban_ledger_test_support::MemoryBanLedger::shared(),
         ));
         let bundle =
             YoutubeIntegrationBundle::new("UCabc123".to_owned(), Arc::clone(&platform), manager);
@@ -515,31 +485,31 @@ mod tests {
         let moderation = Arc::new(YoutubeModeration::new(
             api.clone(),
             token_source(),
-            crate::ban_ledger_test_support::broadcaster_source(),
+            crate::chat::ban_ledger_test_support::broadcaster_source(),
             LiveChatIdHandle::new(),
-            crate::ban_ledger_test_support::MemoryBanLedger::shared(),
+            crate::chat::ban_ledger_test_support::MemoryBanLedger::shared(),
         ));
         let metadata = Arc::new(YoutubeStreamMetadata::new(
             api.clone(),
             token_source(),
             ActiveBroadcastIdHandle::new(),
         ));
-        let stream_stats = Arc::new(crate::stream_stats::YoutubeStreamStats::new(
+        let stream_stats = Arc::new(crate::broadcast::stream_stats::YoutubeStreamStats::new(
             api.clone(),
             token_source(),
             ActiveBroadcastIdHandle::new(),
         ));
-        let ad_break = Arc::new(crate::ad_break::YoutubeAdBreak::new(
+        let ad_break = Arc::new(crate::broadcast::ad_break::YoutubeAdBreak::new(
             api.clone(),
             token_source(),
             ActiveBroadcastIdHandle::new(),
         ));
-        let thumbnail = Arc::new(crate::thumbnail::YoutubeThumbnail::new(
+        let thumbnail = Arc::new(crate::broadcast::thumbnail::YoutubeThumbnail::new(
             api.clone(),
             token_source(),
             ActiveBroadcastIdHandle::new(),
         ));
-        let channel_lookup = Arc::new(crate::channel_lookup::YoutubeChannelLookup::new(
+        let channel_lookup = Arc::new(crate::broadcast::channel_lookup::YoutubeChannelLookup::new(
             api,
             token_source(),
         ));
@@ -584,7 +554,7 @@ mod tests {
 
     fn signed_in_repo() -> Arc<MemoryCredentials> {
         Arc::new(MemoryCredentials::holding(
-            crate::credentials::CREDENTIAL_KEY,
+            crate::account::credentials::CREDENTIAL_KEY,
             &stored_credential_json(
                 "Live",
                 None,
@@ -913,7 +883,7 @@ mod tests {
     #[tokio::test]
     async fn api_calls_metric_reads_zero_once_the_pacific_day_has_rolled_over() {
         let previous_day = time::Date::from_calendar_date(2020, time::Month::January, 1).unwrap();
-        let quota = SharedQuota::new(crate::quota_state::QuotaState {
+        let quota = SharedQuota::new(crate::api::quota_state::QuotaState {
             used_today: 9_500,
             last_reset_date: previous_day,
         });
@@ -962,7 +932,7 @@ mod tests {
     async fn refresh_identity_populates_hero_name_and_token_expiry() {
         let expires_at = OffsetDateTime::from_unix_timestamp(1_800_000_000).unwrap();
         let repo = Arc::new(MemoryCredentials::holding(
-            crate::credentials::CREDENTIAL_KEY,
+            crate::account::credentials::CREDENTIAL_KEY,
             &stored_credential_json("GTNH Live", Some("@gtnhlive"), expires_at),
         ));
         let (bundle, _platform) = make_bundle(repo);
@@ -1190,7 +1160,7 @@ mod tests {
     async fn each_identity_refresh_replaces_the_hero_name() {
         let expires_at = OffsetDateTime::from_unix_timestamp(1_800_000_000).unwrap();
         let repo = Arc::new(MemoryCredentials::holding(
-            crate::credentials::CREDENTIAL_KEY,
+            crate::account::credentials::CREDENTIAL_KEY,
             &stored_credential_json("Old Title", Some("@old"), expires_at),
         ));
         let (bundle, _platform) = make_bundle(Arc::clone(&repo) as Arc<dyn CredentialsRepo>);
@@ -1201,7 +1171,7 @@ mod tests {
             ("New Title", None, "New Title"),
         ] {
             repo.put(
-                crate::credentials::CREDENTIAL_KEY,
+                crate::account::credentials::CREDENTIAL_KEY,
                 &stored_credential_json(title, handle, expires_at),
             );
             bundle.refresh_identity().await;

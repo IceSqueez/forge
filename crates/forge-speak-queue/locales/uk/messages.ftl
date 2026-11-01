@@ -60,4 +60,3 @@ msg-speak-event_stream_closed = Черга озвучення закрилася
 msg-speak-outcome_unknown = Невідомо, чи озвучено це повідомлення: черга втратила події під час очікування.
 msg-speak-wait_timed_out = Очікування озвучення тривало надто довго.
 msg-speak-removed_from_queue = Повідомлення прибрано з черги.
-msg-speak-show_speech_unavailable = Озвучення для показу оверлея недоступне.

@@ -4,7 +4,7 @@ use std::sync::Arc;
 
 use async_trait::async_trait;
 use forge_registry::SubActionConfig;
-use forge_registry::{RunContext, StepTimer, SubActionCategory, SubActionRunner};
+use forge_registry::{RunContext, StepCatalogEntry, StepTimer, SubActionCategory, SubActionRunner};
 use forge_types::{ArgStack, SubActionOutcome, SubActionTelemetry};
 
 use crate::account::identity::SelfIdentity;
@@ -45,30 +45,28 @@ impl CancelRaidRunner {
     }
 }
 
+impl StepCatalogEntry for CancelRaidRunner {
+    fn category(&self) -> SubActionCategory {
+        SubActionCategory::Integration
+    }
+    fn label(&self) -> &str {
+        "Cancel Raid"
+    }
+    fn summary(&self) -> &str {
+        "Cancels a pending raid initiated from this channel."
+    }
+    fn search_text(&self) -> &str {
+        "twitch raid cancel abort stop"
+    }
+    fn icon_name(&self) -> &str {
+        "raid-cancel"
+    }
+}
+
 #[async_trait]
 impl SubActionRunner for CancelRaidRunner {
     fn id(&self) -> &str {
         sub_action_ids::CHANNEL_CANCEL_RAID
-    }
-
-    fn category(&self) -> SubActionCategory {
-        SubActionCategory::Integration
-    }
-
-    fn label(&self) -> &str {
-        "Cancel Raid"
-    }
-
-    fn summary(&self) -> &str {
-        "Cancels a pending raid initiated from this channel."
-    }
-
-    fn search_text(&self) -> &str {
-        "twitch raid cancel abort stop"
-    }
-
-    fn icon_name(&self) -> &str {
-        "raid-cancel"
     }
 
     async fn execute(

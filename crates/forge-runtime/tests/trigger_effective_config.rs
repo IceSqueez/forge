@@ -7,7 +7,9 @@ use std::time::Duration;
 use async_trait::async_trait;
 use forge_events::EventSubscription;
 use forge_events::{Event, EventSource};
-use forge_registry::{FormField, RegistryError, RunContext, SubActionCategory, SubActionRunner};
+use forge_registry::{
+    FormField, RegistryError, RunContext, StepCatalogEntry, SubActionCategory, SubActionRunner,
+};
 use forge_runtime::{
     EventBus, FrozenRuntime, NullEventLogRepo, RuntimeWiring, register_core_triggers,
 };
@@ -90,30 +92,28 @@ struct RecordingRunner {
     captured: Arc<Mutex<Option<BTreeMap<String, Variant>>>>,
 }
 
+impl StepCatalogEntry for RecordingRunner {
+    fn category(&self) -> SubActionCategory {
+        SubActionCategory::Util
+    }
+    fn label(&self) -> &str {
+        "Recording"
+    }
+    fn summary(&self) -> &str {
+        ""
+    }
+    fn search_text(&self) -> &str {
+        ""
+    }
+    fn icon_name(&self) -> &str {
+        ""
+    }
+}
+
 #[async_trait]
 impl SubActionRunner for RecordingRunner {
     fn id(&self) -> &str {
         "test.record"
-    }
-
-    fn category(&self) -> SubActionCategory {
-        SubActionCategory::Util
-    }
-
-    fn label(&self) -> &str {
-        "Recording"
-    }
-
-    fn summary(&self) -> &str {
-        ""
-    }
-
-    fn search_text(&self) -> &str {
-        ""
-    }
-
-    fn icon_name(&self) -> &str {
-        ""
     }
 
     fn default_config(&self) -> forge_registry::SubActionConfig {

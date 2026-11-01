@@ -7,8 +7,8 @@ use forge_events::EventPublisher;
 use forge_platform_core::SenderPreference;
 use forge_registry::SubActionConfig;
 use forge_registry::{
-    ChoiceField, ConfigChoice, ConfigProblem, ConfigSpec, RunContext, StepTimer, SubActionCategory,
-    SubActionRunner, TextEditor, TextField, TypedField,
+    ChoiceField, ConfigChoice, ConfigProblem, ConfigSpec, RunContext, StepCatalogEntry, StepTimer,
+    SubActionCategory, SubActionRunner, TextEditor, TextField, TypedField,
 };
 use forge_types::{ArgStack, SubActionTelemetry};
 
@@ -135,30 +135,28 @@ impl SendAnnouncementRunner {
     }
 }
 
+impl StepCatalogEntry for SendAnnouncementRunner {
+    fn category(&self) -> SubActionCategory {
+        SubActionCategory::Chat
+    }
+    fn label(&self) -> &str {
+        "Send Announcement"
+    }
+    fn summary(&self) -> &str {
+        "Posts a highlighted announcement in the Twitch chat."
+    }
+    fn search_text(&self) -> &str {
+        "twitch chat announcement announce highlight banner notice"
+    }
+    fn icon_name(&self) -> &str {
+        "speakerphone"
+    }
+}
+
 #[async_trait]
 impl SubActionRunner for SendAnnouncementRunner {
     fn id(&self) -> &str {
         sub_action_ids::CHAT_SEND_ANNOUNCEMENT
-    }
-
-    fn category(&self) -> SubActionCategory {
-        SubActionCategory::Chat
-    }
-
-    fn label(&self) -> &str {
-        "Send Announcement"
-    }
-
-    fn summary(&self) -> &str {
-        "Posts a highlighted announcement in the Twitch chat."
-    }
-
-    fn search_text(&self) -> &str {
-        "twitch chat announcement announce highlight banner notice"
-    }
-
-    fn icon_name(&self) -> &str {
-        "speakerphone"
     }
 
     fn config_spec(&self) -> Option<ConfigSpec> {

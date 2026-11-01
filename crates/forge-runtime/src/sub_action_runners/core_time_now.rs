@@ -1,8 +1,8 @@
 use async_trait::async_trait;
 use forge_registry::{
     ChoiceField, ConfigChoice, ConfigProblem, ConfigSpec, Interpolation, ProducedVariable,
-    RunContext, StepTimer, SubActionCategory, SubActionIo, SubActionRunner, TemplateField,
-    ToggleField, TypedField, VariableField,
+    RunContext, StepCatalogEntry, StepTimer, SubActionCategory, SubActionIo, SubActionRunner,
+    TemplateField, ToggleField, TypedField, VariableField,
 };
 use forge_types::{
     ArgStack, MessageRef, NamesLanguage, SubActionConfig, SubActionTelemetry, Variant, VariantKind,
@@ -134,30 +134,28 @@ fn formatted(
 
 pub struct CoreTimeNowRunner;
 
+impl StepCatalogEntry for CoreTimeNowRunner {
+    fn category(&self) -> SubActionCategory {
+        SubActionCategory::Util
+    }
+    fn label(&self) -> &str {
+        "Time - Get Current Time"
+    }
+    fn summary(&self) -> &str {
+        "Capture the current time; writes the datetime to `into_var`, a formatted string to `time.formatted` (custom: a date pattern such as HH:mm dd.MM.yyyy, local time or UTC), and unix seconds to `time.unix_seconds`"
+    }
+    fn search_text(&self) -> &str {
+        "time now current datetime timestamp unix clock pattern date"
+    }
+    fn icon_name(&self) -> &str {
+        "clock"
+    }
+}
+
 #[async_trait]
 impl SubActionRunner for CoreTimeNowRunner {
     fn id(&self) -> &str {
         TIME_NOW_KIND_ID
-    }
-
-    fn category(&self) -> SubActionCategory {
-        SubActionCategory::Util
-    }
-
-    fn label(&self) -> &str {
-        "Time - Get Current Time"
-    }
-
-    fn summary(&self) -> &str {
-        "Capture the current time; writes the datetime to `into_var`, a formatted string to `time.formatted` (custom: a date pattern such as HH:mm dd.MM.yyyy, local time or UTC), and unix seconds to `time.unix_seconds`"
-    }
-
-    fn search_text(&self) -> &str {
-        "time now current datetime timestamp unix clock pattern date"
-    }
-
-    fn icon_name(&self) -> &str {
-        "clock"
     }
 
     fn config_spec(&self) -> Option<ConfigSpec> {

@@ -95,7 +95,7 @@ pub use references::{
 pub use refinement::{FormRefinement, FormSchemaSource, refined_fields};
 pub use registry::{SubActionRegistry, TriggerRegistry};
 pub use run_context::RunContext;
-pub use runner::{SubActionConfig, SubActionRunner, validate_declared_config};
+pub use runner::{StepCatalogEntry, SubActionConfig, SubActionRunner, validate_declared_config};
 pub use scope::{ScopeLevel, ScopeOrigin, ScopedVariable, variables_in_scope};
 pub use scope_io::{ProducedVariable, SubActionIo};
 pub use step_tree::{

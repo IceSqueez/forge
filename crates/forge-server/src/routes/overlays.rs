@@ -6,9 +6,9 @@ use forge_storage::OverlayId;
 use std::path::{Path, PathBuf};
 use tokio_util::io::ReaderStream;
 
-use crate::media_type::mime_for_extension;
-use crate::origin::accepts_origin;
-use crate::server::AppState;
+use crate::access::origin::accepts_origin;
+use crate::files::media_type::mime_for_extension;
+use crate::lifecycle::server::AppState;
 
 const OVERLAY_ENTRY_DOCUMENT: &str = "index.html";
 pub(crate) const FAVICON_PATH: &str = "/favicon.ico";
@@ -156,12 +156,13 @@ struct ServedFile {
 }
 
 async fn resolve_and_open(state: &AppState, url_path: &str) -> Result<ServedFile, StatusCode> {
-    let requested = crate::sandbox::request_relative_path(url_path).ok_or(StatusCode::NOT_FOUND)?;
+    let requested =
+        crate::access::sandbox::request_relative_path(url_path).ok_or(StatusCode::NOT_FOUND)?;
     let canon_root = tokio::fs::canonicalize(state.overlay_root.as_ref())
         .await
         .map_err(|_| StatusCode::NOT_FOUND)?;
 
-    let canon_target = crate::sandbox::confine_within(&canon_root, &requested)
+    let canon_target = crate::access::sandbox::confine_within(&canon_root, &requested)
         .await
         .ok_or(StatusCode::NOT_FOUND)?;
 
@@ -171,7 +172,7 @@ async fn resolve_and_open(state: &AppState, url_path: &str) -> Result<ServedFile
 
     let canon_file = if meta.is_dir() {
         let entry_relative = requested.join(OVERLAY_ENTRY_DOCUMENT);
-        let canon_entry = crate::sandbox::confine_within(&canon_root, &entry_relative)
+        let canon_entry = crate::access::sandbox::confine_within(&canon_root, &entry_relative)
             .await
             .ok_or(StatusCode::NOT_FOUND)?;
         let entry_meta = tokio::fs::metadata(&canon_entry)
@@ -238,8 +239,8 @@ mod tests {
     use tokio::net::TcpListener;
 
     use crate::ServerHandle;
-    use crate::auth::AuthState;
-    use crate::server::AppState;
+    use crate::access::auth::AuthState;
+    use crate::lifecycle::server::AppState;
     use crate::test_helpers::{MemCreds, app_state, log_capture};
 
     const FIXTURE_BIND_ADDR: &str = "127.0.0.1:9515";
@@ -280,8 +281,11 @@ mod tests {
         let listener = TcpListener::bind("127.0.0.1:0").await.expect("bind");
         let addr = listener.local_addr().expect("local addr");
         let (run_state_tx, _run_state_rx) = tokio::sync::watch::channel(true);
-        let (join, shutdown_tx) =
-            crate::server::serve_on_with_shutdown(listener, state.clone(), run_state_tx.clone());
+        let (join, shutdown_tx) = crate::lifecycle::server::serve_on_with_shutdown(
+            listener,
+            state.clone(),
+            run_state_tx.clone(),
+        );
         (
             ServerHandle::new(join, shutdown_tx, state, addr, run_state_tx),
             addr,

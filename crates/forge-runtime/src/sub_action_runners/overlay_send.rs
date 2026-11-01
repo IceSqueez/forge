@@ -3,16 +3,16 @@ use forge_overlay::config::{DURATION_MAX_SECS, DURATION_MIN_SECS};
 use forge_registry::OVERLAY_OPTIONS_KEY;
 use forge_registry::{
     ConfigProblem, ConfigSpec, DynamicSelectField, FormRefinement, IntegerEditor, IntegerField,
-    OptionalField, RunContext, StepTimer, SubActionCategory, SubActionRunner, ToggleField,
-    TypedField, ValueBounds,
+    OptionalField, RunContext, StepCatalogEntry, StepTimer, SubActionCategory, SubActionRunner,
+    ToggleField, TypedField, ValueBounds,
 };
 use forge_storage::{OverlayConfig, OverlayId};
 use forge_types::{ArgStack, SubActionConfig, SubActionOutcome, SubActionTelemetry};
 
 use super::overlay_targets::{OVERLAY_SEND_KIND_ID, OVERLAY_TARGET_KEY};
 use crate::core_messages;
-use crate::overlay_service::{OverlayDelivery, OverlayDispatch, OverlayServiceHandle};
-use crate::overlay_shows::ShowEnd;
+use crate::overlays::overlay_service::{OverlayDelivery, OverlayDispatch, OverlayServiceHandle};
+use crate::overlays::overlay_shows::ShowEnd;
 
 const DURATION_KEY: &str = "duration_seconds";
 const WAIT_KEY: &str = "wait_for_show";
@@ -83,7 +83,7 @@ impl OverlaySendRunner {
                 &OverlayId::new(identity),
                 &supplied_content(config),
                 ctx.arg_stack,
-                crate::overlay_service::OverlaySendOptions {
+                crate::overlays::overlay_service::OverlaySendOptions {
                     duration_ms: send.duration_ms,
                     caused_by: Some(ctx.parent_event_id),
                 },
@@ -119,30 +119,28 @@ fn show_outcome(identity: &str, end: ShowEnd) -> SubActionOutcome {
     }
 }
 
+impl StepCatalogEntry for OverlaySendRunner {
+    fn category(&self) -> SubActionCategory {
+        SubActionCategory::Overlay
+    }
+    fn label(&self) -> &str {
+        "Send to Overlay"
+    }
+    fn summary(&self) -> &str {
+        "Send content to a browser-source overlay"
+    }
+    fn search_text(&self) -> &str {
+        "overlay send show alert browser source display banner goal ticker"
+    }
+    fn icon_name(&self) -> &str {
+        "layout"
+    }
+}
+
 #[async_trait]
 impl SubActionRunner for OverlaySendRunner {
     fn id(&self) -> &str {
         OVERLAY_SEND_KIND_ID
-    }
-
-    fn category(&self) -> SubActionCategory {
-        SubActionCategory::Overlay
-    }
-
-    fn label(&self) -> &str {
-        "Send to Overlay"
-    }
-
-    fn summary(&self) -> &str {
-        "Send content to a browser-source overlay"
-    }
-
-    fn search_text(&self) -> &str {
-        "overlay send show alert browser source display banner goal ticker"
-    }
-
-    fn icon_name(&self) -> &str {
-        "layout"
     }
 
     fn config_spec(&self) -> Option<ConfigSpec> {

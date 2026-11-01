@@ -2,8 +2,8 @@ use std::sync::Arc;
 
 use async_trait::async_trait;
 use forge_registry::{
-    ConfigSpec, IntegerEditor, IntegerField, RunContext, StepTimer, SubActionCategory,
-    SubActionRunner, TypedField, ValueBounds,
+    ConfigSpec, IntegerEditor, IntegerField, RunContext, StepCatalogEntry, StepTimer,
+    SubActionCategory, SubActionRunner, TypedField, ValueBounds,
 };
 use forge_types::{ArgStack, SubActionConfig, SubActionTelemetry};
 
@@ -46,30 +46,28 @@ impl SetMasterVolumeRunner {
     }
 }
 
+impl StepCatalogEntry for SetMasterVolumeRunner {
+    fn category(&self) -> SubActionCategory {
+        SubActionCategory::Audio
+    }
+    fn label(&self) -> &str {
+        "Set Master Volume"
+    }
+    fn summary(&self) -> &str {
+        "Set the soundboard master volume applied to every clip"
+    }
+    fn search_text(&self) -> &str {
+        "set master volume soundboard gain decibel db level"
+    }
+    fn icon_name(&self) -> &str {
+        "volume"
+    }
+}
+
 #[async_trait]
 impl SubActionRunner for SetMasterVolumeRunner {
     fn id(&self) -> &str {
         sub_action_ids::VOLUME_SET_MASTER
-    }
-
-    fn category(&self) -> SubActionCategory {
-        SubActionCategory::Audio
-    }
-
-    fn label(&self) -> &str {
-        "Set Master Volume"
-    }
-
-    fn summary(&self) -> &str {
-        "Set the soundboard master volume applied to every clip"
-    }
-
-    fn search_text(&self) -> &str {
-        "set master volume soundboard gain decibel db level"
-    }
-
-    fn icon_name(&self) -> &str {
-        "volume"
     }
 
     fn config_spec(&self) -> Option<ConfigSpec> {

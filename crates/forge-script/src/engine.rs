@@ -98,11 +98,30 @@ impl Engine {
         this
     }
 
+    #[cfg(any(test, feature = "test-support"))]
     pub fn eval_script(&self, script: &str) -> Result<rhai::Dynamic, ScriptError> {
         self.eval_script_with_scope(script, &mut rhai::Scope::new())
     }
 
-    pub fn eval_script_with_scope(
+    #[cfg(feature = "test-support")]
+    pub fn eval_in_scope(
+        &self,
+        body: &str,
+        scope: &mut rhai::Scope<'_>,
+    ) -> Result<rhai::Dynamic, ScriptError> {
+        self.eval_script_with_scope(body, scope)
+    }
+
+    #[cfg(feature = "test-support")]
+    pub fn eval_in_scope_as_variant(
+        &self,
+        body: &str,
+        scope: &mut rhai::Scope<'_>,
+    ) -> Result<Option<Variant>, ScriptError> {
+        self.eval_script_with_scope_as_variant(body, scope)
+    }
+
+    pub(crate) fn eval_script_with_scope(
         &self,
         body: &str,
         scope: &mut rhai::Scope<'_>,
@@ -119,7 +138,7 @@ impl Engine {
         })
     }
 
-    pub fn eval_script_with_scope_as_variant(
+    pub(crate) fn eval_script_with_scope_as_variant(
         &self,
         body: &str,
         scope: &mut rhai::Scope<'_>,

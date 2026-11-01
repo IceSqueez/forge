@@ -7,10 +7,10 @@ use axum::response::{IntoResponse, Response};
 use axum::routing::{get, post};
 use serde::Deserialize;
 
-use crate::audio_clips::PageVerdict;
-use crate::clip_paths::{CLIP_PATH_PREFIX, REPORT_PATH_PREFIX};
+use crate::files::audio_clips::PageVerdict;
+use crate::files::clip_paths::{CLIP_PATH_PREFIX, REPORT_PATH_PREFIX};
+use crate::lifecycle::server::AppState;
 use crate::routes::overlays::{NOSNIFF, cors_header_value};
-use crate::server::AppState;
 
 const CAPABILITY_PATTERN: &str = "{capability}";
 
@@ -99,7 +99,7 @@ fn cross_origin_headers(state: &AppState, request_headers: &HeaderMap) -> Header
 
 #[cfg(test)]
 mod tests {
-    use crate::clip_paths::{clip_path, report_path};
+    use crate::files::clip_paths::{clip_path, report_path};
     use std::collections::BTreeMap;
     use std::net::SocketAddr;
     use std::path::{Path as FsPath, PathBuf};
@@ -113,12 +113,12 @@ mod tests {
 
     use super::*;
     use crate::ServerHandle;
-    use crate::audio_clips::{
+    use crate::access::auth::AuthState;
+    use crate::access::origin::build_allowed_origins;
+    use crate::files::audio_clips::{
         ClipMediaType, ClipOffer, ClipOutcome, ClipOutcomeHandle, ClipTicket,
     };
-    use crate::auth::AuthState;
-    use crate::origin::build_allowed_origins;
-    use crate::server::{AppState, serve_on_with_shutdown};
+    use crate::lifecycle::server::{AppState, serve_on_with_shutdown};
     use crate::test_helpers::{app_state, log_capture, mem_settings, test_creds};
     use forge_storage::test_support::MemorySettings;
 

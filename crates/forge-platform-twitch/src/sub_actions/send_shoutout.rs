@@ -5,8 +5,8 @@ use forge_events::EventPublisher;
 use forge_platform_core::SenderPreference;
 use forge_registry::SubActionConfig;
 use forge_registry::{
-    ConfigProblem, ConfigSpec, Interpolation, RunContext, StepTimer, SubActionCategory,
-    SubActionRunner, TextEditor, TextField, TypedField,
+    ConfigProblem, ConfigSpec, Interpolation, RunContext, StepCatalogEntry, StepTimer,
+    SubActionCategory, SubActionRunner, TextEditor, TextField, TypedField,
 };
 use forge_types::{ArgStack, SubActionTelemetry};
 
@@ -82,30 +82,28 @@ impl SendShoutoutRunner {
     }
 }
 
+impl StepCatalogEntry for SendShoutoutRunner {
+    fn category(&self) -> SubActionCategory {
+        SubActionCategory::Integration
+    }
+    fn label(&self) -> &str {
+        "Send Shoutout"
+    }
+    fn summary(&self) -> &str {
+        "Sends a shoutout to another broadcaster in the channel chat."
+    }
+    fn search_text(&self) -> &str {
+        "twitch shoutout so channel raid highlight streamer"
+    }
+    fn icon_name(&self) -> &str {
+        "shoutout"
+    }
+}
+
 #[async_trait]
 impl SubActionRunner for SendShoutoutRunner {
     fn id(&self) -> &str {
         sub_action_ids::CHANNEL_SEND_SHOUTOUT
-    }
-
-    fn category(&self) -> SubActionCategory {
-        SubActionCategory::Integration
-    }
-
-    fn label(&self) -> &str {
-        "Send Shoutout"
-    }
-
-    fn summary(&self) -> &str {
-        "Sends a shoutout to another broadcaster in the channel chat."
-    }
-
-    fn search_text(&self) -> &str {
-        "twitch shoutout so channel raid highlight streamer"
-    }
-
-    fn icon_name(&self) -> &str {
-        "shoutout"
     }
 
     fn config_spec(&self) -> Option<ConfigSpec> {

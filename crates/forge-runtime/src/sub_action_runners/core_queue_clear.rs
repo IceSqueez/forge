@@ -1,7 +1,7 @@
 use async_trait::async_trait;
 use forge_registry::{
-    ConfigProblem, ConfigSpec, RunContext, StepTimer, SubActionCategory, SubActionRunner,
-    ToggleField, TypedField,
+    ConfigProblem, ConfigSpec, RunContext, StepCatalogEntry, StepTimer, SubActionCategory,
+    SubActionRunner, ToggleField, TypedField,
 };
 use forge_types::{ArgStack, QueueId, SubActionConfig, SubActionOutcome, SubActionTelemetry};
 
@@ -46,30 +46,28 @@ impl CoreQueueClearRunner {
     }
 }
 
+impl StepCatalogEntry for CoreQueueClearRunner {
+    fn category(&self) -> SubActionCategory {
+        SubActionCategory::Logic
+    }
+    fn label(&self) -> &str {
+        "Clear Queue"
+    }
+    fn summary(&self) -> &str {
+        "Drop a queue's pending actions, optionally stopping the running one"
+    }
+    fn search_text(&self) -> &str {
+        "clear queue empty flush drop pending purge"
+    }
+    fn icon_name(&self) -> &str {
+        "trash"
+    }
+}
+
 #[async_trait]
 impl SubActionRunner for CoreQueueClearRunner {
     fn id(&self) -> &str {
         "core.queue.clear"
-    }
-
-    fn category(&self) -> SubActionCategory {
-        SubActionCategory::Logic
-    }
-
-    fn label(&self) -> &str {
-        "Clear Queue"
-    }
-
-    fn summary(&self) -> &str {
-        "Drop a queue's pending actions, optionally stopping the running one"
-    }
-
-    fn search_text(&self) -> &str {
-        "clear queue empty flush drop pending purge"
-    }
-
-    fn icon_name(&self) -> &str {
-        "trash"
     }
 
     fn config_spec(&self) -> Option<ConfigSpec> {

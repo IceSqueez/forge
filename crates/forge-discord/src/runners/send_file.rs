@@ -4,8 +4,8 @@ use std::sync::Arc;
 use async_trait::async_trait;
 use forge_registry::SubActionConfig;
 use forge_registry::{
-    ConfigProblem, ConfigSpec, RunContext, StepTimer, SubActionCategory, SubActionIo,
-    SubActionRunner, TextEditor, TextField, TypedField,
+    ConfigProblem, ConfigSpec, RunContext, StepCatalogEntry, StepTimer, SubActionCategory,
+    SubActionIo, SubActionRunner, TextEditor, TextField, TypedField,
 };
 use forge_types::{ArgStack, SubActionTelemetry};
 
@@ -65,30 +65,28 @@ impl SendFileRunner {
     }
 }
 
+impl StepCatalogEntry for SendFileRunner {
+    fn category(&self) -> SubActionCategory {
+        SubActionCategory::Integration
+    }
+    fn label(&self) -> &str {
+        "Send File Attachment"
+    }
+    fn summary(&self) -> &str {
+        "Uploads a file from disk to a Discord webhook with an optional caption."
+    }
+    fn search_text(&self) -> &str {
+        "discord webhook send file attachment upload"
+    }
+    fn icon_name(&self) -> &str {
+        "paperclip"
+    }
+}
+
 #[async_trait]
 impl SubActionRunner for SendFileRunner {
     fn id(&self) -> &str {
         sub_action_ids::WEBHOOK_SEND_FILE
-    }
-
-    fn category(&self) -> SubActionCategory {
-        SubActionCategory::Integration
-    }
-
-    fn label(&self) -> &str {
-        "Send File Attachment"
-    }
-
-    fn summary(&self) -> &str {
-        "Uploads a file from disk to a Discord webhook with an optional caption."
-    }
-
-    fn search_text(&self) -> &str {
-        "discord webhook send file attachment upload"
-    }
-
-    fn icon_name(&self) -> &str {
-        "paperclip"
     }
 
     fn config_spec(&self) -> Option<ConfigSpec> {

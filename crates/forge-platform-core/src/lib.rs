@@ -6,6 +6,7 @@ mod collections;
 mod connection_announcer;
 mod credential_errors;
 mod credential_state;
+mod credentialed_control;
 mod donation;
 mod donation_poll;
 #[cfg(test)]
@@ -48,6 +49,9 @@ pub use collections::{
 pub use connection_announcer::ConnectionAnnouncer;
 pub use credential_errors::{credential_storage_error, reauth_required};
 pub use credential_state::{CredentialState, CredentialStateTracker};
+pub use credentialed_control::{
+    CredentialedChatBundle, disconnect_credentialed, reconnect_credentialed, refresh_credentialed,
+};
 pub use donation::{DonationProvider, DonationStream};
 pub use donation_poll::{
     CycleError, DonationPoll, POLL_ERROR_BACKOFF_BASE, POLL_ERROR_BACKOFF_CAP, PollError,

@@ -4,8 +4,8 @@ use async_trait::async_trait;
 use forge_events::EventSource;
 use forge_registry::GLOBAL_OPTIONS_KEY;
 use forge_registry::{
-    ConfigProblem, ConfigSpec, ReferenceField, RunContext, StepTimer, SubActionCategory,
-    SubActionRunner, TextEditor, TextField, ToggleField, TypedField,
+    ConfigProblem, ConfigSpec, ReferenceField, RunContext, StepCatalogEntry, StepTimer,
+    SubActionCategory, SubActionRunner, TextEditor, TextField, ToggleField, TypedField,
 };
 use forge_storage::GlobalsRepo;
 use forge_types::{
@@ -14,7 +14,7 @@ use forge_types::{
 
 use super::core_globals_shared::NAME_KEY;
 use crate::core_messages;
-use crate::global_mutation::GlobalMutation;
+use crate::services::global_mutation::GlobalMutation;
 
 pub const GLOBAL_SET_KIND_ID: &str = "core.globals.set";
 pub const GLOBAL_VALUE_KEY: &str = "value";
@@ -66,30 +66,28 @@ impl CoreGlobalsSetRunner {
     }
 }
 
+impl StepCatalogEntry for CoreGlobalsSetRunner {
+    fn category(&self) -> SubActionCategory {
+        SubActionCategory::Globals
+    }
+    fn label(&self) -> &str {
+        "Set Global"
+    }
+    fn summary(&self) -> &str {
+        "Set a global variable to a value"
+    }
+    fn search_text(&self) -> &str {
+        "set global variable store write"
+    }
+    fn icon_name(&self) -> &str {
+        "database"
+    }
+}
+
 #[async_trait]
 impl SubActionRunner for CoreGlobalsSetRunner {
     fn id(&self) -> &str {
         GLOBAL_SET_KIND_ID
-    }
-
-    fn category(&self) -> SubActionCategory {
-        SubActionCategory::Globals
-    }
-
-    fn label(&self) -> &str {
-        "Set Global"
-    }
-
-    fn summary(&self) -> &str {
-        "Set a global variable to a value"
-    }
-
-    fn search_text(&self) -> &str {
-        "set global variable store write"
-    }
-
-    fn icon_name(&self) -> &str {
-        "database"
     }
 
     fn config_spec(&self) -> Option<ConfigSpec> {

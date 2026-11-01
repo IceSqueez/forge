@@ -73,8 +73,6 @@ const EVENT_STREAM_CLOSED: MessageCode = MessageCode::from_static(NAMESPACE, "ev
 const OUTCOME_UNKNOWN: MessageCode = MessageCode::from_static(NAMESPACE, "outcome_unknown");
 const WAIT_TIMED_OUT: MessageCode = MessageCode::from_static(NAMESPACE, "wait_timed_out");
 const REMOVED_FROM_QUEUE: MessageCode = MessageCode::from_static(NAMESPACE, "removed_from_queue");
-const SHOW_SPEECH_UNAVAILABLE: MessageCode =
-    MessageCode::from_static(NAMESPACE, "show_speech_unavailable");
 
 pub const SPEAK_MESSAGES: MessageCatalog = MessageCatalog {
     namespace: NAMESPACE,
@@ -123,7 +121,6 @@ pub const SPEAK_MESSAGES: MessageCatalog = MessageCatalog {
         OUTCOME_UNKNOWN,
         WAIT_TIMED_OUT,
         REMOVED_FROM_QUEUE,
-        SHOW_SPEECH_UNAVAILABLE,
     ],
     en_ftl: include_str!("../../locales/en/messages.ftl"),
     uk_ftl: include_str!("../../locales/uk/messages.ftl"),
@@ -399,7 +396,6 @@ mod tests {
             outcome_unknown(),
             wait_timed_out(),
             removed_from_queue(),
-            MessageRef::new(SHOW_SPEECH_UNAVAILABLE),
         ]);
         all
     }

@@ -2,7 +2,9 @@ use std::sync::Arc;
 
 use async_trait::async_trait;
 use forge_registry::SubActionConfig;
-use forge_registry::{ConfigSpec, RunContext, SubActionCategory, SubActionRunner};
+use forge_registry::{
+    ConfigSpec, RunContext, StepCatalogEntry, SubActionCategory, SubActionRunner,
+};
 use forge_types::{ArgStack, SubActionTelemetry};
 
 use super::approve_automod_message::{AUTOMOD_CONFIG, execute_automod_runner};
@@ -26,30 +28,28 @@ impl DenyAutomodMessageRunner {
     }
 }
 
+impl StepCatalogEntry for DenyAutomodMessageRunner {
+    fn category(&self) -> SubActionCategory {
+        SubActionCategory::Moderation
+    }
+    fn label(&self) -> &str {
+        "Deny AutoMod Message"
+    }
+    fn summary(&self) -> &str {
+        "Denies a message held by AutoMod so it is removed from the queue."
+    }
+    fn search_text(&self) -> &str {
+        "twitch automod deny reject remove message held moderation"
+    }
+    fn icon_name(&self) -> &str {
+        "x"
+    }
+}
+
 #[async_trait]
 impl SubActionRunner for DenyAutomodMessageRunner {
     fn id(&self) -> &str {
         KIND_ID
-    }
-
-    fn category(&self) -> SubActionCategory {
-        SubActionCategory::Moderation
-    }
-
-    fn label(&self) -> &str {
-        "Deny AutoMod Message"
-    }
-
-    fn summary(&self) -> &str {
-        "Denies a message held by AutoMod so it is removed from the queue."
-    }
-
-    fn search_text(&self) -> &str {
-        "twitch automod deny reject remove message held moderation"
-    }
-
-    fn icon_name(&self) -> &str {
-        "x"
     }
 
     fn config_spec(&self) -> Option<ConfigSpec> {

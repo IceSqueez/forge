@@ -4,7 +4,7 @@ use std::sync::Arc;
 
 use async_trait::async_trait;
 use forge_registry::SubActionConfig;
-use forge_registry::{RunContext, StepTimer, SubActionCategory, SubActionRunner};
+use forge_registry::{RunContext, StepCatalogEntry, StepTimer, SubActionCategory, SubActionRunner};
 use forge_types::{ArgStack, SubActionOutcome, SubActionTelemetry};
 
 use crate::account::identity::SelfIdentity;
@@ -34,30 +34,28 @@ impl SnoozeAdRunner {
     }
 }
 
+impl StepCatalogEntry for SnoozeAdRunner {
+    fn category(&self) -> SubActionCategory {
+        SubActionCategory::Integration
+    }
+    fn label(&self) -> &str {
+        "Snooze Next Ad"
+    }
+    fn summary(&self) -> &str {
+        "Delays the next scheduled ad break by 5 minutes."
+    }
+    fn search_text(&self) -> &str {
+        "twitch ad snooze delay schedule next commercial"
+    }
+    fn icon_name(&self) -> &str {
+        "clock-pause"
+    }
+}
+
 #[async_trait]
 impl SubActionRunner for SnoozeAdRunner {
     fn id(&self) -> &str {
         sub_action_ids::CHANNEL_SNOOZE_AD
-    }
-
-    fn category(&self) -> SubActionCategory {
-        SubActionCategory::Integration
-    }
-
-    fn label(&self) -> &str {
-        "Snooze Next Ad"
-    }
-
-    fn summary(&self) -> &str {
-        "Delays the next scheduled ad break by 5 minutes."
-    }
-
-    fn search_text(&self) -> &str {
-        "twitch ad snooze delay schedule next commercial"
-    }
-
-    fn icon_name(&self) -> &str {
-        "clock-pause"
     }
 
     async fn execute(

@@ -58,8 +58,8 @@ fn scope_at(
 #[cfg(test)]
 mod tests {
     use forge_registry::{
-        CASE_CHAIN_KEY, FormField, ProducedVariable, RegistryError, RunContext, SubActionCategory,
-        SubActionIo, SubActionRunner,
+        CASE_CHAIN_KEY, FormField, ProducedVariable, RegistryError, RunContext, StepCatalogEntry,
+        SubActionCategory, SubActionIo, SubActionRunner,
     };
     use forge_types::{ArgStack, SubActionConfig, SubActionTelemetry, Variant, VariantKind};
 
@@ -79,30 +79,28 @@ mod tests {
         io: SubActionIo,
     }
 
+    impl StepCatalogEntry for Fake {
+        fn category(&self) -> SubActionCategory {
+            SubActionCategory::Logic
+        }
+        fn label(&self) -> &str {
+            self.id
+        }
+        fn summary(&self) -> &str {
+            self.id
+        }
+        fn search_text(&self) -> &str {
+            self.id
+        }
+        fn icon_name(&self) -> &str {
+            "bolt"
+        }
+    }
+
     #[async_trait::async_trait]
     impl SubActionRunner for Fake {
         fn id(&self) -> &str {
             self.id
-        }
-
-        fn category(&self) -> SubActionCategory {
-            SubActionCategory::Logic
-        }
-
-        fn label(&self) -> &str {
-            self.id
-        }
-
-        fn summary(&self) -> &str {
-            self.id
-        }
-
-        fn search_text(&self) -> &str {
-            self.id
-        }
-
-        fn icon_name(&self) -> &str {
-            "bolt"
         }
 
         fn default_config(&self) -> SubActionConfig {

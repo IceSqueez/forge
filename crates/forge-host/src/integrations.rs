@@ -1,4 +1,4 @@
-use forge_types::{IntegrationId, MessageRef, RecoverRwLock};
+use forge_types::{IntegrationId, LiveSlot, MessageRef};
 use std::collections::HashMap;
 use std::sync::Arc;
 use std::time::Duration;
@@ -153,7 +153,7 @@ struct LiveObs {
 #[derive(Clone)]
 pub struct ObsInstallSeed {
     sink: Arc<forge_obs::SwitchableObsSink>,
-    live: Arc<std::sync::RwLock<Option<LiveObs>>>,
+    live: LiveSlot<LiveObs>,
     builtins: BuiltinRegistry,
 }
 
@@ -161,7 +161,7 @@ impl ObsInstallSeed {
     pub fn new(sink: Arc<forge_obs::SwitchableObsSink>, builtins: BuiltinRegistry) -> Self {
         Self {
             sink,
-            live: Arc::new(std::sync::RwLock::new(None)),
+            live: LiveSlot::new(),
             builtins,
         }
     }
@@ -183,34 +183,27 @@ impl ObsInstallSeed {
         self.builtins
             .install(obs_builtin_object(Arc::clone(&client)));
         let connection: Arc<dyn ObsConnection> = client.clone();
-        let mut guard = self.live.write_recover();
-        *guard = Some(LiveObs {
+        self.live.install(Arc::new(LiveObs {
             client: Some(client),
             connection,
-        });
+        }));
     }
 
     pub fn install_connection(&self, connection: Arc<dyn ObsConnection>) {
-        let mut guard = self.live.write_recover();
-        *guard = Some(LiveObs {
+        self.live.install(Arc::new(LiveObs {
             client: None,
             connection,
-        });
+        }));
     }
 
     pub fn clear(&self) {
         self.forget_object();
-        let mut guard = self.live.write_recover();
-        *guard = None;
+        self.live.take();
     }
 
     pub async fn disconnect_live(&self) {
         self.forget_object();
-        let previous = {
-            let mut guard = self.live.write_recover();
-            guard.take()
-        };
-        if let Some(live) = previous
+        if let Some(live) = self.live.take()
             && let Err(err) = live.connection.disconnect().await
         {
             tracing::warn!(error = %err, "disconnecting the live client failed");
@@ -218,23 +211,18 @@ impl ObsInstallSeed {
     }
 
     pub fn live(&self) -> Option<Arc<forge_obs::ObsClient>> {
-        let guard = self.live.read_recover();
-        guard.as_ref().and_then(|live| live.client.clone())
+        self.live.current().and_then(|live| live.client.clone())
     }
 
     pub fn connect_failure(&self) -> Option<MessageRef> {
-        let connection = {
-            let guard = self.live.read_recover();
-            Arc::clone(&guard.as_ref()?.connection)
-        };
-        connection.connect_failure()
+        self.live.current()?.connection.connect_failure()
     }
 }
 
 #[derive(Clone)]
 pub struct VTubeInstallSeed {
     sink: Arc<forge_vtube::SwitchableVTubeSink>,
-    live: Arc<std::sync::RwLock<Option<Arc<forge_vtube::VTubeClient>>>>,
+    live: LiveSlot<forge_vtube::VTubeClient>,
     builtins: BuiltinRegistry,
 }
 
@@ -242,7 +230,7 @@ impl VTubeInstallSeed {
     pub fn new(sink: Arc<forge_vtube::SwitchableVTubeSink>, builtins: BuiltinRegistry) -> Self {
         Self {
             sink,
-            live: Arc::new(std::sync::RwLock::new(None)),
+            live: LiveSlot::new(),
             builtins,
         }
     }
@@ -256,23 +244,17 @@ impl VTubeInstallSeed {
         self.sink.install(Arc::clone(&client));
         self.builtins
             .install(vtube_builtin_object(Arc::clone(&client)));
-        let mut guard = self.live.write_recover();
-        *guard = Some(client);
+        self.live.install(client);
     }
 
     pub fn clear(&self) {
         self.forget_object();
-        let mut guard = self.live.write_recover();
-        *guard = None;
+        self.live.take();
     }
 
     pub async fn disconnect_live(&self) {
         self.forget_object();
-        let previous = {
-            let mut guard = self.live.write_recover();
-            guard.take()
-        };
-        if let Some(client) = previous
+        if let Some(client) = self.live.take()
             && let Err(err) = client.disconnect().await
         {
             tracing::warn!(error = %err, "disconnecting the live client failed");
@@ -280,8 +262,7 @@ impl VTubeInstallSeed {
     }
 
     pub fn live(&self) -> Option<Arc<forge_vtube::VTubeClient>> {
-        let guard = self.live.read_recover();
-        guard.clone()
+        self.live.current()
     }
 
     pub fn connect_failure(&self) -> Option<MessageRef> {

@@ -1,75 +1,48 @@
-mod action_impl;
-mod ban_ledger_impl;
 mod batch;
-mod chat_history_impl;
-mod checkpoint_task;
-mod credentials_impl;
-mod crypto;
-mod donation_impl;
-mod epoch;
+mod codec;
 mod error;
-mod event_log_impl;
 #[cfg(feature = "settings-test-support")]
 mod foreign_settings;
-mod global_read_tally;
-mod globals_impl;
-mod history_impl;
-mod kind_id_rename;
-mod latest_value_impl;
-mod media_impl;
-mod migrations;
-mod overlay_impl;
 mod pool;
 mod provider;
-mod queue_impl;
-mod registry_migration;
-pub(crate) mod retention_task;
-mod row_int;
-mod scheduled_run_impl;
-mod schema_probe;
-mod script_impl;
-mod script_name_steps;
-mod settings_impl;
+mod repos;
+mod schema;
 mod snapshot;
-mod soundboard_impl;
+mod tasks;
 #[cfg(any(test, feature = "test-support"))]
 pub mod test_support;
-mod trigger_instance_impl;
-mod tts_filters_impl;
 mod unit_of_work;
-mod user_globals_impl;
-mod viewer_impl;
-mod voice_alias_impl;
-mod wire_label;
 
-pub use action_impl::SqliteActionRepo;
-pub use ban_ledger_impl::SqliteBanLedgerRepo;
-pub use chat_history_impl::SqliteChatHistoryRepo;
-pub use credentials_impl::SqliteCredentialsRepo;
-pub(crate) use donation_impl::SqliteDonationRepo;
 pub use error::SqliteStorageError;
-pub use event_log_impl::SqliteEventLogRepo;
-pub use globals_impl::SqliteGlobalsRepo;
-pub use history_impl::SqliteHistoryRepo;
-pub(crate) use latest_value_impl::SqliteLatestValueRepo;
-pub use media_impl::SqliteMediaRepo;
-pub use migrations::{BASELINE_VERSION, JournalState, MIGRATIONS, apply as apply_migrations};
-pub use overlay_impl::SqliteOverlayRepo;
 pub use pool::{SqlitePools, connect, connect_pools, connect_pools_with_busy_timeout};
 pub use provider::SqliteBackend;
-pub use queue_impl::SqliteQueueRepo;
-pub use scheduled_run_impl::SqliteScheduledRunRepo;
-pub use schema_probe::{
+pub use repos::action::SqliteActionRepo;
+pub use repos::ban_ledger::SqliteBanLedgerRepo;
+pub use repos::chat_history::SqliteChatHistoryRepo;
+pub use repos::credentials::SqliteCredentialsRepo;
+pub(crate) use repos::donation::SqliteDonationRepo;
+pub use repos::event_log::SqliteEventLogRepo;
+pub use repos::globals::SqliteGlobalsRepo;
+pub use repos::history::SqliteHistoryRepo;
+pub(crate) use repos::latest_value::SqliteLatestValueRepo;
+pub use repos::media::SqliteMediaRepo;
+pub use repos::overlay::SqliteOverlayRepo;
+pub use repos::queue::SqliteQueueRepo;
+pub use repos::scheduled_run::SqliteScheduledRunRepo;
+pub use repos::script::SqliteScriptRepo;
+pub use repos::settings::SqliteSettingsRepo;
+pub(crate) use repos::trigger_instance::SqliteTriggerInstanceRepo;
+pub use repos::tts_filters::SqliteTtsFiltersRepo;
+pub use repos::user_globals::SqliteUserGlobalsRepo;
+pub use repos::viewer::SqliteViewerRepo;
+pub use repos::voice_alias::SqliteVoiceAliasRepo;
+pub use schema::migrations::{
+    BASELINE_VERSION, JournalState, MIGRATIONS, apply as apply_migrations,
+};
+pub use schema::schema_probe::{
     SqliteDatabaseFileSchema, inspect_database_file, read_applied_schema_version,
 };
-pub use script_impl::SqliteScriptRepo;
-pub use settings_impl::SqliteSettingsRepo;
-pub(crate) use trigger_instance_impl::SqliteTriggerInstanceRepo;
-pub use tts_filters_impl::SqliteTtsFiltersRepo;
-pub use user_globals_impl::SqliteUserGlobalsRepo;
-pub use viewer_impl::SqliteViewerRepo;
-pub use voice_alias_impl::SqliteVoiceAliasRepo;
 
-pub use migrations::classify as classify_journal;
-pub use registry_migration::migrate_registry_format;
-pub use soundboard_impl::SqliteSoundboardClipsRepo;
+pub use repos::soundboard::SqliteSoundboardClipsRepo;
+pub use schema::migrations::classify as classify_journal;
+pub use schema::registry_migration::migrate_registry_format;

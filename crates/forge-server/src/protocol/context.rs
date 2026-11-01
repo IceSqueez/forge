@@ -6,10 +6,10 @@ use forge_storage::{ActionRepo, CredentialsRepo, GlobalsRepo, OverlayRepo, UserG
 use forge_types::{OverlayCredential, Secret};
 use tokio::sync::{Mutex, broadcast};
 
-use crate::auth::AuthState;
-use crate::bus_adapter::{BusAdapter, OverlayClientClass, WsFrame};
-use crate::server_info::ServerInfo;
-use crate::ws_client::WsClient;
+use crate::access::auth::AuthState;
+use crate::delivery::bus_adapter::{BusAdapter, OverlayClientClass, WsFrame};
+use crate::delivery::ws_client::WsClient;
+use crate::lifecycle::server_info::ServerInfo;
 
 use super::envelope::{WsErrorCode, WsResponse};
 

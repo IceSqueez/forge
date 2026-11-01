@@ -3,7 +3,7 @@ use std::sync::Arc;
 use async_trait::async_trait;
 use forge_registry::SubActionConfig;
 use forge_registry::{
-    ConfigProblem, ConfigSpec, NumberField, OptionalField, RunContext, StepTimer,
+    ConfigProblem, ConfigSpec, NumberField, OptionalField, RunContext, StepCatalogEntry, StepTimer,
     SubActionCategory, SubActionRunner, TypedField,
 };
 use forge_types::{ArgStack, SubActionTelemetry};
@@ -51,30 +51,28 @@ impl ModelMoveRunner {
     }
 }
 
+impl StepCatalogEntry for ModelMoveRunner {
+    fn category(&self) -> SubActionCategory {
+        SubActionCategory::Integration
+    }
+    fn label(&self) -> &str {
+        "Move Model"
+    }
+    fn summary(&self) -> &str {
+        "Moves or rotates the VTube Studio model on screen."
+    }
+    fn search_text(&self) -> &str {
+        "vtube model move position rotate x y vts"
+    }
+    fn icon_name(&self) -> &str {
+        "arrows-move"
+    }
+}
+
 #[async_trait]
 impl SubActionRunner for ModelMoveRunner {
     fn id(&self) -> &str {
         sub_action_ids::MODEL_MOVE
-    }
-
-    fn category(&self) -> SubActionCategory {
-        SubActionCategory::Integration
-    }
-
-    fn label(&self) -> &str {
-        "Move Model"
-    }
-
-    fn summary(&self) -> &str {
-        "Moves or rotates the VTube Studio model on screen."
-    }
-
-    fn search_text(&self) -> &str {
-        "vtube model move position rotate x y vts"
-    }
-
-    fn icon_name(&self) -> &str {
-        "arrows-move"
     }
 
     fn config_spec(&self) -> Option<ConfigSpec> {

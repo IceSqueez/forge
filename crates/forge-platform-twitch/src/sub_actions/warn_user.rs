@@ -3,8 +3,8 @@ use std::sync::Arc;
 use async_trait::async_trait;
 use forge_registry::SubActionConfig;
 use forge_registry::{
-    BoundedTextField, ConfigProblem, ConfigSpec, RunContext, StepTimer, SubActionCategory,
-    SubActionRunner, TextEditor, TypedField, ValueBounds,
+    BoundedTextField, ConfigProblem, ConfigSpec, RunContext, StepCatalogEntry, StepTimer,
+    SubActionCategory, SubActionRunner, TextEditor, TypedField, ValueBounds,
 };
 use forge_types::{ArgStack, SubActionOutcome, SubActionTelemetry};
 
@@ -70,30 +70,28 @@ impl WarnUserRunner {
     }
 }
 
+impl StepCatalogEntry for WarnUserRunner {
+    fn category(&self) -> SubActionCategory {
+        SubActionCategory::Moderation
+    }
+    fn label(&self) -> &str {
+        "Warn User"
+    }
+    fn summary(&self) -> &str {
+        "Sends an official Twitch warning to a user in the channel."
+    }
+    fn search_text(&self) -> &str {
+        "twitch moderation warn warning user notice"
+    }
+    fn icon_name(&self) -> &str {
+        "alert-triangle"
+    }
+}
+
 #[async_trait]
 impl SubActionRunner for WarnUserRunner {
     fn id(&self) -> &str {
         sub_action_ids::MODERATION_WARN_USER
-    }
-
-    fn category(&self) -> SubActionCategory {
-        SubActionCategory::Moderation
-    }
-
-    fn label(&self) -> &str {
-        "Warn User"
-    }
-
-    fn summary(&self) -> &str {
-        "Sends an official Twitch warning to a user in the channel."
-    }
-
-    fn search_text(&self) -> &str {
-        "twitch moderation warn warning user notice"
-    }
-
-    fn icon_name(&self) -> &str {
-        "alert-triangle"
     }
 
     fn config_spec(&self) -> Option<ConfigSpec> {

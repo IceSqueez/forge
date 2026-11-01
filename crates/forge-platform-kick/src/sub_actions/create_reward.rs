@@ -4,8 +4,8 @@ use async_trait::async_trait;
 use forge_platform_core::PlatformError;
 use forge_registry::SubActionConfig;
 use forge_registry::{
-    ConfigProblem, ConfigSpec, RunContext, StepTimer, SubActionCategory, SubActionIo,
-    SubActionRunner, TextEditor, TextField, TypedField, ValueBounds,
+    ConfigProblem, ConfigSpec, RunContext, StepCatalogEntry, StepTimer, SubActionCategory,
+    SubActionIo, SubActionRunner, TextEditor, TextField, TypedField, ValueBounds,
 };
 use forge_types::{ArgStack, SubActionTelemetry, Variant};
 use futures::future::BoxFuture;
@@ -80,30 +80,28 @@ impl CreateRewardRunner {
     }
 }
 
+impl StepCatalogEntry for CreateRewardRunner {
+    fn category(&self) -> SubActionCategory {
+        SubActionCategory::ChannelPoints
+    }
+    fn label(&self) -> &str {
+        "Create Channel Reward"
+    }
+    fn summary(&self) -> &str {
+        "Creates a new channel point reward on Kick. Requires channel:rewards:write scope."
+    }
+    fn search_text(&self) -> &str {
+        "kick channel reward create points redeem"
+    }
+    fn icon_name(&self) -> &str {
+        "gift"
+    }
+}
+
 #[async_trait]
 impl SubActionRunner for CreateRewardRunner {
     fn id(&self) -> &str {
         sub_action_ids::REWARD_CREATE
-    }
-
-    fn category(&self) -> SubActionCategory {
-        SubActionCategory::ChannelPoints
-    }
-
-    fn label(&self) -> &str {
-        "Create Channel Reward"
-    }
-
-    fn summary(&self) -> &str {
-        "Creates a new channel point reward on Kick. Requires channel:rewards:write scope."
-    }
-
-    fn search_text(&self) -> &str {
-        "kick channel reward create points redeem"
-    }
-
-    fn icon_name(&self) -> &str {
-        "gift"
     }
 
     fn config_spec(&self) -> Option<ConfigSpec> {

@@ -3,7 +3,7 @@ use std::sync::Arc;
 use async_trait::async_trait;
 use forge_platform_core::PlatformError;
 use forge_registry::SubActionConfig;
-use forge_registry::{RunContext, StepTimer, SubActionCategory, SubActionRunner};
+use forge_registry::{RunContext, StepCatalogEntry, StepTimer, SubActionCategory, SubActionRunner};
 use forge_types::{ArgStack, SubActionTelemetry, Variant};
 use futures::future::BoxFuture;
 
@@ -31,30 +31,28 @@ impl LookupStreamStatsRunner {
     }
 }
 
+impl StepCatalogEntry for LookupStreamStatsRunner {
+    fn category(&self) -> SubActionCategory {
+        SubActionCategory::Integration
+    }
+    fn label(&self) -> &str {
+        "Stream Stats"
+    }
+    fn summary(&self) -> &str {
+        "Fetches live stream details for your own Kick channel."
+    }
+    fn search_text(&self) -> &str {
+        "kick stream stats viewer count started category live"
+    }
+    fn icon_name(&self) -> &str {
+        "chart-line"
+    }
+}
+
 #[async_trait]
 impl SubActionRunner for LookupStreamStatsRunner {
     fn id(&self) -> &str {
         sub_action_ids::LOOKUP_STREAM_STATS
-    }
-
-    fn category(&self) -> SubActionCategory {
-        SubActionCategory::Integration
-    }
-
-    fn label(&self) -> &str {
-        "Stream Stats"
-    }
-
-    fn summary(&self) -> &str {
-        "Fetches live stream details for your own Kick channel."
-    }
-
-    fn search_text(&self) -> &str {
-        "kick stream stats viewer count started category live"
-    }
-
-    fn icon_name(&self) -> &str {
-        "chart-line"
     }
 
     async fn execute(

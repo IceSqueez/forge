@@ -3,8 +3,8 @@ use std::sync::Arc;
 use async_trait::async_trait;
 use forge_registry::SubActionConfig;
 use forge_registry::{
-    ChoiceField, ConfigProblem, ConfigSpec, DurationBounds, DurationField, RunContext, StepTimer,
-    SubActionCategory, SubActionRunner, TypedField,
+    ChoiceField, ConfigProblem, ConfigSpec, DurationBounds, DurationField, RunContext,
+    StepCatalogEntry, StepTimer, SubActionCategory, SubActionRunner, TypedField,
 };
 use forge_types::{ArgStack, SubActionOutcome, SubActionTelemetry};
 
@@ -139,30 +139,28 @@ impl SetModeRunner {
     }
 }
 
+impl StepCatalogEntry for SetModeRunner {
+    fn category(&self) -> SubActionCategory {
+        SubActionCategory::Moderation
+    }
+    fn label(&self) -> &str {
+        "Set Chat Mode"
+    }
+    fn summary(&self) -> &str {
+        "Configures emote-only, follower, slow, subscriber, or unique-chat mode."
+    }
+    fn search_text(&self) -> &str {
+        "twitch chat mode emote follower slow subscriber unique moderation settings"
+    }
+    fn icon_name(&self) -> &str {
+        "adjustments"
+    }
+}
+
 #[async_trait]
 impl SubActionRunner for SetModeRunner {
     fn id(&self) -> &str {
         sub_action_ids::CHAT_SET_MODE
-    }
-
-    fn category(&self) -> SubActionCategory {
-        SubActionCategory::Moderation
-    }
-
-    fn label(&self) -> &str {
-        "Set Chat Mode"
-    }
-
-    fn summary(&self) -> &str {
-        "Configures emote-only, follower, slow, subscriber, or unique-chat mode."
-    }
-
-    fn search_text(&self) -> &str {
-        "twitch chat mode emote follower slow subscriber unique moderation settings"
-    }
-
-    fn icon_name(&self) -> &str {
-        "adjustments"
     }
 
     fn config_spec(&self) -> Option<ConfigSpec> {

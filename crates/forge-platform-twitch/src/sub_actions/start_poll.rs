@@ -4,8 +4,8 @@ use async_trait::async_trait;
 use forge_registry::SubActionConfig;
 use forge_registry::{
     BoundedTextField, ConfigProblem, ConfigSpec, DurationBounds, DurationField, IntegerEditor,
-    IntegerField, RunContext, SeparatedListField, StepTimer, SubActionCategory, SubActionRunner,
-    TextEditor, ToggleField, TypedField, ValueBounds,
+    IntegerField, RunContext, SeparatedListField, StepCatalogEntry, StepTimer, SubActionCategory,
+    SubActionRunner, TextEditor, ToggleField, TypedField, ValueBounds,
 };
 use forge_types::{ArgStack, SubActionOutcome, SubActionTelemetry, Variant};
 
@@ -159,30 +159,28 @@ impl StartPollRunner {
     }
 }
 
+impl StepCatalogEntry for StartPollRunner {
+    fn category(&self) -> SubActionCategory {
+        SubActionCategory::PollsPredictions
+    }
+    fn label(&self) -> &str {
+        "Start Poll"
+    }
+    fn summary(&self) -> &str {
+        "Creates a new Twitch poll. Outputs poll.id for chaining with End Poll."
+    }
+    fn search_text(&self) -> &str {
+        "twitch poll vote create start channel points"
+    }
+    fn icon_name(&self) -> &str {
+        "chart-bar"
+    }
+}
+
 #[async_trait]
 impl SubActionRunner for StartPollRunner {
     fn id(&self) -> &str {
         sub_action_ids::POLL_START
-    }
-
-    fn category(&self) -> SubActionCategory {
-        SubActionCategory::PollsPredictions
-    }
-
-    fn label(&self) -> &str {
-        "Start Poll"
-    }
-
-    fn summary(&self) -> &str {
-        "Creates a new Twitch poll. Outputs poll.id for chaining with End Poll."
-    }
-
-    fn search_text(&self) -> &str {
-        "twitch poll vote create start channel points"
-    }
-
-    fn icon_name(&self) -> &str {
-        "chart-bar"
     }
 
     fn config_spec(&self) -> Option<ConfigSpec> {

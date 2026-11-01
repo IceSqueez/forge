@@ -3,8 +3,8 @@ use std::sync::Arc;
 use async_trait::async_trait;
 use forge_registry::SubActionConfig;
 use forge_registry::{
-    ConfigProblem, ConfigSpec, RunContext, StepTimer, SubActionCategory, SubActionIo,
-    SubActionRunner, TextEditor, TextField, TypedField,
+    ConfigProblem, ConfigSpec, RunContext, StepCatalogEntry, StepTimer, SubActionCategory,
+    SubActionIo, SubActionRunner, TextEditor, TextField, TypedField,
 };
 use forge_types::{ArgStack, SubActionTelemetry};
 
@@ -45,30 +45,28 @@ impl PostTextRunner {
     }
 }
 
+impl StepCatalogEntry for PostTextRunner {
+    fn category(&self) -> SubActionCategory {
+        SubActionCategory::Integration
+    }
+    fn label(&self) -> &str {
+        "Post Text"
+    }
+    fn summary(&self) -> &str {
+        "Posts a text message to a Discord webhook."
+    }
+    fn search_text(&self) -> &str {
+        "discord webhook post message text send"
+    }
+    fn icon_name(&self) -> &str {
+        "message"
+    }
+}
+
 #[async_trait]
 impl SubActionRunner for PostTextRunner {
     fn id(&self) -> &str {
         sub_action_ids::WEBHOOK_SEND_MESSAGE
-    }
-
-    fn category(&self) -> SubActionCategory {
-        SubActionCategory::Integration
-    }
-
-    fn label(&self) -> &str {
-        "Post Text"
-    }
-
-    fn summary(&self) -> &str {
-        "Posts a text message to a Discord webhook."
-    }
-
-    fn search_text(&self) -> &str {
-        "discord webhook post message text send"
-    }
-
-    fn icon_name(&self) -> &str {
-        "message"
     }
 
     fn config_spec(&self) -> Option<ConfigSpec> {

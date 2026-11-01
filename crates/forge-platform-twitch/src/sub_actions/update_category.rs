@@ -3,8 +3,9 @@ use std::sync::Arc;
 use async_trait::async_trait;
 use forge_registry::SubActionConfig;
 use forge_registry::{
-    ConfigProblem, ConfigReason, ConfigSpec, Interpolation, RunContext, StepTimer,
-    SubActionCategory, SubActionConfigExt, SubActionRunner, TextEditor, TextField, TypedField,
+    ConfigProblem, ConfigReason, ConfigSpec, Interpolation, RunContext, StepCatalogEntry,
+    StepTimer, SubActionCategory, SubActionConfigExt, SubActionRunner, TextEditor, TextField,
+    TypedField,
 };
 use forge_types::{ArgStack, SubActionOutcome, SubActionTelemetry};
 
@@ -101,30 +102,28 @@ impl UpdateCategoryRunner {
     }
 }
 
+impl StepCatalogEntry for UpdateCategoryRunner {
+    fn category(&self) -> SubActionCategory {
+        SubActionCategory::Integration
+    }
+    fn label(&self) -> &str {
+        "Update Stream Category"
+    }
+    fn summary(&self) -> &str {
+        "Changes the broadcaster's game/category by its Helix game_id or exact category name."
+    }
+    fn search_text(&self) -> &str {
+        "twitch channel category game update broadcast"
+    }
+    fn icon_name(&self) -> &str {
+        "game-controller"
+    }
+}
+
 #[async_trait]
 impl SubActionRunner for UpdateCategoryRunner {
     fn id(&self) -> &str {
         sub_action_ids::CHANNEL_UPDATE_CATEGORY
-    }
-
-    fn category(&self) -> SubActionCategory {
-        SubActionCategory::Integration
-    }
-
-    fn label(&self) -> &str {
-        "Update Stream Category"
-    }
-
-    fn summary(&self) -> &str {
-        "Changes the broadcaster's game/category by its Helix game_id or exact category name."
-    }
-
-    fn search_text(&self) -> &str {
-        "twitch channel category game update broadcast"
-    }
-
-    fn icon_name(&self) -> &str {
-        "game-controller"
     }
 
     fn config_spec(&self) -> Option<ConfigSpec> {

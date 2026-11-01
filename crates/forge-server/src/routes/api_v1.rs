@@ -6,13 +6,13 @@ use axum::response::{IntoResponse, Response};
 use axum::routing::{get, post};
 use serde::Deserialize;
 
+use crate::lifecycle::server::AppState;
 use crate::protocol::{
     WsErrorCode, WsResponse, handle_do_action, handle_get_actions, handle_get_active_viewers,
     handle_get_events, handle_get_global, handle_get_globals, handle_get_info,
     handle_get_overlay_files, handle_get_user_globals, handle_replay_event, handle_set_global,
     handle_trigger_code_event, merge_payload,
 };
-use crate::server::AppState;
 
 const ACTION_VERB_SUFFIX: &str = ":do";
 const REPLAY_VERB_SUFFIX: &str = ":replay";
@@ -202,7 +202,7 @@ mod tests {
     use tokio::net::TcpListener;
 
     use crate::ServerHandle;
-    use crate::auth::AuthState;
+    use crate::access::auth::AuthState;
     use crate::test_helpers::{MemCreds, TestDataProvider, app_state_over};
 
     async fn make_test_server(
@@ -222,8 +222,11 @@ mod tests {
         let addr = listener.local_addr().expect("local addr");
         let bind_addr = addr;
         let (run_state_tx, _run_state_rx) = tokio::sync::watch::channel(true);
-        let (join, shutdown_tx) =
-            crate::server::serve_on_with_shutdown(listener, state.clone(), run_state_tx.clone());
+        let (join, shutdown_tx) = crate::lifecycle::server::serve_on_with_shutdown(
+            listener,
+            state.clone(),
+            run_state_tx.clone(),
+        );
         (
             crate::ServerHandle::new(join, shutdown_tx, state, bind_addr, run_state_tx),
             addr,

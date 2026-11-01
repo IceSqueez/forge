@@ -2,7 +2,9 @@ use std::sync::Arc;
 
 use async_trait::async_trait;
 use forge_registry::SubActionConfig;
-use forge_registry::{RunContext, StepTimer, SubActionCategory, SubActionIo, SubActionRunner};
+use forge_registry::{
+    RunContext, StepCatalogEntry, StepTimer, SubActionCategory, SubActionIo, SubActionRunner,
+};
 use forge_types::{ArgStack, SubActionTelemetry, Variant};
 
 use super::step_failure;
@@ -19,30 +21,28 @@ impl QueryInputListRunner {
     }
 }
 
+impl StepCatalogEntry for QueryInputListRunner {
+    fn category(&self) -> SubActionCategory {
+        SubActionCategory::Integration
+    }
+    fn label(&self) -> &str {
+        "Get Source/Input List"
+    }
+    fn summary(&self) -> &str {
+        "Queries OBS for all inputs (sources) by name."
+    }
+    fn search_text(&self) -> &str {
+        "obs sources inputs get list all names"
+    }
+    fn icon_name(&self) -> &str {
+        "layers"
+    }
+}
+
 #[async_trait]
 impl SubActionRunner for QueryInputListRunner {
     fn id(&self) -> &str {
         sub_action_ids::SOURCE_GET_LIST
-    }
-
-    fn category(&self) -> SubActionCategory {
-        SubActionCategory::Integration
-    }
-
-    fn label(&self) -> &str {
-        "Get Source/Input List"
-    }
-
-    fn summary(&self) -> &str {
-        "Queries OBS for all inputs (sources) by name."
-    }
-
-    fn search_text(&self) -> &str {
-        "obs sources inputs get list all names"
-    }
-
-    fn icon_name(&self) -> &str {
-        "layers"
     }
 
     fn scope_io(&self) -> SubActionIo {

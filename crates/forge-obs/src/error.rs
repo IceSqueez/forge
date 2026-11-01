@@ -13,7 +13,7 @@ pub enum ObsError {
     NotStored,
 
     #[error("not connected to OBS")]
-    Disconnected,
+    NotConnected,
 
     #[error("request timed out")]
     Timeout,
@@ -38,7 +38,7 @@ pub enum ObsError {
 
 impl ObsError {
     pub(crate) fn is_connection_loss(&self) -> bool {
-        matches!(self, Self::Timeout | Self::Disconnected)
+        matches!(self, Self::Timeout | Self::NotConnected)
     }
 }
 
@@ -47,7 +47,7 @@ pub(crate) fn map_request_error(request_type: &str, e: obws::error::Error) -> Ob
         obws::error::Error::Timeout => ObsError::Timeout,
         obws::error::Error::Disconnected
         | obws::error::Error::Send(_)
-        | obws::error::Error::ReceiveMessage(_) => ObsError::Disconnected,
+        | obws::error::Error::ReceiveMessage(_) => ObsError::NotConnected,
         obws::error::Error::Api {
             code: obws::responses::StatusCode::StudioModeNotActive,
             ..

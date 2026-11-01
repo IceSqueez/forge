@@ -1,7 +1,8 @@
 use async_trait::async_trait;
 use forge_registry::{
     ChoiceField, ConfigChoice, ConfigProblem, ConfigSpec, ControlSignal, RunContext, STOP_KIND_ID,
-    StepTimer, StopMark, SubActionCategory, SubActionRunner, TextEditor, TextField, TypedField,
+    StepCatalogEntry, StepTimer, StopMark, SubActionCategory, SubActionRunner, TextEditor,
+    TextField, TypedField,
 };
 use forge_types::{ArgStack, SubActionConfig, SubActionTelemetry};
 
@@ -49,30 +50,28 @@ fn read_mark(config: &SubActionConfig, args: &ArgStack) -> Result<StopMark, Conf
 
 pub struct CoreLogicStopRunner;
 
+impl StepCatalogEntry for CoreLogicStopRunner {
+    fn category(&self) -> SubActionCategory {
+        SubActionCategory::Logic
+    }
+    fn label(&self) -> &str {
+        "Stop Action"
+    }
+    fn summary(&self) -> &str {
+        "Halt the current action chain immediately"
+    }
+    fn search_text(&self) -> &str {
+        "stop halt end action chain abort flow control"
+    }
+    fn icon_name(&self) -> &str {
+        "stop-circle"
+    }
+}
+
 #[async_trait]
 impl SubActionRunner for CoreLogicStopRunner {
     fn id(&self) -> &str {
         STOP_KIND_ID
-    }
-
-    fn category(&self) -> SubActionCategory {
-        SubActionCategory::Logic
-    }
-
-    fn label(&self) -> &str {
-        "Stop Action"
-    }
-
-    fn summary(&self) -> &str {
-        "Halt the current action chain immediately"
-    }
-
-    fn search_text(&self) -> &str {
-        "stop halt end action chain abort flow control"
-    }
-
-    fn icon_name(&self) -> &str {
-        "stop-circle"
     }
 
     fn config_spec(&self) -> Option<ConfigSpec> {

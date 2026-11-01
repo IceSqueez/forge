@@ -1,0 +1,488 @@
+use async_trait::async_trait;
+use forge_storage::{
+    NewOverlay, OverlayConfig, OverlayDefinition, OverlayId, OverlayRepo, StorageError,
+    is_token_shaped, unique_overlay_id,
+};
+use forge_types::OverlayCredential;
+use rand::rand_core::Rng;
+use sqlx::SqliteConnection;
+
+use crate::codec::epoch::{epoch_ms_now, from_epoch_ms, to_epoch_ms};
+use crate::codec::row_int::decode_u32;
+use crate::error::SqliteStorageError;
+use crate::pool::SqlitePools;
+
+#[derive(sqlx::FromRow)]
+struct OverlayRow {
+    id: String,
+    display_name: String,
+    kind_id: String,
+    enabled: i64,
+    position: i64,
+    config: String,
+    config_schema_version: i64,
+    generator_version: i64,
+    source_overrides: String,
+    credential: String,
+    created_at: i64,
+    updated_at: i64,
+}
+
+fn decode_row(row: OverlayRow) -> Result<OverlayDefinition, SqliteStorageError> {
+    let config: OverlayConfig = serde_json::from_str(&row.config)
+        .map_err(|e| SqliteStorageError::Decode(format!("invalid overlay config json: {e}")))?;
+    let source_overrides: Vec<String> = serde_json::from_str(&row.source_overrides)
+        .map_err(|e| SqliteStorageError::Decode(format!("invalid source_overrides json: {e}")))?;
+
+    Ok(OverlayDefinition {
+        id: OverlayId::new(row.id),
+        display_name: row.display_name,
+        kind_id: row.kind_id,
+        enabled: row.enabled != 0,
+        position: row.position,
+        config,
+        config_schema_version: decode_u32("config_schema_version", row.config_schema_version)?,
+        generator_version: decode_u32("generator_version", row.generator_version)?,
+        source_overrides,
+        credential: OverlayCredential::new(row.credential),
+        created_at: from_epoch_ms(row.created_at)?,
+        updated_at: from_epoch_ms(row.updated_at)?,
+    })
+}
+
+fn generate_credential() -> OverlayCredential {
+    let mut bytes = [0u8; 32];
+    rand::rng().fill_bytes(&mut bytes);
+    OverlayCredential::new(forge_types::to_lower_hex(&bytes))
+}
+
+pub struct SqliteOverlayRepo {
+    db: SqlitePools,
+}
+
+impl SqliteOverlayRepo {
+    pub fn new(db: SqlitePools) -> Self {
+        Self { db }
+    }
+}
+
+fn refuse_token_shaped(field: &str, candidate: &str) -> Result<(), StorageError> {
+    if is_token_shaped(candidate) {
+        return Err(StorageError::ValidationFailed {
+            field: field.to_owned(),
+            reason: "the value looks like an overlay token".to_owned(),
+        });
+    }
+    Ok(())
+}
+
+async fn mint_unique_id(
+    conn: &mut SqliteConnection,
+    base: &str,
+) -> Result<OverlayId, StorageError> {
+    let stored: Vec<(String,)> = sqlx::query_as("SELECT id FROM overlays")
+        .fetch_all(&mut *conn)
+        .await
+        .map_err(SqliteStorageError::Sqlx)?;
+    let stored: std::collections::HashSet<String> = stored.into_iter().map(|(id,)| id).collect();
+
+    Ok(unique_overlay_id(base, |candidate| {
+        stored.contains(candidate.as_str())
+    }))
+}
+
+pub(crate) async fn insert_new_overlay(
+    conn: &mut SqliteConnection,
+    overlay: &NewOverlay,
+) -> Result<(), StorageError> {
+    refuse_token_shaped("display_name", &overlay.display_name)?;
+    refuse_token_shaped("id", overlay.id.as_str())?;
+    let config_json =
+        serde_json::to_string(&overlay.config).map_err(StorageError::Serialization)?;
+    let source_overrides_json =
+        serde_json::to_string(&overlay.source_overrides).map_err(StorageError::Serialization)?;
+    let position = match overlay.position {
+        Some(position) => position,
+        None => next_position(conn).await?,
+    };
+    let credential = generate_credential();
+    let now_ms = epoch_ms_now();
+
+    sqlx::query(
+        "INSERT INTO overlays
+             (id, display_name, kind_id, enabled, position, config,
+              config_schema_version, generator_version, source_overrides,
+              credential, created_at, updated_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, 0, ?, ?, ?, ?)",
+    )
+    .bind(overlay.id.as_str())
+    .bind(&overlay.display_name)
+    .bind(&overlay.kind_id)
+    .bind(i64::from(overlay.enabled))
+    .bind(position)
+    .bind(&config_json)
+    .bind(i64::from(overlay.config_schema_version))
+    .bind(&source_overrides_json)
+    .bind(credential.expose())
+    .bind(now_ms)
+    .bind(now_ms)
+    .execute(&mut *conn)
+    .await
+    .map_err(SqliteStorageError::Sqlx)?;
+
+    Ok(())
+}
+
+pub(crate) async fn delete_overlay<'e>(
+    executor: impl sqlx::SqliteExecutor<'e>,
+    id: &OverlayId,
+) -> Result<bool, StorageError> {
+    let result = sqlx::query("DELETE FROM overlays WHERE id = ?")
+        .bind(id.as_str())
+        .execute(executor)
+        .await
+        .map_err(SqliteStorageError::Sqlx)?;
+
+    Ok(result.rows_affected() > 0)
+}
+
+async fn next_position(conn: &mut SqliteConnection) -> Result<i64, StorageError> {
+    let (max,): (Option<i64>,) = sqlx::query_as("SELECT MAX(position) FROM overlays")
+        .fetch_one(&mut *conn)
+        .await
+        .map_err(SqliteStorageError::Sqlx)?;
+
+    Ok(max.map(|m| m + 1).unwrap_or(0))
+}
+
+pub(crate) async fn update_overlay<'e>(
+    executor: impl sqlx::SqliteExecutor<'e>,
+    definition: &OverlayDefinition,
+) -> Result<(), StorageError> {
+    refuse_token_shaped("display_name", &definition.display_name)?;
+    refuse_token_shaped("id", definition.id.as_str())?;
+    let config_json =
+        serde_json::to_string(&definition.config).map_err(StorageError::Serialization)?;
+    let source_overrides_json =
+        serde_json::to_string(&definition.source_overrides).map_err(StorageError::Serialization)?;
+    let enabled = i64::from(definition.enabled);
+    let now_ms = epoch_ms_now();
+
+    let result = sqlx::query(
+        "UPDATE overlays SET
+             display_name          = ?,
+             kind_id               = ?,
+             enabled               = ?,
+             position              = ?,
+             config                = ?,
+             config_schema_version = ?,
+             generator_version     = ?,
+             source_overrides      = ?,
+             credential            = ?,
+             updated_at            = ?
+         WHERE id = ?",
+    )
+    .bind(&definition.display_name)
+    .bind(&definition.kind_id)
+    .bind(enabled)
+    .bind(definition.position)
+    .bind(&config_json)
+    .bind(definition.config_schema_version as i64)
+    .bind(definition.generator_version as i64)
+    .bind(&source_overrides_json)
+    .bind(definition.credential.expose())
+    .bind(now_ms)
+    .bind(definition.id.as_str())
+    .execute(executor)
+    .await
+    .map_err(SqliteStorageError::Sqlx)?;
+
+    if result.rows_affected() == 0 {
+        return Err(StorageError::NotFound {
+            key: definition.id.as_str().to_owned(),
+        });
+    }
+    Ok(())
+}
+
+#[async_trait]
+impl OverlayRepo for SqliteOverlayRepo {
+    async fn list(&self) -> Result<Vec<OverlayDefinition>, StorageError> {
+        let rows: Vec<OverlayRow> = sqlx::query_as(
+            "SELECT id, display_name, kind_id, enabled, position, config,
+                    config_schema_version, generator_version, source_overrides,
+                    credential, created_at, updated_at
+             FROM overlays
+             ORDER BY position ASC, display_name ASC",
+        )
+        .fetch_all(self.db.reader())
+        .await
+        .map_err(SqliteStorageError::Sqlx)?;
+
+        rows.into_iter()
+            .map(|row| decode_row(row).map_err(StorageError::from))
+            .collect()
+    }
+
+    async fn get(&self, id: &OverlayId) -> Result<Option<OverlayDefinition>, StorageError> {
+        let row: Option<OverlayRow> = sqlx::query_as(
+            "SELECT id, display_name, kind_id, enabled, position, config,
+                    config_schema_version, generator_version, source_overrides,
+                    credential, created_at, updated_at
+             FROM overlays WHERE id = ?",
+        )
+        .bind(id.as_str())
+        .fetch_optional(self.db.reader())
+        .await
+        .map_err(SqliteStorageError::Sqlx)?;
+
+        row.map(|r| decode_row(r).map_err(StorageError::from))
+            .transpose()
+    }
+
+    async fn get_by_credential(
+        &self,
+        credential: &OverlayCredential,
+    ) -> Result<Option<OverlayDefinition>, StorageError> {
+        let row: Option<OverlayRow> = sqlx::query_as(
+            "SELECT id, display_name, kind_id, enabled, position, config,
+                    config_schema_version, generator_version, source_overrides,
+                    credential, created_at, updated_at
+             FROM overlays WHERE credential = ?",
+        )
+        .bind(credential.expose())
+        .fetch_optional(self.db.reader())
+        .await
+        .map_err(SqliteStorageError::Sqlx)?;
+
+        row.map(|r| decode_row(r).map_err(StorageError::from))
+            .transpose()
+    }
+
+    async fn reissue_all_credentials(&self) -> Result<Vec<OverlayId>, StorageError> {
+        let mut tx = self
+            .db
+            .writer()
+            .begin_with("BEGIN IMMEDIATE")
+            .await
+            .map_err(SqliteStorageError::Sqlx)?;
+
+        let ids: Vec<(String,)> = sqlx::query_as("SELECT id FROM overlays ORDER BY position ASC")
+            .fetch_all(&mut *tx)
+            .await
+            .map_err(SqliteStorageError::Sqlx)?;
+        let now_ms = epoch_ms_now();
+
+        let mut reissued = Vec::with_capacity(ids.len());
+        for (id,) in ids {
+            let credential = generate_credential();
+            sqlx::query("UPDATE overlays SET credential = ?, updated_at = ? WHERE id = ?")
+                .bind(credential.expose())
+                .bind(now_ms)
+                .bind(&id)
+                .execute(&mut *tx)
+                .await
+                .map_err(SqliteStorageError::Sqlx)?;
+            reissued.push(OverlayId::new(id));
+        }
+
+        tx.commit().await.map_err(SqliteStorageError::Sqlx)?;
+        Ok(reissued)
+    }
+
+    async fn create(
+        &self,
+        display_name: &str,
+        kind_id: &str,
+        config_schema_version: u32,
+    ) -> Result<OverlayDefinition, StorageError> {
+        refuse_token_shaped("display_name", display_name)?;
+        let mut tx = self
+            .db
+            .writer()
+            .begin_with("BEGIN IMMEDIATE")
+            .await
+            .map_err(SqliteStorageError::Sqlx)?;
+
+        let id = mint_unique_id(&mut tx, display_name).await?;
+        let position = next_position(&mut tx).await?;
+        let credential = generate_credential();
+        let now_ms = epoch_ms_now();
+
+        sqlx::query(
+            "INSERT INTO overlays
+                 (id, display_name, kind_id, enabled, position, config,
+                  config_schema_version, generator_version, source_overrides,
+                  credential, created_at, updated_at)
+             VALUES (?, ?, ?, 1, ?, '{}', ?, 0, '[]', ?, ?, ?)",
+        )
+        .bind(id.as_str())
+        .bind(display_name)
+        .bind(kind_id)
+        .bind(position)
+        .bind(config_schema_version as i64)
+        .bind(credential.expose())
+        .bind(now_ms)
+        .bind(now_ms)
+        .execute(&mut *tx)
+        .await
+        .map_err(SqliteStorageError::Sqlx)?;
+
+        tx.commit().await.map_err(SqliteStorageError::Sqlx)?;
+
+        Ok(OverlayDefinition {
+            id,
+            display_name: display_name.to_string(),
+            kind_id: kind_id.to_string(),
+            enabled: true,
+            position,
+            config: OverlayConfig::new(),
+            config_schema_version,
+            generator_version: 0,
+            source_overrides: Vec::new(),
+            credential,
+            created_at: from_epoch_ms(now_ms)?,
+            updated_at: from_epoch_ms(now_ms)?,
+        })
+    }
+
+    async fn save(&self, definition: &OverlayDefinition) -> Result<(), StorageError> {
+        update_overlay(self.db.writer(), definition).await
+    }
+
+    async fn restore(&self, definition: &OverlayDefinition) -> Result<(), StorageError> {
+        let config_json =
+            serde_json::to_string(&definition.config).map_err(StorageError::Serialization)?;
+        let source_overrides_json = serde_json::to_string(&definition.source_overrides)
+            .map_err(StorageError::Serialization)?;
+
+        sqlx::query(
+            "INSERT INTO overlays
+                 (id, display_name, kind_id, enabled, position, config,
+                  config_schema_version, generator_version, source_overrides,
+                  credential, created_at, updated_at)
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+             ON CONFLICT(id) DO UPDATE SET
+                 display_name          = excluded.display_name,
+                 kind_id               = excluded.kind_id,
+                 enabled               = excluded.enabled,
+                 position              = excluded.position,
+                 config                = excluded.config,
+                 config_schema_version = excluded.config_schema_version,
+                 generator_version     = excluded.generator_version,
+                 source_overrides      = excluded.source_overrides,
+                 credential            = excluded.credential,
+                 created_at            = excluded.created_at,
+                 updated_at            = excluded.updated_at",
+        )
+        .bind(definition.id.as_str())
+        .bind(&definition.display_name)
+        .bind(&definition.kind_id)
+        .bind(i64::from(definition.enabled))
+        .bind(definition.position)
+        .bind(&config_json)
+        .bind(definition.config_schema_version as i64)
+        .bind(definition.generator_version as i64)
+        .bind(&source_overrides_json)
+        .bind(definition.credential.expose())
+        .bind(to_epoch_ms(definition.created_at))
+        .bind(to_epoch_ms(definition.updated_at))
+        .execute(self.db.writer())
+        .await
+        .map_err(SqliteStorageError::Sqlx)?;
+        Ok(())
+    }
+
+    async fn update_config(
+        &self,
+        id: &OverlayId,
+        config: &OverlayConfig,
+    ) -> Result<bool, StorageError> {
+        let config_json = serde_json::to_string(config).map_err(StorageError::Serialization)?;
+        let result = sqlx::query("UPDATE overlays SET config = ?, updated_at = ? WHERE id = ?")
+            .bind(&config_json)
+            .bind(epoch_ms_now())
+            .bind(id.as_str())
+            .execute(self.db.writer())
+            .await
+            .map_err(SqliteStorageError::Sqlx)?;
+
+        Ok(result.rows_affected() > 0)
+    }
+
+    async fn rename(&self, id: &OverlayId, display_name: &str) -> Result<bool, StorageError> {
+        refuse_token_shaped("display_name", display_name)?;
+        let result =
+            sqlx::query("UPDATE overlays SET display_name = ?, updated_at = ? WHERE id = ?")
+                .bind(display_name)
+                .bind(epoch_ms_now())
+                .bind(id.as_str())
+                .execute(self.db.writer())
+                .await
+                .map_err(SqliteStorageError::Sqlx)?;
+
+        Ok(result.rows_affected() > 0)
+    }
+
+    async fn set_enabled(&self, id: &OverlayId, enabled: bool) -> Result<bool, StorageError> {
+        let enabled_val = i64::from(enabled);
+        let now_ms = epoch_ms_now();
+
+        let result = sqlx::query("UPDATE overlays SET enabled = ?, updated_at = ? WHERE id = ?")
+            .bind(enabled_val)
+            .bind(now_ms)
+            .bind(id.as_str())
+            .execute(self.db.writer())
+            .await
+            .map_err(SqliteStorageError::Sqlx)?;
+
+        Ok(result.rows_affected() > 0)
+    }
+
+    async fn delete(&self, id: &OverlayId) -> Result<bool, StorageError> {
+        delete_overlay(self.db.writer(), id).await
+    }
+
+    async fn get_retained_content(
+        &self,
+        id: &OverlayId,
+    ) -> Result<Option<OverlayConfig>, StorageError> {
+        let row: Option<(Option<String>,)> =
+            sqlx::query_as("SELECT retained_content FROM overlays WHERE id = ?")
+                .bind(id.as_str())
+                .fetch_optional(self.db.reader())
+                .await
+                .map_err(SqliteStorageError::Sqlx)?;
+
+        let Some(json) = row.and_then(|(content,)| content) else {
+            return Ok(None);
+        };
+
+        let content: OverlayConfig = serde_json::from_str(&json).map_err(|e| {
+            SqliteStorageError::Decode(format!("invalid retained_content json: {e}"))
+        })?;
+        Ok(Some(content))
+    }
+
+    async fn set_retained_content(
+        &self,
+        id: &OverlayId,
+        content: &OverlayConfig,
+    ) -> Result<(), StorageError> {
+        let json = serde_json::to_string(content).map_err(StorageError::Serialization)?;
+
+        let result = sqlx::query("UPDATE overlays SET retained_content = ? WHERE id = ?")
+            .bind(&json)
+            .bind(id.as_str())
+            .execute(self.db.writer())
+            .await
+            .map_err(SqliteStorageError::Sqlx)?;
+
+        if result.rows_affected() == 0 {
+            return Err(StorageError::NotFound {
+                key: id.as_str().to_owned(),
+            });
+        }
+        Ok(())
+    }
+}

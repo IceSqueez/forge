@@ -4,13 +4,13 @@ use async_trait::async_trait;
 use forge_events::{ChatSent, EventSource, TypedEvent};
 use forge_registry::SubActionConfig;
 use forge_registry::{
-    ConfigSpec, RunContext, StepTimer, SubActionCategory, SubActionRunner, TextEditor, TextField,
-    TypedField,
+    ConfigSpec, RunContext, StepCatalogEntry, StepTimer, SubActionCategory, SubActionRunner,
+    TextEditor, TextField, TypedField,
 };
 use forge_types::{ArgStack, PlatformId, SubActionOutcome, SubActionTelemetry};
 
 use super::step_failure;
-use crate::send_chat::YoutubeSendChat;
+use crate::chat::send_chat::YoutubeSendChat;
 use crate::vocabulary::{config_keys, sub_action_ids};
 
 const MESSAGE: TextField = TextField {
@@ -33,30 +33,28 @@ impl SendMessageRunner {
     }
 }
 
+impl StepCatalogEntry for SendMessageRunner {
+    fn category(&self) -> SubActionCategory {
+        SubActionCategory::Chat
+    }
+    fn label(&self) -> &str {
+        "Send Message"
+    }
+    fn summary(&self) -> &str {
+        "Posts a message in the active YouTube live chat."
+    }
+    fn search_text(&self) -> &str {
+        "youtube chat message send say post live"
+    }
+    fn icon_name(&self) -> &str {
+        "chat"
+    }
+}
+
 #[async_trait]
 impl SubActionRunner for SendMessageRunner {
     fn id(&self) -> &str {
         sub_action_ids::CHAT_SEND_MESSAGE
-    }
-
-    fn category(&self) -> SubActionCategory {
-        SubActionCategory::Chat
-    }
-
-    fn label(&self) -> &str {
-        "Send Message"
-    }
-
-    fn summary(&self) -> &str {
-        "Posts a message in the active YouTube live chat."
-    }
-
-    fn search_text(&self) -> &str {
-        "youtube chat message send say post live"
-    }
-
-    fn icon_name(&self) -> &str {
-        "chat"
     }
 
     fn config_spec(&self) -> Option<ConfigSpec> {
@@ -105,7 +103,7 @@ mod tests {
 
     use super::*;
 
-    use crate::live_chat_id::LiveChatIdHandle;
+    use crate::broadcast::live_chat_id::LiveChatIdHandle;
     use forge_events::test_support::CapturingPublisher;
     use forge_types::Variant;
     use std::collections::BTreeMap;

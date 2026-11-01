@@ -6,8 +6,8 @@ use async_trait::async_trait;
 use forge_audio::{PlaybackCorrelation, RemoteDestinationId};
 use forge_registry::CancelSignal;
 use forge_runtime::{
-    EngineVoiceRef, ShowSpeech, SpeakDispatcher, SpeakingViewer, SpeechOrigin, SpeechStartSignal,
-    VoiceDescriptor,
+    EngineVoiceRef, ShowSpeaker, ShowSpeech, SpeakDispatcher, SpeakQueueControl, SpeakingViewer,
+    SpeechOrigin, SpeechRequest, SpeechStartSignal, SpeechVoice, VoiceAliasWriter, VoiceDescriptor,
 };
 use forge_script::{ScriptError, SpeakRequester};
 use forge_speak_queue::{
@@ -97,11 +97,14 @@ impl SpeakBridge {
         ))
     }
 
-    fn dispatch_voice_overrides(
+    fn request_overrides(
         &self,
-        voice: Option<&str>,
+        voice: &SpeechVoice,
     ) -> Result<(Option<EngineId>, Option<VoiceId>), MessageRef> {
-        self.installed_voice_overrides(voice)
+        match voice {
+            SpeechVoice::Chosen(voice) => self.installed_voice_overrides(voice.as_deref()),
+            SpeechVoice::Engine(engine_id) => Ok((Some(EngineId(engine_id.clone())), None)),
+        }
     }
 
     async fn withdraw_unfinished(
@@ -254,68 +257,36 @@ async fn wait_marking_start(
 
 #[async_trait]
 impl SpeakDispatcher for SpeakBridge {
-    async fn speak(
-        &self,
-        text: String,
-        voice: Option<String>,
-        origin: SpeechOrigin,
-    ) -> Result<(), MessageRef> {
-        let (engine, voice) = self.dispatch_voice_overrides(voice.as_deref())?;
-        self.enqueue(text, engine, voice, false, None, origin)
-            .await
-            .map(|_| ())
-    }
-
-    async fn speak_reward_sourced(
-        &self,
-        text: String,
-        voice: Option<String>,
-        origin: SpeechOrigin,
-    ) -> Result<(), MessageRef> {
-        let (engine, voice) = self.dispatch_voice_overrides(voice.as_deref())?;
-        self.enqueue(text, engine, voice, true, None, origin)
-            .await
-            .map(|_| ())
-    }
-
-    async fn speak_with_engine(
-        &self,
-        text: String,
-        engine_id: String,
-        origin: SpeechOrigin,
-    ) -> Result<(), MessageRef> {
-        self.enqueue(text, Some(EngineId(engine_id)), None, false, None, origin)
-            .await
-            .map(|_| ())
+    async fn speak(&self, request: SpeechRequest) -> Result<(), MessageRef> {
+        let (engine, voice) = self.request_overrides(&request.voice)?;
+        self.enqueue(
+            request.text,
+            engine,
+            voice,
+            request.is_reward,
+            None,
+            request.origin,
+        )
+        .await
+        .map(|_| ())
     }
 
     async fn speak_queued_for_run(
         &self,
-        text: String,
-        voice: Option<String>,
-        is_reward: bool,
-        origin: SpeechOrigin,
+        request: SpeechRequest,
         run: CancelSignal,
     ) -> Result<(), MessageRef> {
-        let (engine, voice) = self.dispatch_voice_overrides(voice.as_deref())?;
+        let (engine, voice) = self.request_overrides(&request.voice)?;
         let events = self.handle.subscribe();
         let request_id = self
-            .enqueue(text, engine, voice, is_reward, None, origin)
-            .await?;
-        self.withdraw_when_run_stops(events, request_id, run);
-        Ok(())
-    }
-
-    async fn speak_with_engine_queued_for_run(
-        &self,
-        text: String,
-        engine_id: String,
-        origin: SpeechOrigin,
-        run: CancelSignal,
-    ) -> Result<(), MessageRef> {
-        let events = self.handle.subscribe();
-        let request_id = self
-            .enqueue(text, Some(EngineId(engine_id)), None, false, None, origin)
+            .enqueue(
+                request.text,
+                engine,
+                voice,
+                request.is_reward,
+                None,
+                request.origin,
+            )
             .await?;
         self.withdraw_when_run_stops(events, request_id, run);
         Ok(())
@@ -323,38 +294,33 @@ impl SpeakDispatcher for SpeakBridge {
 
     async fn speak_and_wait(
         &self,
-        text: String,
-        voice: Option<String>,
-        is_reward: bool,
-        origin: SpeechOrigin,
+        request: SpeechRequest,
         cancel: CancelSignal,
     ) -> Result<(), MessageRef> {
-        let (engine, voice) = self.dispatch_voice_overrides(voice.as_deref())?;
+        let (engine, voice) = self.request_overrides(&request.voice)?;
         let mut events = self.handle.subscribe();
         let request_id = self
-            .enqueue(text, engine, voice, is_reward, None, origin)
+            .enqueue(
+                request.text,
+                engine,
+                voice,
+                request.is_reward,
+                None,
+                request.origin,
+            )
             .await?;
         let outcome = wait_for_terminal(&mut events, &request_id, cancel).await;
         self.withdraw_unfinished(SpeakCommand::RemoveQueued(request_id), outcome)
             .await
     }
 
-    async fn speak_with_engine_and_wait(
-        &self,
-        text: String,
-        engine_id: String,
-        origin: SpeechOrigin,
-        cancel: CancelSignal,
-    ) -> Result<(), MessageRef> {
-        let mut events = self.handle.subscribe();
-        let request_id = self
-            .enqueue(text, Some(EngineId(engine_id)), None, false, None, origin)
-            .await?;
-        let outcome = wait_for_terminal(&mut events, &request_id, cancel).await;
-        self.withdraw_unfinished(SpeakCommand::RemoveQueued(request_id), outcome)
-            .await
+    async fn available_voices(&self) -> Vec<VoiceDescriptor> {
+        self.voice_descriptors()
     }
+}
 
+#[async_trait]
+impl ShowSpeaker for SpeakBridge {
     async fn speak_for_show(
         &self,
         speech: ShowSpeech,
@@ -365,7 +331,7 @@ impl SpeakDispatcher for SpeakBridge {
             destination: RemoteDestinationId::new(speech.overlay),
             correlation: PlaybackCorrelation::new(speech.show),
         };
-        let (engine, voice) = self.dispatch_voice_overrides(speech.voice.as_deref())?;
+        let (engine, voice) = self.installed_voice_overrides(speech.voice.as_deref())?;
         let mut events = self.handle.subscribe();
         let request_id = self
             .enqueue(
@@ -382,6 +348,13 @@ impl SpeakDispatcher for SpeakBridge {
             .await
     }
 
+    fn check_voice(&self, encoded: &str) -> Result<(), MessageRef> {
+        self.installed_voice_overrides(Some(encoded)).map(|_| ())
+    }
+}
+
+#[async_trait]
+impl SpeakQueueControl for SpeakBridge {
     async fn stop_current(&self) -> Result<(), MessageRef> {
         self.dispatch(SpeakCommand::Skip).await
     }
@@ -401,23 +374,10 @@ impl SpeakDispatcher for SpeakBridge {
     async fn clear_keep_current(&self) -> Result<(), MessageRef> {
         self.dispatch(SpeakCommand::ClearPending).await
     }
+}
 
-    async fn get_queue_depth(&self) -> usize {
-        self.handle.queue_depth()
-    }
-
-    async fn get_available_voices(&self) -> Vec<VoiceDescriptor> {
-        self.voice_descriptors()
-    }
-
-    fn check_voice(&self, encoded: &str) -> Result<(), MessageRef> {
-        self.installed_voice_overrides(Some(encoded)).map(|_| ())
-    }
-
-    async fn get_engines(&self) -> Vec<String> {
-        self.handle.engines().into_iter().map(|e| e.0).collect()
-    }
-
+#[async_trait]
+impl VoiceAliasWriter for SpeakBridge {
     async fn alias_set(
         &self,
         viewer_id: String,
@@ -715,9 +675,12 @@ mod tests {
         stream: &mut forge_speak_queue::SpeakEventStream,
         origin: SpeechOrigin,
     ) -> forge_types::MessageRef {
-        SpeakDispatcher::speak(bridge, "hello chat".to_owned(), None, origin)
-            .await
-            .unwrap();
+        SpeakDispatcher::speak(
+            bridge,
+            SpeechRequest::chosen_voice("hello chat".to_owned(), None, origin),
+        )
+        .await
+        .unwrap();
         next_matching(stream, |event| match event {
             SpeakEvent::Skipped { message, .. } => Some(message),
             _ => None,
@@ -758,13 +721,15 @@ mod tests {
 
         SpeakDispatcher::speak(
             &bridge,
-            "hello chat".to_owned(),
-            None,
-            SpeechOrigin {
-                viewer: Some(viewer("twitch", "141981764", "NovaFox")),
-                caused_by: Some(trigger),
-                ..Default::default()
-            },
+            SpeechRequest::chosen_voice(
+                "hello chat".to_owned(),
+                None,
+                SpeechOrigin {
+                    viewer: Some(viewer("twitch", "141981764", "NovaFox")),
+                    caused_by: Some(trigger),
+                    ..Default::default()
+                },
+            ),
         )
         .await
         .unwrap();
@@ -949,9 +914,12 @@ mod tests {
             let count = origins.len();
 
             for origin in origins {
-                SpeakDispatcher::speak(&bridge, "hi".to_owned(), None, origin)
-                    .await
-                    .unwrap();
+                SpeakDispatcher::speak(
+                    &bridge,
+                    SpeechRequest::chosen_voice("hi".to_owned(), None, origin),
+                )
+                .await
+                .unwrap();
             }
 
             assert_eq!(admissions(&mut stream, count).await, expected, "{label}");
@@ -1337,16 +1305,21 @@ mod tests {
         let voice = Some(voice.to_owned());
         match path {
             VoicedPath::Step => {
-                SpeakDispatcher::speak(bridge, text, voice, SpeechOrigin::default())
-                    .await
-                    .unwrap();
+                SpeakDispatcher::speak(
+                    bridge,
+                    SpeechRequest::chosen_voice(text, voice, SpeechOrigin::default()),
+                )
+                .await
+                .unwrap();
                 enqueued_preview(stream).await
             }
             VoicedPath::Reward => {
-                bridge
-                    .speak_reward_sourced(text, voice, SpeechOrigin::default())
-                    .await
-                    .unwrap();
+                SpeakDispatcher::speak(
+                    bridge,
+                    SpeechRequest::reward_sourced(text, voice, SpeechOrigin::default()),
+                )
+                .await
+                .unwrap();
                 enqueued_preview(stream).await
             }
             VoicedPath::Script => {
@@ -1406,9 +1379,11 @@ mod tests {
 
         let step = SpeakDispatcher::speak(
             &bridge,
-            "hi".to_owned(),
-            Some("cap/ghost".to_owned()),
-            SpeechOrigin::default(),
+            SpeechRequest::chosen_voice(
+                "hi".to_owned(),
+                Some("cap/ghost".to_owned()),
+                SpeechOrigin::default(),
+            ),
         )
         .await;
         let script =
@@ -1678,13 +1653,13 @@ mod tests {
             Unwaited::Voice => {
                 let voice = Some(LISTED_VOICE.to_owned());
                 bridge
-                    .speak_queued_for_run(text, voice, false, origin, run)
+                    .speak_queued_for_run(SpeechRequest::chosen_voice(text, voice, origin), run)
                     .await
             }
             Unwaited::Engine => {
                 let engine = LISTED_ENGINE.to_owned();
                 bridge
-                    .speak_with_engine_queued_for_run(text, engine, origin, run)
+                    .speak_queued_for_run(SpeechRequest::with_engine(text, engine, origin), run)
                     .await
             }
         }
@@ -1738,20 +1713,19 @@ mod tests {
                 async {
                     if engine {
                         bridge
-                            .speak_with_engine_and_wait(
-                                text,
-                                LISTED_ENGINE.to_owned(),
-                                origin,
+                            .speak_and_wait(
+                                SpeechRequest::with_engine(text, LISTED_ENGINE.to_owned(), origin),
                                 run.clone(),
                             )
                             .await
                     } else {
                         bridge
                             .speak_and_wait(
-                                text,
-                                Some(LISTED_VOICE.to_owned()),
-                                false,
-                                origin,
+                                SpeechRequest::chosen_voice(
+                                    text,
+                                    Some(LISTED_VOICE.to_owned()),
+                                    origin,
+                                ),
                                 run.clone(),
                             )
                             .await
@@ -1831,10 +1805,11 @@ mod tests {
 
         let (outcome, ending) = tokio::join!(
             bridge.speak_and_wait(
-                "hi".to_owned(),
-                Some(LISTED_VOICE.to_owned()),
-                false,
-                SpeechOrigin::default(),
+                SpeechRequest::chosen_voice(
+                    "hi".to_owned(),
+                    Some(LISTED_VOICE.to_owned()),
+                    SpeechOrigin::default(),
+                ),
                 run.clone(),
             ),
             async {

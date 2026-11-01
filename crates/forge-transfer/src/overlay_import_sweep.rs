@@ -4,7 +4,7 @@ use std::time::{Duration, SystemTime};
 
 use forge_storage::{OverlayId, OverlayRepo};
 
-use crate::documents::overlay_files::PENDING_IMPORT_MARKER;
+use crate::documents::overlay_files::{PENDING_IMPORT_MARKER, SET_ASIDE_EXTENSION};
 use crate::error::TransferError;
 
 const ABANDONED_IMPORT_AGE: Duration = Duration::from_hours(1);
@@ -53,6 +53,50 @@ pub async fn sweep_abandoned_overlay_imports(
         }
     }
     Ok(removed)
+}
+
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub struct SetAsideSweep {
+    pub restored: usize,
+    pub removed: usize,
+}
+
+fn replaced_name(name: &str) -> Option<&str> {
+    let (replaced, suffix) = name.rsplit_once(&format!(".{SET_ASIDE_EXTENSION}-"))?;
+    (!replaced.is_empty() && !suffix.is_empty()).then_some(replaced)
+}
+
+pub async fn sweep_set_aside_overlay_files(
+    overlay_root: &Path,
+) -> Result<SetAsideSweep, TransferError> {
+    let mut sweep = SetAsideSweep::default();
+    let mut pending = vec![overlay_root.to_path_buf()];
+    while let Some(directory) = pending.pop() {
+        let mut entries = match tokio::fs::read_dir(&directory).await {
+            Ok(entries) => entries,
+            Err(e) if e.kind() == io::ErrorKind::NotFound => continue,
+            Err(e) => return Err(e.into()),
+        };
+        while let Some(entry) = entries.next_entry().await? {
+            if entry.file_type().await?.is_dir() {
+                pending.push(entry.path());
+                continue;
+            }
+            let file_name = entry.file_name();
+            let Some(replaced) = file_name.to_str().and_then(replaced_name) else {
+                continue;
+            };
+            let replaced = directory.join(replaced);
+            if tokio::fs::try_exists(&replaced).await? {
+                tokio::fs::remove_file(entry.path()).await?;
+                sweep.removed += 1;
+            } else {
+                tokio::fs::rename(entry.path(), &replaced).await?;
+                sweep.restored += 1;
+            }
+        }
+    }
+    Ok(sweep)
 }
 
 #[cfg(test)]

@@ -3,8 +3,8 @@ use std::sync::Arc;
 use async_trait::async_trait;
 use forge_registry::SubActionConfig;
 use forge_registry::{
-    ConfigProblem, ConfigSpec, RunContext, StepTimer, SubActionCategory, SubActionRunner,
-    TextEditor, TextField, TypedField,
+    ConfigProblem, ConfigSpec, RunContext, StepCatalogEntry, StepTimer, SubActionCategory,
+    SubActionRunner, TextEditor, TextField, TypedField,
 };
 use forge_types::{ArgStack, SubActionOutcome, SubActionTelemetry};
 
@@ -119,30 +119,28 @@ impl PredictionUpdate<'_> {
     }
 }
 
+impl StepCatalogEntry for LockPredictionRunner {
+    fn category(&self) -> SubActionCategory {
+        SubActionCategory::PollsPredictions
+    }
+    fn label(&self) -> &str {
+        "Lock Prediction"
+    }
+    fn summary(&self) -> &str {
+        "Locks an active prediction, preventing new votes. Viewers can no longer change their outcome."
+    }
+    fn search_text(&self) -> &str {
+        "twitch prediction lock stop votes"
+    }
+    fn icon_name(&self) -> &str {
+        "lock"
+    }
+}
+
 #[async_trait]
 impl SubActionRunner for LockPredictionRunner {
     fn id(&self) -> &str {
         KIND_ID
-    }
-
-    fn category(&self) -> SubActionCategory {
-        SubActionCategory::PollsPredictions
-    }
-
-    fn label(&self) -> &str {
-        "Lock Prediction"
-    }
-
-    fn summary(&self) -> &str {
-        "Locks an active prediction, preventing new votes. Viewers can no longer change their outcome."
-    }
-
-    fn search_text(&self) -> &str {
-        "twitch prediction lock stop votes"
-    }
-
-    fn icon_name(&self) -> &str {
-        "lock"
     }
 
     fn config_spec(&self) -> Option<ConfigSpec> {

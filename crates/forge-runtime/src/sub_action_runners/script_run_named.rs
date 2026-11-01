@@ -5,10 +5,10 @@ use async_trait::async_trait;
 use forge_events::{EventPublisher, EventSource, ScriptFailed, ScriptStarted, TypedEvent};
 use forge_registry::SCRIPT_OPTIONS_KEY;
 use forge_registry::{
-    ConfigProblem, ConfigSpec, DynamicSelectField, ProducedVariable, RunContext, StepTimer,
-    SubActionCategory, SubActionIo, SubActionRunner, TextEditor, TextField, TypedField,
+    ConfigProblem, ConfigSpec, DynamicSelectField, ProducedVariable, RunContext, StepCatalogEntry,
+    StepTimer, SubActionCategory, SubActionIo, SubActionRunner, TextEditor, TextField, TypedField,
 };
-use forge_script::{ScriptCapabilities, ScriptGlobals, ScriptSession, build_scope_for_contract};
+use forge_script::{ScriptCapabilities, ScriptGlobals, ScriptSession};
 use forge_storage::{
     ExecutionStatus, GlobalsRepo, SCRIPT_NAME_KEY, SCRIPT_RUN_NAMED_KIND, ScriptRepo, SettingsRepo,
 };
@@ -19,9 +19,9 @@ use forge_types::{
 use time::OffsetDateTime;
 
 use crate::core_messages;
-use crate::global_mutation::RuntimeScriptGlobals;
-use crate::scheduled_runs::SchedulingContext;
-use crate::script_registry::{SCRIPT_PANIC_ERROR_TYPE, ScriptRegistry};
+use crate::engine::scheduled_runs::SchedulingContext;
+use crate::services::global_mutation::RuntimeScriptGlobals;
+use crate::services::script_registry::{SCRIPT_PANIC_ERROR_TYPE, ScriptRegistry};
 
 pub const TARGET_VAR_KEY: &str = "target_var";
 
@@ -76,30 +76,28 @@ impl ScriptRunNamedRunner {
     }
 }
 
+impl StepCatalogEntry for ScriptRunNamedRunner {
+    fn category(&self) -> SubActionCategory {
+        SubActionCategory::Scripts
+    }
+    fn label(&self) -> &str {
+        "Run Script (Named)"
+    }
+    fn summary(&self) -> &str {
+        "Execute a saved script by name"
+    }
+    fn search_text(&self) -> &str {
+        "run script named execute rhai"
+    }
+    fn icon_name(&self) -> &str {
+        "script"
+    }
+}
+
 #[async_trait]
 impl SubActionRunner for ScriptRunNamedRunner {
     fn id(&self) -> &str {
         SCRIPT_RUN_NAMED_KIND
-    }
-
-    fn category(&self) -> SubActionCategory {
-        SubActionCategory::Scripts
-    }
-
-    fn label(&self) -> &str {
-        "Run Script (Named)"
-    }
-
-    fn summary(&self) -> &str {
-        "Execute a saved script by name"
-    }
-
-    fn search_text(&self) -> &str {
-        "run script named execute rhai"
-    }
-
-    fn icon_name(&self) -> &str {
-        "script"
     }
 
     fn config_spec(&self) -> Option<ConfigSpec> {
@@ -189,12 +187,7 @@ impl SubActionRunner for ScriptRunNamedRunner {
         let script_event_id = exec_event.id;
         self.publisher.publish(exec_event);
 
-        let exec_result = tokio::task::spawn_blocking(move || {
-            let mut scope = build_scope_for_contract(&contract, &arg_stack_clone)?;
-            let engine = session.into_engine()?;
-            engine.eval_script_with_scope_as_variant(&body, &mut scope)
-        })
-        .await;
+        let exec_result = session.run_for_value(body, contract, arg_stack_clone).await;
 
         let duration_ms = u64::try_from(wall_start.elapsed().as_millis()).unwrap_or(u64::MAX);
 

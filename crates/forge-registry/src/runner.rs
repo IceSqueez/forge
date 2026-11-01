@@ -13,14 +13,17 @@ use crate::refinement::FormRefinement;
 use crate::run_context::RunContext;
 use crate::scope_io::SubActionIo;
 
-#[async_trait]
-pub trait SubActionRunner: Send + Sync {
-    fn id(&self) -> &str;
+pub trait StepCatalogEntry {
     fn category(&self) -> SubActionCategory;
     fn label(&self) -> &str;
     fn summary(&self) -> &str;
     fn search_text(&self) -> &str;
     fn icon_name(&self) -> &str;
+}
+
+#[async_trait]
+pub trait SubActionRunner: StepCatalogEntry + Send + Sync {
+    fn id(&self) -> &str;
     fn config_spec(&self) -> Option<ConfigSpec> {
         None
     }
@@ -115,11 +118,7 @@ mod tests {
         ConfigProblem::whole(crate::config_messages::invalid_id())
     }
 
-    #[async_trait]
-    impl SubActionRunner for DeclaringRunner {
-        fn id(&self) -> &str {
-            "test.declaring"
-        }
+    impl StepCatalogEntry for DeclaringRunner {
         fn category(&self) -> SubActionCategory {
             SubActionCategory::Util
         }
@@ -134,6 +133,13 @@ mod tests {
         }
         fn icon_name(&self) -> &str {
             "bolt"
+        }
+    }
+
+    #[async_trait]
+    impl SubActionRunner for DeclaringRunner {
+        fn id(&self) -> &str {
+            "test.declaring"
         }
         fn config_spec(&self) -> Option<ConfigSpec> {
             self.spec

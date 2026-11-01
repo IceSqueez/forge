@@ -3,8 +3,8 @@ use std::sync::Arc;
 use async_trait::async_trait;
 use forge_registry::SubActionConfig;
 use forge_registry::{
-    ConfigProblem, ConfigSpec, RunContext, StepTimer, SubActionCategory, SubActionRunner,
-    TypedField,
+    ConfigProblem, ConfigSpec, RunContext, StepCatalogEntry, StepTimer, SubActionCategory,
+    SubActionRunner, TypedField,
 };
 use forge_types::{ArgStack, SubActionOutcome, SubActionTelemetry};
 
@@ -72,30 +72,28 @@ impl GuestStarAssignSlotRunner {
     }
 }
 
+impl StepCatalogEntry for GuestStarAssignSlotRunner {
+    fn category(&self) -> SubActionCategory {
+        SubActionCategory::Integration
+    }
+    fn label(&self) -> &str {
+        "Assign Guest Star Slot"
+    }
+    fn summary(&self) -> &str {
+        "Assigns an invited guest to a numbered slot in the Guest Star session."
+    }
+    fn search_text(&self) -> &str {
+        "twitch guest star slot assign seat layout collab session"
+    }
+    fn icon_name(&self) -> &str {
+        "layout"
+    }
+}
+
 #[async_trait]
 impl SubActionRunner for GuestStarAssignSlotRunner {
     fn id(&self) -> &str {
         sub_action_ids::GUEST_STAR_ASSIGN_SLOT
-    }
-
-    fn category(&self) -> SubActionCategory {
-        SubActionCategory::Integration
-    }
-
-    fn label(&self) -> &str {
-        "Assign Guest Star Slot"
-    }
-
-    fn summary(&self) -> &str {
-        "Assigns an invited guest to a numbered slot in the Guest Star session."
-    }
-
-    fn search_text(&self) -> &str {
-        "twitch guest star slot assign seat layout collab session"
-    }
-
-    fn icon_name(&self) -> &str {
-        "layout"
     }
 
     fn config_spec(&self) -> Option<ConfigSpec> {

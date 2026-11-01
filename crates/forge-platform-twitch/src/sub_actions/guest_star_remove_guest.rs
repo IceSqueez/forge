@@ -2,7 +2,9 @@ use std::sync::Arc;
 
 use async_trait::async_trait;
 use forge_registry::SubActionConfig;
-use forge_registry::{ConfigSpec, RunContext, StepTimer, SubActionCategory, SubActionRunner};
+use forge_registry::{
+    ConfigSpec, RunContext, StepCatalogEntry, StepTimer, SubActionCategory, SubActionRunner,
+};
 use forge_types::{ArgStack, SubActionOutcome, SubActionTelemetry};
 
 use super::guest_star::GuestStarContext;
@@ -51,30 +53,28 @@ impl GuestStarRemoveGuestRunner {
     }
 }
 
+impl StepCatalogEntry for GuestStarRemoveGuestRunner {
+    fn category(&self) -> SubActionCategory {
+        SubActionCategory::Integration
+    }
+    fn label(&self) -> &str {
+        "Remove Guest Star Guest"
+    }
+    fn summary(&self) -> &str {
+        "Removes a guest from their slot in the active Guest Star session."
+    }
+    fn search_text(&self) -> &str {
+        "twitch guest star remove kick guest slot session collab"
+    }
+    fn icon_name(&self) -> &str {
+        "user-minus"
+    }
+}
+
 #[async_trait]
 impl SubActionRunner for GuestStarRemoveGuestRunner {
     fn id(&self) -> &str {
         sub_action_ids::GUEST_STAR_REMOVE_GUEST
-    }
-
-    fn category(&self) -> SubActionCategory {
-        SubActionCategory::Integration
-    }
-
-    fn label(&self) -> &str {
-        "Remove Guest Star Guest"
-    }
-
-    fn summary(&self) -> &str {
-        "Removes a guest from their slot in the active Guest Star session."
-    }
-
-    fn search_text(&self) -> &str {
-        "twitch guest star remove kick guest slot session collab"
-    }
-
-    fn icon_name(&self) -> &str {
-        "user-minus"
     }
 
     fn config_spec(&self) -> Option<ConfigSpec> {

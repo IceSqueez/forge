@@ -3,8 +3,8 @@ use std::sync::Arc;
 use async_trait::async_trait;
 use forge_events::{EventSource, GlobalArrayRemoved, TypedEvent};
 use forge_registry::{
-    ConfigProblem, ConfigSpec, RunContext, StepTimer, SubActionCategory, SubActionRunner,
-    TextEditor, TextField, ToggleField, TypedField,
+    ConfigProblem, ConfigSpec, RunContext, StepCatalogEntry, StepTimer, SubActionCategory,
+    SubActionRunner, TextEditor, TextField, ToggleField, TypedField,
 };
 use forge_storage::{GlobalsRepo, StorageError};
 use forge_types::{ArgStack, SubActionConfig, SubActionOutcome, SubActionTelemetry};
@@ -51,30 +51,28 @@ impl CoreGlobalsArrayRemoveRunner {
     }
 }
 
+impl StepCatalogEntry for CoreGlobalsArrayRemoveRunner {
+    fn category(&self) -> SubActionCategory {
+        SubActionCategory::Globals
+    }
+    fn label(&self) -> &str {
+        "Remove from Global Array"
+    }
+    fn summary(&self) -> &str {
+        "Remove matching items from a global array variable"
+    }
+    fn search_text(&self) -> &str {
+        "remove delete array global list item filter"
+    }
+    fn icon_name(&self) -> &str {
+        "list-minus"
+    }
+}
+
 #[async_trait]
 impl SubActionRunner for CoreGlobalsArrayRemoveRunner {
     fn id(&self) -> &str {
         "core.globals.array_remove"
-    }
-
-    fn category(&self) -> SubActionCategory {
-        SubActionCategory::Globals
-    }
-
-    fn label(&self) -> &str {
-        "Remove from Global Array"
-    }
-
-    fn summary(&self) -> &str {
-        "Remove matching items from a global array variable"
-    }
-
-    fn search_text(&self) -> &str {
-        "remove delete array global list item filter"
-    }
-
-    fn icon_name(&self) -> &str {
-        "list-minus"
     }
 
     fn config_spec(&self) -> Option<ConfigSpec> {

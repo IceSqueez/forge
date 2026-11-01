@@ -3,8 +3,8 @@ use std::sync::Arc;
 use async_trait::async_trait;
 use forge_registry::SubActionConfig;
 use forge_registry::{
-    ConfigProblem, ConfigSpec, Interpolation, PickedTextField, RunContext, StepTimer,
-    SubActionCategory, SubActionRunner, TextPicker,
+    ConfigProblem, ConfigSpec, Interpolation, PickedTextField, RunContext, StepCatalogEntry,
+    StepTimer, SubActionCategory, SubActionRunner, TextPicker,
 };
 use forge_types::{ArgStack, SubActionTelemetry};
 
@@ -32,30 +32,28 @@ impl RecordSetDirectoryRunner {
     }
 }
 
+impl StepCatalogEntry for RecordSetDirectoryRunner {
+    fn category(&self) -> SubActionCategory {
+        SubActionCategory::Integration
+    }
+    fn label(&self) -> &str {
+        "Set Record Directory"
+    }
+    fn summary(&self) -> &str {
+        "Sets the directory OBS writes recording files to."
+    }
+    fn search_text(&self) -> &str {
+        "obs record directory folder path output file location"
+    }
+    fn icon_name(&self) -> &str {
+        "folder"
+    }
+}
+
 #[async_trait]
 impl SubActionRunner for RecordSetDirectoryRunner {
     fn id(&self) -> &str {
         sub_action_ids::RECORDING_SET_DIRECTORY
-    }
-
-    fn category(&self) -> SubActionCategory {
-        SubActionCategory::Integration
-    }
-
-    fn label(&self) -> &str {
-        "Set Record Directory"
-    }
-
-    fn summary(&self) -> &str {
-        "Sets the directory OBS writes recording files to."
-    }
-
-    fn search_text(&self) -> &str {
-        "obs record directory folder path output file location"
-    }
-
-    fn icon_name(&self) -> &str {
-        "folder"
     }
 
     fn config_spec(&self) -> Option<ConfigSpec> {

@@ -2,7 +2,9 @@ use std::sync::Arc;
 
 use async_trait::async_trait;
 use forge_registry::SubActionConfig;
-use forge_registry::{RunContext, StepTimer, SubActionCategory, SubActionIo, SubActionRunner};
+use forge_registry::{
+    RunContext, StepCatalogEntry, StepTimer, SubActionCategory, SubActionIo, SubActionRunner,
+};
 use forge_types::{ArgStack, SubActionTelemetry, Variant};
 
 use super::step_failure;
@@ -19,30 +21,28 @@ impl QueryRecordStatusRunner {
     }
 }
 
+impl StepCatalogEntry for QueryRecordStatusRunner {
+    fn category(&self) -> SubActionCategory {
+        SubActionCategory::Integration
+    }
+    fn label(&self) -> &str {
+        "Get Recording Status"
+    }
+    fn summary(&self) -> &str {
+        "Queries OBS for the current recording state, pause state, and elapsed duration."
+    }
+    fn search_text(&self) -> &str {
+        "obs record recording get status active paused duration"
+    }
+    fn icon_name(&self) -> &str {
+        "circle"
+    }
+}
+
 #[async_trait]
 impl SubActionRunner for QueryRecordStatusRunner {
     fn id(&self) -> &str {
         sub_action_ids::RECORDING_GET_STATUS
-    }
-
-    fn category(&self) -> SubActionCategory {
-        SubActionCategory::Integration
-    }
-
-    fn label(&self) -> &str {
-        "Get Recording Status"
-    }
-
-    fn summary(&self) -> &str {
-        "Queries OBS for the current recording state, pause state, and elapsed duration."
-    }
-
-    fn search_text(&self) -> &str {
-        "obs record recording get status active paused duration"
-    }
-
-    fn icon_name(&self) -> &str {
-        "circle"
     }
 
     fn scope_io(&self) -> SubActionIo {

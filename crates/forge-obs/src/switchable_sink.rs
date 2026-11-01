@@ -1,5 +1,5 @@
-use forge_types::RecoverRwLock;
-use std::sync::{Arc, RwLock};
+use forge_types::LiveSlot;
+use std::sync::Arc;
 
 use async_trait::async_trait;
 
@@ -12,7 +12,7 @@ use crate::stream_output::{
 };
 
 pub struct SwitchableObsSink {
-    inner: RwLock<Option<Arc<ObsClient>>>,
+    live: LiveSlot<ObsClient>,
     stream_output: StreamOutputTarget,
 }
 
@@ -22,14 +22,13 @@ impl SwitchableObsSink {
     }
 
     pub fn install(&self, client: Arc<ObsClient>) {
-        let mut guard = self.inner.write_recover();
-        if let Some(previous) = guard.as_ref() {
+        if let Some(previous) = self.live.current() {
             previous.stream_output.detach();
         }
         client
             .stream_output
             .route_to(Arc::clone(&self.stream_output));
-        *guard = Some(client);
+        self.live.install(client);
     }
 
     pub fn stream_output(&self) -> StreamOutputActive {
@@ -41,15 +40,14 @@ impl SwitchableObsSink {
     }
 
     fn get(&self) -> Result<Arc<ObsClient>, ObsError> {
-        let guard = self.inner.read_recover();
-        guard.clone().ok_or(ObsError::Disconnected)
+        self.live.current().ok_or(ObsError::NotConnected)
     }
 }
 
 impl Default for SwitchableObsSink {
     fn default() -> Self {
         Self {
-            inner: RwLock::new(None),
+            live: LiveSlot::new(),
             stream_output: new_stream_output_target(),
         }
     }
@@ -287,8 +285,8 @@ mod tests {
         ];
         for result in results {
             assert!(
-                matches!(result, Err(ObsError::Disconnected)),
-                "expected Disconnected, got {result:?}",
+                matches!(result, Err(ObsError::NotConnected)),
+                "expected NotConnected, got {result:?}",
             );
         }
     }

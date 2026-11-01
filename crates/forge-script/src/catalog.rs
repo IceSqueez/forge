@@ -9,9 +9,40 @@ use crate::api::ForgeApi;
 use crate::globals_port::{GlobalDeletion, GlobalIncrement, ScriptGlobals};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ScriptValueKind {
+    Unit,
+    Int,
+    Bool,
+    Text,
+    Datetime,
+    Map,
+    Value,
+}
+
+impl ScriptValueKind {
+    pub const fn name(self) -> &'static str {
+        match self {
+            Self::Unit => "()",
+            Self::Int => "int",
+            Self::Bool => "bool",
+            Self::Text => "string",
+            Self::Datetime => "datetime",
+            Self::Map => "map",
+            Self::Value => "value",
+        }
+    }
+}
+
+impl std::fmt::Display for ScriptValueKind {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(self.name())
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct ParamDescriptor {
     pub name: &'static str,
-    pub ty: &'static str,
+    pub ty: ScriptValueKind,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -19,7 +50,7 @@ pub struct MethodDescriptor {
     pub namespace: Option<&'static str>,
     pub name: &'static str,
     pub params: Vec<ParamDescriptor>,
-    pub return_type: &'static str,
+    pub return_type: ScriptValueKind,
     pub doc: Option<&'static str>,
 }
 
@@ -118,8 +149,12 @@ mod tests {
         (
             method.namespace,
             method.name,
-            method.params.iter().map(|p| (p.name, p.ty)).collect(),
-            method.return_type,
+            method
+                .params
+                .iter()
+                .map(|p| (p.name, p.ty.name()))
+                .collect(),
+            method.return_type.name(),
         )
     }
 
@@ -132,7 +167,7 @@ mod tests {
         let user = ("user", "string");
         let key = ("key", "string");
         let action = ("action", "string");
-        let options = ("options", "Map");
+        let options = ("options", "map");
         let expected = vec![
             root("log", &[("msg", "string")], "()"),
             root("warn", &[("msg", "string")], "()"),
@@ -150,14 +185,14 @@ mod tests {
             within("chat", "reply_as", &[s, t, to, text], "()"),
             within("chat", "whisper_as", &[s, user, text], "()"),
             within("chat", "whisper_as", &[s, t, user, text], "()"),
-            within("globals", "get", &[key], "Variant"),
+            within("globals", "get", &[key], "value"),
             within(
                 "globals",
                 "set",
-                &[key, ("value", "Variant"), ("persisted", "bool")],
+                &[key, ("value", "value"), ("persisted", "bool")],
                 "()",
             ),
-            within("globals", "incr", &[key, ("amount", "int")], "Variant"),
+            within("globals", "incr", &[key, ("amount", "int")], "value"),
             within("globals", "del", &[key], "bool"),
             within("tts", "speak", &[text], "()"),
             within("tts", "speak_as", &[("voice_id", "string"), text], "()"),
@@ -165,47 +200,47 @@ mod tests {
             within("tts", "clear", &[], "()"),
             within("time", "now", &[], "string"),
             within("time", "unix", &[], "int"),
-            within("http", "get", &[("url", "string")], "Map"),
+            within("http", "get", &[("url", "string")], "map"),
             within(
                 "http",
                 "post",
                 &[("url", "string"), ("body", "string")],
-                "Map",
+                "map",
             ),
-            within("latest", "get", &[("slot", "string")], "Variant"),
+            within("latest", "get", &[("slot", "string")], "value"),
             within(
                 "latest",
                 "get",
                 &[("slot", "string"), ("platform", "string")],
-                "Variant",
+                "value",
             ),
-            within("schedule", "after", &[action, ("seconds", "int")], "Map"),
+            within("schedule", "after", &[action, ("seconds", "int")], "map"),
             within(
                 "schedule",
                 "after",
                 &[action, ("seconds", "int"), options],
-                "Map",
+                "map",
             ),
-            within("schedule", "at", &[action, ("when", "string")], "Map"),
+            within("schedule", "at", &[action, ("when", "string")], "map"),
             within(
                 "schedule",
                 "at",
                 &[action, ("when", "string"), options],
-                "Map",
+                "map",
             ),
-            within("schedule", "at", &[action, ("when", "datetime")], "Map"),
+            within("schedule", "at", &[action, ("when", "datetime")], "map"),
             within(
                 "schedule",
                 "at",
                 &[action, ("when", "datetime"), options],
-                "Map",
+                "map",
             ),
-            within("schedule", "at", &[action, ("unix_seconds", "int")], "Map"),
+            within("schedule", "at", &[action, ("unix_seconds", "int")], "map"),
             within(
                 "schedule",
                 "at",
                 &[action, ("unix_seconds", "int"), options],
-                "Map",
+                "map",
             ),
             within("schedule", "cancel", &[key], "bool"),
         ];
@@ -220,8 +255,8 @@ mod tests {
             "string" => r#""x""#,
             "int" => "0",
             "bool" => "false",
-            "Map" => "#{}",
-            "Variant" => "1",
+            "map" => "#{}",
+            "value" => "1",
             "datetime" => DATETIME_BINDING,
             other => panic!("no script literal for parameter type {other}"),
         }
@@ -232,7 +267,11 @@ mod tests {
             Some(namespace) => format!("forge::{namespace}::{}", method.name),
             None => format!("forge::{}", method.name),
         };
-        let args: Vec<&str> = method.params.iter().map(|p| argument_for(p.ty)).collect();
+        let args: Vec<&str> = method
+            .params
+            .iter()
+            .map(|p| argument_for(p.ty.name()))
+            .collect();
         format!("{path}({})", args.join(", "))
     }
 

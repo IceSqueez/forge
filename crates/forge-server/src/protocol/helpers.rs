@@ -3,7 +3,7 @@ use std::str::FromStr;
 
 use forge_types::{ArgStack, Variant};
 
-use crate::bus_adapter::EventFilter;
+use crate::delivery::bus_adapter::EventFilter;
 
 use super::envelope::{WireEventFilter, WsErrorCode, WsResponse};
 

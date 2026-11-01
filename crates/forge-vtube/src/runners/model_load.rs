@@ -3,8 +3,8 @@ use std::sync::Arc;
 use async_trait::async_trait;
 use forge_registry::SubActionConfig;
 use forge_registry::{
-    ConfigSpec, PickedTextField, RunContext, StepTimer, SubActionCategory, SubActionRunner,
-    TextPicker, TypedField,
+    ConfigSpec, PickedTextField, RunContext, StepCatalogEntry, StepTimer, SubActionCategory,
+    SubActionRunner, TextPicker, TypedField,
 };
 use forge_types::{ArgStack, SubActionTelemetry};
 
@@ -34,30 +34,28 @@ impl ModelLoadRunner {
     }
 }
 
+impl StepCatalogEntry for ModelLoadRunner {
+    fn category(&self) -> SubActionCategory {
+        SubActionCategory::Integration
+    }
+    fn label(&self) -> &str {
+        "Load Model"
+    }
+    fn summary(&self) -> &str {
+        "Loads a VTube Studio model by its ID."
+    }
+    fn search_text(&self) -> &str {
+        "vtube model load avatar character vts"
+    }
+    fn icon_name(&self) -> &str {
+        "user"
+    }
+}
+
 #[async_trait]
 impl SubActionRunner for ModelLoadRunner {
     fn id(&self) -> &str {
         sub_action_ids::MODEL_LOAD
-    }
-
-    fn category(&self) -> SubActionCategory {
-        SubActionCategory::Integration
-    }
-
-    fn label(&self) -> &str {
-        "Load Model"
-    }
-
-    fn summary(&self) -> &str {
-        "Loads a VTube Studio model by its ID."
-    }
-
-    fn search_text(&self) -> &str {
-        "vtube model load avatar character vts"
-    }
-
-    fn icon_name(&self) -> &str {
-        "user"
     }
 
     fn config_spec(&self) -> Option<ConfigSpec> {

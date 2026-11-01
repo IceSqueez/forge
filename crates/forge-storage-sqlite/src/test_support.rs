@@ -43,7 +43,8 @@ impl<T> Deref for Sandboxed<T> {
 
 pub async fn open_existing(data_dir: &Path) -> SqliteBackend {
     let key_file = data_dir.join(forge_paths::CREDENTIALS_KEY_FILE_NAME);
-    let key = crate::crypto::read_key_file(&key_file).expect("a readable credential key file");
+    let key =
+        crate::codec::crypto::read_key_file(&key_file).expect("a readable credential key file");
     let url = format!(
         "sqlite://{}?mode=rw",
         data_dir.join(forge_storage::DATABASE_FILE_NAME).display()

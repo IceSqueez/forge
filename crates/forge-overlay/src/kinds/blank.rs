@@ -1,9 +1,9 @@
 use forge_types::MessageCode;
 
-use crate::assets::PageAssets;
-use crate::descriptor::{DeliveryDisposition, OverlayConfig, OverlayKindDescriptor};
+use crate::catalog::descriptor::{DeliveryDisposition, OverlayConfig, OverlayKindDescriptor};
+use crate::files::assets::PageAssets;
 use crate::messages;
-use crate::preview::{PreviewComposition, PreviewShape, compose};
+use crate::render::preview::{PreviewComposition, PreviewShape, compose};
 
 pub const KIND_ID: &str = "overlay.blank";
 

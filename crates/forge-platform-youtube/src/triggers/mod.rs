@@ -1,3 +1,19 @@
+use forge_registry::{RegistryError, TriggerRegistry};
+
+use channel_member::SupportNewMemberDescriptor;
+use channel_member_milestone::SupportMemberMilestoneDescriptor;
+use channel_user_banned::ChannelUserBannedDescriptor;
+use chat_command::ChatCommandDescriptor;
+use chat_message::ChatMessageDescriptor;
+use chat_super_chat::SupportSuperChatDescriptor;
+use chat_super_sticker::SupportSuperStickerDescriptor;
+use member_gift::ChannelMemberGiftDescriptor;
+use member_gift_received::ChannelMemberGiftReceivedDescriptor;
+use message_deleted::ChatMessageDeletedDescriptor;
+use stream_offline::ChannelBroadcastEndedDescriptor;
+use stream_online::ChannelBroadcastStartedDescriptor;
+use title_changed::ChannelBroadcastTitleChangedDescriptor;
+
 pub(crate) mod channel_member;
 pub(crate) mod channel_member_milestone;
 pub(crate) mod channel_user_banned;
@@ -12,6 +28,24 @@ mod payload_read;
 pub(crate) mod stream_offline;
 pub(crate) mod stream_online;
 pub(crate) mod title_changed;
+
+pub fn register_youtube_triggers(registry: &mut TriggerRegistry) -> Result<(), RegistryError> {
+    let mut registry = registry.owned_by(crate::YOUTUBE_INTEGRATION.id);
+    registry.register(Box::new(ChatMessageDescriptor))?;
+    registry.register(Box::new(ChatCommandDescriptor))?;
+    registry.register(Box::new(SupportSuperChatDescriptor))?;
+    registry.register(Box::new(SupportSuperStickerDescriptor))?;
+    registry.register(Box::new(SupportNewMemberDescriptor))?;
+    registry.register(Box::new(SupportMemberMilestoneDescriptor))?;
+    registry.register(Box::new(ChannelUserBannedDescriptor))?;
+    registry.register(Box::new(ChatMessageDeletedDescriptor))?;
+    registry.register(Box::new(ChannelMemberGiftDescriptor))?;
+    registry.register(Box::new(ChannelMemberGiftReceivedDescriptor))?;
+    registry.register(Box::new(ChannelBroadcastStartedDescriptor))?;
+    registry.register(Box::new(ChannelBroadcastEndedDescriptor))?;
+    registry.register(Box::new(ChannelBroadcastTitleChangedDescriptor))?;
+    Ok(())
+}
 
 #[cfg(test)]
 mod tests {

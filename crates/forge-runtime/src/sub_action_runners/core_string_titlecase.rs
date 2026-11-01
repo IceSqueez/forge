@@ -1,7 +1,7 @@
 use async_trait::async_trait;
 use forge_registry::{
-    ConfigSpec, ProducedVariable, RunContext, StepTimer, SubActionCategory, SubActionIo,
-    SubActionRunner, TextField,
+    ConfigSpec, ProducedVariable, RunContext, StepCatalogEntry, StepTimer, SubActionCategory,
+    SubActionIo, SubActionRunner, TextField,
 };
 use forge_types::{ArgStack, SubActionConfig, SubActionTelemetry, Variant, VariantKind};
 
@@ -13,30 +13,28 @@ const CONFIG: ConfigSpec = ConfigSpec::new(&[&SOURCE, &INTO_RESULT]);
 
 pub struct CoreStringTitlecaseRunner;
 
+impl StepCatalogEntry for CoreStringTitlecaseRunner {
+    fn category(&self) -> SubActionCategory {
+        SubActionCategory::Util
+    }
+    fn label(&self) -> &str {
+        "String - Titlecase"
+    }
+    fn summary(&self) -> &str {
+        "Capitalize the first character of each whitespace-delimited word"
+    }
+    fn search_text(&self) -> &str {
+        "string titlecase title case capitalize word"
+    }
+    fn icon_name(&self) -> &str {
+        "letter-case"
+    }
+}
+
 #[async_trait]
 impl SubActionRunner for CoreStringTitlecaseRunner {
     fn id(&self) -> &str {
         "core.string.titlecase"
-    }
-
-    fn category(&self) -> SubActionCategory {
-        SubActionCategory::Util
-    }
-
-    fn label(&self) -> &str {
-        "String - Titlecase"
-    }
-
-    fn summary(&self) -> &str {
-        "Capitalize the first character of each whitespace-delimited word"
-    }
-
-    fn search_text(&self) -> &str {
-        "string titlecase title case capitalize word"
-    }
-
-    fn icon_name(&self) -> &str {
-        "letter-case"
     }
 
     fn config_spec(&self) -> Option<ConfigSpec> {

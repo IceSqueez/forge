@@ -3,8 +3,8 @@ use std::sync::Arc;
 use async_trait::async_trait;
 use forge_registry::SubActionConfig;
 use forge_registry::{
-    ConfigSpec, PickedTextField, RunContext, StepTimer, SubActionCategory, SubActionRunner,
-    TextPicker, TypedField,
+    ConfigSpec, PickedTextField, RunContext, StepCatalogEntry, StepTimer, SubActionCategory,
+    SubActionRunner, TextPicker, TypedField,
 };
 use forge_types::{ArgStack, SubActionOutcome, SubActionTelemetry};
 
@@ -140,30 +140,28 @@ async fn execute_bool_runner(
     (timer.finish(outcome), None)
 }
 
+impl StepCatalogEntry for RewardToggleRunner {
+    fn category(&self) -> SubActionCategory {
+        SubActionCategory::ChannelPoints
+    }
+    fn label(&self) -> &str {
+        self.spec.label
+    }
+    fn summary(&self) -> &str {
+        self.spec.summary
+    }
+    fn search_text(&self) -> &str {
+        self.spec.search_text
+    }
+    fn icon_name(&self) -> &str {
+        self.spec.icon
+    }
+}
+
 #[async_trait]
 impl SubActionRunner for RewardToggleRunner {
     fn id(&self) -> &str {
         self.spec.id
-    }
-
-    fn category(&self) -> SubActionCategory {
-        SubActionCategory::ChannelPoints
-    }
-
-    fn label(&self) -> &str {
-        self.spec.label
-    }
-
-    fn summary(&self) -> &str {
-        self.spec.summary
-    }
-
-    fn search_text(&self) -> &str {
-        self.spec.search_text
-    }
-
-    fn icon_name(&self) -> &str {
-        self.spec.icon
     }
 
     fn config_spec(&self) -> Option<ConfigSpec> {

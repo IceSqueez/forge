@@ -2,10 +2,10 @@ use std::sync::Arc;
 
 use async_trait::async_trait;
 use forge_registry::{
-    ConfigProblem, ConfigSpec, RunContext, StepTimer, SubActionCategory, SubActionRunner,
-    TextEditor, TextField, TypedField,
+    ConfigProblem, ConfigSpec, RunContext, StepCatalogEntry, StepTimer, SubActionCategory,
+    SubActionRunner, TextEditor, TextField, TypedField,
 };
-use forge_storage::{GlobalsRepo, UserGlobalsRepo};
+use forge_storage::{GlobalsRepo, UserGlobalKey, UserGlobalsRepo};
 use forge_types::{ArgStack, SubActionConfig, SubActionOutcome, SubActionTelemetry};
 
 use super::core_users_shared::{USER_LOGIN, VAR_NAME, resolve_broadcaster_id, resolve_user_login};
@@ -46,30 +46,28 @@ impl CoreUsersSetVarRunner {
     }
 }
 
+impl StepCatalogEntry for CoreUsersSetVarRunner {
+    fn category(&self) -> SubActionCategory {
+        SubActionCategory::Globals
+    }
+    fn label(&self) -> &str {
+        "Set User Variable"
+    }
+    fn summary(&self) -> &str {
+        "Set a per-user variable to a value"
+    }
+    fn search_text(&self) -> &str {
+        "set user variable per-user state store write"
+    }
+    fn icon_name(&self) -> &str {
+        "user-cog"
+    }
+}
+
 #[async_trait]
 impl SubActionRunner for CoreUsersSetVarRunner {
     fn id(&self) -> &str {
         "core.users.set_var"
-    }
-
-    fn category(&self) -> SubActionCategory {
-        SubActionCategory::Globals
-    }
-
-    fn label(&self) -> &str {
-        "Set User Variable"
-    }
-
-    fn summary(&self) -> &str {
-        "Set a per-user variable to a value"
-    }
-
-    fn search_text(&self) -> &str {
-        "set user variable per-user state store write"
-    }
-
-    fn icon_name(&self) -> &str {
-        "user-cog"
     }
 
     fn config_spec(&self) -> Option<ConfigSpec> {
@@ -102,7 +100,10 @@ impl SubActionRunner for CoreUsersSetVarRunner {
 
         let outcome = match self
             .user_globals
-            .set(&broadcaster_id, &user_login, &var_name, value)
+            .set(
+                &UserGlobalKey::new(&broadcaster_id, &user_login, &var_name),
+                value,
+            )
             .await
         {
             Ok(()) => SubActionOutcome::Success,

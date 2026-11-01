@@ -4,7 +4,8 @@ use async_trait::async_trait;
 use forge_platform_core::PlatformError;
 use forge_registry::SubActionConfig;
 use forge_registry::{
-    ConfigSpec, RunContext, StepTimer, SubActionCategory, SubActionRunner, TypedField,
+    ConfigSpec, RunContext, StepCatalogEntry, StepTimer, SubActionCategory, SubActionRunner,
+    TypedField,
 };
 use forge_types::{ArgStack, SubActionOutcome, SubActionTelemetry};
 use futures::future::BoxFuture;
@@ -41,30 +42,28 @@ impl UnbanUserRunner {
     }
 }
 
+impl StepCatalogEntry for UnbanUserRunner {
+    fn category(&self) -> SubActionCategory {
+        SubActionCategory::Moderation
+    }
+    fn label(&self) -> &str {
+        "Unban User"
+    }
+    fn summary(&self) -> &str {
+        "Lifts an active ban or timeout for a user on the Kick channel. Requires moderation:ban scope."
+    }
+    fn search_text(&self) -> &str {
+        "kick unban user moderation lift remove ban"
+    }
+    fn icon_name(&self) -> &str {
+        "unban"
+    }
+}
+
 #[async_trait]
 impl SubActionRunner for UnbanUserRunner {
     fn id(&self) -> &str {
         sub_action_ids::MODERATION_UNBAN
-    }
-
-    fn category(&self) -> SubActionCategory {
-        SubActionCategory::Moderation
-    }
-
-    fn label(&self) -> &str {
-        "Unban User"
-    }
-
-    fn summary(&self) -> &str {
-        "Lifts an active ban or timeout for a user on the Kick channel. Requires moderation:ban scope."
-    }
-
-    fn search_text(&self) -> &str {
-        "kick unban user moderation lift remove ban"
-    }
-
-    fn icon_name(&self) -> &str {
-        "unban"
     }
 
     fn config_spec(&self) -> Option<ConfigSpec> {

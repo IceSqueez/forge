@@ -3,7 +3,8 @@ use std::sync::Arc;
 use async_trait::async_trait;
 use forge_registry::SubActionConfig;
 use forge_registry::{
-    ConfigSpec, RunContext, StepTimer, SubActionCategory, SubActionRunner, TypedField,
+    ConfigSpec, RunContext, StepCatalogEntry, StepTimer, SubActionCategory, SubActionRunner,
+    TypedField,
 };
 use forge_types::{ArgStack, SubActionOutcome, SubActionTelemetry};
 
@@ -45,30 +46,28 @@ impl GuestStarEndSessionRunner {
     }
 }
 
+impl StepCatalogEntry for GuestStarEndSessionRunner {
+    fn category(&self) -> SubActionCategory {
+        SubActionCategory::Integration
+    }
+    fn label(&self) -> &str {
+        "End Guest Star Session"
+    }
+    fn summary(&self) -> &str {
+        "Ends the active Guest Star session for the broadcaster's channel."
+    }
+    fn search_text(&self) -> &str {
+        "twitch guest star session end close stop collab"
+    }
+    fn icon_name(&self) -> &str {
+        "x-circle"
+    }
+}
+
 #[async_trait]
 impl SubActionRunner for GuestStarEndSessionRunner {
     fn id(&self) -> &str {
         sub_action_ids::GUEST_STAR_END_SESSION
-    }
-
-    fn category(&self) -> SubActionCategory {
-        SubActionCategory::Integration
-    }
-
-    fn label(&self) -> &str {
-        "End Guest Star Session"
-    }
-
-    fn summary(&self) -> &str {
-        "Ends the active Guest Star session for the broadcaster's channel."
-    }
-
-    fn search_text(&self) -> &str {
-        "twitch guest star session end close stop collab"
-    }
-
-    fn icon_name(&self) -> &str {
-        "x-circle"
     }
 
     fn config_spec(&self) -> Option<ConfigSpec> {

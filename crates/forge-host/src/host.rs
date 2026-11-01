@@ -71,7 +71,8 @@ pub async fn build_host(inputs: HostInputs) -> Host {
         events: speak_events,
         pipeline_config,
         voice_gate,
-        dispatcher: speak_dispatcher,
+        ports: speech_ports,
+        show_speaker,
         script_requester: speak_requester,
     } = build_speech(
         bus,
@@ -81,7 +82,6 @@ pub async fn build_host(inputs: HostInputs) -> Host {
         &mut boot_warnings,
     )
     .await;
-    let show_speaker = speak_dispatcher.clone();
 
     let overlay_kinds = build_overlay_kinds(&mut boot_warnings);
     let delivery_hub = DeliveryHub::new(Arc::clone(bus) as Arc<dyn EventObserver>);
@@ -98,6 +98,7 @@ pub async fn build_host(inputs: HostInputs) -> Host {
         date_names: date_names.clone(),
         paths: paths.clone(),
         config: forge_runtime::Config::default(),
+        os: crate::os_adapters::system_os_ports(),
     });
     if let Err(e) = wiring.scripts().load_all(backend.as_ref()).await {
         tracing::warn!(error = %e, "script registry load failed at boot");
@@ -164,12 +165,12 @@ pub async fn build_host(inputs: HostInputs) -> Host {
         &mut boot_warnings,
     )
     .await;
-    match speak_dispatcher {
-        Some(dispatcher) => {
+    match speech_ports {
+        Some(ports) => {
             let reward_emotes = TwitchEmoteLexicon::default();
             spawn_twitch_emote_learning(bus, reward_emotes.clone(), services);
             if let Err(e) =
-                register_speech_sub_actions(wiring.sub_actions_mut(), dispatcher, reward_emotes)
+                register_speech_sub_actions(wiring.sub_actions_mut(), ports, reward_emotes)
             {
                 tracing::error!(error = %e, "speech sub-action runner registration failed");
                 boot_warnings.record(BootWarning::SpeechSubActions);

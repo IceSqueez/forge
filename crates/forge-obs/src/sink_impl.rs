@@ -509,7 +509,7 @@ mod tests {
     async fn set_scene_returns_disconnected_when_not_connected() {
         let client = ObsClient::new_for_test("localhost:4455".to_owned());
         let result = client.set_scene("Gameplay").await;
-        assert!(matches!(result, Err(ObsError::Disconnected)));
+        assert!(matches!(result, Err(ObsError::NotConnected)));
     }
 
     #[test]

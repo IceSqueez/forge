@@ -81,7 +81,7 @@ async fn drive_a_drop_during_the_catalog_load() -> (Recorder, Arc<ObsClient>, Fa
     assert_eq!(listed_scenes(&client).await, [SCENE], "precondition");
 
     let lost = client.set_scene(SCENE).await;
-    assert!(matches!(lost, Err(ObsError::Disconnected)), "got {lost:?}");
+    assert!(matches!(lost, Err(ObsError::NotConnected)), "got {lost:?}");
     settle_until("the supervisor dialled again after the drop", || {
         fake.log.accepted() >= 2
     })

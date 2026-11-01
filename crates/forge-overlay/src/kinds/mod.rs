@@ -6,8 +6,8 @@ pub mod goal;
 pub mod latest;
 pub mod ticker;
 
+use crate::catalog::registry::OverlayKindRegistry;
 use crate::error::OverlayError;
-use crate::registry::OverlayKindRegistry;
 
 pub fn register_builtin_kinds(reg: &mut OverlayKindRegistry) -> Result<(), OverlayError> {
     reg.register(Box::new(alert::AlertOverlayKind))?;
@@ -25,8 +25,8 @@ mod tests {
     use std::collections::BTreeSet;
 
     use super::*;
+    use crate::catalog::descriptor::OverlayConfig;
     use crate::config::{effective_overlay_config, validate_overlay_config};
-    use crate::descriptor::OverlayConfig;
 
     const BUILTIN_IDS: &[&str] = &[
         "overlay.alert",

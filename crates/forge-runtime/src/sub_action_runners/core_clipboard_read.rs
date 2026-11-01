@@ -2,8 +2,8 @@ use std::sync::Arc;
 
 use async_trait::async_trait;
 use forge_registry::{
-    ConfigSpec, ProducedVariable, RunContext, StepTimer, SubActionCategory, SubActionIo,
-    SubActionRunner, TypedField, VariableField,
+    ConfigSpec, ProducedVariable, RunContext, StepCatalogEntry, StepTimer, SubActionCategory,
+    SubActionIo, SubActionRunner, TypedField, VariableField,
 };
 use forge_types::{
     ArgStack, SubActionConfig, SubActionOutcome, SubActionTelemetry, Variant, VariantKind,
@@ -34,30 +34,28 @@ impl CoreClipboardReadRunner {
     }
 }
 
+impl StepCatalogEntry for CoreClipboardReadRunner {
+    fn category(&self) -> SubActionCategory {
+        SubActionCategory::Util
+    }
+    fn label(&self) -> &str {
+        "Read Clipboard"
+    }
+    fn summary(&self) -> &str {
+        "Read the system clipboard into a variable"
+    }
+    fn search_text(&self) -> &str {
+        "clipboard read paste text into variable system"
+    }
+    fn icon_name(&self) -> &str {
+        "clipboard-text"
+    }
+}
+
 #[async_trait]
 impl SubActionRunner for CoreClipboardReadRunner {
     fn id(&self) -> &str {
         "core.clipboard.read"
-    }
-
-    fn category(&self) -> SubActionCategory {
-        SubActionCategory::Util
-    }
-
-    fn label(&self) -> &str {
-        "Read Clipboard"
-    }
-
-    fn summary(&self) -> &str {
-        "Read the system clipboard into a variable"
-    }
-
-    fn search_text(&self) -> &str {
-        "clipboard read paste text into variable system"
-    }
-
-    fn icon_name(&self) -> &str {
-        "clipboard-text"
     }
 
     fn config_spec(&self) -> Option<ConfigSpec> {

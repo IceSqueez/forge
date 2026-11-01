@@ -3,13 +3,13 @@ use std::sync::Arc;
 use async_trait::async_trait;
 use forge_registry::SubActionConfig;
 use forge_registry::{
-    ConfigSpec, RunContext, StepTimer, SubActionCategory, SubActionRunner, TextEditor, TextField,
-    TypedField,
+    ConfigSpec, RunContext, StepCatalogEntry, StepTimer, SubActionCategory, SubActionRunner,
+    TextEditor, TextField, TypedField,
 };
 use forge_types::{ArgStack, SubActionTelemetry};
 
 use super::step_failure;
-use crate::stream_metadata::YoutubeStreamMetadata;
+use crate::broadcast::stream_metadata::YoutubeStreamMetadata;
 use crate::vocabulary::{config_keys, sub_action_ids};
 
 const TITLE: TextField = TextField {
@@ -34,30 +34,28 @@ impl UpdateTitleRunner {
     }
 }
 
+impl StepCatalogEntry for UpdateTitleRunner {
+    fn category(&self) -> SubActionCategory {
+        SubActionCategory::Integration
+    }
+    fn label(&self) -> &str {
+        "Update Stream Title"
+    }
+    fn summary(&self) -> &str {
+        "Sets the title of the active YouTube broadcast."
+    }
+    fn search_text(&self) -> &str {
+        "youtube stream broadcast title rename metadata"
+    }
+    fn icon_name(&self) -> &str {
+        "edit"
+    }
+}
+
 #[async_trait]
 impl SubActionRunner for UpdateTitleRunner {
     fn id(&self) -> &str {
         sub_action_ids::STREAM_UPDATE_TITLE
-    }
-
-    fn category(&self) -> SubActionCategory {
-        SubActionCategory::Integration
-    }
-
-    fn label(&self) -> &str {
-        "Update Stream Title"
-    }
-
-    fn summary(&self) -> &str {
-        "Sets the title of the active YouTube broadcast."
-    }
-
-    fn search_text(&self) -> &str {
-        "youtube stream broadcast title rename metadata"
-    }
-
-    fn icon_name(&self) -> &str {
-        "edit"
     }
 
     fn config_spec(&self) -> Option<ConfigSpec> {
@@ -92,7 +90,7 @@ mod tests {
     use wiremock::{Mock, MockServer, ResponseTemplate};
 
     use super::*;
-    use crate::active_broadcast_id::ActiveBroadcastIdHandle;
+    use crate::broadcast::active_broadcast_id::ActiveBroadcastIdHandle;
     use forge_types::SubActionOutcome;
     use forge_types::Variant;
     use std::collections::BTreeMap;

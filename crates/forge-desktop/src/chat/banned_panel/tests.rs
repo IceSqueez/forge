@@ -9,7 +9,7 @@ use forge_platform_core::{
     BanPageToken, UnbanAbility, UnbanRefusal,
 };
 use forge_registry::{
-    RunContext, StepTimer, SubActionCategory, SubActionRegistry, SubActionRunner,
+    RunContext, StepCatalogEntry, StepTimer, SubActionCategory, SubActionRegistry, SubActionRunner,
 };
 use forge_runtime::{ActionCancelRegistry, ActionEngineHandle, EventBus, spawn_action_engine};
 use forge_storage::Language;
@@ -83,11 +83,7 @@ pub(crate) struct ModerationRunner {
     pub(crate) outcome: SubActionOutcome,
 }
 
-#[async_trait::async_trait]
-impl SubActionRunner for ModerationRunner {
-    fn id(&self) -> &str {
-        self.kind
-    }
+impl StepCatalogEntry for ModerationRunner {
     fn category(&self) -> SubActionCategory {
         SubActionCategory::Util
     }
@@ -102,6 +98,13 @@ impl SubActionRunner for ModerationRunner {
     }
     fn icon_name(&self) -> &str {
         ""
+    }
+}
+
+#[async_trait::async_trait]
+impl SubActionRunner for ModerationRunner {
+    fn id(&self) -> &str {
+        self.kind
     }
     async fn execute(
         &self,

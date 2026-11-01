@@ -3,8 +3,8 @@ use std::sync::Arc;
 use async_trait::async_trait;
 use forge_registry::SubActionConfig;
 use forge_registry::{
-    ConfigProblem, ConfigSpec, RunContext, StepTimer, SubActionCategory, SubActionRunner,
-    ToggleField, TypedField,
+    ConfigProblem, ConfigSpec, RunContext, StepCatalogEntry, StepTimer, SubActionCategory,
+    SubActionRunner, ToggleField, TypedField,
 };
 use forge_types::{ArgStack, SubActionTelemetry};
 
@@ -42,30 +42,28 @@ impl SetVisibleRunner {
     }
 }
 
+impl StepCatalogEntry for SetVisibleRunner {
+    fn category(&self) -> SubActionCategory {
+        SubActionCategory::Integration
+    }
+    fn label(&self) -> &str {
+        "Set Source Visible"
+    }
+    fn summary(&self) -> &str {
+        "Shows or hides a source within an OBS scene."
+    }
+    fn search_text(&self) -> &str {
+        "obs source visible hidden show hide toggle scene item"
+    }
+    fn icon_name(&self) -> &str {
+        "eye"
+    }
+}
+
 #[async_trait]
 impl SubActionRunner for SetVisibleRunner {
     fn id(&self) -> &str {
         sub_action_ids::SOURCE_SET_VISIBLE
-    }
-
-    fn category(&self) -> SubActionCategory {
-        SubActionCategory::Integration
-    }
-
-    fn label(&self) -> &str {
-        "Set Source Visible"
-    }
-
-    fn summary(&self) -> &str {
-        "Shows or hides a source within an OBS scene."
-    }
-
-    fn search_text(&self) -> &str {
-        "obs source visible hidden show hide toggle scene item"
-    }
-
-    fn icon_name(&self) -> &str {
-        "eye"
     }
 
     fn config_spec(&self) -> Option<ConfigSpec> {

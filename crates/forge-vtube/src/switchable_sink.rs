@@ -1,5 +1,5 @@
-use forge_types::RecoverRwLock;
-use std::sync::{Arc, RwLock};
+use forge_types::LiveSlot;
+use std::sync::Arc;
 
 use async_trait::async_trait;
 
@@ -11,36 +11,33 @@ use crate::sink::{
 };
 
 pub struct SwitchableVTubeSink {
-    inner: RwLock<Option<Arc<VTubeClient>>>,
+    live: LiveSlot<VTubeClient>,
 }
 
 impl SwitchableVTubeSink {
     pub fn new() -> Arc<Self> {
         Arc::new(Self {
-            inner: RwLock::new(None),
+            live: LiveSlot::new(),
         })
     }
 
     pub fn install(&self, client: Arc<VTubeClient>) {
-        let mut guard = self.inner.write_recover();
-        *guard = Some(client);
+        self.live.install(client);
     }
 
     pub fn clear(&self) {
-        let mut guard = self.inner.write_recover();
-        *guard = None;
+        self.live.take();
     }
 
     fn get(&self) -> Result<Arc<VTubeClient>, VTubeError> {
-        let guard = self.inner.read_recover();
-        guard.clone().ok_or(VTubeError::NotConnected)
+        self.live.current().ok_or(VTubeError::NotConnected)
     }
 }
 
 impl Default for SwitchableVTubeSink {
     fn default() -> Self {
         Self {
-            inner: RwLock::new(None),
+            live: LiveSlot::new(),
         }
     }
 }

@@ -5,8 +5,8 @@ use forge_events::EventPublisher;
 use forge_platform_core::SenderPreference;
 use forge_registry::SubActionConfig;
 use forge_registry::{
-    ConfigProblem, ConfigSpec, RunContext, StepTimer, SubActionCategory, SubActionRunner,
-    TextEditor, TextField, TypedField,
+    ConfigProblem, ConfigSpec, RunContext, StepCatalogEntry, StepTimer, SubActionCategory,
+    SubActionRunner, TextEditor, TextField, TypedField,
 };
 use forge_types::{ArgStack, SubActionTelemetry};
 
@@ -82,30 +82,28 @@ impl ReplyChatRunner {
     }
 }
 
+impl StepCatalogEntry for ReplyChatRunner {
+    fn category(&self) -> SubActionCategory {
+        SubActionCategory::Chat
+    }
+    fn label(&self) -> &str {
+        "Reply to Message"
+    }
+    fn summary(&self) -> &str {
+        "Sends a reply to a specific chat message."
+    }
+    fn search_text(&self) -> &str {
+        "twitch chat reply respond message thread"
+    }
+    fn icon_name(&self) -> &str {
+        "reply"
+    }
+}
+
 #[async_trait]
 impl SubActionRunner for ReplyChatRunner {
     fn id(&self) -> &str {
         sub_action_ids::CHAT_REPLY
-    }
-
-    fn category(&self) -> SubActionCategory {
-        SubActionCategory::Chat
-    }
-
-    fn label(&self) -> &str {
-        "Reply to Message"
-    }
-
-    fn summary(&self) -> &str {
-        "Sends a reply to a specific chat message."
-    }
-
-    fn search_text(&self) -> &str {
-        "twitch chat reply respond message thread"
-    }
-
-    fn icon_name(&self) -> &str {
-        "reply"
     }
 
     fn config_spec(&self) -> Option<ConfigSpec> {

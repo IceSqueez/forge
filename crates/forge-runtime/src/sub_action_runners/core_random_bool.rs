@@ -1,7 +1,8 @@
 use async_trait::async_trait;
 use forge_registry::{
-    ConfigProblem, ConfigSpec, NumberField, ProducedVariable, RunContext, StepTimer, StoredNumber,
-    SubActionCategory, SubActionIo, SubActionRunner, TypedField, ValueBounds, VariableField,
+    ConfigProblem, ConfigSpec, NumberField, ProducedVariable, RunContext, StepCatalogEntry,
+    StepTimer, StoredNumber, SubActionCategory, SubActionIo, SubActionRunner, TypedField,
+    ValueBounds, VariableField,
 };
 use forge_types::{ArgStack, SubActionConfig, SubActionTelemetry, Variant, VariantKind};
 
@@ -37,30 +38,28 @@ fn read_config(config: &SubActionConfig, args: &ArgStack) -> Result<(f64, String
 
 pub(crate) struct CoreRandomBoolRunner;
 
+impl StepCatalogEntry for CoreRandomBoolRunner {
+    fn category(&self) -> SubActionCategory {
+        SubActionCategory::Logic
+    }
+    fn label(&self) -> &str {
+        "Random Bool (Weighted)"
+    }
+    fn summary(&self) -> &str {
+        "Generate a weighted random boolean and store it in a variable"
+    }
+    fn search_text(&self) -> &str {
+        "random bool boolean weighted probability chance true false"
+    }
+    fn icon_name(&self) -> &str {
+        "dice"
+    }
+}
+
 #[async_trait]
 impl SubActionRunner for CoreRandomBoolRunner {
     fn id(&self) -> &str {
         "core.random.bool"
-    }
-
-    fn category(&self) -> SubActionCategory {
-        SubActionCategory::Logic
-    }
-
-    fn label(&self) -> &str {
-        "Random Bool (Weighted)"
-    }
-
-    fn summary(&self) -> &str {
-        "Generate a weighted random boolean and store it in a variable"
-    }
-
-    fn search_text(&self) -> &str {
-        "random bool boolean weighted probability chance true false"
-    }
-
-    fn icon_name(&self) -> &str {
-        "dice"
     }
 
     fn config_spec(&self) -> Option<ConfigSpec> {

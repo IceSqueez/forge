@@ -3,8 +3,8 @@ use std::sync::Arc;
 use async_trait::async_trait;
 use forge_events::{CUSTOM_EVENT_PREFIX, Event, EventPublisher, EventSource};
 use forge_registry::{
-    ConfigProblem, ConfigSpec, RunContext, StepTimer, SubActionCategory, SubActionRunner,
-    TextEditor, TextField, TypedField,
+    ConfigProblem, ConfigSpec, RunContext, StepCatalogEntry, StepTimer, SubActionCategory,
+    SubActionRunner, TextEditor, TextField, TypedField,
 };
 use forge_types::{ArgStack, SubActionConfig, SubActionOutcome, SubActionTelemetry};
 
@@ -45,30 +45,28 @@ impl ScriptEmitEventRunner {
     }
 }
 
+impl StepCatalogEntry for ScriptEmitEventRunner {
+    fn category(&self) -> SubActionCategory {
+        SubActionCategory::Scripts
+    }
+    fn label(&self) -> &str {
+        "Emit Custom Event"
+    }
+    fn summary(&self) -> &str {
+        "Publish a named custom event to the bus"
+    }
+    fn search_text(&self) -> &str {
+        "emit publish custom event script rhai bus trigger"
+    }
+    fn icon_name(&self) -> &str {
+        "bolt"
+    }
+}
+
 #[async_trait]
 impl SubActionRunner for ScriptEmitEventRunner {
     fn id(&self) -> &str {
         EMIT_EVENT_KIND_ID
-    }
-
-    fn category(&self) -> SubActionCategory {
-        SubActionCategory::Scripts
-    }
-
-    fn label(&self) -> &str {
-        "Emit Custom Event"
-    }
-
-    fn summary(&self) -> &str {
-        "Publish a named custom event to the bus"
-    }
-
-    fn search_text(&self) -> &str {
-        "emit publish custom event script rhai bus trigger"
-    }
-
-    fn icon_name(&self) -> &str {
-        "bolt"
     }
 
     fn config_spec(&self) -> Option<ConfigSpec> {

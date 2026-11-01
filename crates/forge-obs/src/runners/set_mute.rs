@@ -3,8 +3,8 @@ use std::sync::Arc;
 use async_trait::async_trait;
 use forge_registry::SubActionConfig;
 use forge_registry::{
-    ConfigProblem, ConfigSpec, PickedTextField, RunContext, StepTimer, SubActionCategory,
-    SubActionRunner, TextPicker, ToggleField, TypedField,
+    ConfigProblem, ConfigSpec, PickedTextField, RunContext, StepCatalogEntry, StepTimer,
+    SubActionCategory, SubActionRunner, TextPicker, ToggleField, TypedField,
 };
 use forge_types::{ArgStack, SubActionTelemetry};
 
@@ -44,30 +44,28 @@ impl SetMuteRunner {
     }
 }
 
+impl StepCatalogEntry for SetMuteRunner {
+    fn category(&self) -> SubActionCategory {
+        SubActionCategory::Integration
+    }
+    fn label(&self) -> &str {
+        "Set Input Mute"
+    }
+    fn summary(&self) -> &str {
+        "Mutes or unmutes an OBS audio input."
+    }
+    fn search_text(&self) -> &str {
+        "obs audio mute unmute input source volume"
+    }
+    fn icon_name(&self) -> &str {
+        "volume"
+    }
+}
+
 #[async_trait]
 impl SubActionRunner for SetMuteRunner {
     fn id(&self) -> &str {
         sub_action_ids::AUDIO_SET_MUTE
-    }
-
-    fn category(&self) -> SubActionCategory {
-        SubActionCategory::Integration
-    }
-
-    fn label(&self) -> &str {
-        "Set Input Mute"
-    }
-
-    fn summary(&self) -> &str {
-        "Mutes or unmutes an OBS audio input."
-    }
-
-    fn search_text(&self) -> &str {
-        "obs audio mute unmute input source volume"
-    }
-
-    fn icon_name(&self) -> &str {
-        "volume"
     }
 
     fn config_spec(&self) -> Option<ConfigSpec> {

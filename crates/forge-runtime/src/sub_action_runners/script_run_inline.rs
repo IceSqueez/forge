@@ -4,18 +4,18 @@ use std::time::Instant;
 use async_trait::async_trait;
 use forge_events::{EventPublisher, EventSource, ScriptFailed, ScriptStarted, TypedEvent};
 use forge_registry::{
-    CodeField, CodeKind, CodeLanguage, ConfigSpec, RunContext, StepTimer, SubActionCategory,
-    SubActionRunner, TypedField,
+    CodeField, CodeKind, CodeLanguage, ConfigSpec, RunContext, StepCatalogEntry, StepTimer,
+    SubActionCategory, SubActionRunner, TypedField,
 };
-use forge_script::{ScriptCapabilities, ScriptGlobals, ScriptSession, build_scope_for_contract};
+use forge_script::{ScriptCapabilities, ScriptGlobals, ScriptSession};
 use forge_storage::{GlobalsRepo, SettingsRepo};
 use forge_types::{ArgStack, SubActionConfig, SubActionOutcome, SubActionTelemetry};
 use time::OffsetDateTime;
 
 use crate::core_messages;
-use crate::global_mutation::RuntimeScriptGlobals;
-use crate::scheduled_runs::SchedulingContext;
-use crate::script_registry::{SCRIPT_PANIC_ERROR_TYPE, ScriptRegistry};
+use crate::engine::scheduled_runs::SchedulingContext;
+use crate::services::global_mutation::RuntimeScriptGlobals;
+use crate::services::script_registry::{SCRIPT_PANIC_ERROR_TYPE, ScriptRegistry};
 
 const INLINE_SCRIPT_KIND_ID: &str = "script.run.inline";
 
@@ -53,30 +53,28 @@ impl ScriptRunInlineRunner {
     }
 }
 
+impl StepCatalogEntry for ScriptRunInlineRunner {
+    fn category(&self) -> SubActionCategory {
+        SubActionCategory::Scripts
+    }
+    fn label(&self) -> &str {
+        "Run Inline Script"
+    }
+    fn summary(&self) -> &str {
+        "Execute a rhai script snippet embedded directly in the config"
+    }
+    fn search_text(&self) -> &str {
+        "run script inline execute rhai code snippet"
+    }
+    fn icon_name(&self) -> &str {
+        "code"
+    }
+}
+
 #[async_trait]
 impl SubActionRunner for ScriptRunInlineRunner {
     fn id(&self) -> &str {
         INLINE_SCRIPT_KIND_ID
-    }
-
-    fn category(&self) -> SubActionCategory {
-        SubActionCategory::Scripts
-    }
-
-    fn label(&self) -> &str {
-        "Run Inline Script"
-    }
-
-    fn summary(&self) -> &str {
-        "Execute a rhai script snippet embedded directly in the config"
-    }
-
-    fn search_text(&self) -> &str {
-        "run script inline execute rhai code snippet"
-    }
-
-    fn icon_name(&self) -> &str {
-        "code"
     }
 
     fn config_spec(&self) -> Option<ConfigSpec> {
@@ -127,13 +125,7 @@ impl SubActionRunner for ScriptRunInlineRunner {
         let script_event_id = exec_event.id;
         self.publisher.publish(exec_event);
 
-        let exec_result = tokio::task::spawn_blocking(move || {
-            let contract = forge_types::ScriptContract::default();
-            let mut scope = build_scope_for_contract(&contract, &arg_stack_clone)?;
-            let engine = session.into_engine()?;
-            engine.eval_script_with_scope(&body, &mut scope)
-        })
-        .await;
+        let exec_result = session.run_discarding_value(body, arg_stack_clone).await;
 
         let duration_ms = u64::try_from(wall_start.elapsed().as_millis()).unwrap_or(u64::MAX);
 

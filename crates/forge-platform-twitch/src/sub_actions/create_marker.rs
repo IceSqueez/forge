@@ -3,8 +3,8 @@ use std::sync::Arc;
 use async_trait::async_trait;
 use forge_registry::SubActionConfig;
 use forge_registry::{
-    BoundedTextField, ConfigSpec, RunContext, StepTimer, SubActionCategory, SubActionRunner,
-    TextEditor, TypedField, ValueBounds,
+    BoundedTextField, ConfigSpec, RunContext, StepCatalogEntry, StepTimer, SubActionCategory,
+    SubActionRunner, TextEditor, TypedField, ValueBounds,
 };
 use forge_types::{ArgStack, SubActionOutcome, SubActionTelemetry, Variant};
 
@@ -89,30 +89,28 @@ impl CreateMarkerRunner {
     }
 }
 
+impl StepCatalogEntry for CreateMarkerRunner {
+    fn category(&self) -> SubActionCategory {
+        SubActionCategory::Integration
+    }
+    fn label(&self) -> &str {
+        "Create Stream Marker"
+    }
+    fn summary(&self) -> &str {
+        "Places a bookmark at the current live stream position."
+    }
+    fn search_text(&self) -> &str {
+        "twitch stream marker bookmark position highlight timestamp"
+    }
+    fn icon_name(&self) -> &str {
+        "flag"
+    }
+}
+
 #[async_trait]
 impl SubActionRunner for CreateMarkerRunner {
     fn id(&self) -> &str {
         sub_action_ids::CHANNEL_CREATE_MARKER
-    }
-
-    fn category(&self) -> SubActionCategory {
-        SubActionCategory::Integration
-    }
-
-    fn label(&self) -> &str {
-        "Create Stream Marker"
-    }
-
-    fn summary(&self) -> &str {
-        "Places a bookmark at the current live stream position."
-    }
-
-    fn search_text(&self) -> &str {
-        "twitch stream marker bookmark position highlight timestamp"
-    }
-
-    fn icon_name(&self) -> &str {
-        "flag"
     }
 
     fn config_spec(&self) -> Option<ConfigSpec> {

@@ -4,7 +4,8 @@ use async_trait::async_trait;
 use forge_platform_core::PlatformError;
 use forge_registry::SubActionConfig;
 use forge_registry::{
-    ConfigSpec, RunContext, StepTimer, SubActionCategory, SubActionRunner, TypedField,
+    ConfigSpec, RunContext, StepCatalogEntry, StepTimer, SubActionCategory, SubActionRunner,
+    TypedField,
 };
 use forge_types::{ArgStack, SubActionOutcome, SubActionTelemetry};
 use futures::future::BoxFuture;
@@ -35,30 +36,28 @@ impl RejectRedemptionRunner {
     }
 }
 
+impl StepCatalogEntry for RejectRedemptionRunner {
+    fn category(&self) -> SubActionCategory {
+        SubActionCategory::ChannelPoints
+    }
+    fn label(&self) -> &str {
+        "Reject Reward Redemption(s)"
+    }
+    fn summary(&self) -> &str {
+        "Rejects one or more pending Kick reward redemptions. Requires channel:rewards:write scope."
+    }
+    fn search_text(&self) -> &str {
+        "kick channel reward redemption reject cancel deny points"
+    }
+    fn icon_name(&self) -> &str {
+        "x-circle"
+    }
+}
+
 #[async_trait]
 impl SubActionRunner for RejectRedemptionRunner {
     fn id(&self) -> &str {
         sub_action_ids::REWARD_REDEMPTION_REJECT
-    }
-
-    fn category(&self) -> SubActionCategory {
-        SubActionCategory::ChannelPoints
-    }
-
-    fn label(&self) -> &str {
-        "Reject Reward Redemption(s)"
-    }
-
-    fn summary(&self) -> &str {
-        "Rejects one or more pending Kick reward redemptions. Requires channel:rewards:write scope."
-    }
-
-    fn search_text(&self) -> &str {
-        "kick channel reward redemption reject cancel deny points"
-    }
-
-    fn icon_name(&self) -> &str {
-        "x-circle"
     }
 
     fn config_spec(&self) -> Option<ConfigSpec> {

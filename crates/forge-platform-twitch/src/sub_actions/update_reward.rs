@@ -4,8 +4,8 @@ use async_trait::async_trait;
 use forge_registry::SubActionConfig;
 use forge_registry::{
     BoundedTextField, ChoiceField, ConfigProblem, ConfigSpec, DurationBounds, DurationField,
-    IntegerEditor, IntegerField, OptionalField, OptionalSwitch, RunContext, StepTimer,
-    SubActionCategory, SubActionRunner, TextEditor, TypedField, ValueBounds,
+    IntegerEditor, IntegerField, OptionalField, OptionalSwitch, RunContext, StepCatalogEntry,
+    StepTimer, SubActionCategory, SubActionRunner, TextEditor, TypedField, ValueBounds,
 };
 use forge_types::{ArgStack, SubActionOutcome, SubActionTelemetry};
 
@@ -237,30 +237,28 @@ impl UpdateRewardRunner {
     }
 }
 
+impl StepCatalogEntry for UpdateRewardRunner {
+    fn category(&self) -> SubActionCategory {
+        SubActionCategory::ChannelPoints
+    }
+    fn label(&self) -> &str {
+        "Update Channel Point Reward"
+    }
+    fn summary(&self) -> &str {
+        "Updates selected fields of an existing custom channel point reward."
+    }
+    fn search_text(&self) -> &str {
+        "twitch channel points custom reward update edit redemption pause cost"
+    }
+    fn icon_name(&self) -> &str {
+        "star"
+    }
+}
+
 #[async_trait]
 impl SubActionRunner for UpdateRewardRunner {
     fn id(&self) -> &str {
         sub_action_ids::CHANNEL_POINTS_UPDATE_REWARD
-    }
-
-    fn category(&self) -> SubActionCategory {
-        SubActionCategory::ChannelPoints
-    }
-
-    fn label(&self) -> &str {
-        "Update Channel Point Reward"
-    }
-
-    fn summary(&self) -> &str {
-        "Updates selected fields of an existing custom channel point reward."
-    }
-
-    fn search_text(&self) -> &str {
-        "twitch channel points custom reward update edit redemption pause cost"
-    }
-
-    fn icon_name(&self) -> &str {
-        "star"
     }
 
     fn config_spec(&self) -> Option<ConfigSpec> {

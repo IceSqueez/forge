@@ -2,7 +2,9 @@ use std::sync::Arc;
 
 use async_trait::async_trait;
 use forge_registry::SubActionConfig;
-use forge_registry::{ConfigSpec, RunContext, SubActionCategory, SubActionRunner};
+use forge_registry::{
+    ConfigSpec, RunContext, StepCatalogEntry, SubActionCategory, SubActionRunner,
+};
 use forge_types::{ArgStack, SubActionTelemetry};
 
 use super::fulfill_redemption::{REDEMPTION_CONFIG, execute_redemption_runner};
@@ -26,30 +28,28 @@ impl CancelRedemptionRunner {
     }
 }
 
+impl StepCatalogEntry for CancelRedemptionRunner {
+    fn category(&self) -> SubActionCategory {
+        SubActionCategory::ChannelPoints
+    }
+    fn label(&self) -> &str {
+        "Cancel Channel Point Redemption"
+    }
+    fn summary(&self) -> &str {
+        "Cancels a channel point redemption and refunds the viewer's points."
+    }
+    fn search_text(&self) -> &str {
+        "twitch channel points redemption cancel reject refund"
+    }
+    fn icon_name(&self) -> &str {
+        "x"
+    }
+}
+
 #[async_trait]
 impl SubActionRunner for CancelRedemptionRunner {
     fn id(&self) -> &str {
         KIND_ID
-    }
-
-    fn category(&self) -> SubActionCategory {
-        SubActionCategory::ChannelPoints
-    }
-
-    fn label(&self) -> &str {
-        "Cancel Channel Point Redemption"
-    }
-
-    fn summary(&self) -> &str {
-        "Cancels a channel point redemption and refunds the viewer's points."
-    }
-
-    fn search_text(&self) -> &str {
-        "twitch channel points redemption cancel reject refund"
-    }
-
-    fn icon_name(&self) -> &str {
-        "x"
     }
 
     fn config_spec(&self) -> Option<ConfigSpec> {

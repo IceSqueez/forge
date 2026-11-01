@@ -1,5 +1,5 @@
-use forge_types::RecoverRwLock;
-use std::sync::{Arc, RwLock};
+use forge_types::LiveSlot;
+use std::sync::Arc;
 
 use async_trait::async_trait;
 
@@ -26,7 +26,7 @@ impl MidiSink for MidiClient {
 
 #[derive(Default)]
 pub struct SwitchableMidiSink {
-    live: RwLock<Option<Arc<MidiClient>>>,
+    live: LiveSlot<MidiClient>,
 }
 
 impl SwitchableMidiSink {
@@ -35,18 +35,15 @@ impl SwitchableMidiSink {
     }
 
     pub fn install(&self, client: Arc<MidiClient>) {
-        let mut guard = self.live.write_recover();
-        *guard = Some(client);
+        self.live.install(client);
     }
 
     pub fn take(&self) -> Option<Arc<MidiClient>> {
-        let mut guard = self.live.write_recover();
-        guard.take()
+        self.live.take()
     }
 
     pub fn live(&self) -> Option<Arc<MidiClient>> {
-        let guard = self.live.read_recover();
-        guard.clone()
+        self.live.current()
     }
 }
 

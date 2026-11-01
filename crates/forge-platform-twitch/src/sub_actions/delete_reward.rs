@@ -3,7 +3,8 @@ use std::sync::Arc;
 use async_trait::async_trait;
 use forge_registry::SubActionConfig;
 use forge_registry::{
-    ConfigSpec, RunContext, StepTimer, SubActionCategory, SubActionRunner, TypedField,
+    ConfigSpec, RunContext, StepCatalogEntry, StepTimer, SubActionCategory, SubActionRunner,
+    TypedField,
 };
 use forge_types::{ArgStack, SubActionOutcome, SubActionTelemetry};
 
@@ -37,30 +38,28 @@ impl DeleteRewardRunner {
     }
 }
 
+impl StepCatalogEntry for DeleteRewardRunner {
+    fn category(&self) -> SubActionCategory {
+        SubActionCategory::ChannelPoints
+    }
+    fn label(&self) -> &str {
+        "Delete Channel Point Reward"
+    }
+    fn summary(&self) -> &str {
+        "Permanently deletes a custom channel point reward."
+    }
+    fn search_text(&self) -> &str {
+        "twitch channel points custom reward delete remove redemption"
+    }
+    fn icon_name(&self) -> &str {
+        "star"
+    }
+}
+
 #[async_trait]
 impl SubActionRunner for DeleteRewardRunner {
     fn id(&self) -> &str {
         sub_action_ids::CHANNEL_POINTS_DELETE_REWARD
-    }
-
-    fn category(&self) -> SubActionCategory {
-        SubActionCategory::ChannelPoints
-    }
-
-    fn label(&self) -> &str {
-        "Delete Channel Point Reward"
-    }
-
-    fn summary(&self) -> &str {
-        "Permanently deletes a custom channel point reward."
-    }
-
-    fn search_text(&self) -> &str {
-        "twitch channel points custom reward delete remove redemption"
-    }
-
-    fn icon_name(&self) -> &str {
-        "star"
     }
 
     fn config_spec(&self) -> Option<ConfigSpec> {

@@ -87,13 +87,10 @@ fn action_banner(status: &PollStatus) -> Option<DetailSection> {
     ) {
         return None;
     }
-    let body = match status.last_error {
-        Some(PollFailure::TokenRejected) => messages::LABEL_BANNER_TOKEN_REJECTED,
-        Some(PollFailure::TokenUnreadable) => messages::LABEL_BANNER_TOKEN_UNREADABLE,
-        Some(PollFailure::JarNotSelected) => messages::LABEL_BANNER_JAR_NOT_SELECTED,
-        Some(PollFailure::JarMissing) => messages::LABEL_BANNER_JAR_MISSING,
-        _ => messages::LABEL_BANNER_TOKEN_MISSING,
-    };
+    let body = status
+        .last_error
+        .and_then(PollFailure::action_banner)
+        .unwrap_or(messages::LABEL_BANNER_TOKEN_MISSING);
     Some(DetailSection::WarningBanner {
         level: BannerLevel::Warning,
         title: status

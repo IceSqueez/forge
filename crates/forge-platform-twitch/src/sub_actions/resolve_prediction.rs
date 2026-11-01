@@ -3,7 +3,8 @@ use std::sync::Arc;
 use async_trait::async_trait;
 use forge_registry::SubActionConfig;
 use forge_registry::{
-    ConfigSpec, RunContext, SubActionCategory, SubActionRunner, TextEditor, TextField,
+    ConfigSpec, RunContext, StepCatalogEntry, SubActionCategory, SubActionRunner, TextEditor,
+    TextField,
 };
 use forge_types::{ArgStack, SubActionTelemetry};
 
@@ -40,30 +41,28 @@ impl ResolvePredictionRunner {
     }
 }
 
+impl StepCatalogEntry for ResolvePredictionRunner {
+    fn category(&self) -> SubActionCategory {
+        SubActionCategory::PollsPredictions
+    }
+    fn label(&self) -> &str {
+        "Resolve Prediction"
+    }
+    fn summary(&self) -> &str {
+        "Resolves a prediction by declaring a winning outcome and distributing points to winners."
+    }
+    fn search_text(&self) -> &str {
+        "twitch prediction resolve win outcome declare result"
+    }
+    fn icon_name(&self) -> &str {
+        "trophy"
+    }
+}
+
 #[async_trait]
 impl SubActionRunner for ResolvePredictionRunner {
     fn id(&self) -> &str {
         KIND_ID
-    }
-
-    fn category(&self) -> SubActionCategory {
-        SubActionCategory::PollsPredictions
-    }
-
-    fn label(&self) -> &str {
-        "Resolve Prediction"
-    }
-
-    fn summary(&self) -> &str {
-        "Resolves a prediction by declaring a winning outcome and distributing points to winners."
-    }
-
-    fn search_text(&self) -> &str {
-        "twitch prediction resolve win outcome declare result"
-    }
-
-    fn icon_name(&self) -> &str {
-        "trophy"
     }
 
     fn config_spec(&self) -> Option<ConfigSpec> {

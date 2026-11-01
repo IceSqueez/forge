@@ -3,8 +3,8 @@ use std::sync::Arc;
 use async_trait::async_trait;
 use forge_registry::SubActionConfig;
 use forge_registry::{
-    ConfigProblem, ConfigSpec, RunContext, StepTimer, SubActionCategory, SubActionRunner,
-    TypedField,
+    ConfigProblem, ConfigSpec, RunContext, StepCatalogEntry, StepTimer, SubActionCategory,
+    SubActionRunner, TypedField,
 };
 use forge_types::{ArgStack, SubActionTelemetry};
 
@@ -32,30 +32,28 @@ impl DeleteMessageRunner {
     }
 }
 
+impl StepCatalogEntry for DeleteMessageRunner {
+    fn category(&self) -> SubActionCategory {
+        SubActionCategory::Integration
+    }
+    fn label(&self) -> &str {
+        "Delete Webhook Message"
+    }
+    fn summary(&self) -> &str {
+        "Deletes a previously posted Discord webhook message."
+    }
+    fn search_text(&self) -> &str {
+        "discord webhook delete remove message"
+    }
+    fn icon_name(&self) -> &str {
+        "trash"
+    }
+}
+
 #[async_trait]
 impl SubActionRunner for DeleteMessageRunner {
     fn id(&self) -> &str {
         sub_action_ids::WEBHOOK_DELETE_MESSAGE
-    }
-
-    fn category(&self) -> SubActionCategory {
-        SubActionCategory::Integration
-    }
-
-    fn label(&self) -> &str {
-        "Delete Webhook Message"
-    }
-
-    fn summary(&self) -> &str {
-        "Deletes a previously posted Discord webhook message."
-    }
-
-    fn search_text(&self) -> &str {
-        "discord webhook delete remove message"
-    }
-
-    fn icon_name(&self) -> &str {
-        "trash"
     }
 
     fn config_spec(&self) -> Option<ConfigSpec> {

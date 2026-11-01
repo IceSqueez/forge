@@ -1,0 +1,676 @@
+use std::collections::HashMap;
+use std::str::FromStr;
+use std::sync::Arc;
+
+use async_trait::async_trait;
+use forge_storage::{
+    ActionRepo, QueueRepo, StorageError, TriggerChanges, TriggerInstanceRepo, TriggerWiring,
+};
+use forge_types::{ActionId, PermissionRung, PlatformScope, TriggerInstance, TriggerInstanceId};
+
+use crate::codec::epoch::epoch_ms_now;
+use crate::codec::row_int::decode_u32;
+use crate::codec::wire_label::parse_label;
+use crate::error::SqliteStorageError;
+use crate::pool::SqlitePools;
+use crate::repos::action::upsert_action;
+use crate::repos::queue::{mark_overlay_alert_queue, upsert_queue};
+
+const REFERENCE_BLOCK_SAMPLE_NAMES: usize = 3;
+
+fn parse_id<T: serde::de::DeserializeOwned>(s: &str, label: &str) -> Result<T, SqliteStorageError> {
+    parse_label(s).map_err(|e| SqliteStorageError::Decode(format!("invalid {label} id '{s}': {e}")))
+}
+
+#[derive(sqlx::FromRow)]
+struct InstanceRow {
+    id: String,
+    kind_id: String,
+    name: String,
+    overrides: String,
+    enabled: i64,
+    user_defined: i64,
+    platform_scope: String,
+    cooldown_secs: i64,
+    cooldown_global: i64,
+    permission_rung: String,
+}
+
+fn decode_row(row: InstanceRow) -> Result<TriggerInstance, SqliteStorageError> {
+    let id: TriggerInstanceId = parse_id(&row.id, "trigger_instance")?;
+    let overrides = serde_json::from_str(&row.overrides)
+        .map_err(|e| SqliteStorageError::Decode(format!("invalid overrides json: {e}")))?;
+    let platform_scope = serde_json::from_str::<PlatformScope>(&row.platform_scope)
+        .map_err(|e| SqliteStorageError::Decode(format!("invalid platform_scope json: {e}")))?;
+    let permission_rung = PermissionRung::from_str(&row.permission_rung).map_err(|e| {
+        SqliteStorageError::Decode(format!(
+            "invalid permission_rung '{}': {e}",
+            row.permission_rung
+        ))
+    })?;
+    Ok(TriggerInstance {
+        id,
+        kind_id: row.kind_id,
+        name: row.name,
+        overrides,
+        enabled: row.enabled != 0,
+        user_defined: row.user_defined != 0,
+        platform_scope,
+        cooldown_secs: decode_u32("cooldown_secs", row.cooldown_secs)?,
+        cooldown_global: row.cooldown_global != 0,
+        permission_rung,
+    })
+}
+
+#[derive(sqlx::FromRow)]
+struct LinkedInstanceRow {
+    action_id: String,
+    #[sqlx(flatten)]
+    instance: InstanceRow,
+}
+
+pub(crate) struct SqliteTriggerInstanceRepo {
+    db: SqlitePools,
+}
+
+impl SqliteTriggerInstanceRepo {
+    pub(crate) fn new(db: SqlitePools) -> Self {
+        Self { db }
+    }
+}
+
+#[async_trait]
+impl TriggerInstanceRepo for SqliteTriggerInstanceRepo {
+    async fn count_of_kinds(&self, kind_ids: &[String]) -> Result<usize, StorageError> {
+        if kind_ids.is_empty() {
+            return Ok(0);
+        }
+        let mut query = sqlx::QueryBuilder::<sqlx::Sqlite>::new(
+            "SELECT COUNT(*) FROM trigger_instances WHERE archived_at IS NULL AND kind_id IN (",
+        );
+        let mut kinds = query.separated(", ");
+        for kind_id in kind_ids {
+            kinds.push_bind(kind_id);
+        }
+        query.push(")");
+        let count: i64 = query
+            .build_query_scalar()
+            .fetch_one(self.db.reader())
+            .await
+            .map_err(SqliteStorageError::Sqlx)?;
+        Ok(usize::try_from(count).unwrap_or(usize::MAX))
+    }
+
+    async fn list_all(&self) -> Result<Vec<TriggerInstance>, StorageError> {
+        let rows: Vec<InstanceRow> = sqlx::query_as(
+            "SELECT id, kind_id, name, overrides, enabled, user_defined, platform_scope,
+                    cooldown_secs, cooldown_global, permission_rung
+             FROM trigger_instances
+             WHERE archived_at IS NULL
+             ORDER BY user_defined ASC, name ASC",
+        )
+        .fetch_all(self.db.reader())
+        .await
+        .map_err(SqliteStorageError::Sqlx)?;
+
+        rows.into_iter()
+            .map(|row| decode_row(row).map_err(StorageError::from))
+            .collect()
+    }
+
+    async fn list_archived(&self) -> Result<Vec<TriggerInstance>, StorageError> {
+        let rows: Vec<InstanceRow> = sqlx::query_as(
+            "SELECT id, kind_id, name, overrides, enabled, user_defined, platform_scope,
+                    cooldown_secs, cooldown_global, permission_rung
+             FROM trigger_instances
+             WHERE archived_at IS NOT NULL
+             ORDER BY user_defined ASC, name ASC",
+        )
+        .fetch_all(self.db.reader())
+        .await
+        .map_err(SqliteStorageError::Sqlx)?;
+
+        rows.into_iter()
+            .map(|row| decode_row(row).map_err(StorageError::from))
+            .collect()
+    }
+
+    async fn list_user_defined(&self) -> Result<Vec<TriggerInstance>, StorageError> {
+        let rows: Vec<InstanceRow> = sqlx::query_as(
+            "SELECT id, kind_id, name, overrides, enabled, user_defined, platform_scope,
+                    cooldown_secs, cooldown_global, permission_rung
+             FROM trigger_instances WHERE user_defined = 1 AND archived_at IS NULL ORDER BY name",
+        )
+        .fetch_all(self.db.reader())
+        .await
+        .map_err(SqliteStorageError::Sqlx)?;
+
+        rows.into_iter()
+            .map(|row| decode_row(row).map_err(StorageError::from))
+            .collect()
+    }
+
+    async fn list_for_action(
+        &self,
+        action_id: ActionId,
+    ) -> Result<Vec<TriggerInstance>, StorageError> {
+        let action_id_str = action_id.to_string();
+        let rows: Vec<InstanceRow> = sqlx::query_as(
+            "SELECT ti.id, ti.kind_id, ti.name, ti.overrides, ti.enabled, ti.user_defined,
+                    ti.platform_scope, ti.cooldown_secs, ti.cooldown_global, ti.permission_rung
+             FROM trigger_instances ti
+             JOIN action_trigger_instances ati ON ati.trigger_instance_id = ti.id
+             WHERE ati.action_id = ? AND ti.archived_at IS NULL
+             ORDER BY ati.position, ti.id",
+        )
+        .bind(&action_id_str)
+        .fetch_all(self.db.reader())
+        .await
+        .map_err(SqliteStorageError::Sqlx)?;
+
+        rows.into_iter()
+            .map(|row| decode_row(row).map_err(StorageError::from))
+            .collect()
+    }
+
+    async fn instances_by_action(
+        &self,
+    ) -> Result<HashMap<ActionId, Vec<TriggerInstance>>, StorageError> {
+        let rows: Vec<LinkedInstanceRow> = sqlx::query_as(
+            "SELECT ati.action_id, ti.id, ti.kind_id, ti.name, ti.overrides, ti.enabled,
+                    ti.user_defined, ti.platform_scope, ti.cooldown_secs, ti.cooldown_global,
+                    ti.permission_rung
+             FROM trigger_instances ti
+             JOIN action_trigger_instances ati ON ati.trigger_instance_id = ti.id
+             WHERE ti.archived_at IS NULL
+             ORDER BY ati.action_id, ati.position, ti.id",
+        )
+        .fetch_all(self.db.reader())
+        .await
+        .map_err(SqliteStorageError::Sqlx)?;
+
+        let mut links: HashMap<ActionId, Vec<TriggerInstance>> = HashMap::new();
+        for row in rows {
+            links
+                .entry(parse_id(&row.action_id, "action")?)
+                .or_default()
+                .push(decode_row(row.instance)?);
+        }
+        Ok(links)
+    }
+
+    async fn actions_using(
+        &self,
+        instance_id: TriggerInstanceId,
+    ) -> Result<Vec<ActionId>, StorageError> {
+        let id_str = instance_id.to_string();
+        let rows: Vec<(String,)> = sqlx::query_as(
+            "SELECT ati.action_id
+             FROM action_trigger_instances ati
+             JOIN actions a ON a.id = ati.action_id
+             WHERE ati.trigger_instance_id = ? AND a.archived_at IS NULL",
+        )
+        .bind(&id_str)
+        .fetch_all(self.db.reader())
+        .await
+        .map_err(SqliteStorageError::Sqlx)?;
+
+        rows.into_iter()
+            .map(|(s,)| parse_id::<ActionId>(&s, "action").map_err(StorageError::from))
+            .collect()
+    }
+
+    async fn actions_by_instance(
+        &self,
+    ) -> Result<HashMap<TriggerInstanceId, Vec<ActionId>>, StorageError> {
+        let rows: Vec<(String, String)> = sqlx::query_as(
+            "SELECT ati.trigger_instance_id, ati.action_id
+             FROM action_trigger_instances ati
+             JOIN actions a ON a.id = ati.action_id
+             WHERE a.archived_at IS NULL",
+        )
+        .fetch_all(self.db.reader())
+        .await
+        .map_err(SqliteStorageError::Sqlx)?;
+
+        let mut links: HashMap<TriggerInstanceId, Vec<ActionId>> = HashMap::new();
+        for (instance, action) in rows {
+            links
+                .entry(parse_id(&instance, "trigger_instance")?)
+                .or_default()
+                .push(parse_id(&action, "action")?);
+        }
+        Ok(links)
+    }
+
+    async fn apply_changes(&self, changes: &TriggerChanges) -> Result<(), StorageError> {
+        let mut tx = self
+            .db
+            .writer()
+            .begin_with("BEGIN IMMEDIATE")
+            .await
+            .map_err(SqliteStorageError::Sqlx)?;
+
+        for instance_id in &changes.removed {
+            let id_str = instance_id.to_string();
+            sqlx::query("DELETE FROM action_trigger_instances WHERE trigger_instance_id = ?")
+                .bind(&id_str)
+                .execute(&mut *tx)
+                .await
+                .map_err(SqliteStorageError::Sqlx)?;
+            sqlx::query("DELETE FROM trigger_instances WHERE id = ?")
+                .bind(&id_str)
+                .execute(&mut *tx)
+                .await
+                .map_err(SqliteStorageError::Sqlx)?;
+        }
+        for (action_id, instance_id) in &changes.unlinked {
+            sqlx::query(
+                "DELETE FROM action_trigger_instances
+                 WHERE action_id = ? AND trigger_instance_id = ?",
+            )
+            .bind(action_id.to_string())
+            .bind(instance_id.to_string())
+            .execute(&mut *tx)
+            .await
+            .map_err(SqliteStorageError::Sqlx)?;
+        }
+        for instance in &changes.saved {
+            upsert_instance(&mut *tx, instance).await?;
+        }
+        for (action_id, instance_id) in &changes.linked {
+            ignore_unique_violation(append_link(&mut *tx, *action_id, *instance_id).await)?;
+        }
+
+        tx.commit().await.map_err(SqliteStorageError::Sqlx)?;
+        Ok(())
+    }
+
+    async fn commit_overlay_wiring(
+        &self,
+        wiring: &TriggerWiring,
+        _queues: Arc<dyn QueueRepo>,
+        _actions: Arc<dyn ActionRepo>,
+    ) -> Result<(), StorageError> {
+        let mut tx = self
+            .db
+            .writer()
+            .begin_with("BEGIN IMMEDIATE")
+            .await
+            .map_err(SqliteStorageError::Sqlx)?;
+
+        if let Some(queue) = &wiring.created_queue {
+            upsert_queue(&mut *tx, queue).await?;
+        }
+        mark_overlay_alert_queue(&mut *tx, wiring.action.queue_id).await?;
+        upsert_action(&mut *tx, &wiring.action).await?;
+        upsert_instance(&mut *tx, &wiring.instance).await?;
+        ignore_unique_violation(append_link(&mut *tx, wiring.action.id, wiring.instance.id).await)?;
+
+        tx.commit().await.map_err(SqliteStorageError::Sqlx)?;
+        Ok(())
+    }
+
+    async fn link_action(
+        &self,
+        action_id: ActionId,
+        instance_id: TriggerInstanceId,
+    ) -> Result<(), StorageError> {
+        ignore_unique_violation(append_link(self.db.writer(), action_id, instance_id).await)
+    }
+
+    async fn link_action_at(
+        &self,
+        action_id: ActionId,
+        instance_id: TriggerInstanceId,
+        position: i64,
+    ) -> Result<(), StorageError> {
+        let result = sqlx::query(
+            "INSERT INTO action_trigger_instances (action_id, trigger_instance_id, position)
+             VALUES (?, ?, ?)",
+        )
+        .bind(action_id.to_string())
+        .bind(instance_id.to_string())
+        .bind(position)
+        .execute(self.db.writer())
+        .await;
+
+        ignore_unique_violation(result)
+    }
+
+    async fn unlink_action(
+        &self,
+        action_id: ActionId,
+        instance_id: TriggerInstanceId,
+    ) -> Result<bool, StorageError> {
+        let action_id_str = action_id.to_string();
+        let instance_id_str = instance_id.to_string();
+
+        let result = sqlx::query(
+            "DELETE FROM action_trigger_instances
+             WHERE action_id = ? AND trigger_instance_id = ?",
+        )
+        .bind(&action_id_str)
+        .bind(&instance_id_str)
+        .execute(self.db.writer())
+        .await
+        .map_err(SqliteStorageError::Sqlx)?;
+
+        Ok(result.rows_affected() > 0)
+    }
+
+    async fn get(&self, id: TriggerInstanceId) -> Result<Option<TriggerInstance>, StorageError> {
+        let id_str = id.to_string();
+        let row: Option<InstanceRow> = sqlx::query_as(
+            "SELECT id, kind_id, name, overrides, enabled, user_defined, platform_scope,
+                    cooldown_secs, cooldown_global, permission_rung
+             FROM trigger_instances WHERE id = ? AND archived_at IS NULL",
+        )
+        .bind(&id_str)
+        .fetch_optional(self.db.reader())
+        .await
+        .map_err(SqliteStorageError::Sqlx)?;
+
+        row.map(|r| decode_row(r).map_err(StorageError::from))
+            .transpose()
+    }
+
+    async fn save(&self, instance: &TriggerInstance) -> Result<(), StorageError> {
+        upsert_instance(self.db.writer(), instance).await
+    }
+
+    async fn delete(&self, id: TriggerInstanceId) -> Result<bool, StorageError> {
+        let id_str = id.to_string();
+        let mut tx = self
+            .db
+            .writer()
+            .begin_with("BEGIN IMMEDIATE")
+            .await
+            .map_err(SqliteStorageError::Sqlx)?;
+
+        let live_users: Vec<(String,)> = sqlx::query_as(
+            "SELECT a.name FROM action_trigger_instances l
+             JOIN actions a ON a.id = l.action_id
+             WHERE l.trigger_instance_id = ? AND a.archived_at IS NULL
+             ORDER BY a.name",
+        )
+        .bind(&id_str)
+        .fetch_all(&mut *tx)
+        .await
+        .map_err(SqliteStorageError::Sqlx)?;
+
+        if !live_users.is_empty() {
+            return Err(StorageError::ReferenceBlock {
+                used_in_count: u32::try_from(live_users.len()).unwrap_or(u32::MAX),
+                sample_action_names: live_users
+                    .into_iter()
+                    .take(REFERENCE_BLOCK_SAMPLE_NAMES)
+                    .map(|(name,)| name)
+                    .collect(),
+            });
+        }
+
+        sqlx::query("DELETE FROM action_trigger_instances WHERE trigger_instance_id = ?")
+            .bind(&id_str)
+            .execute(&mut *tx)
+            .await
+            .map_err(SqliteStorageError::Sqlx)?;
+        let result = sqlx::query("DELETE FROM trigger_instances WHERE id = ?")
+            .bind(&id_str)
+            .execute(&mut *tx)
+            .await
+            .map_err(SqliteStorageError::Sqlx)?;
+
+        tx.commit().await.map_err(SqliteStorageError::Sqlx)?;
+        Ok(result.rows_affected() > 0)
+    }
+
+    async fn upsert_default(
+        &self,
+        kind_id: &str,
+        name: &str,
+    ) -> Result<TriggerInstanceId, StorageError> {
+        let new_id = TriggerInstanceId::new();
+        let new_id_str = new_id.to_string();
+
+        let result = sqlx::query(
+            "INSERT INTO trigger_instances
+                 (id, kind_id, name, overrides, enabled, user_defined, platform_scope)
+             VALUES (?, ?, ?, '{}', 1, 0, '\"any\"')
+             ON CONFLICT(kind_id) WHERE user_defined = 0 DO NOTHING",
+        )
+        .bind(&new_id_str)
+        .bind(kind_id)
+        .bind(name)
+        .execute(self.db.writer())
+        .await
+        .map_err(SqliteStorageError::Sqlx)?;
+
+        if result.rows_affected() == 1 {
+            return Ok(new_id);
+        }
+
+        let (existing_id_str,): (String,) = sqlx::query_as(
+            "SELECT id FROM trigger_instances WHERE kind_id = ? AND user_defined = 0",
+        )
+        .bind(kind_id)
+        .fetch_one(self.db.reader())
+        .await
+        .map_err(SqliteStorageError::Sqlx)?;
+
+        parse_id::<TriggerInstanceId>(&existing_id_str, "trigger_instance")
+            .map_err(StorageError::from)
+    }
+
+    async fn set_enabled(
+        &self,
+        id: TriggerInstanceId,
+        enabled: bool,
+    ) -> Result<bool, StorageError> {
+        match update_enabled(self.db.writer(), id, enabled).await {
+            Ok(()) => Ok(true),
+            Err(StorageError::NotFound { .. }) => Ok(false),
+            Err(other) => Err(other),
+        }
+    }
+
+    async fn set_all_enabled(
+        &self,
+        ids: &[TriggerInstanceId],
+        enabled: bool,
+    ) -> Result<(), StorageError> {
+        let mut tx = self
+            .db
+            .writer()
+            .begin_with("BEGIN IMMEDIATE")
+            .await
+            .map_err(SqliteStorageError::Sqlx)?;
+        for id in ids {
+            update_enabled(&mut *tx, *id, enabled).await?;
+        }
+        tx.commit().await.map_err(SqliteStorageError::Sqlx)?;
+        Ok(())
+    }
+
+    async fn toggle_enabled(&self, id: TriggerInstanceId) -> Result<Option<bool>, StorageError> {
+        let row: Option<(i64,)> = sqlx::query_as(
+            "UPDATE trigger_instances SET enabled = CASE enabled WHEN 0 THEN 1 ELSE 0 END \
+             WHERE id = ? AND archived_at IS NULL RETURNING enabled",
+        )
+        .bind(id.to_string())
+        .fetch_optional(self.db.writer())
+        .await
+        .map_err(SqliteStorageError::Sqlx)?;
+
+        Ok(row.map(|(enabled,)| enabled != 0))
+    }
+
+    async fn archive(&self, id: TriggerInstanceId) -> Result<bool, StorageError> {
+        let id_str = id.to_string();
+        let now_ms = epoch_ms_now();
+        let result = sqlx::query(
+            "UPDATE trigger_instances SET archived_at = ? WHERE id = ? AND archived_at IS NULL",
+        )
+        .bind(now_ms)
+        .bind(&id_str)
+        .execute(self.db.writer())
+        .await
+        .map_err(SqliteStorageError::Sqlx)?;
+
+        Ok(result.rows_affected() > 0)
+    }
+
+    async fn restore(&self, id: TriggerInstanceId) -> Result<bool, StorageError> {
+        let id_str = id.to_string();
+        let result = sqlx::query(
+            "UPDATE trigger_instances SET archived_at = NULL WHERE id = ? AND archived_at IS NOT NULL",
+        )
+        .bind(&id_str)
+        .execute(self.db.writer())
+        .await
+        .map_err(SqliteStorageError::Sqlx)?;
+
+        Ok(result.rows_affected() > 0)
+    }
+}
+
+async fn update_enabled<'e>(
+    executor: impl sqlx::SqliteExecutor<'e>,
+    id: TriggerInstanceId,
+    enabled: bool,
+) -> Result<(), StorageError> {
+    let id_str = id.to_string();
+    let result = sqlx::query("UPDATE trigger_instances SET enabled = ? WHERE id = ?")
+        .bind(i64::from(enabled))
+        .bind(&id_str)
+        .execute(executor)
+        .await
+        .map_err(SqliteStorageError::Sqlx)?;
+
+    if result.rows_affected() == 0 {
+        return Err(StorageError::NotFound { key: id_str });
+    }
+    Ok(())
+}
+
+pub(crate) async fn upsert_instance<'e>(
+    executor: impl sqlx::SqliteExecutor<'e>,
+    instance: &TriggerInstance,
+) -> Result<(), StorageError> {
+    let id_str = instance.id.to_string();
+    let overrides_json =
+        serde_json::to_string(&instance.overrides).map_err(StorageError::Serialization)?;
+    let platform_scope_json =
+        serde_json::to_string(&instance.platform_scope).map_err(StorageError::Serialization)?;
+    let enabled = i64::from(instance.enabled);
+    let user_defined = i64::from(instance.user_defined);
+
+    let cooldown_secs: i64 = instance.cooldown_secs.into();
+    let cooldown_global = i64::from(instance.cooldown_global);
+    let permission_rung = instance.permission_rung.as_str();
+
+    sqlx::query(
+        "INSERT INTO trigger_instances
+             (id, kind_id, name, overrides, enabled, user_defined, platform_scope,
+              cooldown_secs, cooldown_global, permission_rung)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+         ON CONFLICT(id) DO UPDATE SET
+             kind_id         = excluded.kind_id,
+             name            = excluded.name,
+             overrides       = excluded.overrides,
+             enabled         = excluded.enabled,
+             user_defined    = excluded.user_defined,
+             platform_scope  = excluded.platform_scope,
+             cooldown_secs   = excluded.cooldown_secs,
+             cooldown_global = excluded.cooldown_global,
+             permission_rung = excluded.permission_rung",
+    )
+    .bind(&id_str)
+    .bind(&instance.kind_id)
+    .bind(&instance.name)
+    .bind(&overrides_json)
+    .bind(enabled)
+    .bind(user_defined)
+    .bind(&platform_scope_json)
+    .bind(cooldown_secs)
+    .bind(cooldown_global)
+    .bind(permission_rung)
+    .execute(executor)
+    .await
+    .map_err(SqliteStorageError::Sqlx)?;
+
+    Ok(())
+}
+
+pub(crate) async fn append_link<'e>(
+    executor: impl sqlx::SqliteExecutor<'e>,
+    action_id: ActionId,
+    instance_id: TriggerInstanceId,
+) -> Result<sqlx::sqlite::SqliteQueryResult, sqlx::Error> {
+    let action_id_str = action_id.to_string();
+    sqlx::query(
+        "INSERT INTO action_trigger_instances (action_id, trigger_instance_id, position)
+         SELECT ?, ?, COALESCE(MAX(position), -1) + 1
+         FROM action_trigger_instances WHERE action_id = ?",
+    )
+    .bind(&action_id_str)
+    .bind(instance_id.to_string())
+    .bind(&action_id_str)
+    .execute(executor)
+    .await
+}
+
+pub(crate) fn ignore_unique_violation(
+    result: Result<sqlx::sqlite::SqliteQueryResult, sqlx::Error>,
+) -> Result<(), StorageError> {
+    match result {
+        Ok(_) => Ok(()),
+        Err(sqlx::Error::Database(db_err)) if db_err.is_unique_violation() => Ok(()),
+        Err(e) => Err(StorageError::from(SqliteStorageError::Sqlx(e))),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn row(permission_rung: &str) -> InstanceRow {
+        InstanceRow {
+            id: "01ARZ3NDEKTSV4RRFFQ69G5FAV".to_owned(),
+            kind_id: "twitch.chat.command".to_owned(),
+            name: "Gated".to_owned(),
+            overrides: "{}".to_owned(),
+            enabled: 1,
+            user_defined: 1,
+            platform_scope: "\"any\"".to_owned(),
+            cooldown_secs: 0,
+            cooldown_global: 1,
+            permission_rung: permission_rung.to_owned(),
+        }
+    }
+
+    #[test]
+    fn a_foreign_permission_rung_string_fails_the_row_decode() {
+        for foreign in ["regular", "owner", "", "Moderator"] {
+            let err = decode_row(row(foreign)).expect_err("must not decode");
+            assert!(
+                matches!(&err, SqliteStorageError::Decode(msg) if msg.contains(foreign)),
+                "expected a decode error naming {foreign:?}, got {err:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn a_canonical_permission_rung_string_decodes_to_its_rung() {
+        for rung in [
+            PermissionRung::Everyone,
+            PermissionRung::Subscriber,
+            PermissionRung::Vip,
+            PermissionRung::Moderator,
+            PermissionRung::Broadcaster,
+        ] {
+            let decoded = decode_row(row(rung.as_str())).expect("must decode");
+            assert_eq!(decoded.permission_rung, rung);
+        }
+    }
+}

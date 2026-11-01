@@ -14,8 +14,8 @@ use async_trait::async_trait;
 use forge_events::Event;
 use forge_events::EventSubscription;
 use forge_registry::{
-    FormField, RegistryError, RunContext, StepTimer, SubActionCategory, SubActionRegistry,
-    SubActionRunner,
+    FormField, RegistryError, RunContext, StepCatalogEntry, StepTimer, SubActionCategory,
+    SubActionRegistry, SubActionRunner,
 };
 use forge_runtime::{
     ActionCancelRegistry, Catalog, EventBus, MAX_PENDING_PER_QUEUE, NullEventLogRepo,
@@ -102,11 +102,7 @@ struct GateRunner {
     open: watch::Receiver<bool>,
 }
 
-#[async_trait]
-impl SubActionRunner for GateRunner {
-    fn id(&self) -> &str {
-        GATE_KIND_ID
-    }
+impl StepCatalogEntry for GateRunner {
     fn category(&self) -> SubActionCategory {
         SubActionCategory::Delay
     }
@@ -121,6 +117,13 @@ impl SubActionRunner for GateRunner {
     }
     fn icon_name(&self) -> &str {
         "clock-pause"
+    }
+}
+
+#[async_trait]
+impl SubActionRunner for GateRunner {
+    fn id(&self) -> &str {
+        GATE_KIND_ID
     }
     fn default_config(&self) -> SubActionConfig {
         SubActionConfig::new()

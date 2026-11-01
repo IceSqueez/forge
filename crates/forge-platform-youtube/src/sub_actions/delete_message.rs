@@ -3,13 +3,13 @@ use std::sync::Arc;
 use async_trait::async_trait;
 use forge_registry::SubActionConfig;
 use forge_registry::{
-    ConfigSpec, RunContext, StepTimer, SubActionCategory, SubActionRunner, TextEditor, TextField,
-    TypedField,
+    ConfigSpec, RunContext, StepCatalogEntry, StepTimer, SubActionCategory, SubActionRunner,
+    TextEditor, TextField, TypedField,
 };
 use forge_types::{ArgStack, SubActionTelemetry};
 
 use super::step_failure;
-use crate::send_chat::YoutubeSendChat;
+use crate::chat::send_chat::YoutubeSendChat;
 use crate::vocabulary::{config_keys, messages, sub_action_ids};
 
 const KIND_ID: &str = sub_action_ids::CHAT_DELETE_MESSAGE;
@@ -38,30 +38,28 @@ impl DeleteMessageRunner {
     }
 }
 
+impl StepCatalogEntry for DeleteMessageRunner {
+    fn category(&self) -> SubActionCategory {
+        SubActionCategory::Moderation
+    }
+    fn label(&self) -> &str {
+        "Delete Message"
+    }
+    fn summary(&self) -> &str {
+        "Removes a message from the active YouTube live chat by its resource id."
+    }
+    fn search_text(&self) -> &str {
+        "youtube chat delete remove message moderation live"
+    }
+    fn icon_name(&self) -> &str {
+        "delete"
+    }
+}
+
 #[async_trait]
 impl SubActionRunner for DeleteMessageRunner {
     fn id(&self) -> &str {
         KIND_ID
-    }
-
-    fn category(&self) -> SubActionCategory {
-        SubActionCategory::Moderation
-    }
-
-    fn label(&self) -> &str {
-        "Delete Message"
-    }
-
-    fn summary(&self) -> &str {
-        "Removes a message from the active YouTube live chat by its resource id."
-    }
-
-    fn search_text(&self) -> &str {
-        "youtube chat delete remove message moderation live"
-    }
-
-    fn icon_name(&self) -> &str {
-        "delete"
     }
 
     fn config_spec(&self) -> Option<ConfigSpec> {
@@ -102,7 +100,7 @@ mod tests {
     use forge_registry::TriggerKindDescriptor;
 
     use super::*;
-    use crate::live_chat_id::LiveChatIdHandle;
+    use crate::broadcast::live_chat_id::LiveChatIdHandle;
     use forge_types::SubActionOutcome;
     use forge_types::Variant;
     use std::collections::BTreeMap;

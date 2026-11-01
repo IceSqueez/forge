@@ -4,7 +4,8 @@ use std::sync::Arc;
 use async_trait::async_trait;
 use forge_registry::{
     ChainLayout, CodeField, CodeKind, CodeLanguage, ConfigProblem, ConfigSpec, RunContext,
-    StepChainField, StepTimer, SubActionCategory, SubActionRunner, ToggleField, TypedField,
+    StepCatalogEntry, StepChainField, StepTimer, SubActionCategory, SubActionRunner, ToggleField,
+    TypedField,
 };
 use forge_types::{ArgStack, SubActionConfig, SubActionTelemetry, Variant};
 
@@ -66,30 +67,28 @@ impl CoreLogicIfThenElseRunner {
     }
 }
 
+impl StepCatalogEntry for CoreLogicIfThenElseRunner {
+    fn category(&self) -> SubActionCategory {
+        SubActionCategory::Logic
+    }
+    fn label(&self) -> &str {
+        "If / Then / Else"
+    }
+    fn summary(&self) -> &str {
+        "Run one of two sub-chains depending on a condition"
+    }
+    fn search_text(&self) -> &str {
+        "if then else condition branch conditional flow control"
+    }
+    fn icon_name(&self) -> &str {
+        "git-branch"
+    }
+}
+
 #[async_trait]
 impl SubActionRunner for CoreLogicIfThenElseRunner {
     fn id(&self) -> &str {
         "core.logic.if_then_else"
-    }
-
-    fn category(&self) -> SubActionCategory {
-        SubActionCategory::Logic
-    }
-
-    fn label(&self) -> &str {
-        "If / Then / Else"
-    }
-
-    fn summary(&self) -> &str {
-        "Run one of two sub-chains depending on a condition"
-    }
-
-    fn search_text(&self) -> &str {
-        "if then else condition branch conditional flow control"
-    }
-
-    fn icon_name(&self) -> &str {
-        "git-branch"
     }
 
     fn config_spec(&self) -> Option<ConfigSpec> {

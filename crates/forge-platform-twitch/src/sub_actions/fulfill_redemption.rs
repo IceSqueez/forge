@@ -3,8 +3,8 @@ use std::sync::Arc;
 use async_trait::async_trait;
 use forge_registry::SubActionConfig;
 use forge_registry::{
-    ConfigProblem, ConfigSpec, PickedTextField, RunContext, StepTimer, SubActionCategory,
-    SubActionRunner, TextEditor, TextField, TextPicker, TypedField,
+    ConfigProblem, ConfigSpec, PickedTextField, RunContext, StepCatalogEntry, StepTimer,
+    SubActionCategory, SubActionRunner, TextEditor, TextField, TextPicker, TypedField,
 };
 use forge_types::{ArgStack, SubActionOutcome, SubActionTelemetry};
 
@@ -106,30 +106,28 @@ pub(crate) async fn execute_redemption_runner(
     (timer.finish(outcome), None)
 }
 
+impl StepCatalogEntry for FulfillRedemptionRunner {
+    fn category(&self) -> SubActionCategory {
+        SubActionCategory::ChannelPoints
+    }
+    fn label(&self) -> &str {
+        "Fulfill Channel Point Redemption"
+    }
+    fn summary(&self) -> &str {
+        "Marks a channel point redemption as fulfilled."
+    }
+    fn search_text(&self) -> &str {
+        "twitch channel points redemption fulfill complete done"
+    }
+    fn icon_name(&self) -> &str {
+        "check"
+    }
+}
+
 #[async_trait]
 impl SubActionRunner for FulfillRedemptionRunner {
     fn id(&self) -> &str {
         KIND_ID
-    }
-
-    fn category(&self) -> SubActionCategory {
-        SubActionCategory::ChannelPoints
-    }
-
-    fn label(&self) -> &str {
-        "Fulfill Channel Point Redemption"
-    }
-
-    fn summary(&self) -> &str {
-        "Marks a channel point redemption as fulfilled."
-    }
-
-    fn search_text(&self) -> &str {
-        "twitch channel points redemption fulfill complete done"
-    }
-
-    fn icon_name(&self) -> &str {
-        "check"
     }
 
     fn config_spec(&self) -> Option<ConfigSpec> {

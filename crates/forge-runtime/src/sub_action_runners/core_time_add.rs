@@ -2,8 +2,8 @@ use crate::core_messages;
 use async_trait::async_trait;
 use forge_registry::{
     ChoiceField, ConfigChoice, ConfigProblem, ConfigSpec, DateTimeField, IntegerEditor,
-    IntegerField, ProducedVariable, RunContext, StepTimer, SubActionCategory, SubActionIo,
-    SubActionRunner, TypedField, ValueBounds, VariableField,
+    IntegerField, ProducedVariable, RunContext, StepCatalogEntry, StepTimer, SubActionCategory,
+    SubActionIo, SubActionRunner, TypedField, ValueBounds, VariableField,
 };
 use forge_types::{ArgStack, SubActionConfig, SubActionTelemetry, Variant, VariantKind};
 use time::{Date, Duration, Month, OffsetDateTime};
@@ -136,30 +136,28 @@ fn read_config(config: &SubActionConfig, args: &ArgStack) -> Result<AddConfig, C
 
 pub(crate) struct CoreTimeAddRunner;
 
+impl StepCatalogEntry for CoreTimeAddRunner {
+    fn category(&self) -> SubActionCategory {
+        SubActionCategory::Util
+    }
+    fn label(&self) -> &str {
+        "Time - Date/Time Arithmetic"
+    }
+    fn summary(&self) -> &str {
+        "Add or subtract an amount from a UTC datetime; month/year addition clamps to the last valid day on overflow"
+    }
+    fn search_text(&self) -> &str {
+        "time add subtract arithmetic shift date days months years seconds minutes hours"
+    }
+    fn icon_name(&self) -> &str {
+        "clock-plus"
+    }
+}
+
 #[async_trait]
 impl SubActionRunner for CoreTimeAddRunner {
     fn id(&self) -> &str {
         "core.time.add"
-    }
-
-    fn category(&self) -> SubActionCategory {
-        SubActionCategory::Util
-    }
-
-    fn label(&self) -> &str {
-        "Time - Date/Time Arithmetic"
-    }
-
-    fn summary(&self) -> &str {
-        "Add or subtract an amount from a UTC datetime; month/year addition clamps to the last valid day on overflow"
-    }
-
-    fn search_text(&self) -> &str {
-        "time add subtract arithmetic shift date days months years seconds minutes hours"
-    }
-
-    fn icon_name(&self) -> &str {
-        "clock-plus"
     }
 
     fn config_spec(&self) -> Option<ConfigSpec> {

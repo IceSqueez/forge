@@ -3,8 +3,8 @@ use std::sync::Arc;
 use async_trait::async_trait;
 use forge_registry::SubActionConfig;
 use forge_registry::{
-    ConfigProblem, ConfigReason, ConfigSpec, Interpolation, RunContext, StepTimer,
-    SubActionCategory, SubActionRunner, TextEditor, TextField, TypedField,
+    ConfigProblem, ConfigReason, ConfigSpec, Interpolation, RunContext, StepCatalogEntry,
+    StepTimer, SubActionCategory, SubActionRunner, TextEditor, TextField, TypedField,
 };
 use forge_types::{ArgStack, SubActionTelemetry};
 
@@ -58,30 +58,28 @@ impl EditMessageRunner {
     }
 }
 
+impl StepCatalogEntry for EditMessageRunner {
+    fn category(&self) -> SubActionCategory {
+        SubActionCategory::Integration
+    }
+    fn label(&self) -> &str {
+        "Edit Message"
+    }
+    fn summary(&self) -> &str {
+        "Edits a previously posted Discord webhook message."
+    }
+    fn search_text(&self) -> &str {
+        "discord webhook edit message update"
+    }
+    fn icon_name(&self) -> &str {
+        "pencil"
+    }
+}
+
 #[async_trait]
 impl SubActionRunner for EditMessageRunner {
     fn id(&self) -> &str {
         sub_action_ids::WEBHOOK_UPDATE_MESSAGE
-    }
-
-    fn category(&self) -> SubActionCategory {
-        SubActionCategory::Integration
-    }
-
-    fn label(&self) -> &str {
-        "Edit Message"
-    }
-
-    fn summary(&self) -> &str {
-        "Edits a previously posted Discord webhook message."
-    }
-
-    fn search_text(&self) -> &str {
-        "discord webhook edit message update"
-    }
-
-    fn icon_name(&self) -> &str {
-        "pencil"
     }
 
     fn config_spec(&self) -> Option<ConfigSpec> {

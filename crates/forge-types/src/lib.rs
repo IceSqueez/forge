@@ -10,6 +10,7 @@ mod hex;
 mod ids;
 mod integration;
 mod latest;
+mod live_slot;
 mod log_level;
 mod log_target;
 mod message;
@@ -54,6 +55,7 @@ pub use latest::{
     LATEST_DONATION_SLOT, LatestScope, LatestValue, LatestValueReader, NOW_PLAYING_SLOT,
     latest_fields,
 };
+pub use live_slot::LiveSlot;
 pub use log_level::LogLevel;
 pub use log_target::SCRIPT_LOG_TARGET;
 pub use message::{

@@ -3,13 +3,13 @@ use std::sync::Arc;
 use async_trait::async_trait;
 use forge_registry::SubActionConfig;
 use forge_registry::{
-    ConfigProblem, ConfigReason, ConfigSpec, FieldLiteral, FormField, RunContext, StepTimer,
-    SubActionCategory, SubActionRunner, TextEditor, TextField, TypedField, ValueBounds,
+    ConfigProblem, ConfigReason, ConfigSpec, FieldLiteral, FormField, RunContext, StepCatalogEntry,
+    StepTimer, SubActionCategory, SubActionRunner, TextEditor, TextField, TypedField, ValueBounds,
 };
 use forge_types::{ArgStack, SubActionTelemetry, Variant};
 
 use super::step_failure;
-use crate::send_chat::YoutubeSendChat;
+use crate::chat::send_chat::YoutubeSendChat;
 use crate::vocabulary::{config_keys, sub_action_ids};
 
 const MIN_OPTIONS: usize = 2;
@@ -103,30 +103,28 @@ impl CreatePollRunner {
     }
 }
 
+impl StepCatalogEntry for CreatePollRunner {
+    fn category(&self) -> SubActionCategory {
+        SubActionCategory::PollsPredictions
+    }
+    fn label(&self) -> &str {
+        "Create Live Poll"
+    }
+    fn summary(&self) -> &str {
+        "Posts a poll to the active YouTube live chat."
+    }
+    fn search_text(&self) -> &str {
+        "youtube poll vote create question options live chat"
+    }
+    fn icon_name(&self) -> &str {
+        "chart-bar"
+    }
+}
+
 #[async_trait]
 impl SubActionRunner for CreatePollRunner {
     fn id(&self) -> &str {
         sub_action_ids::CHAT_CREATE_POLL
-    }
-
-    fn category(&self) -> SubActionCategory {
-        SubActionCategory::PollsPredictions
-    }
-
-    fn label(&self) -> &str {
-        "Create Live Poll"
-    }
-
-    fn summary(&self) -> &str {
-        "Posts a poll to the active YouTube live chat."
-    }
-
-    fn search_text(&self) -> &str {
-        "youtube poll vote create question options live chat"
-    }
-
-    fn icon_name(&self) -> &str {
-        "chart-bar"
     }
 
     fn config_spec(&self) -> Option<ConfigSpec> {
@@ -161,7 +159,7 @@ mod tests {
     use wiremock::{Mock, MockServer, ResponseTemplate};
 
     use super::*;
-    use crate::live_chat_id::LiveChatIdHandle;
+    use crate::broadcast::live_chat_id::LiveChatIdHandle;
     use forge_registry::RegistryError;
     use forge_types::SubActionOutcome;
     use std::collections::BTreeMap;

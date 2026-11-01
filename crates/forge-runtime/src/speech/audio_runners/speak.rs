@@ -1,0 +1,678 @@
+use std::sync::Arc;
+
+use async_trait::async_trait;
+use forge_registry::{
+    BlankableSelectField, ConfigProblem, ConfigSpec, ENGINE_VOICE_OPTIONS_KEY, OptionalField,
+    OptionalSwitch, RunContext, StepCatalogEntry, StepTimer, SubActionCategory, SubActionRunner,
+    TypedField,
+};
+use forge_types::{
+    ArgStack, MessageRef, PlatformId, SubActionConfig, SubActionOutcome, SubActionTelemetry,
+};
+
+use super::{SPEECH_TEXT, WAIT_FOR_COMPLETION};
+use crate::chat::twitch_emote_lexicon::TwitchEmoteLexicon;
+use crate::speech::engine_voice_ref::EngineVoiceRef;
+use crate::speech::speak_dispatcher::{SpeakDispatcher, SpeechOrigin, SpeechRequest};
+
+pub const SPEAK_KIND_ID: &str = "tts.speak.text";
+const VOICE_KEY: &str = "voice";
+const REWARD_ID_VARIABLE: &str = "reward.id";
+
+const VOICE: OptionalField<BlankableSelectField<String>> = OptionalField {
+    field: BlankableSelectField::new(VOICE_KEY, "Voice", ENGINE_VOICE_OPTIONS_KEY),
+    switch: OptionalSwitch::SharedKey {
+        label: Some("Voice (leave empty for the default voice)"),
+    },
+};
+
+const CONFIG: ConfigSpec = ConfigSpec::new(&[&SPEECH_TEXT, &VOICE, &WAIT_FOR_COMPLETION]);
+
+struct Speech {
+    text: String,
+    voice: Option<String>,
+    wait_for_completion: bool,
+}
+
+fn read_config(config: &SubActionConfig, args: &ArgStack) -> Result<Speech, ConfigProblem> {
+    Ok(Speech {
+        text: SPEECH_TEXT.read(config, args)?,
+        voice: VOICE.read(config, args)?.flatten(),
+        wait_for_completion: WAIT_FOR_COMPLETION.read(config, args)?,
+    })
+}
+
+pub struct SpeakRunner {
+    speak: Arc<dyn SpeakDispatcher>,
+    reward_emotes: TwitchEmoteLexicon,
+}
+
+impl SpeakRunner {
+    pub fn new(speak: Arc<dyn SpeakDispatcher>) -> Self {
+        Self {
+            speak,
+            reward_emotes: TwitchEmoteLexicon::default(),
+        }
+    }
+
+    pub fn with_reward_emotes(mut self, lexicon: TwitchEmoteLexicon) -> Self {
+        self.reward_emotes = lexicon;
+        self
+    }
+
+    async fn installed_voice(&self, stored: Option<String>) -> Result<Option<String>, MessageRef> {
+        let Some(stored) = stored else {
+            return Ok(None);
+        };
+        EngineVoiceRef::installed(&stored, &self.speak.available_voices().await)
+            .map(|voice| Some(voice.to_string()))
+    }
+
+    fn add_learned_reward_emotes(&self, origin: &mut SpeechOrigin, text: &str) {
+        let from_twitch = origin
+            .viewer
+            .as_ref()
+            .is_some_and(|viewer| viewer.platform == PlatformId::Twitch.as_str());
+        if from_twitch {
+            origin
+                .message_emotes
+                .extend(self.reward_emotes.codes_in(text));
+        }
+    }
+}
+
+impl StepCatalogEntry for SpeakRunner {
+    fn category(&self) -> SubActionCategory {
+        SubActionCategory::Tts
+    }
+    fn label(&self) -> &str {
+        "Speak Text"
+    }
+    fn summary(&self) -> &str {
+        "Send text to the TTS speak queue, optionally with a chosen engine voice"
+    }
+    fn search_text(&self) -> &str {
+        "speak tts text voice engine queue"
+    }
+    fn icon_name(&self) -> &str {
+        "message-circle"
+    }
+}
+
+#[async_trait]
+impl SubActionRunner for SpeakRunner {
+    fn id(&self) -> &str {
+        SPEAK_KIND_ID
+    }
+
+    fn config_spec(&self) -> Option<ConfigSpec> {
+        Some(CONFIG)
+    }
+
+    async fn execute(
+        &self,
+        config: &SubActionConfig,
+        ctx: &RunContext<'_>,
+    ) -> (SubActionTelemetry, Option<ArgStack>) {
+        let timer = StepTimer::start(ctx, SPEAK_KIND_ID);
+        let Speech {
+            text,
+            voice,
+            wait_for_completion,
+        } = match read_config(config, ctx.arg_stack) {
+            Ok(speech) => speech,
+            Err(problem) => return (timer.invalid_config(&problem), None),
+        };
+
+        let voice = match self.installed_voice(voice).await {
+            Ok(voice) => voice,
+            Err(reason) => {
+                return (timer.finish(SubActionOutcome::Failed(reason.into())), None);
+            }
+        };
+
+        let is_reward = ctx.arg_stack.get(REWARD_ID_VARIABLE).is_some();
+        let mut origin = SpeechOrigin::from_args(ctx.arg_stack, Some(ctx.parent_event_id));
+        if is_reward {
+            self.add_learned_reward_emotes(&mut origin, &text);
+        }
+        let request = if is_reward {
+            SpeechRequest::reward_sourced(text, voice, origin)
+        } else {
+            SpeechRequest::chosen_voice(text, voice, origin)
+        };
+        let dispatch_result = if wait_for_completion {
+            self.speak.speak_and_wait(request, ctx.cancel.clone()).await
+        } else {
+            self.speak
+                .speak_queued_for_run(request, ctx.cancel.clone())
+                .await
+        };
+
+        (
+            timer.finish(crate::speech::speak_dispatcher::dispatch_outcome(
+                &dispatch_result,
+            )),
+            None,
+        )
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use crate::core_messages;
+    use crate::speech::speak_dispatcher::{SpeechVoice, VoiceDescriptor};
+    use forge_events::test_support::NullPublisher;
+    use forge_registry::CancelSignal;
+    use std::sync::Mutex;
+
+    use async_trait::async_trait;
+    use forge_types::{EventId, MessageCode, MessageRef, SubActionOutcome};
+
+    use super::*;
+    use crate::speech::speak_dispatcher::{SpeakDispatcher, SpeakingViewer};
+    use crate::test_support::failure::{failure_message, verbatim_arg};
+    use forge_events::Event;
+    use forge_types::Variant;
+
+    #[derive(Debug, Clone, PartialEq, Eq)]
+    enum Path {
+        Speak,
+        Reward,
+    }
+
+    fn path_of(is_reward: bool) -> Path {
+        if is_reward { Path::Reward } else { Path::Speak }
+    }
+
+    #[derive(Debug, Clone)]
+    struct Heard {
+        text: String,
+        path: Path,
+        origin: SpeechOrigin,
+    }
+
+    #[derive(Default)]
+    struct Capturing {
+        heard: Mutex<Vec<Heard>>,
+    }
+
+    impl Capturing {
+        fn only(&self) -> Heard {
+            let heard = self.heard.lock().unwrap();
+            assert_eq!(heard.len(), 1, "expected exactly one dispatch: {heard:?}");
+            heard[0].clone()
+        }
+    }
+
+    #[async_trait]
+    impl SpeakDispatcher for Capturing {
+        async fn speak(&self, request: SpeechRequest) -> Result<(), MessageRef> {
+            self.heard.lock().unwrap().push(Heard {
+                text: request.text,
+                path: path_of(request.is_reward),
+                origin: request.origin,
+            });
+            Ok(())
+        }
+
+        async fn speak_queued_for_run(
+            &self,
+            request: SpeechRequest,
+            _run: CancelSignal,
+        ) -> Result<(), MessageRef> {
+            self.speak(request).await
+        }
+
+        async fn speak_and_wait(
+            &self,
+            request: SpeechRequest,
+            _cancel: CancelSignal,
+        ) -> Result<(), MessageRef> {
+            self.speak(request).await
+        }
+
+        async fn available_voices(&self) -> Vec<VoiceDescriptor> {
+            Vec::new()
+        }
+    }
+
+    struct FailSpeaker;
+
+    #[async_trait]
+    impl SpeakDispatcher for FailSpeaker {
+        async fn speak(&self, _request: SpeechRequest) -> Result<(), MessageRef> {
+            Err(MessageRef::new(MessageCode::from_static(
+                "speak",
+                "queue_stopped",
+            )))
+        }
+
+        async fn speak_queued_for_run(
+            &self,
+            request: SpeechRequest,
+            _run: CancelSignal,
+        ) -> Result<(), MessageRef> {
+            self.speak(request).await
+        }
+
+        async fn speak_and_wait(
+            &self,
+            request: SpeechRequest,
+            _cancel: CancelSignal,
+        ) -> Result<(), MessageRef> {
+            self.speak(request).await
+        }
+
+        async fn available_voices(&self) -> Vec<VoiceDescriptor> {
+            Vec::new()
+        }
+    }
+
+    fn make_ctx(stack: &ArgStack) -> RunContext<'_> {
+        RunContext::leaf(stack, 0, EventId::new(), &NullPublisher)
+    }
+
+    fn config(text: &str, wait: bool) -> SubActionConfig {
+        let mut cfg = SubActionConfig::new();
+        cfg.insert("text".to_owned(), Variant::String(text.to_owned()));
+        cfg.insert("wait_for_completion".to_owned(), Variant::Bool(wait));
+        cfg
+    }
+
+    fn chat_stack() -> ArgStack {
+        ArgStack::new()
+            .set(
+                "user_id".to_owned(),
+                Variant::String("141981764".to_owned()),
+            )
+            .set(
+                "user_name".to_owned(),
+                Variant::String("NovaFox".to_owned()),
+            )
+            .set(
+                "user_login".to_owned(),
+                Variant::String("novafox".to_owned()),
+            )
+            .set(
+                "user_platform".to_owned(),
+                Variant::String("twitch".to_owned()),
+            )
+    }
+
+    fn nova() -> SpeakingViewer {
+        SpeakingViewer {
+            platform: "twitch".to_owned(),
+            id: "141981764".to_owned(),
+            name: "NovaFox".to_owned(),
+        }
+    }
+
+    #[tokio::test]
+    async fn a_chat_triggered_speak_carries_the_viewer_and_the_triggering_event() {
+        let speaker = Arc::new(Capturing::default());
+        let runner = SpeakRunner::new(speaker.clone());
+        let stack = chat_stack();
+        let ctx = make_ctx(&stack);
+
+        let (telemetry, _) = runner.execute(&config("hello", false), &ctx).await;
+
+        assert!(matches!(telemetry.outcome, SubActionOutcome::Success));
+        assert_eq!(
+            speaker.only().origin,
+            SpeechOrigin {
+                viewer: Some(nova()),
+                caused_by: Some(ctx.parent_event_id),
+                ..Default::default()
+            }
+        );
+    }
+
+    #[tokio::test]
+    async fn every_dispatch_path_forwards_the_viewer() {
+        for (wait, reward, path) in [
+            (true, false, Path::Speak),
+            (false, false, Path::Speak),
+            (true, true, Path::Reward),
+            (false, true, Path::Reward),
+        ] {
+            let speaker = Arc::new(Capturing::default());
+            let runner = SpeakRunner::new(speaker.clone());
+            let mut stack = chat_stack();
+            if reward {
+                stack = stack.set("reward.id".to_owned(), Variant::String("r-1".to_owned()));
+            }
+            let ctx = make_ctx(&stack);
+
+            runner.execute(&config("hello", wait), &ctx).await;
+
+            let heard = speaker.only();
+            assert_eq!(heard.path, path, "wait={wait} reward={reward}");
+            assert_eq!(
+                heard.origin.viewer,
+                Some(nova()),
+                "wait={wait} reward={reward} lost the viewer"
+            );
+        }
+    }
+
+    fn lexicon_knowing_lul() -> TwitchEmoteLexicon {
+        let lexicon = TwitchEmoteLexicon::default();
+        lexicon.learn_from(&Event::new(
+            forge_events::EventSource::Twitch,
+            "twitch.channel.chat.message",
+            serde_json::json!({
+                forge_types::ChatPayload::KEY: {
+                    "platform_msg_id": "m-1",
+                    "author": "NovaFox",
+                    "author_color": null,
+                    "segments": [{ "type": "emote", "id": "425618", "name": "LUL" }],
+                    "badges": [],
+                    "is_event": false,
+                    "event_detail": null,
+                }
+            }),
+        ));
+        lexicon
+    }
+
+    #[tokio::test]
+    async fn learned_twitch_emotes_reach_only_twitch_reward_speech() {
+        let strings = |codes: &[&str]| -> Vec<Variant> {
+            codes
+                .iter()
+                .map(|code| Variant::String((*code).to_owned()))
+                .collect()
+        };
+        for (label, platform, reward, message_emotes, text, expected) in [
+            ("twitch reward", "twitch", true, None, "LUL hi", vec!["LUL"]),
+            (
+                "twitch reward without codes",
+                "twitch",
+                true,
+                None,
+                "hi there",
+                vec![],
+            ),
+            ("kick reward", "kick", true, None, "LUL hi", vec![]),
+            (
+                "twitch chat",
+                "twitch",
+                false,
+                Some(strings(&["Kappa"])),
+                "LUL Kappa hi",
+                vec!["Kappa"],
+            ),
+        ] {
+            let speaker = Arc::new(Capturing::default());
+            let runner =
+                SpeakRunner::new(speaker.clone()).with_reward_emotes(lexicon_knowing_lul());
+            let mut stack = chat_stack().set(
+                "user_platform".to_owned(),
+                Variant::String(platform.to_owned()),
+            );
+            if reward {
+                stack = stack.set("reward.id".to_owned(), Variant::String("r-1".to_owned()));
+            }
+            if let Some(codes) = message_emotes {
+                stack = stack.set("message_emotes".to_owned(), Variant::Array(codes));
+            }
+            let ctx = make_ctx(&stack);
+
+            runner.execute(&config(text, false), &ctx).await;
+
+            assert_eq!(speaker.only().origin.message_emotes, expected, "{label}");
+        }
+    }
+
+    #[tokio::test]
+    async fn a_speak_without_a_triggering_viewer_carries_no_viewer() {
+        let speaker = Arc::new(Capturing::default());
+        let runner = SpeakRunner::new(speaker.clone());
+        let stack = ArgStack::new()
+            .set(
+                "timer.name".to_owned(),
+                Variant::String("hydrate".to_owned()),
+            )
+            .set("user".to_owned(), Variant::String("NovaFox".to_owned()));
+        let ctx = make_ctx(&stack);
+
+        runner.execute(&config("drink water", false), &ctx).await;
+
+        assert_eq!(speaker.only().origin.viewer, None);
+    }
+
+    #[tokio::test]
+    async fn a_dispatch_error_fails_the_step_with_its_catalogued_message_not_a_bare_code() {
+        let runner = SpeakRunner::new(Arc::new(FailSpeaker));
+        let stack = ArgStack::new();
+        let ctx = make_ctx(&stack);
+
+        let (telemetry, _) = runner.execute(&config("Hello!", false), &ctx).await;
+
+        assert_eq!(
+            failure_message(&telemetry.outcome),
+            &MessageRef::new(MessageCode::from_static("speak", "queue_stopped"))
+        );
+    }
+
+    #[tokio::test]
+    async fn text_is_interpolated_from_the_arg_stack() {
+        let speaker = Arc::new(Capturing::default());
+        let runner = SpeakRunner::new(speaker.clone());
+        let stack = ArgStack::new().set("user".to_owned(), Variant::String("Alice".to_owned()));
+        let ctx = make_ctx(&stack);
+
+        runner
+            .execute(&config("Welcome %user%!", false), &ctx)
+            .await;
+
+        assert_eq!(speaker.only().text, "Welcome Alice!");
+    }
+
+    #[derive(Default)]
+    struct VoicedSpeaker {
+        voices: Vec<VoiceDescriptor>,
+        dispatched: Mutex<Vec<(Path, Option<String>)>>,
+    }
+
+    impl VoicedSpeaker {
+        fn with_installed(engine_id: &str, voice_id: &str) -> Self {
+            Self {
+                voices: vec![VoiceDescriptor {
+                    id: voice_id.to_owned(),
+                    name: "Amy".to_owned(),
+                    locale: "en-US".to_owned(),
+                    engine_id: engine_id.to_owned(),
+                }],
+                dispatched: Mutex::new(Vec::new()),
+            }
+        }
+
+        fn dispatched(&self) -> Vec<(Path, Option<String>)> {
+            self.dispatched.lock().unwrap().clone()
+        }
+    }
+
+    #[async_trait]
+    impl SpeakDispatcher for VoicedSpeaker {
+        async fn speak(&self, request: SpeechRequest) -> Result<(), MessageRef> {
+            let SpeechVoice::Chosen(voice) = request.voice else {
+                panic!("the speak step dispatched a forced engine");
+            };
+            self.dispatched
+                .lock()
+                .unwrap()
+                .push((path_of(request.is_reward), voice));
+            Ok(())
+        }
+
+        async fn speak_queued_for_run(
+            &self,
+            request: SpeechRequest,
+            _run: CancelSignal,
+        ) -> Result<(), MessageRef> {
+            self.speak(request).await
+        }
+
+        async fn speak_and_wait(
+            &self,
+            request: SpeechRequest,
+            _cancel: CancelSignal,
+        ) -> Result<(), MessageRef> {
+            self.speak(request).await
+        }
+
+        async fn available_voices(&self) -> Vec<VoiceDescriptor> {
+            self.voices.clone()
+        }
+    }
+
+    fn voiced(text: &str, wait: bool, voice: &str) -> SubActionConfig {
+        let mut cfg = config(text, wait);
+        cfg.insert(VOICE_KEY.to_owned(), Variant::String(voice.to_owned()));
+        cfg
+    }
+
+    #[tokio::test]
+    async fn a_step_without_a_chosen_voice_speaks_with_the_default_voice() {
+        for step in [config("hello", false), voiced("hello", false, "")] {
+            let speaker = Arc::new(VoicedSpeaker::with_installed("piper", "amy"));
+            let runner = SpeakRunner::new(speaker.clone());
+            let stack = ArgStack::new();
+
+            let (telemetry, _) = runner.execute(&step, &make_ctx(&stack)).await;
+
+            assert!(
+                matches!(telemetry.outcome, SubActionOutcome::Success)
+                    && speaker.dispatched() == vec![(Path::Speak, None)],
+                "{step:?} -> {:?} / {:?}",
+                telemetry.outcome,
+                speaker.dispatched()
+            );
+        }
+    }
+
+    #[tokio::test]
+    async fn an_installed_voice_is_dispatched_on_every_speak_path() {
+        for (wait, reward, path) in [
+            (true, false, Path::Speak),
+            (false, false, Path::Speak),
+            (true, true, Path::Reward),
+            (false, true, Path::Reward),
+        ] {
+            let speaker = Arc::new(VoicedSpeaker::with_installed("piper", "en/amy"));
+            let runner = SpeakRunner::new(speaker.clone());
+            let mut stack = ArgStack::new();
+            if reward {
+                stack = stack.set("reward.id".to_owned(), Variant::String("r-1".to_owned()));
+            }
+
+            runner
+                .execute(&voiced("hello", wait, "piper/en/amy"), &make_ctx(&stack))
+                .await;
+
+            assert_eq!(
+                speaker.dispatched(),
+                vec![(path, Some("piper/en/amy".to_owned()))],
+                "wait={wait} reward={reward}"
+            );
+        }
+    }
+
+    #[tokio::test]
+    async fn an_unusable_voice_fails_the_step_naming_it_and_speaks_nothing() {
+        for (stored, code, named_voice) in [
+            ("amy", &core_messages::VOICE_NOT_ENGINE_VOICE, "amy"),
+            (
+                "piper/ghost",
+                &core_messages::VOICE_NOT_INSTALLED,
+                "piper/ghost",
+            ),
+            ("sapi/amy", &core_messages::VOICE_NOT_INSTALLED, "sapi/amy"),
+        ] {
+            let speaker = Arc::new(VoicedSpeaker::with_installed("piper", "amy"));
+            let runner = SpeakRunner::new(speaker.clone());
+            let stack = ArgStack::new();
+
+            let (telemetry, _) = runner
+                .execute(&voiced("hello", false, stored), &make_ctx(&stack))
+                .await;
+
+            let reason = failure_message(&telemetry.outcome);
+            assert_eq!(reason.code(), code, "{stored:?}");
+            assert_eq!(
+                verbatim_arg(reason, "voice"),
+                Some(named_voice),
+                "{stored:?}"
+            );
+            assert!(speaker.dispatched().is_empty(), "{stored:?} was spoken");
+        }
+    }
+
+    #[test]
+    fn validate_config_rejects_missing_text() {
+        let runner = SpeakRunner::new(Arc::new(FailSpeaker));
+        assert!(runner.validate_config(&SubActionConfig::new()).is_err());
+    }
+
+    #[test]
+    fn validate_config_accepts_nonempty_text() {
+        let runner = SpeakRunner::new(Arc::new(FailSpeaker));
+        assert!(runner.validate_config(&config("hello", true)).is_ok());
+    }
+
+    #[derive(Default)]
+    struct RunScoped {
+        queued: Mutex<Option<(bool, CancelSignal)>>,
+    }
+
+    #[async_trait]
+    impl SpeakDispatcher for RunScoped {
+        async fn speak(&self, _request: SpeechRequest) -> Result<(), MessageRef> {
+            panic!("a queued step must stay tied to its run");
+        }
+
+        async fn speak_queued_for_run(
+            &self,
+            request: SpeechRequest,
+            run: CancelSignal,
+        ) -> Result<(), MessageRef> {
+            *self.queued.lock().unwrap() = Some((request.is_reward, run));
+            Ok(())
+        }
+
+        async fn speak_and_wait(
+            &self,
+            _request: SpeechRequest,
+            _cancel: CancelSignal,
+        ) -> Result<(), MessageRef> {
+            panic!("a queued step must stay tied to its run");
+        }
+
+        async fn available_voices(&self) -> Vec<VoiceDescriptor> {
+            Vec::new()
+        }
+    }
+
+    #[tokio::test]
+    async fn a_step_that_does_not_wait_hands_its_run_signal_to_the_queue() {
+        for (stack, is_reward) in [
+            (chat_stack(), false),
+            (
+                chat_stack().set("reward.id".to_owned(), Variant::String("r-1".to_owned())),
+                true,
+            ),
+        ] {
+            let speaker = Arc::new(RunScoped::default());
+            let runner = SpeakRunner::new(speaker.clone());
+            let ctx = make_ctx(&stack);
+
+            runner.execute(&config("hi", false), &ctx).await;
+            ctx.cancel.cancel();
+
+            let (reward, run) = speaker.queued.lock().unwrap().take().unwrap();
+            assert_eq!((reward, run.is_cancelled()), (is_reward, true));
+        }
+    }
+}

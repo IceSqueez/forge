@@ -5,13 +5,13 @@ use std::sync::Arc;
 use async_trait::async_trait;
 use forge_registry::SubActionConfig;
 use forge_registry::{
-    ConfigChoice, ConfigReason, ConfigSpec, FieldLiteral, FormField, RunContext, StepTimer,
-    SubActionCategory, SubActionRunner, TypedField,
+    ConfigChoice, ConfigReason, ConfigSpec, FieldLiteral, FormField, RunContext, StepCatalogEntry,
+    StepTimer, SubActionCategory, SubActionRunner, TypedField,
 };
 use forge_types::{ArgStack, SubActionTelemetry, Variant};
 
 use super::step_failure;
-use crate::stream_metadata::YoutubeStreamMetadata;
+use crate::broadcast::stream_metadata::YoutubeStreamMetadata;
 use crate::vocabulary::{config_keys, sub_action_ids};
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -101,30 +101,28 @@ impl UpdatePrivacyRunner {
     }
 }
 
+impl StepCatalogEntry for UpdatePrivacyRunner {
+    fn category(&self) -> SubActionCategory {
+        SubActionCategory::Integration
+    }
+    fn label(&self) -> &str {
+        "Update Stream Privacy"
+    }
+    fn summary(&self) -> &str {
+        "Sets the privacy status of the active YouTube broadcast."
+    }
+    fn search_text(&self) -> &str {
+        "youtube stream broadcast privacy public unlisted private visibility metadata"
+    }
+    fn icon_name(&self) -> &str {
+        "eye"
+    }
+}
+
 #[async_trait]
 impl SubActionRunner for UpdatePrivacyRunner {
     fn id(&self) -> &str {
         sub_action_ids::STREAM_UPDATE_PRIVACY
-    }
-
-    fn category(&self) -> SubActionCategory {
-        SubActionCategory::Integration
-    }
-
-    fn label(&self) -> &str {
-        "Update Stream Privacy"
-    }
-
-    fn summary(&self) -> &str {
-        "Sets the privacy status of the active YouTube broadcast."
-    }
-
-    fn search_text(&self) -> &str {
-        "youtube stream broadcast privacy public unlisted private visibility metadata"
-    }
-
-    fn icon_name(&self) -> &str {
-        "eye"
     }
 
     fn config_spec(&self) -> Option<ConfigSpec> {
@@ -159,7 +157,7 @@ mod tests {
     use wiremock::{Mock, MockServer, ResponseTemplate};
 
     use super::*;
-    use crate::active_broadcast_id::ActiveBroadcastIdHandle;
+    use crate::broadcast::active_broadcast_id::ActiveBroadcastIdHandle;
     use forge_registry::RegistryError;
     use forge_types::SubActionOutcome;
     use std::collections::BTreeMap;

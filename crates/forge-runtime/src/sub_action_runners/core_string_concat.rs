@@ -1,7 +1,7 @@
 use async_trait::async_trait;
 use forge_registry::{
-    ConfigProblem, ConfigSpec, LinesField, ProducedVariable, RunContext, StepTimer,
-    SubActionCategory, SubActionIo, SubActionRunner, TextEditor, TextField, TypedField,
+    ConfigProblem, ConfigSpec, LinesField, ProducedVariable, RunContext, StepCatalogEntry,
+    StepTimer, SubActionCategory, SubActionIo, SubActionRunner, TextEditor, TextField, TypedField,
 };
 use forge_types::{ArgStack, SubActionConfig, SubActionTelemetry, Variant, VariantKind};
 
@@ -43,30 +43,28 @@ fn read_config(config: &SubActionConfig, args: &ArgStack) -> Result<ConcatConfig
 
 pub struct CoreStringConcatRunner;
 
+impl StepCatalogEntry for CoreStringConcatRunner {
+    fn category(&self) -> SubActionCategory {
+        SubActionCategory::Util
+    }
+    fn label(&self) -> &str {
+        "String - Concat"
+    }
+    fn summary(&self) -> &str {
+        "Join a list of strings with an optional separator"
+    }
+    fn search_text(&self) -> &str {
+        "string concat join concatenate parts separator"
+    }
+    fn icon_name(&self) -> &str {
+        "text-plus"
+    }
+}
+
 #[async_trait]
 impl SubActionRunner for CoreStringConcatRunner {
     fn id(&self) -> &str {
         "core.string.concat"
-    }
-
-    fn category(&self) -> SubActionCategory {
-        SubActionCategory::Util
-    }
-
-    fn label(&self) -> &str {
-        "String - Concat"
-    }
-
-    fn summary(&self) -> &str {
-        "Join a list of strings with an optional separator"
-    }
-
-    fn search_text(&self) -> &str {
-        "string concat join concatenate parts separator"
-    }
-
-    fn icon_name(&self) -> &str {
-        "text-plus"
     }
 
     fn config_spec(&self) -> Option<ConfigSpec> {

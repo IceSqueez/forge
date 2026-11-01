@@ -4,7 +4,7 @@ use forge_audio::{
     AudioSink, AudioSinkFactory, DeviceSink, OutputDeviceHandle, stored_output_device,
 };
 use forge_events::EventPublisher;
-use forge_runtime::{EventBus, SpeakDispatcher};
+use forge_runtime::{EventBus, ShowSpeaker, SpeechPorts};
 use forge_script::SpeakRequester;
 use forge_speak_queue::{
     PipelineConfigHandle, QueueConfig, QueueDeps, SpeakEventStream, VoiceAliasResolver,
@@ -250,7 +250,8 @@ pub struct Speech {
     pub events: Option<SpeakEventStream>,
     pub pipeline_config: Option<PipelineConfigHandle>,
     pub voice_gate: Arc<VoiceGateOwner>,
-    pub dispatcher: Option<Arc<dyn SpeakDispatcher>>,
+    pub ports: Option<SpeechPorts>,
+    pub show_speaker: Option<Arc<dyn ShowSpeaker>>,
     pub script_requester: Option<Arc<dyn SpeakRequester>>,
 }
 
@@ -278,9 +279,8 @@ pub async fn build_speech(
     let bridge = queue
         .clone()
         .map(|handle| Arc::new(SpeakBridge::new(Arc::new(handle))));
-    let dispatcher = bridge
-        .clone()
-        .map(|bridge| bridge as Arc<dyn SpeakDispatcher>);
+    let ports = bridge.clone().map(SpeechPorts::from_shared);
+    let show_speaker = bridge.clone().map(|bridge| bridge as Arc<dyn ShowSpeaker>);
     let script_requester = bridge.map(|bridge| bridge as Arc<dyn SpeakRequester>);
     Speech {
         output,
@@ -290,7 +290,8 @@ pub async fn build_speech(
         events,
         pipeline_config,
         voice_gate,
-        dispatcher,
+        ports,
+        show_speaker,
         script_requester,
     }
 }

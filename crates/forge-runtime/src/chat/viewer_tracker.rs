@@ -1,0 +1,130 @@
+use std::sync::Arc;
+
+use forge_events::Event;
+use forge_storage::{ViewerMessage, ViewerRepo};
+use forge_types::ChatViewer;
+
+use crate::delivery::VIEWER_TRACKER;
+use crate::event_flow::bus::EventBus;
+use crate::event_flow::delivery_loss::{ConsumerLossCounters, DeliveryTier};
+use crate::event_flow::persist_batch::{BATCH_WRITE_TIMEOUT, BatchSink, MappedEvents, run_batched};
+
+pub fn spawn_viewer_tracker(bus: Arc<EventBus>, repo: Arc<dyn ViewerRepo>) {
+    let intake = MappedEvents::new(bus.subscribe_critical(VIEWER_TRACKER), viewer_message);
+    let sink = ViewerSink {
+        repo,
+        loss: bus.loss_counters(VIEWER_TRACKER, DeliveryTier::Critical),
+    };
+    tokio::spawn(run_batched(
+        intake,
+        sink,
+        bus.batch_policy(),
+        bus.flush_ticket(),
+    ));
+}
+
+struct ViewerSink {
+    repo: Arc<dyn ViewerRepo>,
+    loss: Arc<ConsumerLossCounters>,
+}
+
+impl BatchSink for ViewerSink {
+    type Item = ViewerMessage;
+
+    async fn flush(&mut self, batch: &mut Vec<ViewerMessage>) {
+        let rows = batch.len() as u64;
+        match tokio::time::timeout(BATCH_WRITE_TIMEOUT, self.repo.record_messages(batch)).await {
+            Ok(Ok(())) => {}
+            Ok(Err(e)) => {
+                tracing::warn!(error = %e, rows, "viewer tracker batch failed; messages not counted");
+                self.loss.unwritten(rows);
+            }
+            Err(_) => {
+                tracing::warn!(rows, "viewer tracker batch timed out; messages not counted");
+                self.loss.unwritten(rows);
+            }
+        }
+        batch.clear();
+    }
+
+    fn abandon(&mut self, rows: u64) -> u64 {
+        self.loss.unwritten(rows);
+        rows
+    }
+}
+
+fn viewer_message(event: &Event) -> Option<ViewerMessage> {
+    if event.replay {
+        return None;
+    }
+    let platform = event.source.to_platform_id()?;
+    let viewer = ChatViewer::read(&event.payload)?;
+    Some(ViewerMessage {
+        platform,
+        viewer_id: viewer.id,
+        username: viewer.name,
+    })
+}
+
+#[cfg(test)]
+mod tests {
+    use std::time::Duration;
+
+    use forge_events::{Event, EventSource};
+    use forge_storage::MockViewerRepo;
+    use tokio::sync::mpsc;
+
+    use super::*;
+    use crate::{Config, NullEventLogRepo};
+
+    const OBSERVER_CAPACITY: usize = 16;
+    const BURST: usize = OBSERVER_CAPACITY * 4;
+    const RECORD_TIMEOUT: Duration = Duration::from_secs(30);
+
+    fn chat_message(login: &str) -> Event {
+        Event::new(
+            EventSource::Twitch,
+            "twitch.channel.chat.message",
+            serde_json::json!({ (ChatViewer::KEY): { "id": login, "name": login } }),
+        )
+    }
+
+    #[tokio::test]
+    async fn the_tracker_records_every_message_of_a_burst_larger_than_the_observer_buffer() {
+        let (recorded_tx, mut recorded) = mpsc::unbounded_channel();
+        let mut repo = MockViewerRepo::new();
+        repo.expect_record_messages().returning(move |messages| {
+            for message in messages {
+                #[expect(
+                    clippy::let_underscore_must_use,
+                    reason = "the receiver may already be gone"
+                )]
+                let _ = recorded_tx.send(message.username.clone());
+            }
+            Ok(())
+        });
+        let config = Config {
+            bus_observer_capacity: OBSERVER_CAPACITY,
+            ..Config::default()
+        };
+        let bus = EventBus::with_config(Arc::new(NullEventLogRepo), &config);
+        spawn_viewer_tracker(Arc::clone(&bus), Arc::new(repo));
+
+        let logins: Vec<String> = (0..BURST).map(|i| format!("viewer-{i}")).collect();
+        for login in &logins {
+            bus.publish(chat_message(login));
+        }
+
+        let mut seen = Vec::with_capacity(BURST);
+        while seen.len() < BURST {
+            match tokio::time::timeout(RECORD_TIMEOUT, recorded.recv()).await {
+                Ok(Some(login)) => seen.push(login),
+                _ => break,
+            }
+        }
+        assert_eq!(
+            seen, logins,
+            "the tracker is a lossless consumer; a burst must not cost it any viewer"
+        );
+    }
+}

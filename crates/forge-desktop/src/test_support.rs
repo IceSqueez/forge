@@ -650,30 +650,28 @@ struct StubRunner {
     nests: bool,
 }
 
+impl forge_registry::StepCatalogEntry for StubRunner {
+    fn category(&self) -> forge_registry::SubActionCategory {
+        forge_registry::SubActionCategory::Chat
+    }
+    fn label(&self) -> &str {
+        self.id
+    }
+    fn summary(&self) -> &str {
+        self.id
+    }
+    fn search_text(&self) -> &str {
+        self.id
+    }
+    fn icon_name(&self) -> &str {
+        "bolt"
+    }
+}
+
 #[async_trait::async_trait]
 impl forge_registry::SubActionRunner for StubRunner {
     fn id(&self) -> &str {
         self.id
-    }
-
-    fn category(&self) -> forge_registry::SubActionCategory {
-        forge_registry::SubActionCategory::Chat
-    }
-
-    fn label(&self) -> &str {
-        self.id
-    }
-
-    fn summary(&self) -> &str {
-        self.id
-    }
-
-    fn search_text(&self) -> &str {
-        self.id
-    }
-
-    fn icon_name(&self) -> &str {
-        "bolt"
     }
 
     fn default_config(&self) -> forge_types::SubActionConfig {

@@ -24,7 +24,11 @@ thiserror = { workspace = true }
 serde_json = { workspace = true }
 time = { workspace = true }
 
+[features]
+test-support = []
+
 [dev-dependencies]
+forge-script = { path = ".", features = ["test-support"] }
 forge-test-support = { path = "../forge-test-support" }
 forge-events = { path = "../forge-events", features = ["test-support"] }
 forge-storage-sqlite = { path = "../forge-storage-sqlite", features = ["test-support"] }

@@ -2,7 +2,7 @@ use std::sync::Arc;
 
 use async_trait::async_trait;
 use forge_registry::SubActionConfig;
-use forge_registry::{RunContext, StepTimer, SubActionCategory, SubActionRunner};
+use forge_registry::{RunContext, StepCatalogEntry, StepTimer, SubActionCategory, SubActionRunner};
 use forge_types::{ArgStack, SubActionTelemetry, Variant};
 
 use crate::error::VTubeError;
@@ -154,30 +154,28 @@ impl LookupRunner {
     }
 }
 
+impl StepCatalogEntry for LookupRunner {
+    fn category(&self) -> SubActionCategory {
+        SubActionCategory::Integration
+    }
+    fn label(&self) -> &str {
+        self.kind.label()
+    }
+    fn summary(&self) -> &str {
+        self.kind.summary()
+    }
+    fn search_text(&self) -> &str {
+        self.kind.search_text()
+    }
+    fn icon_name(&self) -> &str {
+        self.kind.icon_name()
+    }
+}
+
 #[async_trait]
 impl SubActionRunner for LookupRunner {
     fn id(&self) -> &str {
         self.kind.id()
-    }
-
-    fn category(&self) -> SubActionCategory {
-        SubActionCategory::Integration
-    }
-
-    fn label(&self) -> &str {
-        self.kind.label()
-    }
-
-    fn summary(&self) -> &str {
-        self.kind.summary()
-    }
-
-    fn search_text(&self) -> &str {
-        self.kind.search_text()
-    }
-
-    fn icon_name(&self) -> &str {
-        self.kind.icon_name()
     }
 
     async fn execute(

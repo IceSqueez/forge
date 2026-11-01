@@ -3,8 +3,8 @@ use std::sync::Arc;
 use async_trait::async_trait;
 use forge_registry::SubActionConfig;
 use forge_registry::{
-    ConfigSpec, RunContext, SeparatedListField, StepTimer, SubActionCategory, SubActionRunner,
-    TypedField, ValueBounds,
+    ConfigSpec, RunContext, SeparatedListField, StepCatalogEntry, StepTimer, SubActionCategory,
+    SubActionRunner, TypedField, ValueBounds,
 };
 use forge_types::{ArgStack, SubActionOutcome, SubActionTelemetry};
 
@@ -57,30 +57,28 @@ impl UpdateTagsRunner {
     }
 }
 
+impl StepCatalogEntry for UpdateTagsRunner {
+    fn category(&self) -> SubActionCategory {
+        SubActionCategory::Integration
+    }
+    fn label(&self) -> &str {
+        "Update Stream Tags"
+    }
+    fn summary(&self) -> &str {
+        "Replaces the broadcaster's stream tags (max 10, each ≤25 chars). Empty clears all tags."
+    }
+    fn search_text(&self) -> &str {
+        "twitch channel tags update broadcast stream"
+    }
+    fn icon_name(&self) -> &str {
+        "tag"
+    }
+}
+
 #[async_trait]
 impl SubActionRunner for UpdateTagsRunner {
     fn id(&self) -> &str {
         sub_action_ids::CHANNEL_UPDATE_TAGS
-    }
-
-    fn category(&self) -> SubActionCategory {
-        SubActionCategory::Integration
-    }
-
-    fn label(&self) -> &str {
-        "Update Stream Tags"
-    }
-
-    fn summary(&self) -> &str {
-        "Replaces the broadcaster's stream tags (max 10, each ≤25 chars). Empty clears all tags."
-    }
-
-    fn search_text(&self) -> &str {
-        "twitch channel tags update broadcast stream"
-    }
-
-    fn icon_name(&self) -> &str {
-        "tag"
     }
 
     fn config_spec(&self) -> Option<ConfigSpec> {

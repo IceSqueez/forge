@@ -10,7 +10,8 @@ use std::time::Duration;
 
 use async_trait::async_trait;
 use forge_registry::{
-    FormField, RegistryError, RunContext, SubActionCategory, SubActionRegistry, SubActionRunner,
+    FormField, RegistryError, RunContext, StepCatalogEntry, SubActionCategory, SubActionRegistry,
+    SubActionRunner,
 };
 use forge_runtime::{
     ActionCancelRegistry, Catalog, EventBus, ExecutionRequest, NullEventLogRepo, ScriptRegistry,
@@ -272,11 +273,7 @@ impl HistoryRepo for SpyHistoryRepo {
 
 struct FailRunner;
 
-#[async_trait]
-impl SubActionRunner for FailRunner {
-    fn id(&self) -> &str {
-        "test.fail"
-    }
+impl StepCatalogEntry for FailRunner {
     fn category(&self) -> SubActionCategory {
         SubActionCategory::Util
     }
@@ -291,6 +288,13 @@ impl SubActionRunner for FailRunner {
     }
     fn icon_name(&self) -> &str {
         ""
+    }
+}
+
+#[async_trait]
+impl SubActionRunner for FailRunner {
+    fn id(&self) -> &str {
+        "test.fail"
     }
     fn default_config(&self) -> SubActionConfig {
         SubActionConfig::new()
@@ -520,11 +524,7 @@ struct OkRunner {
     runs: Arc<std::sync::atomic::AtomicUsize>,
 }
 
-#[async_trait]
-impl SubActionRunner for OkRunner {
-    fn id(&self) -> &str {
-        "test.owned"
-    }
+impl StepCatalogEntry for OkRunner {
     fn category(&self) -> SubActionCategory {
         SubActionCategory::Util
     }
@@ -539,6 +539,13 @@ impl SubActionRunner for OkRunner {
     }
     fn icon_name(&self) -> &str {
         ""
+    }
+}
+
+#[async_trait]
+impl SubActionRunner for OkRunner {
+    fn id(&self) -> &str {
+        "test.owned"
     }
     fn default_config(&self) -> SubActionConfig {
         SubActionConfig::new()

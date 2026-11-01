@@ -13,7 +13,7 @@ fn describe_error_chain(e: &(dyn std::error::Error + 'static)) -> String {
 pub(crate) fn map_obws_error(e: obws::error::Error) -> ObsError {
     match &e {
         obws::error::Error::Timeout => ObsError::Timeout,
-        obws::error::Error::Disconnected => ObsError::Disconnected,
+        obws::error::Error::Disconnected => ObsError::NotConnected,
         obws::error::Error::Handshake(obws::client::HandshakeError::NoIdentified) => {
             ObsError::Authentication
         }

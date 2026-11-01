@@ -3,7 +3,8 @@ use std::time::Duration;
 
 use async_trait::async_trait;
 use forge_registry::{
-    FormField, RegistryError, RunContext, StepTimer, SubActionCategory, SubActionRunner,
+    FormField, RegistryError, RunContext, StepCatalogEntry, StepTimer, SubActionCategory,
+    SubActionRunner,
 };
 use forge_types::{ArgStack, SubActionConfig, SubActionOutcome, SubActionTelemetry, VerbatimText};
 use time::OffsetDateTime;
@@ -13,11 +14,7 @@ pub(crate) struct GateRunner {
     pub running: Arc<Notify>,
 }
 
-#[async_trait]
-impl SubActionRunner for GateRunner {
-    fn id(&self) -> &str {
-        "test.gate"
-    }
+impl StepCatalogEntry for GateRunner {
     fn category(&self) -> SubActionCategory {
         SubActionCategory::Util
     }
@@ -32,6 +29,13 @@ impl SubActionRunner for GateRunner {
     }
     fn icon_name(&self) -> &str {
         ""
+    }
+}
+
+#[async_trait]
+impl SubActionRunner for GateRunner {
+    fn id(&self) -> &str {
+        "test.gate"
     }
     fn default_config(&self) -> SubActionConfig {
         SubActionConfig::new()
@@ -68,11 +72,7 @@ impl SubActionRunner for GateRunner {
 
 pub(crate) struct CancelsItsRunRunner;
 
-#[async_trait]
-impl SubActionRunner for CancelsItsRunRunner {
-    fn id(&self) -> &str {
-        "test.cancels_its_run"
-    }
+impl StepCatalogEntry for CancelsItsRunRunner {
     fn category(&self) -> SubActionCategory {
         SubActionCategory::Util
     }
@@ -87,6 +87,13 @@ impl SubActionRunner for CancelsItsRunRunner {
     }
     fn icon_name(&self) -> &str {
         ""
+    }
+}
+
+#[async_trait]
+impl SubActionRunner for CancelsItsRunRunner {
+    fn id(&self) -> &str {
+        "test.cancels_its_run"
     }
     fn default_config(&self) -> SubActionConfig {
         SubActionConfig::new()
@@ -115,11 +122,7 @@ pub(crate) struct FixedOutcomeRunner {
     pub outcome: SubActionOutcome,
 }
 
-#[async_trait]
-impl SubActionRunner for FixedOutcomeRunner {
-    fn id(&self) -> &str {
-        self.id
-    }
+impl StepCatalogEntry for FixedOutcomeRunner {
     fn category(&self) -> SubActionCategory {
         SubActionCategory::Util
     }
@@ -134,6 +137,13 @@ impl SubActionRunner for FixedOutcomeRunner {
     }
     fn icon_name(&self) -> &str {
         ""
+    }
+}
+
+#[async_trait]
+impl SubActionRunner for FixedOutcomeRunner {
+    fn id(&self) -> &str {
+        self.id
     }
     fn default_config(&self) -> SubActionConfig {
         SubActionConfig::new()

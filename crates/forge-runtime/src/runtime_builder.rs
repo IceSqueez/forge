@@ -11,26 +11,28 @@ use forge_storage::{
 };
 use forge_types::{LatestValueReader, Queue, WallClock};
 
-use crate::action_cancel::ActionCancelRegistry;
-use crate::action_engine::{ActionEngineHandle, spawn_action_engine};
-use crate::bus::EventBus;
-use crate::catalog::Catalog;
 use crate::config::Config;
-use crate::date_names::DateNamesHandle;
-use crate::latest::LatestValues;
-use crate::overlay_media::OverlayMediaLibrary;
-use crate::overlay_service::{OverlayFrameSink, OverlayServiceHandle, OverlayServiceParts};
-use crate::queue_scheduler::{QueueScheduler, QueueSchedulerHandle, QueueSchedulerStart};
-use crate::scheduled_runs::{
+use crate::engine::action_cancel::ActionCancelRegistry;
+use crate::engine::action_engine::{ActionEngineHandle, spawn_action_engine};
+use crate::engine::queue_scheduler::{QueueScheduler, QueueSchedulerHandle, QueueSchedulerStart};
+use crate::engine::scheduled_runs::{
     CatchUpSettle, ScheduledRunsHandle, ScheduledRunsStart, ScheduledRunsStartParts,
     ScriptScheduling, reserve_scheduled_runs,
 };
-use crate::script_registry::{ScriptRegistry, ScriptRegistryParts};
-use crate::speak_dispatcher::SpeakDispatcher;
-use crate::sub_action_runners::{
-    CoreSubActionDeps, register_core_sub_actions, register_scheduled_run_sub_actions,
+use crate::engine::trigger_evaluator::{TriggerEvaluatorHandle, spawn_trigger_evaluator};
+use crate::event_flow::bus::EventBus;
+use crate::overlays::overlay_media::OverlayMediaLibrary;
+use crate::overlays::overlay_service::{
+    OverlayFrameSink, OverlayServiceHandle, OverlayServiceParts,
 };
-use crate::trigger_evaluator::{TriggerEvaluatorHandle, spawn_trigger_evaluator};
+use crate::services::catalog::Catalog;
+use crate::services::date_names::DateNamesHandle;
+use crate::services::latest::LatestValues;
+use crate::services::script_registry::{ScriptRegistry, ScriptRegistryParts};
+use crate::speech::speak_dispatcher::ShowSpeaker;
+use crate::sub_action_runners::{
+    CoreSubActionDeps, OsPorts, register_core_sub_actions, register_scheduled_run_sub_actions,
+};
 use forge_paths::AppPaths;
 
 pub struct RuntimeWiringParts {
@@ -38,7 +40,7 @@ pub struct RuntimeWiringParts {
     pub provider: Arc<dyn DataProvider>,
     pub latest_values: LatestValues,
     pub script_speech: Option<Arc<dyn SpeakRequester>>,
-    pub overlay_speech: Option<Arc<dyn SpeakDispatcher>>,
+    pub overlay_speech: Option<Arc<dyn ShowSpeaker>>,
     pub overlay_kinds: Arc<OverlayKindRegistry>,
     pub overlay_frames: Arc<dyn OverlayFrameSink>,
     pub clock: Arc<dyn WallClock>,
@@ -46,6 +48,7 @@ pub struct RuntimeWiringParts {
     pub tasks: TaskOwner,
     pub paths: AppPaths,
     pub config: Config,
+    pub os: OsPorts,
 }
 
 pub struct RuntimeWiring {
@@ -63,6 +66,7 @@ pub struct RuntimeWiring {
     triggers: TriggerRegistry,
     paths: AppPaths,
     config: Config,
+    os: OsPorts,
 }
 
 impl RuntimeWiring {
@@ -80,6 +84,7 @@ impl RuntimeWiring {
             tasks,
             paths,
             config,
+            os,
         } = parts;
         let (scheduler, scheduler_start) = QueueScheduler::reserve();
         let (scheduled_runs, scheduled_runs_start) =
@@ -127,6 +132,7 @@ impl RuntimeWiring {
             triggers: TriggerRegistry::new(),
             paths,
             config,
+            os,
         }
     }
 
@@ -163,6 +169,7 @@ impl RuntimeWiring {
                 overlays: self.overlays.clone(),
                 config: self.config.clone(),
                 assets_root: self.paths.assets_dir(),
+                os: self.os.clone(),
             },
         )
     }
@@ -187,6 +194,7 @@ impl RuntimeWiring {
             triggers,
             paths: _,
             config,
+            os: _,
         } = self;
         let sub_action_registry = Arc::new(sub_actions);
         let trigger_registry = Arc::new(triggers);

@@ -4,7 +4,7 @@ use std::sync::Arc;
 
 use async_trait::async_trait;
 use forge_registry::SubActionConfig;
-use forge_registry::{RunContext, StepTimer, SubActionCategory, SubActionRunner};
+use forge_registry::{RunContext, StepCatalogEntry, StepTimer, SubActionCategory, SubActionRunner};
 use forge_types::{ArgStack, SubActionOutcome, SubActionTelemetry};
 
 use crate::account::identity::SelfIdentity;
@@ -77,30 +77,28 @@ impl ShieldModeRunner {
     }
 }
 
+impl StepCatalogEntry for ShieldModeRunner {
+    fn category(&self) -> SubActionCategory {
+        SubActionCategory::Moderation
+    }
+    fn label(&self) -> &str {
+        self.switch.label
+    }
+    fn summary(&self) -> &str {
+        self.switch.summary
+    }
+    fn search_text(&self) -> &str {
+        self.switch.search_text
+    }
+    fn icon_name(&self) -> &str {
+        self.switch.icon_name
+    }
+}
+
 #[async_trait]
 impl SubActionRunner for ShieldModeRunner {
     fn id(&self) -> &str {
         self.switch.id
-    }
-
-    fn category(&self) -> SubActionCategory {
-        SubActionCategory::Moderation
-    }
-
-    fn label(&self) -> &str {
-        self.switch.label
-    }
-
-    fn summary(&self) -> &str {
-        self.switch.summary
-    }
-
-    fn search_text(&self) -> &str {
-        self.switch.search_text
-    }
-
-    fn icon_name(&self) -> &str {
-        self.switch.icon_name
     }
 
     async fn execute(

@@ -672,8 +672,8 @@ async fn run_snapshot_queue(mut queue: tokio::sync::mpsc::UnboundedReceiver<Snap
 #[cfg(test)]
 mod tests {
     use forge_registry::{
-        FormField, RegistryError, RunContext, StepTimer, SubActionCategory, SubActionRegistry,
-        SubActionRunner,
+        FormField, RegistryError, RunContext, StepCatalogEntry, StepTimer, SubActionCategory,
+        SubActionRegistry, SubActionRunner,
     };
     use std::cell::Cell;
     use std::rc::Rc;
@@ -699,11 +699,7 @@ mod tests {
         outcome: SubActionOutcome,
     }
 
-    #[async_trait::async_trait]
-    impl SubActionRunner for FixedOutcome {
-        fn id(&self) -> &str {
-            self.id
-        }
+    impl StepCatalogEntry for FixedOutcome {
         fn category(&self) -> SubActionCategory {
             SubActionCategory::Util
         }
@@ -718,6 +714,13 @@ mod tests {
         }
         fn icon_name(&self) -> &str {
             ""
+        }
+    }
+
+    #[async_trait::async_trait]
+    impl SubActionRunner for FixedOutcome {
+        fn id(&self) -> &str {
+            self.id
         }
         fn default_config(&self) -> SubActionConfig {
             SubActionConfig::new()

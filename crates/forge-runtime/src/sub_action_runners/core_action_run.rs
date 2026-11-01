@@ -2,16 +2,16 @@ use std::sync::Arc;
 
 use async_trait::async_trait;
 use forge_registry::{
-    ChainSignal, ConfigSpec, RegistryError, RunContext, StepTimer, SubActionCategory,
-    SubActionRunner, ToggleField, TypedField,
+    ChainSignal, ConfigSpec, RegistryError, RunContext, StepCatalogEntry, StepTimer,
+    SubActionCategory, SubActionRunner, ToggleField, TypedField,
 };
 use forge_storage::ActionRepo;
 use forge_types::{ActionId, ArgStack, SubActionConfig, SubActionOutcome, SubActionTelemetry};
 
 use super::core_action_shared::ACTION;
 use super::core_logic_shared::cancelled_child;
-use crate::chain::pick_steps;
 use crate::core_messages;
+use crate::engine::chain::pick_steps;
 
 const INHERIT_ARGS: ToggleField = ToggleField {
     key: "inherit_args",
@@ -80,30 +80,28 @@ impl CoreActionRunRunner {
     }
 }
 
+impl StepCatalogEntry for CoreActionRunRunner {
+    fn category(&self) -> SubActionCategory {
+        SubActionCategory::Logic
+    }
+    fn label(&self) -> &str {
+        "Run Action"
+    }
+    fn summary(&self) -> &str {
+        "Run another action's steps from inside this chain"
+    }
+    fn search_text(&self) -> &str {
+        "run action call execute chain nested"
+    }
+    fn icon_name(&self) -> &str {
+        "play"
+    }
+}
+
 #[async_trait]
 impl SubActionRunner for CoreActionRunRunner {
     fn id(&self) -> &str {
         "core.action.run"
-    }
-
-    fn category(&self) -> SubActionCategory {
-        SubActionCategory::Logic
-    }
-
-    fn label(&self) -> &str {
-        "Run Action"
-    }
-
-    fn summary(&self) -> &str {
-        "Run another action's steps from inside this chain"
-    }
-
-    fn search_text(&self) -> &str {
-        "run action call execute chain nested"
-    }
-
-    fn icon_name(&self) -> &str {
-        "play"
     }
 
     fn config_spec(&self) -> Option<ConfigSpec> {

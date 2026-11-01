@@ -2,18 +2,18 @@ use forge_types::LATEST_DONATION_SLOT;
 
 use forge_types::{MessageCode, NamesLanguage};
 
-use crate::assets::PageAssets;
-use crate::config;
-use crate::descriptor::{
+use crate::catalog::descriptor::{
     ContentFeed, DeliveryDisposition, OverlayConfig, OverlayKindDescriptor, SectionedField,
 };
-use crate::latest::{SLOT_OPTIONS, latest_content, sample_latest_value};
+use crate::catalog::latest::{SLOT_OPTIONS, latest_content, sample_latest_value};
+use crate::catalog::source_box::{ContentMargins, DesignSize};
+use crate::config;
+use crate::files::assets::PageAssets;
 use crate::messages;
 use crate::metrics;
 use crate::metrics::ElementSizing;
 use crate::motion::{self, MotionAxes, MotionProfile};
-use crate::preview::{PreviewComposition, PreviewShape, compose};
-use crate::source_box::{ContentMargins, DesignSize};
+use crate::render::preview::{PreviewComposition, PreviewShape, compose};
 
 pub const KIND_ID: &str = "overlay.latest";
 

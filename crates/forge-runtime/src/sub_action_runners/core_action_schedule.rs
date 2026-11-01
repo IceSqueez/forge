@@ -5,15 +5,16 @@ use forge_registry::{
     AmountUnit, ConfigProblem, ConfigSpec, DURATION_UNIT_DAYS, DURATION_UNIT_HOURS,
     DURATION_UNIT_MINUTES, DateTimeField, DurationBounds, DurationField, OptionalField,
     OptionalSwitch, ProducedVariable, RunContext, SECONDS_PER_DAY, SECONDS_PER_HOUR,
-    SECONDS_PER_MINUTE, StepTimer, SubActionCategory, SubActionIo, SubActionRunner, TextEditor,
-    TextField, ToggleField, TypedField, UnitAmountBounds, UnitAmountField, VariableField,
+    SECONDS_PER_MINUTE, StepCatalogEntry, StepTimer, SubActionCategory, SubActionIo,
+    SubActionRunner, TextEditor, TextField, ToggleField, TypedField, UnitAmountBounds,
+    UnitAmountField, VariableField,
 };
 use forge_storage::MissedRunPolicy;
 use forge_types::{ArgStack, SubActionConfig, SubActionTelemetry, Variant, VariantKind};
 
 use super::core_action_shared::ACTION;
 use crate::core_messages;
-use crate::scheduled_runs::{
+use crate::engine::scheduled_runs::{
     MAX_LATE_TOLERANCE, MAX_SCHEDULE_DELAY, MIN_LATE_TOLERANCE, ScheduleDue, ScheduleIntent,
     ScheduleRequest, ScheduledRunsHandle, SchedulingContext,
 };
@@ -185,30 +186,28 @@ impl CoreActionScheduleRunner {
     }
 }
 
+impl StepCatalogEntry for CoreActionScheduleRunner {
+    fn category(&self) -> SubActionCategory {
+        SubActionCategory::Delay
+    }
+    fn label(&self) -> &str {
+        "Schedule Action"
+    }
+    fn summary(&self) -> &str {
+        "Run an action later, even after a restart"
+    }
+    fn search_text(&self) -> &str {
+        "schedule action later delay timer remind expire after days hours minutes date time key"
+    }
+    fn icon_name(&self) -> &str {
+        "calendar"
+    }
+}
+
 #[async_trait]
 impl SubActionRunner for CoreActionScheduleRunner {
     fn id(&self) -> &str {
         SCHEDULE_ACTION_KIND_ID
-    }
-
-    fn category(&self) -> SubActionCategory {
-        SubActionCategory::Delay
-    }
-
-    fn label(&self) -> &str {
-        "Schedule Action"
-    }
-
-    fn summary(&self) -> &str {
-        "Run an action later, even after a restart"
-    }
-
-    fn search_text(&self) -> &str {
-        "schedule action later delay timer remind expire after days hours minutes date time key"
-    }
-
-    fn icon_name(&self) -> &str {
-        "calendar"
     }
 
     fn config_spec(&self) -> Option<ConfigSpec> {

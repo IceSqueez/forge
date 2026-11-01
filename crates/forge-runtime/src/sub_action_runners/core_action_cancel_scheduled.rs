@@ -1,12 +1,13 @@
 use async_trait::async_trait;
 use forge_registry::{
-    ConfigProblem, ConfigSpec, ProducedVariable, RunContext, StepTimer, SubActionCategory,
-    SubActionIo, SubActionRunner, TextEditor, TextField, TypedField, VariableField,
+    ConfigProblem, ConfigSpec, ProducedVariable, RunContext, StepCatalogEntry, StepTimer,
+    SubActionCategory, SubActionIo, SubActionRunner, TextEditor, TextField, TypedField,
+    VariableField,
 };
 use forge_types::{ArgStack, SubActionConfig, SubActionTelemetry, Variant, VariantKind};
 
 use crate::core_messages;
-use crate::scheduled_runs::ScheduledRunsHandle;
+use crate::engine::scheduled_runs::ScheduledRunsHandle;
 
 pub const CANCEL_SCHEDULED_KIND_ID: &str = "core.action.cancel_scheduled";
 
@@ -53,30 +54,28 @@ impl CoreActionCancelScheduledRunner {
     }
 }
 
+impl StepCatalogEntry for CoreActionCancelScheduledRunner {
+    fn category(&self) -> SubActionCategory {
+        SubActionCategory::Delay
+    }
+    fn label(&self) -> &str {
+        "Cancel Scheduled Action"
+    }
+    fn summary(&self) -> &str {
+        "Cancel the pending scheduled run with this exact key"
+    }
+    fn search_text(&self) -> &str {
+        "cancel scheduled action unschedule remove pending key delay timer"
+    }
+    fn icon_name(&self) -> &str {
+        "circle-x"
+    }
+}
+
 #[async_trait]
 impl SubActionRunner for CoreActionCancelScheduledRunner {
     fn id(&self) -> &str {
         CANCEL_SCHEDULED_KIND_ID
-    }
-
-    fn category(&self) -> SubActionCategory {
-        SubActionCategory::Delay
-    }
-
-    fn label(&self) -> &str {
-        "Cancel Scheduled Action"
-    }
-
-    fn summary(&self) -> &str {
-        "Cancel the pending scheduled run with this exact key"
-    }
-
-    fn search_text(&self) -> &str {
-        "cancel scheduled action unschedule remove pending key delay timer"
-    }
-
-    fn icon_name(&self) -> &str {
-        "circle-x"
     }
 
     fn config_spec(&self) -> Option<ConfigSpec> {

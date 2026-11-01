@@ -1,8 +1,8 @@
 use async_trait::async_trait;
 use forge_registry::{
-    ConfigProblem, ConfigSpec, Interpolation, ProducedVariable, RunContext, StepTimer,
-    SubActionCategory, SubActionIo, SubActionRunner, TemplateField, TextField, ToggleField,
-    TypedField,
+    ConfigProblem, ConfigSpec, Interpolation, ProducedVariable, RunContext, StepCatalogEntry,
+    StepTimer, SubActionCategory, SubActionIo, SubActionRunner, TemplateField, TextField,
+    ToggleField, TypedField,
 };
 use forge_types::{
     ArgStack, MessageRef, SubActionConfig, SubActionOutcome, SubActionTelemetry, Variant,
@@ -85,30 +85,28 @@ fn read_config(config: &SubActionConfig, args: &ArgStack) -> Result<ReplaceConfi
 
 pub struct CoreStringReplaceRunner;
 
+impl StepCatalogEntry for CoreStringReplaceRunner {
+    fn category(&self) -> SubActionCategory {
+        SubActionCategory::Util
+    }
+    fn label(&self) -> &str {
+        "String - Replace"
+    }
+    fn summary(&self) -> &str {
+        "Replace all occurrences of a literal or regex pattern in a string"
+    }
+    fn search_text(&self) -> &str {
+        "string replace substitute regex find pattern"
+    }
+    fn icon_name(&self) -> &str {
+        "replace"
+    }
+}
+
 #[async_trait]
 impl SubActionRunner for CoreStringReplaceRunner {
     fn id(&self) -> &str {
         "core.string.replace"
-    }
-
-    fn category(&self) -> SubActionCategory {
-        SubActionCategory::Util
-    }
-
-    fn label(&self) -> &str {
-        "String - Replace"
-    }
-
-    fn summary(&self) -> &str {
-        "Replace all occurrences of a literal or regex pattern in a string"
-    }
-
-    fn search_text(&self) -> &str {
-        "string replace substitute regex find pattern"
-    }
-
-    fn icon_name(&self) -> &str {
-        "replace"
     }
 
     fn config_spec(&self) -> Option<ConfigSpec> {

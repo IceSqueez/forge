@@ -3,8 +3,8 @@ use std::sync::Arc;
 use async_trait::async_trait;
 use forge_registry::SubActionConfig;
 use forge_registry::{
-    ConfigSpec, RunContext, StepTimer, SubActionCategory, SubActionRunner, TextEditor, TextField,
-    TypedField,
+    ConfigSpec, RunContext, StepCatalogEntry, StepTimer, SubActionCategory, SubActionRunner,
+    TextEditor, TextField, TypedField,
 };
 use forge_types::{ArgStack, SubActionOutcome, SubActionTelemetry};
 
@@ -82,30 +82,28 @@ pub(crate) async fn execute_automod_runner(
     (timer.finish(outcome), None)
 }
 
+impl StepCatalogEntry for ApproveAutomodMessageRunner {
+    fn category(&self) -> SubActionCategory {
+        SubActionCategory::Moderation
+    }
+    fn label(&self) -> &str {
+        "Approve AutoMod Message"
+    }
+    fn summary(&self) -> &str {
+        "Allows a message held by AutoMod to appear in chat."
+    }
+    fn search_text(&self) -> &str {
+        "twitch automod approve allow message held moderation"
+    }
+    fn icon_name(&self) -> &str {
+        "check"
+    }
+}
+
 #[async_trait]
 impl SubActionRunner for ApproveAutomodMessageRunner {
     fn id(&self) -> &str {
         KIND_ID
-    }
-
-    fn category(&self) -> SubActionCategory {
-        SubActionCategory::Moderation
-    }
-
-    fn label(&self) -> &str {
-        "Approve AutoMod Message"
-    }
-
-    fn summary(&self) -> &str {
-        "Allows a message held by AutoMod to appear in chat."
-    }
-
-    fn search_text(&self) -> &str {
-        "twitch automod approve allow message held moderation"
-    }
-
-    fn icon_name(&self) -> &str {
-        "check"
     }
 
     fn config_spec(&self) -> Option<ConfigSpec> {

@@ -5,8 +5,9 @@ use std::path::PathBuf;
 use crate::core_messages;
 use async_trait::async_trait;
 use forge_registry::{
-    ConfigProblem, ConfigSpec, ProducedVariable, RunContext, StepTimer, SubActionCategory,
-    SubActionIo, SubActionRunner, TextEditor, TextField, ToggleField, TypedField, VariableField,
+    ConfigProblem, ConfigSpec, ProducedVariable, RunContext, StepCatalogEntry, StepTimer,
+    SubActionCategory, SubActionIo, SubActionRunner, TextEditor, TextField, ToggleField,
+    TypedField, VariableField,
 };
 use forge_types::{
     ArgStack, MessageRef, SubActionConfig, SubActionOutcome, SubActionTelemetry,
@@ -84,30 +85,28 @@ impl CoreFileListRunner {
     }
 }
 
+impl StepCatalogEntry for CoreFileListRunner {
+    fn category(&self) -> SubActionCategory {
+        SubActionCategory::Files
+    }
+    fn label(&self) -> &str {
+        "List Directory"
+    }
+    fn summary(&self) -> &str {
+        "Enumerate a sandboxed directory; stores entry names in a variable array"
+    }
+    fn search_text(&self) -> &str {
+        "list directory files glob recursive assets"
+    }
+    fn icon_name(&self) -> &str {
+        "folder"
+    }
+}
+
 #[async_trait]
 impl SubActionRunner for CoreFileListRunner {
     fn id(&self) -> &str {
         "core.file.list"
-    }
-
-    fn category(&self) -> SubActionCategory {
-        SubActionCategory::Files
-    }
-
-    fn label(&self) -> &str {
-        "List Directory"
-    }
-
-    fn summary(&self) -> &str {
-        "Enumerate a sandboxed directory; stores entry names in a variable array"
-    }
-
-    fn search_text(&self) -> &str {
-        "list directory files glob recursive assets"
-    }
-
-    fn icon_name(&self) -> &str {
-        "folder"
     }
 
     fn config_spec(&self) -> Option<ConfigSpec> {

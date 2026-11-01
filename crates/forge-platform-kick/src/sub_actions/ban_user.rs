@@ -4,8 +4,8 @@ use async_trait::async_trait;
 use forge_platform_core::PlatformError;
 use forge_registry::SubActionConfig;
 use forge_registry::{
-    ConfigProblem, ConfigSpec, RunContext, StepTimer, SubActionCategory, SubActionRunner,
-    TypedField,
+    ConfigProblem, ConfigSpec, RunContext, StepCatalogEntry, StepTimer, SubActionCategory,
+    SubActionRunner, TypedField,
 };
 use forge_types::{ArgStack, SubActionOutcome, SubActionTelemetry};
 use futures::future::BoxFuture;
@@ -51,30 +51,28 @@ impl BanUserRunner {
     }
 }
 
+impl StepCatalogEntry for BanUserRunner {
+    fn category(&self) -> SubActionCategory {
+        SubActionCategory::Moderation
+    }
+    fn label(&self) -> &str {
+        "Ban User"
+    }
+    fn summary(&self) -> &str {
+        "Permanently bans a user from the Kick channel. Requires moderation:ban scope."
+    }
+    fn search_text(&self) -> &str {
+        "kick ban user moderation permanent"
+    }
+    fn icon_name(&self) -> &str {
+        "ban"
+    }
+}
+
 #[async_trait]
 impl SubActionRunner for BanUserRunner {
     fn id(&self) -> &str {
         sub_action_ids::MODERATION_BAN
-    }
-
-    fn category(&self) -> SubActionCategory {
-        SubActionCategory::Moderation
-    }
-
-    fn label(&self) -> &str {
-        "Ban User"
-    }
-
-    fn summary(&self) -> &str {
-        "Permanently bans a user from the Kick channel. Requires moderation:ban scope."
-    }
-
-    fn search_text(&self) -> &str {
-        "kick ban user moderation permanent"
-    }
-
-    fn icon_name(&self) -> &str {
-        "ban"
     }
 
     fn config_spec(&self) -> Option<ConfigSpec> {

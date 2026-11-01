@@ -5,8 +5,8 @@ use std::sync::Arc;
 use async_trait::async_trait;
 use forge_registry::SubActionConfig;
 use forge_registry::{
-    ChoiceField, ConfigChoice, ConfigSpec, RunContext, StepTimer, SubActionCategory,
-    SubActionRunner, TypedField,
+    ChoiceField, ConfigChoice, ConfigSpec, RunContext, StepCatalogEntry, StepTimer,
+    SubActionCategory, SubActionRunner, TypedField,
 };
 use forge_types::{ArgStack, SubActionOutcome, SubActionTelemetry};
 
@@ -104,30 +104,28 @@ impl RunAdRunner {
     }
 }
 
+impl StepCatalogEntry for RunAdRunner {
+    fn category(&self) -> SubActionCategory {
+        SubActionCategory::Integration
+    }
+    fn label(&self) -> &str {
+        "Run Ad"
+    }
+    fn summary(&self) -> &str {
+        "Starts a commercial break in the broadcaster's channel."
+    }
+    fn search_text(&self) -> &str {
+        "twitch ad commercial break run start channel"
+    }
+    fn icon_name(&self) -> &str {
+        "player-play"
+    }
+}
+
 #[async_trait]
 impl SubActionRunner for RunAdRunner {
     fn id(&self) -> &str {
         sub_action_ids::CHANNEL_RUN_AD
-    }
-
-    fn category(&self) -> SubActionCategory {
-        SubActionCategory::Integration
-    }
-
-    fn label(&self) -> &str {
-        "Run Ad"
-    }
-
-    fn summary(&self) -> &str {
-        "Starts a commercial break in the broadcaster's channel."
-    }
-
-    fn search_text(&self) -> &str {
-        "twitch ad commercial break run start channel"
-    }
-
-    fn icon_name(&self) -> &str {
-        "player-play"
     }
 
     fn config_spec(&self) -> Option<ConfigSpec> {

@@ -4,9 +4,9 @@ use std::path::PathBuf;
 use crate::core_messages;
 use async_trait::async_trait;
 use forge_registry::{
-    ChoiceField, ConfigChoice, ConfigProblem, ConfigSpec, ProducedVariable, RunContext, StepTimer,
-    SubActionCategory, SubActionIo, SubActionRunner, TextEditor, TextField, TypedField,
-    VariableField,
+    ChoiceField, ConfigChoice, ConfigProblem, ConfigSpec, ProducedVariable, RunContext,
+    StepCatalogEntry, StepTimer, SubActionCategory, SubActionIo, SubActionRunner, TextEditor,
+    TextField, TypedField, VariableField,
 };
 use forge_types::{
     ArgStack, MessageRef, SubActionConfig, SubActionOutcome, SubActionTelemetry, Variant,
@@ -85,30 +85,28 @@ impl CoreFileReadRunner {
     }
 }
 
+impl StepCatalogEntry for CoreFileReadRunner {
+    fn category(&self) -> SubActionCategory {
+        SubActionCategory::Files
+    }
+    fn label(&self) -> &str {
+        "Read File"
+    }
+    fn summary(&self) -> &str {
+        "Read a text file into a variable"
+    }
+    fn search_text(&self) -> &str {
+        "read file text load assets"
+    }
+    fn icon_name(&self) -> &str {
+        "file-text"
+    }
+}
+
 #[async_trait]
 impl SubActionRunner for CoreFileReadRunner {
     fn id(&self) -> &str {
         FILE_READ_KIND_ID
-    }
-
-    fn category(&self) -> SubActionCategory {
-        SubActionCategory::Files
-    }
-
-    fn label(&self) -> &str {
-        "Read File"
-    }
-
-    fn summary(&self) -> &str {
-        "Read a text file into a variable"
-    }
-
-    fn search_text(&self) -> &str {
-        "read file text load assets"
-    }
-
-    fn icon_name(&self) -> &str {
-        "file-text"
     }
 
     fn config_spec(&self) -> Option<ConfigSpec> {

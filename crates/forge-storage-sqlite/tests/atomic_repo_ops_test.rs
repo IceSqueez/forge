@@ -1,7 +1,7 @@
 #![expect(clippy::expect_used, reason = "test fixtures")]
 use std::sync::Arc;
 
-use forge_storage::{DataProvider, GlobalsRepo, StorageError, UserGlobalsRepo};
+use forge_storage::{DataProvider, GlobalsRepo, StorageError, UserGlobalKey, UserGlobalsRepo};
 use forge_storage_sqlite::SqliteBackend;
 use forge_types::{Action, ActionId, SubActionConfig, SubActionStep, Variant};
 
@@ -299,7 +299,7 @@ async fn concurrent_user_variable_increments_sum_exactly() {
             let b = Arc::clone(&backend);
             tokio::spawn(async move {
                 users(&b)
-                    .incr("bc", "viewer", "points", 5)
+                    .incr(&UserGlobalKey::new("bc", "viewer", "points"), 5)
                     .await
                     .expect("incr")
             })
@@ -310,7 +310,7 @@ async fn concurrent_user_variable_increments_sum_exactly() {
     }
 
     let got = users(&backend)
-        .get("bc", "viewer", "points")
+        .get(&UserGlobalKey::new("bc", "viewer", "points"))
         .await
         .expect("get");
     assert_eq!(got, Some(Variant::Int(5 * WRITERS as i64)));
@@ -325,20 +325,26 @@ async fn user_variable_increment_by_stored_kind() {
         (Some(Variant::Int(i64::MIN + 1)), -5, Variant::Int(i64::MIN)),
         (Some(Variant::Float(1.5)), 2, Variant::Float(3.5)),
     ] {
-        users(&backend).delete("bc", "u", "v").await.expect("reset");
+        users(&backend)
+            .delete(&UserGlobalKey::new("bc", "u", "v"))
+            .await
+            .expect("reset");
         if let Some(seed) = seed.clone() {
             users(&backend)
-                .set("bc", "u", "v", seed)
+                .set(&UserGlobalKey::new("bc", "u", "v"), seed)
                 .await
                 .expect("seed");
         }
         let got = users(&backend)
-            .incr("bc", "u", "v", amount)
+            .incr(&UserGlobalKey::new("bc", "u", "v"), amount)
             .await
             .expect("incr");
         assert_eq!(got, expected, "{seed:?} + {amount}");
         assert_eq!(
-            users(&backend).get("bc", "u", "v").await.expect("get"),
+            users(&backend)
+                .get(&UserGlobalKey::new("bc", "u", "v"))
+                .await
+                .expect("get"),
             Some(expected),
         );
     }
@@ -349,16 +355,19 @@ async fn user_variable_increment_rejects_a_non_numeric_value_without_touching_it
     let (_dir, backend) = file_backed().await;
     let text = Variant::String("gold".to_owned());
     users(&backend)
-        .set("bc", "u", "rank", text.clone())
+        .set(&UserGlobalKey::new("bc", "u", "rank"), text.clone())
         .await
         .expect("seed");
     let err = users(&backend)
-        .incr("bc", "u", "rank", 1)
+        .incr(&UserGlobalKey::new("bc", "u", "rank"), 1)
         .await
         .unwrap_err();
     assert!(type_mismatch_of(&err).is_some(), "{err:?}");
     assert_eq!(
-        users(&backend).get("bc", "u", "rank").await.expect("get"),
+        users(&backend)
+            .get(&UserGlobalKey::new("bc", "u", "rank"))
+            .await
+            .expect("get"),
         Some(text)
     );
 }

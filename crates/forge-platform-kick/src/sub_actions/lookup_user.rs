@@ -4,8 +4,8 @@ use async_trait::async_trait;
 use forge_platform_core::PlatformError;
 use forge_registry::SubActionConfig;
 use forge_registry::{
-    ConfigSpec, RunContext, StepTimer, SubActionCategory, SubActionRunner, TextEditor, TextField,
-    TypedField,
+    ConfigSpec, RunContext, StepCatalogEntry, StepTimer, SubActionCategory, SubActionRunner,
+    TextEditor, TextField, TypedField,
 };
 use forge_types::{ArgStack, SubActionTelemetry, Variant};
 use futures::future::BoxFuture;
@@ -46,30 +46,28 @@ impl LookupUserRunner {
     }
 }
 
+impl StepCatalogEntry for LookupUserRunner {
+    fn category(&self) -> SubActionCategory {
+        SubActionCategory::Integration
+    }
+    fn label(&self) -> &str {
+        "Lookup User"
+    }
+    fn summary(&self) -> &str {
+        "Looks up a Kick channel by slug and reports its identity and live state."
+    }
+    fn search_text(&self) -> &str {
+        "kick lookup user channel slug viewer identity live"
+    }
+    fn icon_name(&self) -> &str {
+        "user"
+    }
+}
+
 #[async_trait]
 impl SubActionRunner for LookupUserRunner {
     fn id(&self) -> &str {
         sub_action_ids::LOOKUP_USER
-    }
-
-    fn category(&self) -> SubActionCategory {
-        SubActionCategory::Integration
-    }
-
-    fn label(&self) -> &str {
-        "Lookup User"
-    }
-
-    fn summary(&self) -> &str {
-        "Looks up a Kick channel by slug and reports its identity and live state."
-    }
-
-    fn search_text(&self) -> &str {
-        "kick lookup user channel slug viewer identity live"
-    }
-
-    fn icon_name(&self) -> &str {
-        "user"
     }
 
     fn config_spec(&self) -> Option<ConfigSpec> {

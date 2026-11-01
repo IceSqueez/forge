@@ -1,5 +1,5 @@
 use forge_platform_core::{PollError, PollStatusBoard};
-use forge_types::MessageRef;
+use forge_types::{MessageCode, MessageRef};
 
 use crate::api::DonatelloAccount;
 use crate::error::DonatelloError;
@@ -9,6 +9,12 @@ pub use forge_platform_core::PollPhase;
 
 pub type PollStatus = forge_platform_core::PollStatus<DonatelloAccount, PollFailure>;
 pub(crate) type StatusBoard = PollStatusBoard<DonatelloAccount, PollFailure>;
+
+struct FailureFacts {
+    message: MessageCode,
+    label: &'static str,
+    banner: Option<MessageCode>,
+}
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum PollFailure {
@@ -45,34 +51,71 @@ impl PollFailure {
         }
     }
 
-    pub fn message(self) -> MessageRef {
-        MessageRef::new(match self {
-            Self::MissingToken => messages::FAILURE_MISSING_TOKEN,
-            Self::TokenRejected => messages::FAILURE_TOKEN_REJECTED,
-            Self::TokenUnreadable => messages::FAILURE_TOKEN_UNREADABLE,
-            Self::ProfileIncomplete => messages::FAILURE_PROFILE_INCOMPLETE,
-            Self::RateLimited => messages::FAILURE_RATE_LIMITED,
-            Self::Network => messages::FAILURE_NETWORK,
-            Self::ServerError => messages::FAILURE_SERVER_ERROR,
-            Self::MalformedResponse => messages::FAILURE_MALFORMED_RESPONSE,
-            Self::InvalidDonation => messages::FAILURE_INVALID_DONATION,
-            Self::Local => messages::FAILURE_LOCAL,
-        })
+    const fn facts(self) -> FailureFacts {
+        match self {
+            Self::MissingToken => FailureFacts {
+                message: messages::FAILURE_MISSING_TOKEN,
+                label: "No token",
+                banner: Some(messages::LABEL_BANNER_TOKEN_MISSING),
+            },
+            Self::TokenRejected => FailureFacts {
+                message: messages::FAILURE_TOKEN_REJECTED,
+                label: "Token rejected",
+                banner: Some(messages::LABEL_BANNER_TOKEN_REJECTED),
+            },
+            Self::TokenUnreadable => FailureFacts {
+                message: messages::FAILURE_TOKEN_UNREADABLE,
+                label: "Token unreadable",
+                banner: Some(messages::LABEL_BANNER_TOKEN_UNREADABLE),
+            },
+            Self::ProfileIncomplete => FailureFacts {
+                message: messages::FAILURE_PROFILE_INCOMPLETE,
+                label: "Profile incomplete",
+                banner: Some(messages::LABEL_BANNER_PROFILE_INCOMPLETE),
+            },
+            Self::RateLimited => FailureFacts {
+                message: messages::FAILURE_RATE_LIMITED,
+                label: "Rate limited",
+                banner: None,
+            },
+            Self::Network => FailureFacts {
+                message: messages::FAILURE_NETWORK,
+                label: "Network error",
+                banner: None,
+            },
+            Self::ServerError => FailureFacts {
+                message: messages::FAILURE_SERVER_ERROR,
+                label: "Server error",
+                banner: None,
+            },
+            Self::MalformedResponse => FailureFacts {
+                message: messages::FAILURE_MALFORMED_RESPONSE,
+                label: "Unreadable response",
+                banner: None,
+            },
+            Self::InvalidDonation => FailureFacts {
+                message: messages::FAILURE_INVALID_DONATION,
+                label: "Unreadable donation",
+                banner: None,
+            },
+            Self::Local => FailureFacts {
+                message: messages::FAILURE_LOCAL,
+                label: "Local error",
+                banner: None,
+            },
+        }
     }
 
-    pub const fn label(self) -> &'static str {
-        match self {
-            Self::MissingToken => "No token",
-            Self::TokenRejected => "Token rejected",
-            Self::TokenUnreadable => "Token unreadable",
-            Self::ProfileIncomplete => "Profile incomplete",
-            Self::RateLimited => "Rate limited",
-            Self::Network => "Network error",
-            Self::ServerError => "Server error",
-            Self::MalformedResponse => "Unreadable response",
-            Self::InvalidDonation => "Unreadable donation",
-            Self::Local => "Local error",
-        }
+    pub fn message(self) -> MessageRef {
+        MessageRef::new(self.facts().message)
+    }
+
+    pub fn label(self) -> &'static str {
+        self.facts().label
+    }
+
+    pub fn action_banner(self) -> Option<MessageCode> {
+        self.facts().banner
     }
 }
 

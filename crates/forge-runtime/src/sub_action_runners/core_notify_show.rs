@@ -3,8 +3,8 @@ use std::sync::Arc;
 use async_trait::async_trait;
 use forge_registry::{
     ChoiceField, ConfigChoice, ConfigProblem, ConfigReason, ConfigSpec, DurationBounds,
-    DurationField, Interpolation, RunContext, StepTimer, SubActionCategory, SubActionRunner,
-    TextEditor, TextField, TypedField, ValueBounds,
+    DurationField, Interpolation, RunContext, StepCatalogEntry, StepTimer, SubActionCategory,
+    SubActionRunner, TextEditor, TextField, TypedField, ValueBounds,
 };
 use forge_types::{ArgStack, SubActionConfig, SubActionOutcome, SubActionTelemetry, Variant};
 
@@ -116,30 +116,28 @@ impl CoreNotifyShowRunner {
     }
 }
 
+impl StepCatalogEntry for CoreNotifyShowRunner {
+    fn category(&self) -> SubActionCategory {
+        SubActionCategory::Util
+    }
+    fn label(&self) -> &str {
+        "Show Desktop Notification"
+    }
+    fn summary(&self) -> &str {
+        "Show an OS-level notification"
+    }
+    fn search_text(&self) -> &str {
+        "notification notify desktop toast popup os alert"
+    }
+    fn icon_name(&self) -> &str {
+        "bell"
+    }
+}
+
 #[async_trait]
 impl SubActionRunner for CoreNotifyShowRunner {
     fn id(&self) -> &str {
         "core.notify.show"
-    }
-
-    fn category(&self) -> SubActionCategory {
-        SubActionCategory::Util
-    }
-
-    fn label(&self) -> &str {
-        "Show Desktop Notification"
-    }
-
-    fn summary(&self) -> &str {
-        "Show an OS-level notification"
-    }
-
-    fn search_text(&self) -> &str {
-        "notification notify desktop toast popup os alert"
-    }
-
-    fn icon_name(&self) -> &str {
-        "bell"
     }
 
     fn config_spec(&self) -> Option<ConfigSpec> {

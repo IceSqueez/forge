@@ -1,8 +1,8 @@
 use async_trait::async_trait;
 use forge_registry::{
     ConfigProblem, ConfigSpec, DateTimeField, Interpolation, ProducedVariable, RunContext,
-    StepTimer, SubActionCategory, SubActionIo, SubActionRunner, TemplateField, ToggleField,
-    TypedField, VariableField,
+    StepCatalogEntry, StepTimer, SubActionCategory, SubActionIo, SubActionRunner, TemplateField,
+    ToggleField, TypedField, VariableField,
 };
 use forge_types::{ArgStack, SubActionConfig, SubActionTelemetry, Variant, VariantKind};
 use time::OffsetDateTime;
@@ -64,30 +64,28 @@ fn read_config(config: &SubActionConfig, args: &ArgStack) -> Result<FormatConfig
 
 pub struct CoreTimeFormatRunner;
 
+impl StepCatalogEntry for CoreTimeFormatRunner {
+    fn category(&self) -> SubActionCategory {
+        SubActionCategory::Util
+    }
+    fn label(&self) -> &str {
+        "Time - Format Datetime"
+    }
+    fn summary(&self) -> &str {
+        "Format a datetime as text with a date pattern (e.g. HH:mm dd.MM.yyyy or d MMMM yyyy) in local time, or in UTC when the toggle is on"
+    }
+    fn search_text(&self) -> &str {
+        "time format datetime string timestamp display pattern date"
+    }
+    fn icon_name(&self) -> &str {
+        "clock-check"
+    }
+}
+
 #[async_trait]
 impl SubActionRunner for CoreTimeFormatRunner {
     fn id(&self) -> &str {
         TIME_FORMAT_KIND_ID
-    }
-
-    fn category(&self) -> SubActionCategory {
-        SubActionCategory::Util
-    }
-
-    fn label(&self) -> &str {
-        "Time - Format Datetime"
-    }
-
-    fn summary(&self) -> &str {
-        "Format a datetime as text with a date pattern (e.g. HH:mm dd.MM.yyyy or d MMMM yyyy) in local time, or in UTC when the toggle is on"
-    }
-
-    fn search_text(&self) -> &str {
-        "time format datetime string timestamp display pattern date"
-    }
-
-    fn icon_name(&self) -> &str {
-        "clock-check"
     }
 
     fn config_spec(&self) -> Option<ConfigSpec> {

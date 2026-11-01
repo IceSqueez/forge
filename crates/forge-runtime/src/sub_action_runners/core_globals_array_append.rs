@@ -3,8 +3,8 @@ use std::sync::Arc;
 use async_trait::async_trait;
 use forge_events::{EventSource, GlobalArrayAppended, TypedEvent};
 use forge_registry::{
-    ConfigProblem, ConfigSpec, IntegerEditor, IntegerField, RunContext, StepTimer,
-    SubActionCategory, SubActionRunner, TextEditor, TextField, TypedField, ValueBounds,
+    ConfigProblem, ConfigSpec, IntegerEditor, IntegerField, RunContext, StepCatalogEntry,
+    StepTimer, SubActionCategory, SubActionRunner, TextEditor, TextField, TypedField, ValueBounds,
 };
 use forge_storage::{GlobalsRepo, StorageError};
 use forge_types::{ArgStack, SubActionConfig, SubActionOutcome, SubActionTelemetry};
@@ -58,30 +58,28 @@ impl CoreGlobalsArrayAppendRunner {
     }
 }
 
+impl StepCatalogEntry for CoreGlobalsArrayAppendRunner {
+    fn category(&self) -> SubActionCategory {
+        SubActionCategory::Globals
+    }
+    fn label(&self) -> &str {
+        "Append to Global Array"
+    }
+    fn summary(&self) -> &str {
+        "Append a value to a global array variable"
+    }
+    fn search_text(&self) -> &str {
+        "append push array global list add item"
+    }
+    fn icon_name(&self) -> &str {
+        "list-plus"
+    }
+}
+
 #[async_trait]
 impl SubActionRunner for CoreGlobalsArrayAppendRunner {
     fn id(&self) -> &str {
         "core.globals.array_append"
-    }
-
-    fn category(&self) -> SubActionCategory {
-        SubActionCategory::Globals
-    }
-
-    fn label(&self) -> &str {
-        "Append to Global Array"
-    }
-
-    fn summary(&self) -> &str {
-        "Append a value to a global array variable"
-    }
-
-    fn search_text(&self) -> &str {
-        "append push array global list add item"
-    }
-
-    fn icon_name(&self) -> &str {
-        "list-plus"
     }
 
     fn config_spec(&self) -> Option<ConfigSpec> {

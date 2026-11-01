@@ -4,7 +4,7 @@ use async_trait::async_trait;
 use forge_registry::TRIGGER_INSTANCE_OPTIONS_KEY;
 use forge_registry::{
     ConfigProblem, ConfigReason, ConfigSpec, DynamicSelectField, JsonObjectField, RunContext,
-    StepTimer, SubActionCategory, SubActionRunner, TypedField,
+    StepCatalogEntry, StepTimer, SubActionCategory, SubActionRunner, TypedField,
 };
 use forge_storage::{ActionRepo, TriggerInstanceRepo};
 use forge_types::{
@@ -134,30 +134,28 @@ impl CoreTestFireTriggerRunner {
     }
 }
 
+impl StepCatalogEntry for CoreTestFireTriggerRunner {
+    fn category(&self) -> SubActionCategory {
+        SubActionCategory::Logic
+    }
+    fn label(&self) -> &str {
+        "Test Trigger"
+    }
+    fn summary(&self) -> &str {
+        "Fire one trigger instance with synthetic outputs to run its actions"
+    }
+    fn search_text(&self) -> &str {
+        "test trigger fire manual simulate synthetic outputs"
+    }
+    fn icon_name(&self) -> &str {
+        "bolt"
+    }
+}
+
 #[async_trait]
 impl SubActionRunner for CoreTestFireTriggerRunner {
     fn id(&self) -> &str {
         "core.test.fire_trigger"
-    }
-
-    fn category(&self) -> SubActionCategory {
-        SubActionCategory::Logic
-    }
-
-    fn label(&self) -> &str {
-        "Test Trigger"
-    }
-
-    fn summary(&self) -> &str {
-        "Fire one trigger instance with synthetic outputs to run its actions"
-    }
-
-    fn search_text(&self) -> &str {
-        "test trigger fire manual simulate synthetic outputs"
-    }
-
-    fn icon_name(&self) -> &str {
-        "bolt"
     }
 
     fn config_spec(&self) -> Option<ConfigSpec> {

@@ -13,6 +13,7 @@ pub mod integration_factories;
 pub mod integration_sign_out;
 mod integration_start_errors;
 pub mod integrations;
+pub mod os_adapters;
 mod overlay_boot;
 pub mod platform_credentials;
 pub mod platform_identities;

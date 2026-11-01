@@ -1,7 +1,7 @@
 use async_trait::async_trait;
 use forge_registry::{
-    ConfigSpec, DurationBounds, DurationField, RunContext, StepTimer, SubActionCategory,
-    SubActionRunner, TypedField,
+    ConfigSpec, DurationBounds, DurationField, RunContext, StepCatalogEntry, StepTimer,
+    SubActionCategory, SubActionRunner, TypedField,
 };
 use forge_types::{ArgStack, SubActionConfig, SubActionTelemetry};
 
@@ -22,30 +22,28 @@ const CONFIG: ConfigSpec = ConfigSpec::new(&[&DELAY]);
 
 pub struct CoreLogicWaitRunner;
 
+impl StepCatalogEntry for CoreLogicWaitRunner {
+    fn category(&self) -> SubActionCategory {
+        SubActionCategory::Delay
+    }
+    fn label(&self) -> &str {
+        "Wait"
+    }
+    fn summary(&self) -> &str {
+        "Pause execution for a number of milliseconds (capped at 60s)"
+    }
+    fn search_text(&self) -> &str {
+        "wait delay sleep pause ms milliseconds"
+    }
+    fn icon_name(&self) -> &str {
+        "clock-pause"
+    }
+}
+
 #[async_trait]
 impl SubActionRunner for CoreLogicWaitRunner {
     fn id(&self) -> &str {
         WAIT_KIND_ID
-    }
-
-    fn category(&self) -> SubActionCategory {
-        SubActionCategory::Delay
-    }
-
-    fn label(&self) -> &str {
-        "Wait"
-    }
-
-    fn summary(&self) -> &str {
-        "Pause execution for a number of milliseconds (capped at 60s)"
-    }
-
-    fn search_text(&self) -> &str {
-        "wait delay sleep pause ms milliseconds"
-    }
-
-    fn icon_name(&self) -> &str {
-        "clock-pause"
     }
 
     fn config_spec(&self) -> Option<ConfigSpec> {

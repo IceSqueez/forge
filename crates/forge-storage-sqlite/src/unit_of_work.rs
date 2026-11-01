@@ -1,21 +1,21 @@
 use forge_storage::{StorageError, StoreChange};
 use sqlx::SqliteConnection;
 
-use crate::action_impl::upsert_action;
 use crate::error::SqliteStorageError;
-use crate::globals_impl;
-use crate::media_impl::{release_all_references, release_reference, retain_reference};
-use crate::overlay_impl::{delete_overlay, insert_new_overlay, update_overlay};
 use crate::pool::SqlitePools;
-use crate::queue_impl::{
+use crate::repos::action::upsert_action;
+use crate::repos::globals;
+use crate::repos::media::{release_all_references, release_reference, retain_reference};
+use crate::repos::overlay::{delete_overlay, insert_new_overlay, update_overlay};
+use crate::repos::queue::{
     assign_overlay_alert_queue, claim_overlay_alert_queue, delete_queue, upsert_queue,
 };
-use crate::script_impl::upsert_script;
-use crate::settings_impl::{delete_row, upsert_row};
-use crate::soundboard_impl::{delete_clip, upsert_clip};
-use crate::trigger_instance_impl::{append_link, ignore_unique_violation, upsert_instance};
-use crate::tts_filters_impl::{write_pipeline_settings, write_rules};
-use crate::voice_alias_impl::{store_ignore_profile, upsert_alias};
+use crate::repos::script::upsert_script;
+use crate::repos::settings::{delete_row, upsert_row};
+use crate::repos::soundboard::{delete_clip, upsert_clip};
+use crate::repos::trigger_instance::{append_link, ignore_unique_violation, upsert_instance};
+use crate::repos::tts_filters::{write_pipeline_settings, write_rules};
+use crate::repos::voice_alias::{store_ignore_profile, upsert_alias};
 
 pub(crate) async fn commit(
     pools: SqlitePools,
@@ -68,7 +68,7 @@ async fn apply(conn: &mut SqliteConnection, change: &StoreChange) -> Result<(), 
             name,
             value,
             persisted,
-        } => globals_impl::upsert(conn, name, value, *persisted).await,
+        } => globals::upsert(conn, name, value, *persisted).await,
         StoreChange::DeleteGlobal(name) => {
             execute(conn, "DELETE FROM globals WHERE name = ?", name.clone()).await
         }

@@ -1,7 +1,8 @@
 use async_trait::async_trait;
 use forge_registry::{
     ConfigProblem, ConfigSpec, IntegerEditor, IntegerField, ProducedVariable, RunContext,
-    StepTimer, SubActionCategory, SubActionIo, SubActionRunner, TextField, TypedField, ValueBounds,
+    StepCatalogEntry, StepTimer, SubActionCategory, SubActionIo, SubActionRunner, TextField,
+    TypedField, ValueBounds,
 };
 use forge_types::{
     ArgStack, SubActionConfig, SubActionOutcome, SubActionTelemetry, Variant, VariantKind,
@@ -59,30 +60,28 @@ fn read_config(
 
 pub struct CoreStringSubstringRunner;
 
+impl StepCatalogEntry for CoreStringSubstringRunner {
+    fn category(&self) -> SubActionCategory {
+        SubActionCategory::Util
+    }
+    fn label(&self) -> &str {
+        "String - Substring"
+    }
+    fn summary(&self) -> &str {
+        "Extract a slice of a string by char index range"
+    }
+    fn search_text(&self) -> &str {
+        "string substring slice extract range index"
+    }
+    fn icon_name(&self) -> &str {
+        "text-recognition"
+    }
+}
+
 #[async_trait]
 impl SubActionRunner for CoreStringSubstringRunner {
     fn id(&self) -> &str {
         "core.string.substring"
-    }
-
-    fn category(&self) -> SubActionCategory {
-        SubActionCategory::Util
-    }
-
-    fn label(&self) -> &str {
-        "String - Substring"
-    }
-
-    fn summary(&self) -> &str {
-        "Extract a slice of a string by char index range"
-    }
-
-    fn search_text(&self) -> &str {
-        "string substring slice extract range index"
-    }
-
-    fn icon_name(&self) -> &str {
-        "text-recognition"
     }
 
     fn config_spec(&self) -> Option<ConfigSpec> {

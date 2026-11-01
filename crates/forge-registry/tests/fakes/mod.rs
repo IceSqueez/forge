@@ -1,8 +1,9 @@
 use async_trait::async_trait;
 use forge_events::Event;
 use forge_registry::{
-    EventFilter, FormField, KindPlatformContract, RegistryError, RunContext, SubActionCategory,
-    SubActionIo, SubActionRunner, TriggerCategory, TriggerKindDescriptor, TriggerVariables,
+    EventFilter, FormField, KindPlatformContract, RegistryError, RunContext, StepCatalogEntry,
+    SubActionCategory, SubActionIo, SubActionRunner, TriggerCategory, TriggerKindDescriptor,
+    TriggerVariables,
 };
 use forge_types::{
     Action, ActionId, ArgStack, ExecutionMode, PermissionRung, PlatformId, PlatformScope, QueueId,
@@ -28,30 +29,28 @@ pub(crate) fn runner(id: &'static str) -> FakeRunner {
     }
 }
 
+impl StepCatalogEntry for FakeRunner {
+    fn category(&self) -> SubActionCategory {
+        SubActionCategory::Chat
+    }
+    fn label(&self) -> &str {
+        self.id
+    }
+    fn summary(&self) -> &str {
+        self.id
+    }
+    fn search_text(&self) -> &str {
+        self.id
+    }
+    fn icon_name(&self) -> &str {
+        "bolt"
+    }
+}
+
 #[async_trait]
 impl SubActionRunner for FakeRunner {
     fn id(&self) -> &str {
         self.id
-    }
-
-    fn category(&self) -> SubActionCategory {
-        SubActionCategory::Chat
-    }
-
-    fn label(&self) -> &str {
-        self.id
-    }
-
-    fn summary(&self) -> &str {
-        self.id
-    }
-
-    fn search_text(&self) -> &str {
-        self.id
-    }
-
-    fn icon_name(&self) -> &str {
-        "bolt"
     }
 
     fn default_config(&self) -> SubActionConfig {

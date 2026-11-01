@@ -15,8 +15,8 @@ use forge_events::Event;
 use forge_events::EventSubscription;
 use forge_net::TaskShutdown;
 use forge_registry::{
-    FormField, RegistryError, RunContext, StepTimer, SubActionCategory, SubActionRegistry,
-    SubActionRunner,
+    FormField, RegistryError, RunContext, StepCatalogEntry, StepTimer, SubActionCategory,
+    SubActionRegistry, SubActionRunner,
 };
 use forge_runtime::{
     ActionCancelRegistry, ActionEngineHandle, Catalog, EventBus, ExecutionRequest,
@@ -124,11 +124,7 @@ struct ScriptedRunner {
     behavior: Behavior,
 }
 
-#[async_trait]
-impl SubActionRunner for ScriptedRunner {
-    fn id(&self) -> &str {
-        self.id
-    }
+impl StepCatalogEntry for ScriptedRunner {
     fn category(&self) -> SubActionCategory {
         SubActionCategory::Util
     }
@@ -143,6 +139,13 @@ impl SubActionRunner for ScriptedRunner {
     }
     fn icon_name(&self) -> &str {
         ""
+    }
+}
+
+#[async_trait]
+impl SubActionRunner for ScriptedRunner {
+    fn id(&self) -> &str {
+        self.id
     }
     fn default_config(&self) -> SubActionConfig {
         SubActionConfig::new()

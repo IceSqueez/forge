@@ -9,8 +9,9 @@ use forge_registry::{
     SOUNDBOARD_CLIP_OPTIONS_KEY,
 };
 use forge_registry::{
-    EventFilter, KindPlatformContract, ReferenceField, RunContext, SubActionCategory,
-    SubActionRegistry, SubActionRunner, TriggerCategory, TriggerKindDescriptor, TriggerRegistry,
+    EventFilter, KindPlatformContract, ReferenceField, RunContext, StepCatalogEntry,
+    SubActionCategory, SubActionRegistry, SubActionRunner, TriggerCategory, TriggerKindDescriptor,
+    TriggerRegistry,
 };
 use forge_storage::{GlobalEntry, OverlayDefinition, OverlayId, ScriptRecord, StoredClip};
 use forge_types::{
@@ -46,29 +47,27 @@ struct FixtureRunner {
     category: SubActionCategory,
 }
 
-#[async_trait]
-impl SubActionRunner for FixtureRunner {
-    fn id(&self) -> &str {
-        self.id
-    }
-
+impl StepCatalogEntry for FixtureRunner {
     fn category(&self) -> SubActionCategory {
         self.category
     }
-
     fn label(&self) -> &str {
         self.id
     }
-
     fn summary(&self) -> &str {
         self.id
     }
-
     fn search_text(&self) -> &str {
         self.id
     }
-
     fn icon_name(&self) -> &str {
+        self.id
+    }
+}
+
+#[async_trait]
+impl SubActionRunner for FixtureRunner {
+    fn id(&self) -> &str {
         self.id
     }
 

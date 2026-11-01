@@ -5,8 +5,8 @@ use async_trait::async_trait;
 use forge_platform_core::PlatformError;
 use forge_registry::SubActionConfig;
 use forge_registry::{
-    ConfigSpec, RunContext, StepTimer, SubActionCategory, SubActionRunner, TextEditor, TextField,
-    TypedField,
+    ConfigSpec, RunContext, StepCatalogEntry, StepTimer, SubActionCategory, SubActionRunner,
+    TextEditor, TextField, TypedField,
 };
 use forge_types::{ArgStack, SubActionTelemetry, Variant};
 use futures::future::BoxFuture;
@@ -47,30 +47,28 @@ impl LookupCategoryRunner {
     }
 }
 
+impl StepCatalogEntry for LookupCategoryRunner {
+    fn category(&self) -> SubActionCategory {
+        SubActionCategory::Integration
+    }
+    fn label(&self) -> &str {
+        "Lookup Category"
+    }
+    fn summary(&self) -> &str {
+        "Searches Kick categories by name and returns the matching numeric ids."
+    }
+    fn search_text(&self) -> &str {
+        "kick lookup category search game id"
+    }
+    fn icon_name(&self) -> &str {
+        "search"
+    }
+}
+
 #[async_trait]
 impl SubActionRunner for LookupCategoryRunner {
     fn id(&self) -> &str {
         sub_action_ids::LOOKUP_CATEGORY
-    }
-
-    fn category(&self) -> SubActionCategory {
-        SubActionCategory::Integration
-    }
-
-    fn label(&self) -> &str {
-        "Lookup Category"
-    }
-
-    fn summary(&self) -> &str {
-        "Searches Kick categories by name and returns the matching numeric ids."
-    }
-
-    fn search_text(&self) -> &str {
-        "kick lookup category search game id"
-    }
-
-    fn icon_name(&self) -> &str {
-        "search"
     }
 
     fn config_spec(&self) -> Option<ConfigSpec> {

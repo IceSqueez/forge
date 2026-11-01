@@ -3,7 +3,8 @@ use std::sync::Arc;
 use async_trait::async_trait;
 use forge_registry::SubActionConfig;
 use forge_registry::{
-    ConfigSpec, RunContext, StepTimer, SubActionCategory, SubActionRunner, TypedField,
+    ConfigSpec, RunContext, StepCatalogEntry, StepTimer, SubActionCategory, SubActionRunner,
+    TypedField,
 };
 use forge_types::{ArgStack, SubActionOutcome, SubActionTelemetry};
 
@@ -47,30 +48,28 @@ impl DeleteMessageRunner {
     }
 }
 
+impl StepCatalogEntry for DeleteMessageRunner {
+    fn category(&self) -> SubActionCategory {
+        SubActionCategory::Moderation
+    }
+    fn label(&self) -> &str {
+        "Delete Message"
+    }
+    fn summary(&self) -> &str {
+        "Deletes a specific message from Twitch chat."
+    }
+    fn search_text(&self) -> &str {
+        "twitch chat delete remove message moderation"
+    }
+    fn icon_name(&self) -> &str {
+        "trash"
+    }
+}
+
 #[async_trait]
 impl SubActionRunner for DeleteMessageRunner {
     fn id(&self) -> &str {
         sub_action_ids::CHAT_DELETE_MESSAGE
-    }
-
-    fn category(&self) -> SubActionCategory {
-        SubActionCategory::Moderation
-    }
-
-    fn label(&self) -> &str {
-        "Delete Message"
-    }
-
-    fn summary(&self) -> &str {
-        "Deletes a specific message from Twitch chat."
-    }
-
-    fn search_text(&self) -> &str {
-        "twitch chat delete remove message moderation"
-    }
-
-    fn icon_name(&self) -> &str {
-        "trash"
     }
 
     fn config_spec(&self) -> Option<ConfigSpec> {

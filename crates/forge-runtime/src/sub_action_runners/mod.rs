@@ -164,8 +164,7 @@ pub(crate) use core_url_open::CoreUrlOpenRunner;
 pub use core_users_get_var::CoreUsersGetVarRunner;
 pub use core_users_increment_var::CoreUsersIncrementVarRunner;
 pub use core_users_set_var::CoreUsersSetVarRunner;
-pub use os_ports::{DesktopNotice, NotifyPort, NotifyUrgency, SystemNotifyPort};
-pub(crate) use os_ports::{SystemClipboardPort, SystemUrlOpenPort};
+pub use os_ports::{ClipboardPort, DesktopNotice, NotifyPort, NotifyUrgency, OsPorts, UrlOpenPort};
 pub use overlay_send::CONTENT_SCHEMA_KEY;
 pub(crate) use overlay_send::OverlaySendRunner;
 pub use overlay_targets::{
@@ -187,13 +186,13 @@ use forge_storage::{
 };
 
 use crate::QueueSchedulerHandle;
-use crate::action_cancel::ActionCancelRegistry;
-use crate::condition::ConditionGate;
 use crate::config::Config;
-use crate::egress::{EgressClient, HttpMethod};
-use crate::overlay_service::OverlayServiceHandle;
-use crate::scheduled_runs::ScheduledRunsHandle;
-use crate::script_registry::ScriptRegistry;
+use crate::engine::action_cancel::ActionCancelRegistry;
+use crate::engine::condition::ConditionGate;
+use crate::engine::scheduled_runs::ScheduledRunsHandle;
+use crate::integrations::egress::{EgressClient, HttpMethod};
+use crate::overlays::overlay_service::OverlayServiceHandle;
+use crate::services::script_registry::ScriptRegistry;
 
 pub fn register_scheduled_run_sub_actions(
     reg: &mut SubActionRegistry,
@@ -222,6 +221,7 @@ pub struct CoreSubActionDeps {
     pub overlays: OverlayServiceHandle,
     pub config: Config,
     pub assets_root: PathBuf,
+    pub os: OsPorts,
 }
 
 pub fn register_core_sub_actions(
@@ -242,6 +242,7 @@ pub fn register_core_sub_actions(
         overlays,
         config,
         assets_root,
+        os,
     } = deps;
     let condition_gate = Arc::new(ConditionGate::new(&config));
 
@@ -359,18 +360,12 @@ pub fn register_core_sub_actions(
     reg.register(Box::new(CoreTimeDiffRunner))?;
     reg.register(Box::new(CoreTimeAddRunner))?;
     reg.register(Box::new(CoreTimeParseRunner))?;
-    reg.register(Box::new(CoreNotifyShowRunner::new(Arc::new(
-        SystemNotifyPort,
+    reg.register(Box::new(CoreNotifyShowRunner::new(os.notify)))?;
+    reg.register(Box::new(CoreClipboardCopyRunner::new(Arc::clone(
+        &os.clipboard,
     ))))?;
-    reg.register(Box::new(CoreClipboardCopyRunner::new(Arc::new(
-        SystemClipboardPort,
-    ))))?;
-    reg.register(Box::new(CoreClipboardReadRunner::new(Arc::new(
-        SystemClipboardPort,
-    ))))?;
-    reg.register(Box::new(CoreUrlOpenRunner::new(Arc::new(
-        SystemUrlOpenPort,
-    ))))?;
+    reg.register(Box::new(CoreClipboardReadRunner::new(os.clipboard)))?;
+    reg.register(Box::new(CoreUrlOpenRunner::new(os.url_open)))?;
 
     let egress =
         Arc::new(EgressClient::new().map_err(|e| RegistryError::RunnerInit(e.to_string()))?);
@@ -396,13 +391,13 @@ mod tests {
         CoreHttpRunner, CoreLogicIfThenElseRunner, CoreLogicLoopRunner, CoreLogicSwitchCaseRunner,
         CoreLogicWaitRunner, CoreLogicWaitUntilRunner, CoreNotifyShowRunner,
         CoreStringLengthRunner, CoreStringTrimRunner, CoreTimeAddRunner, CoreTimeDiffRunner,
-        CoreTimeNowRunner, SCHEDULE_ACTION_KIND_ID, SystemNotifyPort,
+        CoreTimeNowRunner, OsPorts, SCHEDULE_ACTION_KIND_ID,
     };
-    use crate::condition::ConditionGate;
     use crate::config::Config;
-    use crate::egress::{EgressClient, HttpMethod};
+    use crate::engine::condition::ConditionGate;
+    use crate::engine::triggers::TimerTickDescriptor;
+    use crate::integrations::egress::{EgressClient, HttpMethod};
     use crate::test_support::{frozen_core_runtime, sandboxed_backend};
-    use crate::triggers::TimerTickDescriptor;
     use forge_events::test_support::NullPublisher;
 
     use forge_registry::{
@@ -499,7 +494,7 @@ mod tests {
             Arc::new(EgressClient::new().unwrap()),
         );
         let wait_until = CoreLogicWaitUntilRunner::new(gate);
-        let notify = CoreNotifyShowRunner::new(Arc::new(SystemNotifyPort));
+        let notify = CoreNotifyShowRunner::new(OsPorts::unavailable().notify);
         let (runtime, _scheduling_backend) = frozen_core_runtime([0x24; 32]).await;
         let schedule = runtime
             .sub_action_registry

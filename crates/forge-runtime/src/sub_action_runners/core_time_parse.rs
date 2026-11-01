@@ -1,8 +1,8 @@
 use async_trait::async_trait;
 use forge_registry::{
-    ConfigProblem, ConfigSpec, Interpolation, ProducedVariable, RunContext, StepTimer,
-    SubActionCategory, SubActionIo, SubActionRunner, TemplateField, TextEditor, TextField,
-    ToggleField, TypedField, VariableField,
+    ConfigProblem, ConfigSpec, Interpolation, ProducedVariable, RunContext, StepCatalogEntry,
+    StepTimer, SubActionCategory, SubActionIo, SubActionRunner, TemplateField, TextEditor,
+    TextField, ToggleField, TypedField, VariableField,
 };
 use forge_types::{ArgStack, SubActionConfig, SubActionTelemetry, Variant, VariantKind};
 
@@ -68,30 +68,28 @@ fn read_config(config: &SubActionConfig, args: &ArgStack) -> Result<ParseConfig,
 
 pub struct CoreTimeParseRunner;
 
+impl StepCatalogEntry for CoreTimeParseRunner {
+    fn category(&self) -> SubActionCategory {
+        SubActionCategory::Util
+    }
+    fn label(&self) -> &str {
+        "Time - Parse Time String"
+    }
+    fn summary(&self) -> &str {
+        "Read text into a datetime with a date pattern (e.g. dd.MM.yyyy HH:mm); text without an offset is read as local time, or as UTC when the toggle is on"
+    }
+    fn search_text(&self) -> &str {
+        "time parse string datetime format convert pattern date"
+    }
+    fn icon_name(&self) -> &str {
+        "clock-edit"
+    }
+}
+
 #[async_trait]
 impl SubActionRunner for CoreTimeParseRunner {
     fn id(&self) -> &str {
         TIME_PARSE_KIND_ID
-    }
-
-    fn category(&self) -> SubActionCategory {
-        SubActionCategory::Util
-    }
-
-    fn label(&self) -> &str {
-        "Time - Parse Time String"
-    }
-
-    fn summary(&self) -> &str {
-        "Read text into a datetime with a date pattern (e.g. dd.MM.yyyy HH:mm); text without an offset is read as local time, or as UTC when the toggle is on"
-    }
-
-    fn search_text(&self) -> &str {
-        "time parse string datetime format convert pattern date"
-    }
-
-    fn icon_name(&self) -> &str {
-        "clock-edit"
     }
 
     fn config_spec(&self) -> Option<ConfigSpec> {

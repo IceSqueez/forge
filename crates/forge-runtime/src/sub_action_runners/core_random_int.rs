@@ -1,8 +1,8 @@
 use async_trait::async_trait;
 use forge_registry::{
     ConfigProblem, ConfigReason, ConfigSpec, IntegerEditor, IntegerField, Interpolation,
-    ProducedVariable, RunContext, StepTimer, SubActionCategory, SubActionIo, SubActionRunner,
-    TypedField, ValueBounds, VariableField,
+    ProducedVariable, RunContext, StepCatalogEntry, StepTimer, SubActionCategory, SubActionIo,
+    SubActionRunner, TypedField, ValueBounds, VariableField,
 };
 use forge_types::{ArgStack, SubActionConfig, SubActionTelemetry, Variant, VariantKind};
 use rand::RngExt;
@@ -60,30 +60,28 @@ fn read_config(
 
 pub(crate) struct CoreRandomIntRunner;
 
+impl StepCatalogEntry for CoreRandomIntRunner {
+    fn category(&self) -> SubActionCategory {
+        SubActionCategory::Logic
+    }
+    fn label(&self) -> &str {
+        "Random Integer"
+    }
+    fn summary(&self) -> &str {
+        "Generate a random integer in [min, max] and store it in a variable"
+    }
+    fn search_text(&self) -> &str {
+        "random integer number generate range"
+    }
+    fn icon_name(&self) -> &str {
+        "dice"
+    }
+}
+
 #[async_trait]
 impl SubActionRunner for CoreRandomIntRunner {
     fn id(&self) -> &str {
         RANDOM_INT_KIND_ID
-    }
-
-    fn category(&self) -> SubActionCategory {
-        SubActionCategory::Logic
-    }
-
-    fn label(&self) -> &str {
-        "Random Integer"
-    }
-
-    fn summary(&self) -> &str {
-        "Generate a random integer in [min, max] and store it in a variable"
-    }
-
-    fn search_text(&self) -> &str {
-        "random integer number generate range"
-    }
-
-    fn icon_name(&self) -> &str {
-        "dice"
     }
 
     fn config_spec(&self) -> Option<ConfigSpec> {

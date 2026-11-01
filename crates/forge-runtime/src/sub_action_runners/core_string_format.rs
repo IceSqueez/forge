@@ -1,7 +1,8 @@
 use async_trait::async_trait;
 use forge_registry::{
-    ConfigProblem, ConfigSpec, ProducedVariable, RunContext, StepTimer, SubActionCategory,
-    SubActionIo, SubActionRunner, TextEditor, TextField, TypedField, VariableField,
+    ConfigProblem, ConfigSpec, ProducedVariable, RunContext, StepCatalogEntry, StepTimer,
+    SubActionCategory, SubActionIo, SubActionRunner, TextEditor, TextField, TypedField,
+    VariableField,
 };
 use forge_types::{ArgStack, SubActionConfig, SubActionTelemetry, Variant, VariantKind};
 
@@ -35,30 +36,28 @@ fn read_config(
 
 pub struct CoreStringFormatRunner;
 
+impl StepCatalogEntry for CoreStringFormatRunner {
+    fn category(&self) -> SubActionCategory {
+        SubActionCategory::Util
+    }
+    fn label(&self) -> &str {
+        "String - Format Template"
+    }
+    fn summary(&self) -> &str {
+        "Compose a string from a template with %variable% placeholders"
+    }
+    fn search_text(&self) -> &str {
+        "string format template compose placeholder variable"
+    }
+    fn icon_name(&self) -> &str {
+        "template"
+    }
+}
+
 #[async_trait]
 impl SubActionRunner for CoreStringFormatRunner {
     fn id(&self) -> &str {
         "core.string.format"
-    }
-
-    fn category(&self) -> SubActionCategory {
-        SubActionCategory::Util
-    }
-
-    fn label(&self) -> &str {
-        "String - Format Template"
-    }
-
-    fn summary(&self) -> &str {
-        "Compose a string from a template with %variable% placeholders"
-    }
-
-    fn search_text(&self) -> &str {
-        "string format template compose placeholder variable"
-    }
-
-    fn icon_name(&self) -> &str {
-        "template"
     }
 
     fn config_spec(&self) -> Option<ConfigSpec> {

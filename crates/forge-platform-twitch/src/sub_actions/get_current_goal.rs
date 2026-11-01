@@ -5,7 +5,7 @@ use std::sync::Arc;
 
 use async_trait::async_trait;
 use forge_registry::SubActionConfig;
-use forge_registry::{RunContext, StepTimer, SubActionCategory, SubActionRunner};
+use forge_registry::{RunContext, StepCatalogEntry, StepTimer, SubActionCategory, SubActionRunner};
 use forge_types::{ArgStack, SubActionOutcome, SubActionTelemetry, Variant};
 
 use crate::account::identity::SelfIdentity;
@@ -85,30 +85,28 @@ struct GoalData {
     is_achieved: bool,
 }
 
+impl StepCatalogEntry for GetCurrentGoalRunner {
+    fn category(&self) -> SubActionCategory {
+        SubActionCategory::Integration
+    }
+    fn label(&self) -> &str {
+        "Get Current Goal"
+    }
+    fn summary(&self) -> &str {
+        "Reads the broadcaster's active creator goal and exposes its details as variables."
+    }
+    fn search_text(&self) -> &str {
+        "twitch goal creator follower subscription current target progress"
+    }
+    fn icon_name(&self) -> &str {
+        "target"
+    }
+}
+
 #[async_trait]
 impl SubActionRunner for GetCurrentGoalRunner {
     fn id(&self) -> &str {
         sub_action_ids::GOAL_GET_CURRENT
-    }
-
-    fn category(&self) -> SubActionCategory {
-        SubActionCategory::Integration
-    }
-
-    fn label(&self) -> &str {
-        "Get Current Goal"
-    }
-
-    fn summary(&self) -> &str {
-        "Reads the broadcaster's active creator goal and exposes its details as variables."
-    }
-
-    fn search_text(&self) -> &str {
-        "twitch goal creator follower subscription current target progress"
-    }
-
-    fn icon_name(&self) -> &str {
-        "target"
     }
 
     async fn execute(

@@ -7,14 +7,13 @@ use forge_events::EventPublisher;
 use forge_storage::SettingsRepo;
 use forge_types::{
     ArgStack, EventId, IntegrationAvailability, LatestValueReader, ScriptContract, ScriptId,
+    Variant,
 };
 
+use crate::contract::build_scope_for_contract;
 use crate::globals_port::ScriptGlobals;
 use crate::schedule::ActionScheduler;
-use crate::{
-    Engine, EngineConfig, ForgeApi, ScriptHttpClient, ScriptHttpConfig, SpeakRequester,
-    build_scope_for_contract,
-};
+use crate::{Engine, EngineConfig, ForgeApi, ScriptHttpClient, ScriptHttpConfig, SpeakRequester};
 
 #[derive(Debug, Clone)]
 pub struct RunResult {
@@ -66,7 +65,37 @@ impl ScriptSession {
         self
     }
 
-    pub fn into_engine(self) -> Result<Engine, ScriptError> {
+    pub async fn run_for_value(
+        self,
+        body: String,
+        contract: ScriptContract,
+        args: ArgStack,
+    ) -> Result<Result<Option<Variant>, ScriptError>, ScriptTaskPanicked> {
+        tokio::task::spawn_blocking(move || {
+            let mut scope = build_scope_for_contract(&contract, &args)?;
+            self.into_engine()?
+                .eval_script_with_scope_as_variant(&body, &mut scope)
+        })
+        .await
+        .map_err(ScriptTaskPanicked::from)
+    }
+
+    pub async fn run_discarding_value(
+        self,
+        body: String,
+        args: ArgStack,
+    ) -> Result<Result<(), ScriptError>, ScriptTaskPanicked> {
+        tokio::task::spawn_blocking(move || {
+            let mut scope = build_scope_for_contract(&ScriptContract::default(), &args)?;
+            self.into_engine()?
+                .eval_script_with_scope(&body, &mut scope)
+                .map(drop)
+        })
+        .await
+        .map_err(ScriptTaskPanicked::from)
+    }
+
+    pub(crate) fn into_engine(self) -> Result<Engine, ScriptError> {
         self.assemble().map(|(engine, _)| engine)
     }
 
@@ -104,6 +133,16 @@ impl ScriptSession {
         }
         let error_count = api.error_count_handle();
         Ok((Engine::with_api(engine_config, api), error_count))
+    }
+}
+
+#[derive(Debug, thiserror::Error)]
+#[error("{0}")]
+pub struct ScriptTaskPanicked(String);
+
+impl From<tokio::task::JoinError> for ScriptTaskPanicked {
+    fn from(error: tokio::task::JoinError) -> Self {
+        Self(error.to_string())
     }
 }
 

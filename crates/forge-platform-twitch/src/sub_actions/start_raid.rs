@@ -3,7 +3,8 @@ use std::sync::Arc;
 use async_trait::async_trait;
 use forge_registry::SubActionConfig;
 use forge_registry::{
-    ConfigSpec, RunContext, StepTimer, SubActionCategory, SubActionRunner, TextField, TypedField,
+    ConfigSpec, RunContext, StepCatalogEntry, StepTimer, SubActionCategory, SubActionRunner,
+    TextField, TypedField,
 };
 use forge_types::{ArgStack, SubActionOutcome, SubActionTelemetry};
 
@@ -62,30 +63,28 @@ impl StartRaidRunner {
     }
 }
 
+impl StepCatalogEntry for StartRaidRunner {
+    fn category(&self) -> SubActionCategory {
+        SubActionCategory::Integration
+    }
+    fn label(&self) -> &str {
+        "Start Raid"
+    }
+    fn summary(&self) -> &str {
+        "Starts a raid to another broadcaster's channel."
+    }
+    fn search_text(&self) -> &str {
+        "twitch raid start send viewers channel"
+    }
+    fn icon_name(&self) -> &str {
+        "raid"
+    }
+}
+
 #[async_trait]
 impl SubActionRunner for StartRaidRunner {
     fn id(&self) -> &str {
         sub_action_ids::CHANNEL_START_RAID
-    }
-
-    fn category(&self) -> SubActionCategory {
-        SubActionCategory::Integration
-    }
-
-    fn label(&self) -> &str {
-        "Start Raid"
-    }
-
-    fn summary(&self) -> &str {
-        "Starts a raid to another broadcaster's channel."
-    }
-
-    fn search_text(&self) -> &str {
-        "twitch raid start send viewers channel"
-    }
-
-    fn icon_name(&self) -> &str {
-        "raid"
     }
 
     fn config_spec(&self) -> Option<ConfigSpec> {

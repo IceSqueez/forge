@@ -4,8 +4,8 @@ use async_trait::async_trait;
 use forge_platform_core::PlatformError;
 use forge_registry::SubActionConfig;
 use forge_registry::{
-    ConfigSpec, RunContext, StepTimer, SubActionCategory, SubActionRunner, TextEditor, TextField,
-    TypedField,
+    ConfigSpec, RunContext, StepCatalogEntry, StepTimer, SubActionCategory, SubActionRunner,
+    TextEditor, TextField, TypedField,
 };
 use forge_types::{ArgStack, SubActionOutcome, SubActionTelemetry};
 use futures::future::BoxFuture;
@@ -49,30 +49,28 @@ impl DeleteMessageRunner {
     }
 }
 
+impl StepCatalogEntry for DeleteMessageRunner {
+    fn category(&self) -> SubActionCategory {
+        SubActionCategory::Moderation
+    }
+    fn label(&self) -> &str {
+        "Delete Message"
+    }
+    fn summary(&self) -> &str {
+        "Removes a chat message from the Kick channel by its message id. Requires moderation:chat_message:manage scope."
+    }
+    fn search_text(&self) -> &str {
+        "kick chat delete remove message moderation"
+    }
+    fn icon_name(&self) -> &str {
+        "delete"
+    }
+}
+
 #[async_trait]
 impl SubActionRunner for DeleteMessageRunner {
     fn id(&self) -> &str {
         sub_action_ids::CHAT_DELETE_MESSAGE
-    }
-
-    fn category(&self) -> SubActionCategory {
-        SubActionCategory::Moderation
-    }
-
-    fn label(&self) -> &str {
-        "Delete Message"
-    }
-
-    fn summary(&self) -> &str {
-        "Removes a chat message from the Kick channel by its message id. Requires moderation:chat_message:manage scope."
-    }
-
-    fn search_text(&self) -> &str {
-        "kick chat delete remove message moderation"
-    }
-
-    fn icon_name(&self) -> &str {
-        "delete"
     }
 
     fn config_spec(&self) -> Option<ConfigSpec> {

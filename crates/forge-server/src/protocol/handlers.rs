@@ -359,11 +359,11 @@ pub(crate) async fn handle_get_overlay_files(recursive: bool, services: &Service
             if files.len() >= MAX_OVERLAY_FILE_ENTRIES {
                 break 'walk;
             }
-            let canon_entry = match crate::sandbox::confine_within(&canon_root, &entry.path()).await
-            {
-                Some(p) => p,
-                None => continue,
-            };
+            let canon_entry =
+                match crate::access::sandbox::confine_within(&canon_root, &entry.path()).await {
+                    Some(p) => p,
+                    None => continue,
+                };
             let rel = match canon_entry.strip_prefix(&canon_root) {
                 Ok(r) => r.to_owned(),
                 Err(_) => continue,
@@ -380,7 +380,7 @@ pub(crate) async fn handle_get_overlay_files(recursive: bool, services: &Service
                 ("dir", 0u64, serde_json::Value::Null)
             } else {
                 let ext = rel.extension().and_then(|e| e.to_str()).unwrap_or_default();
-                let mime = crate::media_type::mime_for_extension(ext)
+                let mime = crate::files::media_type::mime_for_extension(ext)
                     .map(|s| serde_json::Value::String(s.to_owned()))
                     .unwrap_or(serde_json::Value::Null);
                 ("file", meta.len(), mime)

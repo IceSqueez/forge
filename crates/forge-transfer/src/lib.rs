@@ -42,7 +42,9 @@ pub use full::{
     write_scheduled_backup_unless_unchanged,
 };
 pub use messages::TRANSFER_MESSAGES;
-pub use overlay_import_sweep::sweep_abandoned_overlay_imports;
+pub use overlay_import_sweep::{
+    SetAsideSweep, sweep_abandoned_overlay_imports, sweep_set_aside_overlay_files,
+};
 pub use pack::{
     ExecutableContent, PackConflict, PackExportRequest, PackImportLimit, PackImportOutcome,
     PackImportPlan, PackImportRequest, PackItemKey, PackItemKind, PackManifest, PackMetadata,

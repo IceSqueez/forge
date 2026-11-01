@@ -3,15 +3,15 @@ use std::sync::Arc;
 use async_trait::async_trait;
 use forge_events::EventSource;
 use forge_registry::{
-    ConfigProblem, ConfigSpec, RunContext, StepTimer, SubActionCategory, SubActionRunner,
-    TypedField,
+    ConfigProblem, ConfigSpec, RunContext, StepCatalogEntry, StepTimer, SubActionCategory,
+    SubActionRunner, TypedField,
 };
 use forge_storage::GlobalsRepo;
 use forge_types::{ArgStack, SubActionConfig, SubActionOutcome, SubActionTelemetry};
 
 use super::core_globals_shared::{AMOUNT, GLOBAL_BY_NAME, global_name};
 use crate::core_messages;
-use crate::global_mutation::GlobalMutation;
+use crate::services::global_mutation::GlobalMutation;
 
 pub const GLOBAL_INCREMENT_KIND_ID: &str = "core.globals.increment";
 
@@ -34,30 +34,28 @@ impl CoreGlobalsIncrementRunner {
     }
 }
 
+impl StepCatalogEntry for CoreGlobalsIncrementRunner {
+    fn category(&self) -> SubActionCategory {
+        SubActionCategory::Globals
+    }
+    fn label(&self) -> &str {
+        "Increment Global"
+    }
+    fn summary(&self) -> &str {
+        "Increment a numeric global variable by an amount"
+    }
+    fn search_text(&self) -> &str {
+        "increment global variable counter add"
+    }
+    fn icon_name(&self) -> &str {
+        "plus"
+    }
+}
+
 #[async_trait]
 impl SubActionRunner for CoreGlobalsIncrementRunner {
     fn id(&self) -> &str {
         GLOBAL_INCREMENT_KIND_ID
-    }
-
-    fn category(&self) -> SubActionCategory {
-        SubActionCategory::Globals
-    }
-
-    fn label(&self) -> &str {
-        "Increment Global"
-    }
-
-    fn summary(&self) -> &str {
-        "Increment a numeric global variable by an amount"
-    }
-
-    fn search_text(&self) -> &str {
-        "increment global variable counter add"
-    }
-
-    fn icon_name(&self) -> &str {
-        "plus"
     }
 
     fn config_spec(&self) -> Option<ConfigSpec> {

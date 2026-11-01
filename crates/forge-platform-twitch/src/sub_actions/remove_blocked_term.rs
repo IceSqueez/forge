@@ -3,8 +3,8 @@ use std::sync::Arc;
 use async_trait::async_trait;
 use forge_registry::SubActionConfig;
 use forge_registry::{
-    ConfigSpec, RunContext, StepTimer, SubActionCategory, SubActionRunner, TextEditor, TextField,
-    TypedField,
+    ConfigSpec, RunContext, StepCatalogEntry, StepTimer, SubActionCategory, SubActionRunner,
+    TextEditor, TextField, TypedField,
 };
 use forge_types::{ArgStack, SubActionOutcome, SubActionTelemetry};
 
@@ -41,30 +41,28 @@ impl RemoveBlockedTermRunner {
     }
 }
 
+impl StepCatalogEntry for RemoveBlockedTermRunner {
+    fn category(&self) -> SubActionCategory {
+        SubActionCategory::Moderation
+    }
+    fn label(&self) -> &str {
+        "Remove Blocked Term"
+    }
+    fn summary(&self) -> &str {
+        "Removes a term from the AutoMod blocked terms list by its ID."
+    }
+    fn search_text(&self) -> &str {
+        "twitch automod blocked term remove delete unblock word phrase moderation"
+    }
+    fn icon_name(&self) -> &str {
+        "slash-off"
+    }
+}
+
 #[async_trait]
 impl SubActionRunner for RemoveBlockedTermRunner {
     fn id(&self) -> &str {
         sub_action_ids::AUTOMOD_REMOVE_BLOCKED_TERM
-    }
-
-    fn category(&self) -> SubActionCategory {
-        SubActionCategory::Moderation
-    }
-
-    fn label(&self) -> &str {
-        "Remove Blocked Term"
-    }
-
-    fn summary(&self) -> &str {
-        "Removes a term from the AutoMod blocked terms list by its ID."
-    }
-
-    fn search_text(&self) -> &str {
-        "twitch automod blocked term remove delete unblock word phrase moderation"
-    }
-
-    fn icon_name(&self) -> &str {
-        "slash-off"
     }
 
     fn config_spec(&self) -> Option<ConfigSpec> {

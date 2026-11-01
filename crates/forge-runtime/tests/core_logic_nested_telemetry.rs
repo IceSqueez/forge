@@ -8,8 +8,8 @@ use std::sync::Arc;
 
 use async_trait::async_trait;
 use forge_registry::{
-    CancelSignal, ChainSignal, FormField, RegistryError, RunContext, SubActionCategory,
-    SubActionRegistry, SubActionRunner,
+    CancelSignal, ChainSignal, FormField, RegistryError, RunContext, StepCatalogEntry,
+    SubActionCategory, SubActionRegistry, SubActionRunner,
 };
 use forge_runtime::{ChainEngine, ChainRun, ConditionGate, Config};
 use forge_runtime::{
@@ -26,11 +26,7 @@ const TRIP_ITERATION: i64 = 150;
 
 struct TripRunner;
 
-#[async_trait]
-impl SubActionRunner for TripRunner {
-    fn id(&self) -> &str {
-        TRIP_KIND
-    }
+impl StepCatalogEntry for TripRunner {
     fn category(&self) -> SubActionCategory {
         SubActionCategory::Util
     }
@@ -45,6 +41,13 @@ impl SubActionRunner for TripRunner {
     }
     fn icon_name(&self) -> &str {
         ""
+    }
+}
+
+#[async_trait]
+impl SubActionRunner for TripRunner {
+    fn id(&self) -> &str {
+        TRIP_KIND
     }
     fn default_config(&self) -> SubActionConfig {
         SubActionConfig::new()

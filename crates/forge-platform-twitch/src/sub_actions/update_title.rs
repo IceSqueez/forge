@@ -3,8 +3,8 @@ use std::sync::Arc;
 use async_trait::async_trait;
 use forge_registry::SubActionConfig;
 use forge_registry::{
-    BoundedTextField, ConfigSpec, RunContext, StepTimer, SubActionCategory, SubActionRunner,
-    TextEditor, TypedField, ValueBounds,
+    BoundedTextField, ConfigSpec, RunContext, StepCatalogEntry, StepTimer, SubActionCategory,
+    SubActionRunner, TextEditor, TypedField, ValueBounds,
 };
 use forge_types::{ArgStack, SubActionOutcome, SubActionTelemetry};
 
@@ -54,30 +54,28 @@ impl UpdateTitleRunner {
     }
 }
 
+impl StepCatalogEntry for UpdateTitleRunner {
+    fn category(&self) -> SubActionCategory {
+        SubActionCategory::Integration
+    }
+    fn label(&self) -> &str {
+        "Update Stream Title"
+    }
+    fn summary(&self) -> &str {
+        "Updates the broadcaster's stream title."
+    }
+    fn search_text(&self) -> &str {
+        "twitch channel title stream update broadcast"
+    }
+    fn icon_name(&self) -> &str {
+        "pencil"
+    }
+}
+
 #[async_trait]
 impl SubActionRunner for UpdateTitleRunner {
     fn id(&self) -> &str {
         sub_action_ids::CHANNEL_UPDATE_TITLE
-    }
-
-    fn category(&self) -> SubActionCategory {
-        SubActionCategory::Integration
-    }
-
-    fn label(&self) -> &str {
-        "Update Stream Title"
-    }
-
-    fn summary(&self) -> &str {
-        "Updates the broadcaster's stream title."
-    }
-
-    fn search_text(&self) -> &str {
-        "twitch channel title stream update broadcast"
-    }
-
-    fn icon_name(&self) -> &str {
-        "pencil"
     }
 
     fn config_spec(&self) -> Option<ConfigSpec> {

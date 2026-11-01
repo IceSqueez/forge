@@ -3,8 +3,8 @@ use std::sync::Arc;
 use async_trait::async_trait;
 use forge_registry::SubActionConfig;
 use forge_registry::{
-    ConfigSpec, RunContext, StepTimer, SubActionCategory, SubActionRunner, TextEditor, TextField,
-    TypedField,
+    ConfigSpec, RunContext, StepCatalogEntry, StepTimer, SubActionCategory, SubActionRunner,
+    TextEditor, TextField, TypedField,
 };
 use forge_types::{ArgStack, SubActionTelemetry};
 
@@ -34,30 +34,28 @@ impl StreamSendCaptionRunner {
     }
 }
 
+impl StepCatalogEntry for StreamSendCaptionRunner {
+    fn category(&self) -> SubActionCategory {
+        SubActionCategory::Integration
+    }
+    fn label(&self) -> &str {
+        "Send Stream Caption"
+    }
+    fn summary(&self) -> &str {
+        "Sends CEA-608 caption text over the OBS stream output."
+    }
+    fn search_text(&self) -> &str {
+        "obs stream caption subtitle text cea608 accessibility"
+    }
+    fn icon_name(&self) -> &str {
+        "subtitles"
+    }
+}
+
 #[async_trait]
 impl SubActionRunner for StreamSendCaptionRunner {
     fn id(&self) -> &str {
         sub_action_ids::STREAMING_SEND_CAPTION
-    }
-
-    fn category(&self) -> SubActionCategory {
-        SubActionCategory::Integration
-    }
-
-    fn label(&self) -> &str {
-        "Send Stream Caption"
-    }
-
-    fn summary(&self) -> &str {
-        "Sends CEA-608 caption text over the OBS stream output."
-    }
-
-    fn search_text(&self) -> &str {
-        "obs stream caption subtitle text cea608 accessibility"
-    }
-
-    fn icon_name(&self) -> &str {
-        "subtitles"
     }
 
     fn config_spec(&self) -> Option<ConfigSpec> {

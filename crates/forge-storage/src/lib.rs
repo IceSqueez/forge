@@ -119,7 +119,7 @@ pub use tts_filters::{
     UrlMode,
 };
 pub use unit_of_work::StoreChange;
-pub use user_globals::{UserGlobalEntry, UserGlobalsRepo};
+pub use user_globals::{UserGlobalEntry, UserGlobalKey, UserGlobalsRepo};
 pub use viewer::{Viewer, ViewerMessage, ViewerRepo};
 pub use voice_aliases::VoiceAliasRepo;
 

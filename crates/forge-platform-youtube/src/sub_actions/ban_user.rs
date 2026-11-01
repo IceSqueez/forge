@@ -3,13 +3,14 @@ use std::sync::Arc;
 use async_trait::async_trait;
 use forge_registry::SubActionConfig;
 use forge_registry::{
-    ConfigSpec, RunContext, StepTimer, SubActionCategory, SubActionRunner, TypedField,
+    ConfigSpec, RunContext, StepCatalogEntry, StepTimer, SubActionCategory, SubActionRunner,
+    TypedField,
 };
 use forge_types::{ArgStack, SubActionTelemetry};
 
 use super::fields::CHANNEL_ID;
 use super::step_failure;
-use crate::moderation::YoutubeModeration;
+use crate::chat::moderation::YoutubeModeration;
 use crate::vocabulary::{config_keys, sub_action_ids};
 use forge_registry::interpolated_text;
 
@@ -25,30 +26,28 @@ impl BanUserRunner {
     }
 }
 
+impl StepCatalogEntry for BanUserRunner {
+    fn category(&self) -> SubActionCategory {
+        SubActionCategory::Moderation
+    }
+    fn label(&self) -> &str {
+        "Ban User"
+    }
+    fn summary(&self) -> &str {
+        "Permanently bans a user from the active YouTube live chat."
+    }
+    fn search_text(&self) -> &str {
+        "youtube moderation ban block permanent remove user channel"
+    }
+    fn icon_name(&self) -> &str {
+        "ban"
+    }
+}
+
 #[async_trait]
 impl SubActionRunner for BanUserRunner {
     fn id(&self) -> &str {
         sub_action_ids::MODERATION_BAN_USER
-    }
-
-    fn category(&self) -> SubActionCategory {
-        SubActionCategory::Moderation
-    }
-
-    fn label(&self) -> &str {
-        "Ban User"
-    }
-
-    fn summary(&self) -> &str {
-        "Permanently bans a user from the active YouTube live chat."
-    }
-
-    fn search_text(&self) -> &str {
-        "youtube moderation ban block permanent remove user channel"
-    }
-
-    fn icon_name(&self) -> &str {
-        "ban"
     }
 
     fn config_spec(&self) -> Option<ConfigSpec> {
@@ -87,10 +86,10 @@ mod tests {
     use wiremock::{Mock, MockServer, ResponseTemplate};
 
     use super::*;
-    use crate::ban_ledger_test_support::{
+    use crate::broadcast::live_chat_id::LiveChatIdHandle;
+    use crate::chat::ban_ledger_test_support::{
         MemoryBanLedger, TEST_BROADCASTER_CHANNEL_ID, broadcaster_source,
     };
-    use crate::live_chat_id::LiveChatIdHandle;
     use forge_types::SubActionOutcome;
     use forge_types::Variant;
     use std::collections::BTreeMap;
@@ -104,9 +103,9 @@ mod tests {
         let moderation = YoutubeModeration::new(
             crate::endpoints_test_support::unreachable_data_api(),
             source,
-            crate::ban_ledger_test_support::broadcaster_source(),
+            crate::chat::ban_ledger_test_support::broadcaster_source(),
             LiveChatIdHandle::new(),
-            crate::ban_ledger_test_support::MemoryBanLedger::shared(),
+            crate::chat::ban_ledger_test_support::MemoryBanLedger::shared(),
         );
         BanUserRunner::new(Arc::new(moderation))
     }
@@ -199,7 +198,7 @@ mod tests {
             .await;
 
         assert_eq!(telemetry.outcome, SubActionOutcome::Success);
-        let key = crate::ban_ledger::ban_ledger_key(TEST_BROADCASTER_CHANNEL_ID, "UC-target");
+        let key = crate::chat::ban_ledger::ban_ledger_key(TEST_BROADCASTER_CHANNEL_ID, "UC-target");
         assert_eq!(
             ledger.stored(&key).map(|entry| entry.viewer_name),
             Some("Alice".to_owned())

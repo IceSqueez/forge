@@ -48,36 +48,35 @@ mod tests {
 
     use super::*;
     use crate::i18n::install_language;
+    use forge_registry::StepCatalogEntry;
 
     const KIND: &str = "test.kind";
     const KEYS: [&str; 3] = ["id", "clip_id", "text"];
 
     struct Verdict(Option<ConfigProblem>, Vec<FormField>);
 
+    impl StepCatalogEntry for Verdict {
+        fn category(&self) -> SubActionCategory {
+            SubActionCategory::Audio
+        }
+        fn label(&self) -> &str {
+            KIND
+        }
+        fn summary(&self) -> &str {
+            KIND
+        }
+        fn search_text(&self) -> &str {
+            KIND
+        }
+        fn icon_name(&self) -> &str {
+            "volume"
+        }
+    }
+
     #[async_trait::async_trait]
     impl SubActionRunner for Verdict {
         fn id(&self) -> &str {
             KIND
-        }
-
-        fn category(&self) -> SubActionCategory {
-            SubActionCategory::Audio
-        }
-
-        fn label(&self) -> &str {
-            KIND
-        }
-
-        fn summary(&self) -> &str {
-            KIND
-        }
-
-        fn search_text(&self) -> &str {
-            KIND
-        }
-
-        fn icon_name(&self) -> &str {
-            "volume"
         }
 
         fn default_config(&self) -> SubActionConfig {

@@ -2,8 +2,8 @@ use crate::core_messages;
 use async_trait::async_trait;
 use forge_registry::{
     ConfigProblem, ConfigReason, ConfigSpec, Interpolation, LinesField, ProducedVariable,
-    RunContext, StepTimer, SubActionCategory, SubActionIo, SubActionRunner, TypedField,
-    VariableField,
+    RunContext, StepCatalogEntry, StepTimer, SubActionCategory, SubActionIo, SubActionRunner,
+    TypedField, VariableField,
 };
 use forge_types::{ArgStack, SubActionConfig, SubActionTelemetry, Variant, VariantKind};
 use rand::RngExt;
@@ -114,30 +114,28 @@ fn read_config(config: &SubActionConfig, args: &ArgStack) -> Result<PickConfig, 
 
 pub(crate) struct CoreRandomPickRunner;
 
+impl StepCatalogEntry for CoreRandomPickRunner {
+    fn category(&self) -> SubActionCategory {
+        SubActionCategory::Logic
+    }
+    fn label(&self) -> &str {
+        "Random Pick"
+    }
+    fn summary(&self) -> &str {
+        "Pick a random element from a list and store it in a variable"
+    }
+    fn search_text(&self) -> &str {
+        "random pick choose select list element weighted"
+    }
+    fn icon_name(&self) -> &str {
+        "dice"
+    }
+}
+
 #[async_trait]
 impl SubActionRunner for CoreRandomPickRunner {
     fn id(&self) -> &str {
         "core.random.pick"
-    }
-
-    fn category(&self) -> SubActionCategory {
-        SubActionCategory::Logic
-    }
-
-    fn label(&self) -> &str {
-        "Random Pick"
-    }
-
-    fn summary(&self) -> &str {
-        "Pick a random element from a list and store it in a variable"
-    }
-
-    fn search_text(&self) -> &str {
-        "random pick choose select list element weighted"
-    }
-
-    fn icon_name(&self) -> &str {
-        "dice"
     }
 
     fn config_spec(&self) -> Option<ConfigSpec> {

@@ -200,7 +200,7 @@ impl ObsClient {
 
     pub(crate) async fn active_session(&self) -> Result<LiveSession, ObsError> {
         let guard = self.inner.read().await;
-        guard.clone().ok_or(ObsError::Disconnected)
+        guard.clone().ok_or(ObsError::NotConnected)
     }
 
     #[cfg(test)]
@@ -1115,7 +1115,7 @@ mod tests {
         };
         assert!(matches!(tolerate_rejection(Ok(4)), Ok(Some(4))));
         assert!(matches!(tolerate_rejection::<i32>(Err(rejected)), Ok(None)));
-        for loss in [ObsError::Timeout, ObsError::Disconnected] {
+        for loss in [ObsError::Timeout, ObsError::NotConnected] {
             assert!(
                 tolerate_rejection::<i32>(Err(loss)).is_err(),
                 "a lost connection was swallowed as a rejection"

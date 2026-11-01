@@ -2,7 +2,8 @@ use std::sync::Arc;
 
 use async_trait::async_trait;
 use forge_registry::{
-    ConfigSpec, RunContext, StepTimer, SubActionCategory, SubActionRunner, TypedField,
+    ConfigSpec, RunContext, StepCatalogEntry, StepTimer, SubActionCategory, SubActionRunner,
+    TypedField,
 };
 use forge_storage::ActionRepo;
 use forge_types::{ActionId, ArgStack, SubActionConfig, SubActionOutcome, SubActionTelemetry};
@@ -97,30 +98,28 @@ impl CoreActionStateRunner {
     }
 }
 
+impl StepCatalogEntry for CoreActionStateRunner {
+    fn category(&self) -> SubActionCategory {
+        SubActionCategory::Logic
+    }
+    fn label(&self) -> &str {
+        self.copy.label
+    }
+    fn summary(&self) -> &str {
+        self.copy.summary
+    }
+    fn search_text(&self) -> &str {
+        self.copy.search_text
+    }
+    fn icon_name(&self) -> &str {
+        self.copy.icon_name
+    }
+}
+
 #[async_trait]
 impl SubActionRunner for CoreActionStateRunner {
     fn id(&self) -> &str {
         self.copy.id
-    }
-
-    fn category(&self) -> SubActionCategory {
-        SubActionCategory::Logic
-    }
-
-    fn label(&self) -> &str {
-        self.copy.label
-    }
-
-    fn summary(&self) -> &str {
-        self.copy.summary
-    }
-
-    fn search_text(&self) -> &str {
-        self.copy.search_text
-    }
-
-    fn icon_name(&self) -> &str {
-        self.copy.icon_name
     }
 
     fn config_spec(&self) -> Option<ConfigSpec> {

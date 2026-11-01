@@ -3,7 +3,7 @@ use std::sync::Arc;
 use async_trait::async_trait;
 use forge_registry::SubActionConfig;
 use forge_registry::{
-    ConfigProblem, ConfigSpec, NumberField, OptionalField, RunContext, StepTimer,
+    ConfigProblem, ConfigSpec, NumberField, OptionalField, RunContext, StepCatalogEntry, StepTimer,
     SubActionCategory, SubActionRunner, TypedField,
 };
 use forge_types::{ArgStack, SubActionTelemetry, Variant};
@@ -72,30 +72,28 @@ impl ItemThrowRunner {
     }
 }
 
+impl StepCatalogEntry for ItemThrowRunner {
+    fn category(&self) -> SubActionCategory {
+        SubActionCategory::Integration
+    }
+    fn label(&self) -> &str {
+        "Throw Item"
+    }
+    fn summary(&self) -> &str {
+        "Spawns an item and animates it moving across the VTube Studio scene."
+    }
+    fn search_text(&self) -> &str {
+        "vtube item throw spawn fling toss animate vts"
+    }
+    fn icon_name(&self) -> &str {
+        "wind"
+    }
+}
+
 #[async_trait]
 impl SubActionRunner for ItemThrowRunner {
     fn id(&self) -> &str {
         sub_action_ids::ITEM_THROW
-    }
-
-    fn category(&self) -> SubActionCategory {
-        SubActionCategory::Integration
-    }
-
-    fn label(&self) -> &str {
-        "Throw Item"
-    }
-
-    fn summary(&self) -> &str {
-        "Spawns an item and animates it moving across the VTube Studio scene."
-    }
-
-    fn search_text(&self) -> &str {
-        "vtube item throw spawn fling toss animate vts"
-    }
-
-    fn icon_name(&self) -> &str {
-        "wind"
     }
 
     fn config_spec(&self) -> Option<ConfigSpec> {

@@ -2,7 +2,7 @@ use std::sync::Arc;
 
 use async_trait::async_trait;
 use forge_registry::SubActionConfig;
-use forge_registry::{RunContext, StepTimer, SubActionCategory, SubActionRunner};
+use forge_registry::{RunContext, StepCatalogEntry, StepTimer, SubActionCategory, SubActionRunner};
 use forge_types::{ArgStack, SubActionTelemetry};
 
 use crate::runners::step_failure;
@@ -19,30 +19,28 @@ impl ItemUnloadAllRunner {
     }
 }
 
+impl StepCatalogEntry for ItemUnloadAllRunner {
+    fn category(&self) -> SubActionCategory {
+        SubActionCategory::Integration
+    }
+    fn label(&self) -> &str {
+        "Remove All Items"
+    }
+    fn summary(&self) -> &str {
+        "Removes every item currently loaded in the VTube Studio scene."
+    }
+    fn search_text(&self) -> &str {
+        "vtube item remove clear unload all scene vts"
+    }
+    fn icon_name(&self) -> &str {
+        "trash"
+    }
+}
+
 #[async_trait]
 impl SubActionRunner for ItemUnloadAllRunner {
     fn id(&self) -> &str {
         sub_action_ids::ITEM_UNLOAD_ALL
-    }
-
-    fn category(&self) -> SubActionCategory {
-        SubActionCategory::Integration
-    }
-
-    fn label(&self) -> &str {
-        "Remove All Items"
-    }
-
-    fn summary(&self) -> &str {
-        "Removes every item currently loaded in the VTube Studio scene."
-    }
-
-    fn search_text(&self) -> &str {
-        "vtube item remove clear unload all scene vts"
-    }
-
-    fn icon_name(&self) -> &str {
-        "trash"
     }
 
     async fn execute(

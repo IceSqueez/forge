@@ -3,13 +3,14 @@ use std::sync::Arc;
 use async_trait::async_trait;
 use forge_registry::SubActionConfig;
 use forge_registry::{
-    ConfigSpec, RunContext, StepTimer, SubActionCategory, SubActionRunner, TypedField,
+    ConfigSpec, RunContext, StepCatalogEntry, StepTimer, SubActionCategory, SubActionRunner,
+    TypedField,
 };
 use forge_types::{ArgStack, SubActionTelemetry};
 
 use super::fields::CHANNEL_ID;
 use super::step_failure;
-use crate::moderation::YoutubeModeration;
+use crate::chat::moderation::YoutubeModeration;
 use crate::vocabulary::sub_action_ids;
 
 const CONFIG: ConfigSpec = ConfigSpec::new(&[&CHANNEL_ID]);
@@ -24,30 +25,28 @@ impl RemoveModeratorRunner {
     }
 }
 
+impl StepCatalogEntry for RemoveModeratorRunner {
+    fn category(&self) -> SubActionCategory {
+        SubActionCategory::Moderation
+    }
+    fn label(&self) -> &str {
+        "Remove Moderator"
+    }
+    fn summary(&self) -> &str {
+        "Revokes a user's moderator status in the active YouTube live chat."
+    }
+    fn search_text(&self) -> &str {
+        "youtube moderation remove revoke moderator mod demote user channel"
+    }
+    fn icon_name(&self) -> &str {
+        "shield-off"
+    }
+}
+
 #[async_trait]
 impl SubActionRunner for RemoveModeratorRunner {
     fn id(&self) -> &str {
         sub_action_ids::MODERATION_REMOVE_MODERATOR
-    }
-
-    fn category(&self) -> SubActionCategory {
-        SubActionCategory::Moderation
-    }
-
-    fn label(&self) -> &str {
-        "Remove Moderator"
-    }
-
-    fn summary(&self) -> &str {
-        "Revokes a user's moderator status in the active YouTube live chat."
-    }
-
-    fn search_text(&self) -> &str {
-        "youtube moderation remove revoke moderator mod demote user channel"
-    }
-
-    fn icon_name(&self) -> &str {
-        "shield-off"
     }
 
     fn config_spec(&self) -> Option<ConfigSpec> {
@@ -75,7 +74,7 @@ mod tests {
     use futures::future::BoxFuture;
 
     use super::*;
-    use crate::live_chat_id::LiveChatIdHandle;
+    use crate::broadcast::live_chat_id::LiveChatIdHandle;
     use forge_types::Variant;
     use std::collections::BTreeMap;
 
@@ -88,9 +87,9 @@ mod tests {
         let moderation = YoutubeModeration::new(
             crate::endpoints_test_support::unreachable_data_api(),
             source,
-            crate::ban_ledger_test_support::broadcaster_source(),
+            crate::chat::ban_ledger_test_support::broadcaster_source(),
             LiveChatIdHandle::new(),
-            crate::ban_ledger_test_support::MemoryBanLedger::shared(),
+            crate::chat::ban_ledger_test_support::MemoryBanLedger::shared(),
         );
         RemoveModeratorRunner::new(Arc::new(moderation))
     }

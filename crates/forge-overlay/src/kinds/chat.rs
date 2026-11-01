@@ -3,17 +3,17 @@ use forge_types::{ArgStack, PlatformId, Variant};
 
 use forge_types::MessageCode;
 
-use crate::assets::PageAssets;
-use crate::config;
-use crate::descriptor::{
+use crate::catalog::descriptor::{
     DeliveryDisposition, OverlayConfig, OverlayKindDescriptor, SectionedField,
 };
+use crate::catalog::source_box::{ContentMargins, DesignSize};
+use crate::config;
+use crate::files::assets::PageAssets;
 use crate::messages;
 use crate::metrics;
 use crate::metrics::ElementSizing;
 use crate::motion::{self, MotionAxes, MotionProfile};
-use crate::preview::{PreviewComposition, PreviewShape, compose};
-use crate::source_box::{ContentMargins, DesignSize};
+use crate::render::preview::{PreviewComposition, PreviewShape, compose};
 
 pub const KIND_ID: &str = "overlay.chat";
 

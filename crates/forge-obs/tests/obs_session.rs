@@ -391,7 +391,7 @@ async fn a_request_in_flight_when_obs_drops_the_socket_fails_as_disconnected() {
     let outcome = client.set_scene(SCENE).await;
 
     assert!(
-        matches!(outcome, Err(ObsError::Disconnected)),
+        matches!(outcome, Err(ObsError::NotConnected)),
         "got {outcome:?}"
     );
 }
@@ -427,7 +427,7 @@ async fn leaving_connected_is_flagged_expected_only_when_the_user_asked_for_it()
             LeaveConnected::UserReconnects => client.reconnect().await.unwrap(),
             LeaveConnected::ObsDropsTheSocket => {
                 let lost = client.set_scene(SCENE).await;
-                assert!(matches!(lost, Err(ObsError::Disconnected)), "got {lost:?}");
+                assert!(matches!(lost, Err(ObsError::NotConnected)), "got {lost:?}");
             }
         }
         settle_until("the client announced leaving connected", || {

@@ -2,11 +2,11 @@ use std::sync::Arc;
 
 use async_trait::async_trait;
 use forge_registry::SubActionConfig;
-use forge_registry::{RunContext, StepTimer, SubActionCategory, SubActionRunner};
+use forge_registry::{RunContext, StepCatalogEntry, StepTimer, SubActionCategory, SubActionRunner};
 use forge_types::{ArgStack, SubActionTelemetry, Variant};
 
 use super::step_failure;
-use crate::stream_stats::YoutubeStreamStats;
+use crate::broadcast::stream_stats::YoutubeStreamStats;
 use crate::vocabulary::sub_action_ids;
 use crate::vocabulary::variables::stream_stats as variables;
 use forge_platform_core::timestamp_variant;
@@ -21,30 +21,28 @@ impl LookupStreamStatsRunner {
     }
 }
 
+impl StepCatalogEntry for LookupStreamStatsRunner {
+    fn category(&self) -> SubActionCategory {
+        SubActionCategory::Integration
+    }
+    fn label(&self) -> &str {
+        "Stream Stats"
+    }
+    fn summary(&self) -> &str {
+        "Fetches live-streaming details for the active YouTube broadcast."
+    }
+    fn search_text(&self) -> &str {
+        "youtube stream stats concurrent viewers start time broadcast live"
+    }
+    fn icon_name(&self) -> &str {
+        "chart-line"
+    }
+}
+
 #[async_trait]
 impl SubActionRunner for LookupStreamStatsRunner {
     fn id(&self) -> &str {
         sub_action_ids::LOOKUP_STREAM_STATS
-    }
-
-    fn category(&self) -> SubActionCategory {
-        SubActionCategory::Integration
-    }
-
-    fn label(&self) -> &str {
-        "Stream Stats"
-    }
-
-    fn summary(&self) -> &str {
-        "Fetches live-streaming details for the active YouTube broadcast."
-    }
-
-    fn search_text(&self) -> &str {
-        "youtube stream stats concurrent viewers start time broadcast live"
-    }
-
-    fn icon_name(&self) -> &str {
-        "chart-line"
     }
 
     async fn execute(
@@ -88,7 +86,7 @@ mod tests {
     use wiremock::{Mock, MockServer, ResponseTemplate};
 
     use super::*;
-    use crate::active_broadcast_id::ActiveBroadcastIdHandle;
+    use crate::broadcast::active_broadcast_id::ActiveBroadcastIdHandle;
     use forge_test_support::instant;
     use forge_types::SubActionOutcome;
     use std::collections::BTreeMap;

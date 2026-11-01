@@ -3,8 +3,8 @@ use std::sync::Arc;
 use async_trait::async_trait;
 use forge_registry::SubActionConfig;
 use forge_registry::{
-    ConfigSpec, PickedTextField, RunContext, StepTimer, SubActionCategory, SubActionRunner,
-    TextPicker, TypedField,
+    ConfigSpec, PickedTextField, RunContext, StepCatalogEntry, StepTimer, SubActionCategory,
+    SubActionRunner, TextPicker, TypedField,
 };
 use forge_types::{ArgStack, SubActionTelemetry};
 
@@ -34,30 +34,28 @@ impl HotkeyTriggerRunner {
     }
 }
 
+impl StepCatalogEntry for HotkeyTriggerRunner {
+    fn category(&self) -> SubActionCategory {
+        SubActionCategory::Integration
+    }
+    fn label(&self) -> &str {
+        "Trigger Hotkey"
+    }
+    fn summary(&self) -> &str {
+        "Triggers a VTube Studio hotkey by its ID."
+    }
+    fn search_text(&self) -> &str {
+        "vtube hotkey trigger animation expression vts"
+    }
+    fn icon_name(&self) -> &str {
+        "bolt"
+    }
+}
+
 #[async_trait]
 impl SubActionRunner for HotkeyTriggerRunner {
     fn id(&self) -> &str {
         sub_action_ids::HOTKEY_TRIGGER
-    }
-
-    fn category(&self) -> SubActionCategory {
-        SubActionCategory::Integration
-    }
-
-    fn label(&self) -> &str {
-        "Trigger Hotkey"
-    }
-
-    fn summary(&self) -> &str {
-        "Triggers a VTube Studio hotkey by its ID."
-    }
-
-    fn search_text(&self) -> &str {
-        "vtube hotkey trigger animation expression vts"
-    }
-
-    fn icon_name(&self) -> &str {
-        "bolt"
     }
 
     fn config_spec(&self) -> Option<ConfigSpec> {

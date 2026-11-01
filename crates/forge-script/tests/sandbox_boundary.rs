@@ -318,7 +318,7 @@ fn a_bound_constant_past_every_limit_is_not_refused() {
     );
 
     let total = engine()
-        .eval_script_with_scope(&body, &mut scope)
+        .eval_in_scope(&body, &mut scope)
         .expect("a constant is read, never grown")
         .as_int();
 
@@ -338,7 +338,7 @@ fn a_bound_mutable_value_past_the_limit_is_refused() {
     let body =
         format!("let i = 0; while i < {ENOUGH_READS_TO_BE_SAMPLED} {{ bound[0] = i; i += 1; }} i");
 
-    let refused = engine().eval_script_with_scope(&body, &mut scope);
+    let refused = engine().eval_in_scope(&body, &mut scope);
 
     assert!(
         matches!(&refused, Err(ScriptError::Runtime { reason }) if reason.contains(DATA_REFUSAL)),

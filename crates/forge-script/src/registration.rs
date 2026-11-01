@@ -3,52 +3,52 @@ use std::sync::Arc;
 use rhai::{Dynamic, INT, ImmutableString, Map, Module, RhaiNativeFunc};
 use time::OffsetDateTime;
 
-use crate::catalog::{MethodDescriptor, ParamDescriptor};
+use crate::catalog::{MethodDescriptor, ParamDescriptor, ScriptValueKind};
 
 pub(crate) trait ScriptType {
-    const NAME: &'static str;
+    const KIND: ScriptValueKind;
 }
 
 impl ScriptType for () {
-    const NAME: &'static str = "()";
+    const KIND: ScriptValueKind = ScriptValueKind::Unit;
 }
 
 impl ScriptType for INT {
-    const NAME: &'static str = "int";
+    const KIND: ScriptValueKind = ScriptValueKind::Int;
 }
 
 impl ScriptType for bool {
-    const NAME: &'static str = "bool";
+    const KIND: ScriptValueKind = ScriptValueKind::Bool;
 }
 
 impl ScriptType for ImmutableString {
-    const NAME: &'static str = "string";
+    const KIND: ScriptValueKind = ScriptValueKind::Text;
 }
 
 impl ScriptType for OffsetDateTime {
-    const NAME: &'static str = "datetime";
+    const KIND: ScriptValueKind = ScriptValueKind::Datetime;
 }
 
 impl ScriptType for Map {
-    const NAME: &'static str = "Map";
+    const KIND: ScriptValueKind = ScriptValueKind::Map;
 }
 
 impl ScriptType for Dynamic {
-    const NAME: &'static str = "Variant";
+    const KIND: ScriptValueKind = ScriptValueKind::Value;
 }
 
 pub(crate) trait ScriptParams<const N: usize> {
-    const TYPES: [&'static str; N];
+    const TYPES: [ScriptValueKind; N];
 }
 
 impl ScriptParams<0> for () {
-    const TYPES: [&'static str; 0] = [];
+    const TYPES: [ScriptValueKind; 0] = [];
 }
 
 macro_rules! script_params {
     ($n:literal: $($param:ident),+) => {
         impl<$($param: ScriptType),+> ScriptParams<$n> for ($($param,)+) {
-            const TYPES: [&'static str; $n] = [$($param::NAME),+];
+            const TYPES: [ScriptValueKind; $n] = [$($param::KIND),+];
         }
     };
 }
@@ -87,7 +87,7 @@ impl ApiModule {
                 .zip(A::TYPES)
                 .map(|(name, ty)| ParamDescriptor { name, ty })
                 .collect(),
-            return_type: R::NAME,
+            return_type: R::KIND,
             doc: spec.doc,
         });
     }

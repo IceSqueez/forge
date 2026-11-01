@@ -7,7 +7,7 @@ pub(crate) fn message(error: &ObsError) -> MessageRef {
     match error {
         ObsError::Connect(detail) => messages::connect_failed_with(detail),
         ObsError::Authentication => messages::password_rejected(),
-        ObsError::Disconnected | ObsError::NotStored => messages::not_connected(),
+        ObsError::NotConnected | ObsError::NotStored => messages::not_connected(),
         ObsError::Storage(source) => messages::connect_failed_with(&source.to_string()),
         ObsError::Timeout => messages::request_timed_out(),
         ObsError::Protocol(detail) => messages::protocol_error(detail),
@@ -55,7 +55,7 @@ mod tests {
                 Some("refused by peer".to_owned()),
             ),
             (ObsError::Authentication, "msg-obs-password_rejected", None),
-            (ObsError::Disconnected, "msg-obs-not_connected", None),
+            (ObsError::NotConnected, "msg-obs-not_connected", None),
             (ObsError::Timeout, "msg-obs-request_timed_out", None),
             (
                 ObsError::Protocol("bad op code".to_owned()),

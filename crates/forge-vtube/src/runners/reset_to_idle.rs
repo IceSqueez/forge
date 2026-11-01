@@ -2,7 +2,7 @@ use std::sync::Arc;
 
 use async_trait::async_trait;
 use forge_registry::SubActionConfig;
-use forge_registry::{RunContext, StepTimer, SubActionCategory, SubActionRunner};
+use forge_registry::{RunContext, StepCatalogEntry, StepTimer, SubActionCategory, SubActionRunner};
 use forge_types::{ArgStack, SubActionTelemetry};
 
 use crate::runners::hold_registry::HoldRegistry;
@@ -21,30 +21,28 @@ impl ResetToIdleRunner {
     }
 }
 
+impl StepCatalogEntry for ResetToIdleRunner {
+    fn category(&self) -> SubActionCategory {
+        SubActionCategory::Integration
+    }
+    fn label(&self) -> &str {
+        "Reset to Idle"
+    }
+    fn summary(&self) -> &str {
+        "Deactivates every currently active expression, returning the model to idle."
+    }
+    fn search_text(&self) -> &str {
+        "vtube expression reset idle deactivate default vts"
+    }
+    fn icon_name(&self) -> &str {
+        "refresh"
+    }
+}
+
 #[async_trait]
 impl SubActionRunner for ResetToIdleRunner {
     fn id(&self) -> &str {
         sub_action_ids::RESET_TO_IDLE
-    }
-
-    fn category(&self) -> SubActionCategory {
-        SubActionCategory::Integration
-    }
-
-    fn label(&self) -> &str {
-        "Reset to Idle"
-    }
-
-    fn summary(&self) -> &str {
-        "Deactivates every currently active expression, returning the model to idle."
-    }
-
-    fn search_text(&self) -> &str {
-        "vtube expression reset idle deactivate default vts"
-    }
-
-    fn icon_name(&self) -> &str {
-        "refresh"
     }
 
     async fn execute(

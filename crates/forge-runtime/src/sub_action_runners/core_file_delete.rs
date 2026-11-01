@@ -1,8 +1,8 @@
 use crate::core_messages;
 use async_trait::async_trait;
 use forge_registry::{
-    ConfigProblem, ConfigSpec, RunContext, StepTimer, SubActionCategory, SubActionRunner,
-    TextEditor, TextField, ToggleField, TypedField,
+    ConfigProblem, ConfigSpec, RunContext, StepCatalogEntry, StepTimer, SubActionCategory,
+    SubActionRunner, TextEditor, TextField, ToggleField, TypedField,
 };
 use forge_types::{ArgStack, SubActionConfig, SubActionOutcome, SubActionTelemetry};
 use std::path::PathBuf;
@@ -39,30 +39,28 @@ impl CoreFileDeleteRunner {
     }
 }
 
+impl StepCatalogEntry for CoreFileDeleteRunner {
+    fn category(&self) -> SubActionCategory {
+        SubActionCategory::Files
+    }
+    fn label(&self) -> &str {
+        "Delete File"
+    }
+    fn summary(&self) -> &str {
+        "Remove a sandboxed file; never removes directories"
+    }
+    fn search_text(&self) -> &str {
+        "delete remove file assets"
+    }
+    fn icon_name(&self) -> &str {
+        "file-minus"
+    }
+}
+
 #[async_trait]
 impl SubActionRunner for CoreFileDeleteRunner {
     fn id(&self) -> &str {
         "core.file.delete"
-    }
-
-    fn category(&self) -> SubActionCategory {
-        SubActionCategory::Files
-    }
-
-    fn label(&self) -> &str {
-        "Delete File"
-    }
-
-    fn summary(&self) -> &str {
-        "Remove a sandboxed file; never removes directories"
-    }
-
-    fn search_text(&self) -> &str {
-        "delete remove file assets"
-    }
-
-    fn icon_name(&self) -> &str {
-        "file-minus"
     }
 
     fn config_spec(&self) -> Option<ConfigSpec> {

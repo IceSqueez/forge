@@ -31,7 +31,7 @@ pub fn inert_annotation_lines(source: &str) -> Vec<usize> {
         .collect()
 }
 
-pub fn build_scope_for_contract(
+pub(crate) fn build_scope_for_contract(
     contract: &ScriptContract,
     arg_stack: &ArgStack,
 ) -> Result<rhai::Scope<'static>, ScriptError> {

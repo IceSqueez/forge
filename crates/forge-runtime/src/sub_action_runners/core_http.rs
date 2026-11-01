@@ -5,14 +5,14 @@ use std::time::Duration;
 use async_trait::async_trait;
 use forge_registry::{
     ChoiceField, ConfigChoice, ConfigProblem, ConfigReason, ConfigSpec, DurationBounds,
-    DurationField, JsonObjectField, RunContext, StepTimer, SubActionCategory, SubActionIo,
-    SubActionRunner, TextEditor, TextField, ToggleField, TypedField,
+    DurationField, JsonObjectField, RunContext, StepCatalogEntry, StepTimer, SubActionCategory,
+    SubActionIo, SubActionRunner, TextEditor, TextField, ToggleField, TypedField,
 };
 use forge_storage::{SettingsRepo, read_setting_or_default};
 use forge_types::{ArgStack, SubActionConfig, SubActionOutcome, SubActionTelemetry, Variant};
 
 use crate::core_messages;
-use crate::egress::{EgressClient, EgressRequest, EgressResponse, HttpMethod};
+use crate::integrations::egress::{EgressClient, EgressRequest, EgressResponse, HttpMethod};
 use crate::settings;
 
 const TIMEOUT_MIN_MS: i64 = 100;
@@ -284,30 +284,28 @@ struct HttpDescriptor {
     has_body: bool,
 }
 
+impl StepCatalogEntry for CoreHttpRunner {
+    fn category(&self) -> SubActionCategory {
+        SubActionCategory::Http
+    }
+    fn label(&self) -> &str {
+        self.descriptor().label
+    }
+    fn summary(&self) -> &str {
+        self.descriptor().summary
+    }
+    fn search_text(&self) -> &str {
+        self.descriptor().search_text
+    }
+    fn icon_name(&self) -> &str {
+        "globe"
+    }
+}
+
 #[async_trait]
 impl SubActionRunner for CoreHttpRunner {
     fn id(&self) -> &str {
         self.descriptor().id
-    }
-
-    fn category(&self) -> SubActionCategory {
-        SubActionCategory::Http
-    }
-
-    fn label(&self) -> &str {
-        self.descriptor().label
-    }
-
-    fn summary(&self) -> &str {
-        self.descriptor().summary
-    }
-
-    fn search_text(&self) -> &str {
-        self.descriptor().search_text
-    }
-
-    fn icon_name(&self) -> &str {
-        "globe"
     }
 
     fn config_spec(&self) -> Option<ConfigSpec> {

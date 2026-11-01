@@ -3,14 +3,14 @@ use std::sync::Arc;
 use async_trait::async_trait;
 use forge_registry::ACTION_OPTIONS_KEY;
 use forge_registry::{
-    BlankableSelectField, ConfigSpec, RunContext, StepTimer, SubActionCategory, SubActionRunner,
-    TypedField,
+    BlankableSelectField, ConfigSpec, RunContext, StepCatalogEntry, StepTimer, SubActionCategory,
+    SubActionRunner, TypedField,
 };
 use forge_types::{ActionId, ArgStack, SubActionConfig, SubActionTelemetry, Variant};
 
 use super::core_action_shared::ACTION_ID_KEY;
-use crate::action_cancel::ActionCancelRegistry;
 use crate::core_messages;
+use crate::engine::action_cancel::ActionCancelRegistry;
 
 const ACTION: BlankableSelectField<ActionId> =
     BlankableSelectField::new(ACTION_ID_KEY, "Action", ACTION_OPTIONS_KEY);
@@ -45,30 +45,28 @@ fn names_an_action(config: &SubActionConfig) -> bool {
         .is_some_and(|template| !template.trim().is_empty())
 }
 
+impl StepCatalogEntry for CoreActionCancelRunner {
+    fn category(&self) -> SubActionCategory {
+        SubActionCategory::Logic
+    }
+    fn label(&self) -> &str {
+        "Cancel Action"
+    }
+    fn summary(&self) -> &str {
+        "Stop in-flight runs of an action (or all running actions)"
+    }
+    fn search_text(&self) -> &str {
+        "cancel action stop abort kill running"
+    }
+    fn icon_name(&self) -> &str {
+        "octagon-x"
+    }
+}
+
 #[async_trait]
 impl SubActionRunner for CoreActionCancelRunner {
     fn id(&self) -> &str {
         "core.action.cancel"
-    }
-
-    fn category(&self) -> SubActionCategory {
-        SubActionCategory::Logic
-    }
-
-    fn label(&self) -> &str {
-        "Cancel Action"
-    }
-
-    fn summary(&self) -> &str {
-        "Stop in-flight runs of an action (or all running actions)"
-    }
-
-    fn search_text(&self) -> &str {
-        "cancel action stop abort kill running"
-    }
-
-    fn icon_name(&self) -> &str {
-        "octagon-x"
     }
 
     fn config_spec(&self) -> Option<ConfigSpec> {

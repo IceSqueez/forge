@@ -2,8 +2,8 @@ use crate::core_messages;
 use async_trait::async_trait;
 use forge_registry::{
     ConfigProblem, ConfigReason, ConfigSpec, Interpolation, NumberField, ProducedVariable,
-    RunContext, StepTimer, StoredNumber, SubActionCategory, SubActionIo, SubActionRunner,
-    TypedField, ValueBounds, VariableField,
+    RunContext, StepCatalogEntry, StepTimer, StoredNumber, SubActionCategory, SubActionIo,
+    SubActionRunner, TypedField, ValueBounds, VariableField,
 };
 use forge_types::{ArgStack, SubActionConfig, SubActionTelemetry, Variant, VariantKind};
 use rand::RngExt;
@@ -64,30 +64,28 @@ fn read_config(
 
 pub(crate) struct CoreRandomFloatRunner;
 
+impl StepCatalogEntry for CoreRandomFloatRunner {
+    fn category(&self) -> SubActionCategory {
+        SubActionCategory::Logic
+    }
+    fn label(&self) -> &str {
+        "Random Float"
+    }
+    fn summary(&self) -> &str {
+        "Generate a random float in [min, max] and store it in a variable"
+    }
+    fn search_text(&self) -> &str {
+        "random float decimal number generate range"
+    }
+    fn icon_name(&self) -> &str {
+        "dice"
+    }
+}
+
 #[async_trait]
 impl SubActionRunner for CoreRandomFloatRunner {
     fn id(&self) -> &str {
         "core.random.float"
-    }
-
-    fn category(&self) -> SubActionCategory {
-        SubActionCategory::Logic
-    }
-
-    fn label(&self) -> &str {
-        "Random Float"
-    }
-
-    fn summary(&self) -> &str {
-        "Generate a random float in [min, max] and store it in a variable"
-    }
-
-    fn search_text(&self) -> &str {
-        "random float decimal number generate range"
-    }
-
-    fn icon_name(&self) -> &str {
-        "dice"
     }
 
     fn config_spec(&self) -> Option<ConfigSpec> {

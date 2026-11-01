@@ -16,7 +16,7 @@ fn run_on_worker_stack(script: String) -> Result<Option<Variant>, ScriptError> {
                 op_limit: HIGHEST_OP_LIMIT,
                 wall_time_ms: HANG_GUARD_MS,
             })
-            .eval_script_with_scope_as_variant(&script, &mut rhai::Scope::new())
+            .eval_in_scope_as_variant(&script, &mut rhai::Scope::new())
         })
         .expect("a thread")
         .join()

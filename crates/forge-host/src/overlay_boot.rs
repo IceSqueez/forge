@@ -10,7 +10,9 @@ use forge_runtime::{
 };
 use forge_server::DeliveryHub;
 use forge_storage::DataProvider;
-use forge_transfer::sweep_abandoned_overlay_imports;
+use forge_transfer::{
+    SetAsideSweep, sweep_abandoned_overlay_imports, sweep_set_aside_overlay_files,
+};
 
 use crate::boot_warnings::{BootWarning, BootWarnings};
 use crate::host_handles::OverlayHandles;
@@ -80,12 +82,20 @@ pub(crate) async fn start_overlays(
     delivery_hub
         .set_overlay_connect_listener(Arc::new(OverlayConnectFanout::new(connect_listeners)));
     donations.spawn_catch_up_release(Arc::new(donation_audience), services);
-    match sweep_abandoned_overlay_imports(backend.overlay_repo().as_ref(), &service.root().await)
-        .await
-    {
+    let overlay_root = service.root().await;
+    match sweep_abandoned_overlay_imports(backend.overlay_repo().as_ref(), &overlay_root).await {
         Ok(0) => {}
         Ok(removed) => tracing::info!(removed, "abandoned overlay imports removed"),
         Err(error) => tracing::warn!(%error, "abandoned overlay imports could not be swept"),
+    }
+    match sweep_set_aside_overlay_files(&overlay_root).await {
+        Ok(sweep) if sweep == SetAsideSweep::default() => {}
+        Ok(sweep) => tracing::info!(
+            restored = sweep.restored,
+            removed = sweep.removed,
+            "set-aside overlay files swept"
+        ),
+        Err(error) => tracing::warn!(%error, "set-aside overlay files could not be swept"),
     }
     let pass = service.materialize_all(samples.as_ref()).await;
     match &pass {

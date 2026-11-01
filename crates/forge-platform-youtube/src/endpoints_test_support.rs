@@ -8,12 +8,12 @@ use forge_platform_core::PlatformEndpoints;
 
 use forge_net::{RateLimiter, TokenBucketRateLimiter};
 
-use crate::data_api::YoutubeDataApi;
-use crate::oauth_client::{
+use crate::account::oauth_client::{
     GOOGLE_OAUTH_BUDGET_CAPACITY, GOOGLE_OAUTH_BUDGET_WINDOW, GoogleOAuthClient,
     google_oauth_gateway,
 };
-use crate::quota_state::{SharedQuota, today_pacific};
+use crate::api::data_api::YoutubeDataApi;
+use crate::api::quota_state::{SharedQuota, today_pacific};
 
 const UNREACHABLE_HTTP: &str = "http://127.0.0.1:0";
 const UNREACHABLE_WS: &str = "ws://127.0.0.1:0";

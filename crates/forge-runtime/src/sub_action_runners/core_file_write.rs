@@ -6,8 +6,9 @@ use crate::core_messages;
 use async_trait::async_trait;
 use base64::Engine as _;
 use forge_registry::{
-    ChoiceField, ConfigChoice, ConfigProblem, ConfigSpec, RunContext, StepTimer, SubActionCategory,
-    SubActionIo, SubActionRunner, TextEditor, TextField, ToggleField, TypedField,
+    ChoiceField, ConfigChoice, ConfigProblem, ConfigSpec, RunContext, StepCatalogEntry, StepTimer,
+    SubActionCategory, SubActionIo, SubActionRunner, TextEditor, TextField, ToggleField,
+    TypedField,
 };
 use forge_types::{
     ArgStack, MessageRef, SubActionConfig, SubActionOutcome, SubActionTelemetry, Variant,
@@ -125,30 +126,28 @@ impl CoreFileWriteRunner {
     }
 }
 
+impl StepCatalogEntry for CoreFileWriteRunner {
+    fn category(&self) -> SubActionCategory {
+        SubActionCategory::Files
+    }
+    fn label(&self) -> &str {
+        "Write File"
+    }
+    fn summary(&self) -> &str {
+        "Write content to a sandboxed file; stores bytes written in `file.bytes_written`"
+    }
+    fn search_text(&self) -> &str {
+        "write file save output create append overwrite assets"
+    }
+    fn icon_name(&self) -> &str {
+        "file-edit"
+    }
+}
+
 #[async_trait]
 impl SubActionRunner for CoreFileWriteRunner {
     fn id(&self) -> &str {
         "core.file.write"
-    }
-
-    fn category(&self) -> SubActionCategory {
-        SubActionCategory::Files
-    }
-
-    fn label(&self) -> &str {
-        "Write File"
-    }
-
-    fn summary(&self) -> &str {
-        "Write content to a sandboxed file; stores bytes written in `file.bytes_written`"
-    }
-
-    fn search_text(&self) -> &str {
-        "write file save output create append overwrite assets"
-    }
-
-    fn icon_name(&self) -> &str {
-        "file-edit"
     }
 
     fn config_spec(&self) -> Option<ConfigSpec> {

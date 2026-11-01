@@ -2,8 +2,8 @@ use async_trait::async_trait;
 use forge_events::{ChatSendRequest, EventSource, TypedEvent};
 use forge_platform_core::{SENDER_FIELD, SenderPreference};
 use forge_registry::{
-    ChoiceField, ConfigChoice, ConfigProblem, ConfigSpec, RunContext, StepTimer, SubActionCategory,
-    SubActionRunner, TextEditor, TextField, TypedField,
+    ChoiceField, ConfigChoice, ConfigProblem, ConfigSpec, RunContext, StepCatalogEntry, StepTimer,
+    SubActionCategory, SubActionRunner, TextEditor, TextField, TypedField,
 };
 use forge_types::{
     ArgStack, IntegrationId, MessageRef, NO_CHAT_PLATFORM_ENABLED, SubActionConfig,
@@ -73,30 +73,28 @@ fn read_config(config: &SubActionConfig, args: &ArgStack) -> Result<ChatSendConf
 
 pub struct ChatSendMessageRunner;
 
+impl StepCatalogEntry for ChatSendMessageRunner {
+    fn category(&self) -> SubActionCategory {
+        SubActionCategory::Chat
+    }
+    fn label(&self) -> &str {
+        "Send Chat Message"
+    }
+    fn summary(&self) -> &str {
+        "Send a message to a platform chat channel"
+    }
+    fn search_text(&self) -> &str {
+        "send chat message twitch write post"
+    }
+    fn icon_name(&self) -> &str {
+        "message-circle"
+    }
+}
+
 #[async_trait]
 impl SubActionRunner for ChatSendMessageRunner {
     fn id(&self) -> &str {
         CHAT_SEND_KIND_ID
-    }
-
-    fn category(&self) -> SubActionCategory {
-        SubActionCategory::Chat
-    }
-
-    fn label(&self) -> &str {
-        "Send Chat Message"
-    }
-
-    fn summary(&self) -> &str {
-        "Send a message to a platform chat channel"
-    }
-
-    fn search_text(&self) -> &str {
-        "send chat message twitch write post"
-    }
-
-    fn icon_name(&self) -> &str {
-        "message-circle"
     }
 
     fn config_spec(&self) -> Option<ConfigSpec> {
@@ -167,7 +165,7 @@ mod tests {
 
     use super::*;
 
-    use crate::integration_gate::{GatedLeafExecutor, IntegrationGate};
+    use crate::integrations::integration_gate::{GatedLeafExecutor, IntegrationGate};
     use forge_events::test_support::CapturingPublisher;
 
     use forge_registry::FormField;
@@ -366,7 +364,7 @@ mod tests {
         };
         let owner = ChatSendMessageRunner.targeted_integration(&config, &args);
 
-        let (telemetry, _) = crate::integration_gate::run_gated_step(
+        let (telemetry, _) = crate::integrations::integration_gate::run_gated_step(
             &gate,
             owner.as_ref(),
             &ctx,

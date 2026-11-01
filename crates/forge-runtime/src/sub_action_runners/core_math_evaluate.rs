@@ -2,8 +2,8 @@ use crate::core_messages;
 use async_trait::async_trait;
 use forge_registry::{
     ChoiceField, CodeField, CodeKind, CodeLanguage, ConfigChoice, ConfigProblem, ConfigSpec,
-    ProducedVariable, RunContext, StepTimer, SubActionCategory, SubActionIo, SubActionRunner,
-    TypedField, VariableField,
+    ProducedVariable, RunContext, StepCatalogEntry, StepTimer, SubActionCategory, SubActionIo,
+    SubActionRunner, TypedField, VariableField,
 };
 use forge_script::{BoundExpression, EngineConfig, MathEvaluator};
 use forge_types::{
@@ -112,30 +112,28 @@ impl CoreMathEvaluateRunner {
     }
 }
 
+impl StepCatalogEntry for CoreMathEvaluateRunner {
+    fn category(&self) -> SubActionCategory {
+        SubActionCategory::Util
+    }
+    fn label(&self) -> &str {
+        "Math Expression"
+    }
+    fn summary(&self) -> &str {
+        "Evaluate an arithmetic expression and store the result as an argument"
+    }
+    fn search_text(&self) -> &str {
+        "math expression calculate arithmetic formula evaluate number compute"
+    }
+    fn icon_name(&self) -> &str {
+        "calculator"
+    }
+}
+
 #[async_trait]
 impl SubActionRunner for CoreMathEvaluateRunner {
     fn id(&self) -> &str {
         "core.math.evaluate"
-    }
-
-    fn category(&self) -> SubActionCategory {
-        SubActionCategory::Util
-    }
-
-    fn label(&self) -> &str {
-        "Math Expression"
-    }
-
-    fn summary(&self) -> &str {
-        "Evaluate an arithmetic expression and store the result as an argument"
-    }
-
-    fn search_text(&self) -> &str {
-        "math expression calculate arithmetic formula evaluate number compute"
-    }
-
-    fn icon_name(&self) -> &str {
-        "calculator"
     }
 
     fn config_spec(&self) -> Option<ConfigSpec> {

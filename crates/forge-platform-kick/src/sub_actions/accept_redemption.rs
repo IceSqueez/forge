@@ -4,7 +4,8 @@ use async_trait::async_trait;
 use forge_platform_core::PlatformError;
 use forge_registry::SubActionConfig;
 use forge_registry::{
-    ConfigSpec, RunContext, StepTimer, SubActionCategory, SubActionRunner, TypedField,
+    ConfigSpec, RunContext, StepCatalogEntry, StepTimer, SubActionCategory, SubActionRunner,
+    TypedField,
 };
 use forge_types::{ArgStack, SubActionOutcome, SubActionTelemetry};
 use futures::future::BoxFuture;
@@ -35,30 +36,28 @@ impl AcceptRedemptionRunner {
     }
 }
 
+impl StepCatalogEntry for AcceptRedemptionRunner {
+    fn category(&self) -> SubActionCategory {
+        SubActionCategory::ChannelPoints
+    }
+    fn label(&self) -> &str {
+        "Accept Reward Redemption(s)"
+    }
+    fn summary(&self) -> &str {
+        "Accepts one or more pending Kick reward redemptions. Requires channel:rewards:write scope."
+    }
+    fn search_text(&self) -> &str {
+        "kick channel reward redemption accept approve fulfill points"
+    }
+    fn icon_name(&self) -> &str {
+        "check"
+    }
+}
+
 #[async_trait]
 impl SubActionRunner for AcceptRedemptionRunner {
     fn id(&self) -> &str {
         sub_action_ids::REWARD_REDEMPTION_ACCEPT
-    }
-
-    fn category(&self) -> SubActionCategory {
-        SubActionCategory::ChannelPoints
-    }
-
-    fn label(&self) -> &str {
-        "Accept Reward Redemption(s)"
-    }
-
-    fn summary(&self) -> &str {
-        "Accepts one or more pending Kick reward redemptions. Requires channel:rewards:write scope."
-    }
-
-    fn search_text(&self) -> &str {
-        "kick channel reward redemption accept approve fulfill points"
-    }
-
-    fn icon_name(&self) -> &str {
-        "check"
     }
 
     fn config_spec(&self) -> Option<ConfigSpec> {

@@ -2,7 +2,9 @@ use std::sync::Arc;
 
 use async_trait::async_trait;
 use forge_registry::SubActionConfig;
-use forge_registry::{ConfigSpec, RunContext, SubActionCategory, SubActionRunner};
+use forge_registry::{
+    ConfigSpec, RunContext, StepCatalogEntry, SubActionCategory, SubActionRunner,
+};
 use forge_types::{ArgStack, SubActionTelemetry};
 
 use super::lock_prediction::{PREDICTION_CONFIG, PredictionUpdate};
@@ -26,30 +28,28 @@ impl CancelPredictionRunner {
     }
 }
 
+impl StepCatalogEntry for CancelPredictionRunner {
+    fn category(&self) -> SubActionCategory {
+        SubActionCategory::PollsPredictions
+    }
+    fn label(&self) -> &str {
+        "Cancel Prediction"
+    }
+    fn summary(&self) -> &str {
+        "Cancels an active prediction and refunds all channel points to voters."
+    }
+    fn search_text(&self) -> &str {
+        "twitch prediction cancel refund abort"
+    }
+    fn icon_name(&self) -> &str {
+        "x"
+    }
+}
+
 #[async_trait]
 impl SubActionRunner for CancelPredictionRunner {
     fn id(&self) -> &str {
         KIND_ID
-    }
-
-    fn category(&self) -> SubActionCategory {
-        SubActionCategory::PollsPredictions
-    }
-
-    fn label(&self) -> &str {
-        "Cancel Prediction"
-    }
-
-    fn summary(&self) -> &str {
-        "Cancels an active prediction and refunds all channel points to voters."
-    }
-
-    fn search_text(&self) -> &str {
-        "twitch prediction cancel refund abort"
-    }
-
-    fn icon_name(&self) -> &str {
-        "x"
     }
 
     fn config_spec(&self) -> Option<ConfigSpec> {

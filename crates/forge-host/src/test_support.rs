@@ -34,7 +34,7 @@ use forge_storage::{
     QueueRepo, RowClasses, RowGate, ScheduledRunRepo, ScriptRecord, ScriptReferences, ScriptRepo,
     ScriptTelemetry, Setting, SettingCodec, SettingFamily, SettingRow, SettingsRepo,
     SoundboardClipsRepo, StorageError, TriggerInstanceRepo, TtsFiltersRepo, UserGlobalEntry,
-    UserGlobalsRepo, ViewerRepo, VoiceAliasRepo,
+    UserGlobalKey, UserGlobalsRepo, ViewerRepo, VoiceAliasRepo,
 };
 use forge_types::{
     Action, ActionId, EventId, ExecutionContext, OverlayCredential, ScriptId, Variant,
@@ -472,15 +472,15 @@ impl GlobalsRepo for TestBackend {
 
 #[async_trait::async_trait]
 impl UserGlobalsRepo for TestBackend {
-    async fn get(&self, _: &str, _: &str, _: &str) -> Result<Option<Variant>, StorageError> {
+    async fn get(&self, _: &UserGlobalKey) -> Result<Option<Variant>, StorageError> {
         unreachable!("this TestBackend was built without user globals")
     }
 
-    async fn set(&self, _: &str, _: &str, _: &str, _: Variant) -> Result<(), StorageError> {
+    async fn set(&self, _: &UserGlobalKey, _: Variant) -> Result<(), StorageError> {
         unreachable!("this TestBackend was built without user globals")
     }
 
-    async fn delete(&self, _: &str, _: &str, _: &str) -> Result<bool, StorageError> {
+    async fn delete(&self, _: &UserGlobalKey) -> Result<bool, StorageError> {
         unreachable!("this TestBackend was built without user globals")
     }
 
@@ -494,16 +494,12 @@ impl UserGlobalsRepo for TestBackend {
 
     async fn incr(
         &self,
-        broadcaster_id: &str,
-        user_id: &str,
-        name: &str,
+        key: &UserGlobalKey,
         amount: i64,
     ) -> Result<forge_types::Variant, forge_storage::StorageError> {
-        let current =
-            forge_storage::UserGlobalsRepo::get(self, broadcaster_id, user_id, name).await?;
-        let next = forge_storage::incremented(name, current, amount)?;
-        forge_storage::UserGlobalsRepo::set(self, broadcaster_id, user_id, name, next.clone())
-            .await?;
+        let current = forge_storage::UserGlobalsRepo::get(self, key).await?;
+        let next = forge_storage::incremented(&key.name, current, amount)?;
+        forge_storage::UserGlobalsRepo::set(self, key, next.clone()).await?;
         Ok(next)
     }
 }
@@ -1246,9 +1242,72 @@ struct SilentSpeaker;
 impl forge_runtime::SpeakDispatcher for SilentSpeaker {
     async fn speak(
         &self,
-        _text: String,
-        _voice: Option<String>,
-        _origin: forge_runtime::SpeechOrigin,
+        _request: forge_runtime::SpeechRequest,
+    ) -> Result<(), forge_types::MessageRef> {
+        Ok(())
+    }
+
+    async fn speak_queued_for_run(
+        &self,
+        _request: forge_runtime::SpeechRequest,
+        _run: forge_registry::CancelSignal,
+    ) -> Result<(), forge_types::MessageRef> {
+        Ok(())
+    }
+
+    async fn speak_and_wait(
+        &self,
+        _request: forge_runtime::SpeechRequest,
+        _cancel: forge_registry::CancelSignal,
+    ) -> Result<(), forge_types::MessageRef> {
+        Ok(())
+    }
+
+    async fn available_voices(&self) -> Vec<forge_runtime::VoiceDescriptor> {
+        Vec::new()
+    }
+}
+
+#[async_trait::async_trait]
+impl forge_runtime::SpeakQueueControl for SilentSpeaker {
+    async fn stop_current(&self) -> Result<(), forge_types::MessageRef> {
+        Ok(())
+    }
+
+    async fn pause(&self) -> Result<(), forge_types::MessageRef> {
+        Ok(())
+    }
+
+    async fn resume(&self) -> Result<(), forge_types::MessageRef> {
+        Ok(())
+    }
+
+    async fn skip_current(&self) -> Result<(), forge_types::MessageRef> {
+        Ok(())
+    }
+
+    async fn clear_keep_current(&self) -> Result<(), forge_types::MessageRef> {
+        Ok(())
+    }
+}
+
+#[async_trait::async_trait]
+impl forge_runtime::VoiceAliasWriter for SilentSpeaker {
+    async fn alias_set(
+        &self,
+        _viewer_id: String,
+        _viewer_name: String,
+        _engine_id: String,
+        _voice_id: String,
+    ) -> Result<(), forge_types::MessageRef> {
+        Ok(())
+    }
+
+    async fn alias_switch(
+        &self,
+        _viewer_id: String,
+        _engine_id: String,
+        _voice_id: String,
     ) -> Result<(), forge_types::MessageRef> {
         Ok(())
     }
@@ -1284,6 +1343,7 @@ pub async fn every_registry_entry() -> (Arc<TriggerRegistry>, Arc<SubActionRegis
     let mut wiring = forge_runtime::RuntimeWiring::new(forge_runtime::RuntimeWiringParts {
         paths: forge_paths::AppPaths::at(std::env::temp_dir().join("forge-tests")),
         config: forge_runtime::Config::default(),
+        os: forge_runtime::OsPorts::unavailable(),
         date_names: forge_runtime::DateNamesHandle::default(),
         tasks: forge_net::TaskOwner::new(),
         bus: Arc::clone(&bus),
@@ -1319,7 +1379,7 @@ pub async fn every_registry_entry() -> (Arc<TriggerRegistry>, Arc<SubActionRegis
     .unwrap();
     forge_runtime::register_speech_sub_actions(
         &mut *sub_actions,
-        Arc::new(SilentSpeaker),
+        forge_runtime::SpeechPorts::from_shared(Arc::new(SilentSpeaker)),
         forge_runtime::TwitchEmoteLexicon::default(),
     )
     .unwrap();

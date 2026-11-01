@@ -3,7 +3,8 @@ use std::sync::Arc;
 use async_trait::async_trait;
 use forge_registry::SubActionConfig;
 use forge_registry::{
-    ConfigSpec, RunContext, StepTimer, SubActionCategory, SubActionRunner, ToggleField, TypedField,
+    ConfigSpec, RunContext, StepCatalogEntry, StepTimer, SubActionCategory, SubActionRunner,
+    ToggleField, TypedField,
 };
 use forge_types::{ArgStack, SubActionTelemetry};
 
@@ -29,30 +30,28 @@ impl StudioSetEnabledRunner {
     }
 }
 
+impl StepCatalogEntry for StudioSetEnabledRunner {
+    fn category(&self) -> SubActionCategory {
+        SubActionCategory::Integration
+    }
+    fn label(&self) -> &str {
+        "Set Studio Mode"
+    }
+    fn summary(&self) -> &str {
+        "Sets OBS studio mode to an explicit on or off state."
+    }
+    fn search_text(&self) -> &str {
+        "obs studio mode set on off enable disable preview"
+    }
+    fn icon_name(&self) -> &str {
+        "adjustments-horizontal"
+    }
+}
+
 #[async_trait]
 impl SubActionRunner for StudioSetEnabledRunner {
     fn id(&self) -> &str {
         sub_action_ids::STUDIO_SET_ENABLED
-    }
-
-    fn category(&self) -> SubActionCategory {
-        SubActionCategory::Integration
-    }
-
-    fn label(&self) -> &str {
-        "Set Studio Mode"
-    }
-
-    fn summary(&self) -> &str {
-        "Sets OBS studio mode to an explicit on or off state."
-    }
-
-    fn search_text(&self) -> &str {
-        "obs studio mode set on off enable disable preview"
-    }
-
-    fn icon_name(&self) -> &str {
-        "adjustments-horizontal"
     }
 
     fn config_spec(&self) -> Option<ConfigSpec> {

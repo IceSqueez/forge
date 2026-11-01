@@ -3,7 +3,7 @@ use std::sync::Arc;
 use async_trait::async_trait;
 use forge_registry::SubActionConfig;
 use forge_registry::{
-    ConfigProblem, ConfigSpec, NumberField, OptionalField, RunContext, StepTimer,
+    ConfigProblem, ConfigSpec, NumberField, OptionalField, RunContext, StepCatalogEntry, StepTimer,
     SubActionCategory, SubActionRunner, ToggleField, TypedField,
 };
 use forge_types::{ArgStack, SubActionTelemetry};
@@ -48,30 +48,28 @@ impl ModelSetPhysicsRunner {
     }
 }
 
+impl StepCatalogEntry for ModelSetPhysicsRunner {
+    fn category(&self) -> SubActionCategory {
+        SubActionCategory::Integration
+    }
+    fn label(&self) -> &str {
+        "Toggle Physics"
+    }
+    fn summary(&self) -> &str {
+        "Temporarily overrides the VTube Studio model's physics strength."
+    }
+    fn search_text(&self) -> &str {
+        "vtube model physics toggle strength override wind vts"
+    }
+    fn icon_name(&self) -> &str {
+        "activity"
+    }
+}
+
 #[async_trait]
 impl SubActionRunner for ModelSetPhysicsRunner {
     fn id(&self) -> &str {
         sub_action_ids::MODEL_SET_PHYSICS
-    }
-
-    fn category(&self) -> SubActionCategory {
-        SubActionCategory::Integration
-    }
-
-    fn label(&self) -> &str {
-        "Toggle Physics"
-    }
-
-    fn summary(&self) -> &str {
-        "Temporarily overrides the VTube Studio model's physics strength."
-    }
-
-    fn search_text(&self) -> &str {
-        "vtube model physics toggle strength override wind vts"
-    }
-
-    fn icon_name(&self) -> &str {
-        "activity"
     }
 
     fn config_spec(&self) -> Option<ConfigSpec> {

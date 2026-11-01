@@ -4,8 +4,8 @@ use async_trait::async_trait;
 use forge_registry::SubActionConfig;
 use forge_registry::{
     BoundedTextField, ConfigProblem, ConfigSpec, DurationBounds, DurationField, RunContext,
-    SeparatedListField, StepTimer, SubActionCategory, SubActionRunner, TextEditor, TypedField,
-    ValueBounds,
+    SeparatedListField, StepCatalogEntry, StepTimer, SubActionCategory, SubActionRunner,
+    TextEditor, TypedField, ValueBounds,
 };
 use forge_types::{ArgStack, SubActionOutcome, SubActionTelemetry, Variant};
 
@@ -124,30 +124,28 @@ impl StartPredictionRunner {
     }
 }
 
+impl StepCatalogEntry for StartPredictionRunner {
+    fn category(&self) -> SubActionCategory {
+        SubActionCategory::PollsPredictions
+    }
+    fn label(&self) -> &str {
+        "Start Prediction"
+    }
+    fn summary(&self) -> &str {
+        "Creates a new Twitch prediction. Outputs prediction.id for chaining."
+    }
+    fn search_text(&self) -> &str {
+        "twitch prediction vote blue orange start create"
+    }
+    fn icon_name(&self) -> &str {
+        "chart-pie"
+    }
+}
+
 #[async_trait]
 impl SubActionRunner for StartPredictionRunner {
     fn id(&self) -> &str {
         sub_action_ids::PREDICTION_START
-    }
-
-    fn category(&self) -> SubActionCategory {
-        SubActionCategory::PollsPredictions
-    }
-
-    fn label(&self) -> &str {
-        "Start Prediction"
-    }
-
-    fn summary(&self) -> &str {
-        "Creates a new Twitch prediction. Outputs prediction.id for chaining."
-    }
-
-    fn search_text(&self) -> &str {
-        "twitch prediction vote blue orange start create"
-    }
-
-    fn icon_name(&self) -> &str {
-        "chart-pie"
     }
 
     fn config_spec(&self) -> Option<ConfigSpec> {

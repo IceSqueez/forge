@@ -1,73 +1,52 @@
-mod active_broadcast_id;
-mod ad_break;
+mod account;
+mod api;
 mod assembly;
-mod auth;
-mod ban_ledger;
-#[cfg(test)]
-mod ban_ledger_test_support;
-mod ban_list;
-mod broadcast_lookup;
+mod broadcast;
 mod builtin;
-mod channel_lookup;
-mod chat_platform;
-mod chat_poller;
+mod chat;
 pub(crate) mod control;
-mod credentials;
-mod credentials_manager;
-mod data_api;
 #[cfg(test)]
 #[path = "../../forge-platform-core/test_support/emitted_codes.rs"]
 mod emitted_codes;
 pub mod endpoint_surfaces;
 #[cfg(test)]
 mod endpoints_test_support;
-pub(crate) mod error_shape;
-mod follow_lookup;
 mod integration;
-mod live_chat_id;
-mod moderation;
-mod oauth_client;
-mod poll_health;
 mod quick_actions;
-mod quota_state;
-mod send_chat;
-mod stream_metadata;
-mod stream_stats;
 mod sub_actions;
-mod thumbnail;
 mod triggers;
-mod viewer_poll;
 pub mod vocabulary;
 
-pub use active_broadcast_id::ActiveBroadcastIdHandle;
-pub use ad_break::YoutubeAdBreak;
-pub use assembly::YoutubeAssembly;
-pub use assembly::YoutubeSession;
-pub use auth::LoopbackCode;
-pub use auth::{
+pub use account::auth::LoopbackCode;
+pub use account::auth::{
     GOOGLE_AUTHORIZE_ENDPOINT, GoogleAuthFlow, YoutubeAuthBundle, YoutubeSignIn, client_credentials,
 };
-pub use builtin::{YoutubeIntegrationBundle, register_youtube_triggers};
-pub use channel_lookup::YoutubeChannelLookup;
-pub use channel_lookup::YoutubeChannelProfile;
-pub use chat_platform::YoutubePlatform;
-pub use chat_poller::ChatPollTimings;
-pub use chat_poller::YoutubeChatPoller;
-pub use credentials::{CREDENTIAL_KEY, YoutubeBroadcaster, YoutubeCredentials};
-pub use credentials_manager::YoutubeCredentialsManager;
-pub use data_api::YoutubeDataApi;
-pub use integration::YOUTUBE_INTEGRATION;
-pub use live_chat_id::LiveChatIdHandle;
-pub use moderation::YoutubeModeration;
-pub use oauth_client::{
+pub use account::credentials::{CREDENTIAL_KEY, YoutubeBroadcaster, YoutubeCredentials};
+pub use account::credentials_manager::YoutubeCredentialsManager;
+pub use account::oauth_client::{
     GOOGLE_OAUTH_BUDGET_CAPACITY, GOOGLE_OAUTH_BUDGET_WINDOW, GoogleOAuthClient,
     google_oauth_gateway,
 };
-pub use quota_state::SharedQuota;
-pub use send_chat::YoutubeSendChat;
-pub use stream_metadata::YoutubeStreamMetadata;
-pub use stream_stats::YoutubeStreamDetails;
-pub use stream_stats::YoutubeStreamStats;
+pub use api::data_api::YoutubeDataApi;
+pub use api::quota_state::SharedQuota;
+pub use assembly::YoutubeAssembly;
+pub use assembly::YoutubeSession;
+pub use broadcast::active_broadcast_id::ActiveBroadcastIdHandle;
+pub use broadcast::ad_break::YoutubeAdBreak;
+pub use broadcast::channel_lookup::YoutubeChannelLookup;
+pub use broadcast::channel_lookup::YoutubeChannelProfile;
+pub use broadcast::live_chat_id::LiveChatIdHandle;
+pub use broadcast::stream_metadata::YoutubeStreamMetadata;
+pub use broadcast::stream_stats::YoutubeStreamDetails;
+pub use broadcast::stream_stats::YoutubeStreamStats;
+pub use broadcast::thumbnail::YoutubeThumbnail;
+pub use broadcast::viewer_poll::YoutubeViewerPoll;
+pub use builtin::YoutubeIntegrationBundle;
+pub use chat::chat_platform::YoutubePlatform;
+pub use chat::chat_poller::ChatPollTimings;
+pub use chat::chat_poller::YoutubeChatPoller;
+pub use chat::moderation::YoutubeModeration;
+pub use chat::send_chat::YoutubeSendChat;
+pub use integration::YOUTUBE_INTEGRATION;
 pub use sub_actions::register_youtube_sub_actions;
-pub use thumbnail::YoutubeThumbnail;
-pub use viewer_poll::YoutubeViewerPoll;
+pub use triggers::register_youtube_triggers;

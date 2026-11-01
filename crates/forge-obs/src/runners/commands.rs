@@ -2,8 +2,9 @@ use std::sync::Arc;
 
 use async_trait::async_trait;
 use forge_registry::{
-    ConfigProblem, ConfigSpec, PickedTextField, RunContext, StepTimer, SubActionCategory,
-    SubActionConfig, SubActionRunner, TextEditor, TextField, TextPicker, TypedField,
+    ConfigProblem, ConfigSpec, PickedTextField, RunContext, StepCatalogEntry, StepTimer,
+    SubActionCategory, SubActionConfig, SubActionRunner, TextEditor, TextField, TextPicker,
+    TypedField,
 };
 use forge_types::{ArgStack, SubActionTelemetry};
 use futures_util::future::BoxFuture;
@@ -440,30 +441,28 @@ struct CommandRunner<C: 'static> {
     sink: Arc<dyn ObsSink>,
 }
 
+impl<C: ObsCommand> StepCatalogEntry for CommandRunner<C> {
+    fn category(&self) -> SubActionCategory {
+        SubActionCategory::Integration
+    }
+    fn label(&self) -> &str {
+        self.command.copy().label
+    }
+    fn summary(&self) -> &str {
+        self.command.copy().summary
+    }
+    fn search_text(&self) -> &str {
+        self.command.copy().search_text
+    }
+    fn icon_name(&self) -> &str {
+        self.command.copy().icon_name
+    }
+}
+
 #[async_trait]
 impl<C: ObsCommand> SubActionRunner for CommandRunner<C> {
     fn id(&self) -> &str {
         self.command.copy().id
-    }
-
-    fn category(&self) -> SubActionCategory {
-        SubActionCategory::Integration
-    }
-
-    fn label(&self) -> &str {
-        self.command.copy().label
-    }
-
-    fn summary(&self) -> &str {
-        self.command.copy().summary
-    }
-
-    fn search_text(&self) -> &str {
-        self.command.copy().search_text
-    }
-
-    fn icon_name(&self) -> &str {
-        self.command.copy().icon_name
     }
 
     fn config_spec(&self) -> Option<ConfigSpec> {

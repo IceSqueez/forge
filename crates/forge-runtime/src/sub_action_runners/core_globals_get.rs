@@ -2,8 +2,8 @@ use std::sync::Arc;
 
 use async_trait::async_trait;
 use forge_registry::{
-    ConfigProblem, ConfigSpec, ProducedVariable, RunContext, StepTimer, SubActionCategory,
-    SubActionIo, SubActionRunner, TextEditor, TextField, TypedField,
+    ConfigProblem, ConfigSpec, ProducedVariable, RunContext, StepCatalogEntry, StepTimer,
+    SubActionCategory, SubActionIo, SubActionRunner, TextEditor, TextField, TypedField,
 };
 use forge_storage::GlobalsRepo;
 use forge_types::{
@@ -48,30 +48,28 @@ impl CoreGlobalsGetRunner {
     }
 }
 
+impl StepCatalogEntry for CoreGlobalsGetRunner {
+    fn category(&self) -> SubActionCategory {
+        SubActionCategory::Globals
+    }
+    fn label(&self) -> &str {
+        "Get Global"
+    }
+    fn summary(&self) -> &str {
+        "Read a global variable into an argument"
+    }
+    fn search_text(&self) -> &str {
+        "get global variable read load"
+    }
+    fn icon_name(&self) -> &str {
+        "database-import"
+    }
+}
+
 #[async_trait]
 impl SubActionRunner for CoreGlobalsGetRunner {
     fn id(&self) -> &str {
         "core.globals.get"
-    }
-
-    fn category(&self) -> SubActionCategory {
-        SubActionCategory::Globals
-    }
-
-    fn label(&self) -> &str {
-        "Get Global"
-    }
-
-    fn summary(&self) -> &str {
-        "Read a global variable into an argument"
-    }
-
-    fn search_text(&self) -> &str {
-        "get global variable read load"
-    }
-
-    fn icon_name(&self) -> &str {
-        "database-import"
     }
 
     fn config_spec(&self) -> Option<ConfigSpec> {

@@ -1,0 +1,430 @@
+use crate::error::RuntimeError;
+use std::collections::HashMap;
+use std::sync::Arc;
+
+use forge_events::{EventSource, ScriptReloaded, TypedEvent};
+use forge_script::{ActionScheduler, SpeakRequester};
+use forge_storage::{ScriptRecord, ScriptRepo, StorageError};
+use forge_types::{LatestValueReader, ScriptId};
+use tokio::sync::RwLock;
+use tracing::warn;
+
+use crate::EventBus;
+use crate::engine::scheduled_runs::{SchedulingContext, ScriptScheduling};
+
+pub(crate) const SCRIPT_PANIC_ERROR_TYPE: &str = "panic";
+
+pub struct CompiledScript {
+    pub record: ScriptRecord,
+}
+
+pub struct ScriptRegistry {
+    inner: Arc<RwLock<HashMap<ScriptId, Arc<CompiledScript>>>>,
+    speak_requester: Option<Arc<dyn SpeakRequester>>,
+    latest_values: Option<Arc<dyn LatestValueReader>>,
+    scheduling: Option<ScriptScheduling>,
+}
+
+pub struct ScriptRegistryParts {
+    pub speak_requester: Option<Arc<dyn SpeakRequester>>,
+    pub latest_values: Option<Arc<dyn LatestValueReader>>,
+    pub scheduling: Option<ScriptScheduling>,
+}
+
+impl ScriptRegistry {
+    pub fn new() -> Self {
+        Self {
+            inner: Arc::new(RwLock::new(HashMap::new())),
+            speak_requester: None,
+            latest_values: None,
+            scheduling: None,
+        }
+    }
+
+    pub fn with_parts(parts: ScriptRegistryParts) -> Self {
+        let ScriptRegistryParts {
+            speak_requester,
+            latest_values,
+            scheduling,
+        } = parts;
+        Self {
+            inner: Arc::new(RwLock::new(HashMap::new())),
+            speak_requester,
+            latest_values,
+            scheduling,
+        }
+    }
+
+    pub fn speak_requester(&self) -> Option<Arc<dyn SpeakRequester>> {
+        self.speak_requester.clone()
+    }
+
+    pub fn latest_values(&self) -> Option<Arc<dyn LatestValueReader>> {
+        self.latest_values.clone()
+    }
+
+    pub fn action_scheduler(&self, context: SchedulingContext) -> Option<Arc<dyn ActionScheduler>> {
+        self.scheduling
+            .as_ref()
+            .map(|scheduling| scheduling.for_context(context))
+    }
+
+    pub async fn load_all(&self, repo: &dyn ScriptRepo) -> Result<(), RuntimeError> {
+        let records = repo.list_enabled().await.map_err(RuntimeError::Storage)?;
+
+        let mut new_map = HashMap::new();
+        for record in records {
+            if !has_valid_syntax(&record) {
+                continue;
+            }
+            new_map.insert(record.id, Arc::new(CompiledScript { record }));
+        }
+
+        let mut guard = self.inner.write().await;
+        *guard = new_map;
+        Ok(())
+    }
+
+    pub async fn reload(&self, record: ScriptRecord, bus: &EventBus) -> Result<(), RuntimeError> {
+        forge_script::validate_syntax(&record.body)
+            .map_err(|e| RuntimeError::ScriptCompile(e.to_string()))?;
+
+        let script_id = record.id;
+        let script_name = record.name.clone();
+
+        {
+            let mut guard = self.inner.write().await;
+            if record.enabled {
+                guard.insert(script_id, Arc::new(CompiledScript { record }));
+            } else {
+                guard.remove(&script_id);
+            }
+        }
+
+        bus.publish(
+            ScriptReloaded {
+                script_id,
+                script_name,
+            }
+            .into_event(EventSource::Core, None),
+        );
+
+        Ok(())
+    }
+
+    pub async fn remove(&self, id: ScriptId) -> bool {
+        self.inner.write().await.remove(&id).is_some()
+    }
+
+    pub async fn current(
+        &self,
+        name: &str,
+        repo: &dyn ScriptRepo,
+    ) -> Result<Option<Arc<CompiledScript>>, StorageError> {
+        let runnable = repo
+            .get_by_name(name)
+            .await?
+            .filter(|record| record.enabled && has_valid_syntax(record));
+        let mut guard = self.inner.write().await;
+        guard.retain(|_, compiled| compiled.record.name != name);
+        Ok(runnable.map(|record| {
+            let compiled = Arc::new(CompiledScript { record });
+            guard.insert(compiled.record.id, Arc::clone(&compiled));
+            compiled
+        }))
+    }
+
+    pub async fn get_by_name(&self, name: &str) -> Option<Arc<CompiledScript>> {
+        let guard = self.inner.read().await;
+        guard.values().find(|c| c.record.name == name).cloned()
+    }
+}
+
+fn has_valid_syntax(record: &ScriptRecord) -> bool {
+    match forge_script::validate_syntax(&record.body) {
+        Ok(()) => true,
+        Err(error) => {
+            warn!(
+                script_id = %record.id,
+                script_name = %record.name,
+                error = ?error,
+                "script has invalid syntax, skipping"
+            );
+            false
+        }
+    }
+}
+
+impl Default for ScriptRegistry {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::test_support::{Sandboxed, sandboxed_backend};
+    use crate::{EventBus, NullEventLogRepo};
+    use forge_storage::ScriptRepo;
+    use forge_storage_sqlite::SqliteBackend;
+    use forge_types::{ScriptContract, ScriptId};
+    use std::sync::Arc;
+    use time::OffsetDateTime;
+
+    async fn make_dp() -> Sandboxed<Arc<SqliteBackend>> {
+        sandboxed_backend([0xab; 32]).await.map(Arc::new)
+    }
+
+    fn make_record(name: &str, body: &str, enabled: bool) -> ScriptRecord {
+        let ts = OffsetDateTime::now_utc();
+        ScriptRecord {
+            id: ScriptId::new(),
+            name: name.to_owned(),
+            body: body.to_owned(),
+            contract: ScriptContract::default(),
+            enabled,
+            created_at: ts,
+            last_modified: ts,
+        }
+    }
+
+    #[tokio::test]
+    async fn load_all_includes_only_enabled_scripts() {
+        let dp = make_dp().await;
+        let r1 = make_record("greet", "let x = 1;", true);
+        let r2 = make_record("farewell", "let y = 2;", true);
+        let r3 = make_record("disabled_script", "let z = 3;", false);
+
+        ScriptRepo::save(dp.as_ref(), r1).await.unwrap();
+        ScriptRepo::save(dp.as_ref(), r2).await.unwrap();
+        ScriptRepo::save(dp.as_ref(), r3).await.unwrap();
+
+        let registry = ScriptRegistry::new();
+        registry.load_all(dp.as_ref()).await.unwrap();
+
+        assert!(registry.get_by_name("greet").await.is_some());
+        assert!(registry.get_by_name("farewell").await.is_some());
+        assert!(registry.get_by_name("disabled_script").await.is_none());
+    }
+
+    #[tokio::test]
+    async fn load_all_leaves_out_an_archived_script() {
+        let dp = make_dp().await;
+        let kept = make_record("kept", "let x = 1;", true);
+        let shelved = make_record("shelved", "let y = 2;", true);
+        let shelved_id = shelved.id;
+        ScriptRepo::save(dp.as_ref(), kept).await.unwrap();
+        ScriptRepo::save(dp.as_ref(), shelved).await.unwrap();
+        assert!(dp.archive_script(shelved_id).await.unwrap());
+
+        let registry = ScriptRegistry::new();
+        registry.load_all(dp.as_ref()).await.unwrap();
+
+        assert_eq!(
+            (
+                registry.get_by_name("kept").await.is_some(),
+                registry.get_by_name("shelved").await.is_some()
+            ),
+            (true, false)
+        );
+    }
+
+    #[tokio::test]
+    async fn remove_takes_a_loaded_script_out_of_reach_and_reports_whether_it_was_loaded() {
+        let dp = make_dp().await;
+        let record = make_record("greet", "let x = 1;", true);
+        let id = record.id;
+        ScriptRepo::save(dp.as_ref(), record).await.unwrap();
+        let registry = ScriptRegistry::new();
+        registry.load_all(dp.as_ref()).await.unwrap();
+
+        let removals = [registry.remove(id).await, registry.remove(id).await];
+
+        assert_eq!(
+            (removals, registry.get_by_name("greet").await.is_some()),
+            ([true, false], false)
+        );
+    }
+
+    #[tokio::test]
+    async fn load_all_skips_scripts_with_invalid_syntax() {
+        let dp = make_dp().await;
+        let valid = make_record("valid_script", "let x = 1;", true);
+        let invalid = make_record("broken_script", "@@@not valid rhai@@@", true);
+
+        ScriptRepo::save(dp.as_ref(), valid).await.unwrap();
+        ScriptRepo::save(dp.as_ref(), invalid).await.unwrap();
+
+        let registry = ScriptRegistry::new();
+        registry.load_all(dp.as_ref()).await.unwrap();
+
+        assert!(registry.get_by_name("valid_script").await.is_some());
+        assert!(registry.get_by_name("broken_script").await.is_none());
+    }
+
+    #[tokio::test]
+    async fn get_by_name_finds_loaded_script() {
+        let dp = make_dp().await;
+        let record = make_record("my_script", "let x = 42;", true);
+        ScriptRepo::save(dp.as_ref(), record).await.unwrap();
+
+        let registry = ScriptRegistry::new();
+        registry.load_all(dp.as_ref()).await.unwrap();
+
+        let found = registry.get_by_name("my_script").await;
+        assert!(found.is_some());
+        assert_eq!(found.unwrap().record.name, "my_script");
+    }
+
+    #[tokio::test]
+    async fn get_by_name_returns_none_for_unknown() {
+        let dp = make_dp().await;
+        let registry = ScriptRegistry::new();
+        registry.load_all(dp.as_ref()).await.unwrap();
+
+        let found = registry.get_by_name("nonexistent").await;
+        assert!(found.is_none());
+    }
+
+    #[tokio::test]
+    async fn reload_adds_new_entry_and_emits_event() {
+        let registry = ScriptRegistry::new();
+        let bus = EventBus::new(Arc::new(NullEventLogRepo));
+        let mut sub = bus.subscribe();
+
+        let record = make_record("fresh_script", "let x = 1;", true);
+        let expected_name = record.name.clone();
+
+        registry.reload(record, &bus).await.unwrap();
+
+        assert!(registry.get_by_name(&expected_name).await.is_some());
+
+        let event = tokio::time::timeout(forge_test_support::HANG_GUARD, sub.recv())
+            .await
+            .unwrap()
+            .unwrap();
+
+        assert_eq!(event.kind, "script.reloaded");
+        assert_eq!(
+            event.payload["script_name"].as_str(),
+            Some(expected_name.as_str())
+        );
+    }
+
+    #[tokio::test]
+    async fn reload_replaces_existing_entry() {
+        let registry = ScriptRegistry::new();
+        let bus = EventBus::new(Arc::new(NullEventLogRepo));
+        let id = ScriptId::new();
+        let ts = OffsetDateTime::now_utc();
+
+        let original = ScriptRecord {
+            id,
+            name: "editable".to_owned(),
+            body: "let x = 1;".to_owned(),
+            contract: ScriptContract::default(),
+            enabled: true,
+            created_at: ts,
+            last_modified: ts,
+        };
+        registry.reload(original, &bus).await.unwrap();
+
+        let updated = ScriptRecord {
+            id,
+            name: "editable".to_owned(),
+            body: "let x = 2;".to_owned(),
+            contract: ScriptContract::default(),
+            enabled: true,
+            created_at: ts,
+            last_modified: ts,
+        };
+        registry.reload(updated, &bus).await.unwrap();
+
+        let found = registry.get_by_name("editable").await.unwrap();
+        assert_eq!(found.record.body, "let x = 2;");
+    }
+
+    #[tokio::test]
+    async fn concurrent_reads_and_reload_do_not_deadlock() {
+        let registry = Arc::new(ScriptRegistry::new());
+        let bus = EventBus::new(Arc::new(NullEventLogRepo));
+
+        let seed = make_record("concurrent_script", "let v = 99;", true);
+        registry.reload(seed, &bus).await.unwrap();
+
+        let readers: Vec<_> = (0..10)
+            .map(|_| {
+                let reg = Arc::clone(&registry);
+                tokio::spawn(async move {
+                    for _ in 0..50 {
+                        let _ = reg.get_by_name("concurrent_script").await;
+                    }
+                })
+            })
+            .collect();
+
+        let writer = {
+            let reg = Arc::clone(&registry);
+            let bus_clone = EventBus::new(Arc::new(NullEventLogRepo));
+            tokio::spawn(async move {
+                for i in 0..10u32 {
+                    let r = make_record("concurrent_script", &format!("let v = {i};"), true);
+                    reg.reload(r, &bus_clone).await.unwrap();
+                }
+            })
+        };
+
+        for handle in readers {
+            handle.await.unwrap();
+        }
+        writer.await.unwrap();
+
+        let found = registry.get_by_name("concurrent_script").await;
+        assert!(
+            found.is_some(),
+            "script must still be present after concurrent access"
+        );
+    }
+
+    #[tokio::test]
+    async fn reload_rejects_invalid_syntax() {
+        let registry = ScriptRegistry::new();
+        let bus = EventBus::new(Arc::new(NullEventLogRepo));
+        let mut sub = bus.subscribe();
+
+        let bad = make_record("broken", "@@@invalid@@@", true);
+        let result = registry.reload(bad, &bus).await;
+        assert!(
+            matches!(result, Err(RuntimeError::ScriptCompile(_))),
+            "invalid syntax must return Compile error"
+        );
+        assert!(registry.get_by_name("broken").await.is_none());
+
+        assert!(
+            matches!(sub.try_recv(), Ok(None)),
+            "no event should be published on compile failure"
+        );
+    }
+
+    #[tokio::test]
+    async fn reload_of_a_disabled_script_takes_it_out_of_reach() {
+        let registry = ScriptRegistry::new();
+        let bus = EventBus::new(Arc::new(NullEventLogRepo));
+        let enabled = make_record("greet", "1", true);
+        registry.reload(enabled.clone(), &bus).await.unwrap();
+
+        registry
+            .reload(
+                ScriptRecord {
+                    enabled: false,
+                    ..enabled
+                },
+                &bus,
+            )
+            .await
+            .unwrap();
+
+        assert!(registry.get_by_name("greet").await.is_none());
+    }
+}

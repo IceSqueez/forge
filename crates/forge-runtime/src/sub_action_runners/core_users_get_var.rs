@@ -2,10 +2,10 @@ use std::sync::Arc;
 
 use async_trait::async_trait;
 use forge_registry::{
-    ConfigProblem, ConfigSpec, ProducedVariable, RunContext, StepTimer, SubActionCategory,
-    SubActionIo, SubActionRunner, TextEditor, TextField, TypedField,
+    ConfigProblem, ConfigSpec, ProducedVariable, RunContext, StepCatalogEntry, StepTimer,
+    SubActionCategory, SubActionIo, SubActionRunner, TextEditor, TextField, TypedField,
 };
-use forge_storage::{GlobalsRepo, UserGlobalsRepo};
+use forge_storage::{GlobalsRepo, UserGlobalKey, UserGlobalsRepo};
 use forge_types::{
     ArgStack, SubActionConfig, SubActionOutcome, SubActionTelemetry, VariantKind,
     strip_var_decoration,
@@ -66,30 +66,28 @@ impl CoreUsersGetVarRunner {
     }
 }
 
+impl StepCatalogEntry for CoreUsersGetVarRunner {
+    fn category(&self) -> SubActionCategory {
+        SubActionCategory::Globals
+    }
+    fn label(&self) -> &str {
+        "Get User Variable"
+    }
+    fn summary(&self) -> &str {
+        "Read a per-user variable into an argument"
+    }
+    fn search_text(&self) -> &str {
+        "get user variable per-user state read load"
+    }
+    fn icon_name(&self) -> &str {
+        "user-search"
+    }
+}
+
 #[async_trait]
 impl SubActionRunner for CoreUsersGetVarRunner {
     fn id(&self) -> &str {
         "core.users.get_var"
-    }
-
-    fn category(&self) -> SubActionCategory {
-        SubActionCategory::Globals
-    }
-
-    fn label(&self) -> &str {
-        "Get User Variable"
-    }
-
-    fn summary(&self) -> &str {
-        "Read a per-user variable into an argument"
-    }
-
-    fn search_text(&self) -> &str {
-        "get user variable per-user state read load"
-    }
-
-    fn icon_name(&self) -> &str {
-        "user-search"
     }
 
     fn config_spec(&self) -> Option<ConfigSpec> {
@@ -137,7 +135,7 @@ impl SubActionRunner for CoreUsersGetVarRunner {
 
         let (outcome, updated_stack) = match self
             .user_globals
-            .get(&broadcaster_id, &user_login, &var_name)
+            .get(&UserGlobalKey::new(&broadcaster_id, &user_login, &var_name))
             .await
         {
             Ok(Some(value)) => {

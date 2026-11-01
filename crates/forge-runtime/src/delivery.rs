@@ -8,9 +8,9 @@ use forge_events::{
 use forge_registry::{TriggerRegistry, kind_matches_prefix};
 use tokio::sync::mpsc::{self, error::TrySendError};
 
-use crate::delivery_loss::ConsumerLossCounters;
-use crate::event_ring::EventRing;
-use crate::trigger_evaluator::TRIGGER_BLOCKED_KIND;
+use crate::engine::trigger_evaluator::TRIGGER_BLOCKED_KIND;
+use crate::event_flow::delivery_loss::ConsumerLossCounters;
+use crate::event_flow::event_ring::EventRing;
 
 const RECOVERY_HEADROOM_DIVISOR: usize = 2;
 
@@ -250,7 +250,7 @@ mod tests {
     use tracing::Level;
 
     use super::*;
-    use crate::delivery_loss::{DeliveryTier, LossCount, LossLedger};
+    use crate::event_flow::delivery_loss::{DeliveryTier, LossCount, LossLedger};
     use forge_test_support::log_capture::{CapturedLine, capture};
 
     const LANE_CAPACITY: usize = 4;

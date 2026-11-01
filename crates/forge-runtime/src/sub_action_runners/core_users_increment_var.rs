@@ -2,10 +2,10 @@ use std::sync::Arc;
 
 use async_trait::async_trait;
 use forge_registry::{
-    ConfigProblem, ConfigSpec, RunContext, StepTimer, SubActionCategory, SubActionRunner,
-    TypedField,
+    ConfigProblem, ConfigSpec, RunContext, StepCatalogEntry, StepTimer, SubActionCategory,
+    SubActionRunner, TypedField,
 };
-use forge_storage::{GlobalsRepo, StorageError, UserGlobalsRepo};
+use forge_storage::{GlobalsRepo, StorageError, UserGlobalKey, UserGlobalsRepo};
 use forge_types::{ArgStack, SubActionConfig, SubActionOutcome, SubActionTelemetry};
 
 use super::core_globals_shared::AMOUNT;
@@ -39,30 +39,28 @@ impl CoreUsersIncrementVarRunner {
     }
 }
 
+impl StepCatalogEntry for CoreUsersIncrementVarRunner {
+    fn category(&self) -> SubActionCategory {
+        SubActionCategory::Globals
+    }
+    fn label(&self) -> &str {
+        "Increment User Variable"
+    }
+    fn summary(&self) -> &str {
+        "Increment a numeric per-user variable by an amount"
+    }
+    fn search_text(&self) -> &str {
+        "increment user variable per-user counter add"
+    }
+    fn icon_name(&self) -> &str {
+        "user-plus"
+    }
+}
+
 #[async_trait]
 impl SubActionRunner for CoreUsersIncrementVarRunner {
     fn id(&self) -> &str {
         "core.users.increment_var"
-    }
-
-    fn category(&self) -> SubActionCategory {
-        SubActionCategory::Globals
-    }
-
-    fn label(&self) -> &str {
-        "Increment User Variable"
-    }
-
-    fn summary(&self) -> &str {
-        "Increment a numeric per-user variable by an amount"
-    }
-
-    fn search_text(&self) -> &str {
-        "increment user variable per-user counter add"
-    }
-
-    fn icon_name(&self) -> &str {
-        "user-plus"
     }
 
     fn config_spec(&self) -> Option<ConfigSpec> {
@@ -94,7 +92,10 @@ impl SubActionRunner for CoreUsersIncrementVarRunner {
 
         let outcome = match self
             .user_globals
-            .incr(&broadcaster_id, &user_login, &var_name, amount)
+            .incr(
+                &UserGlobalKey::new(&broadcaster_id, &user_login, &var_name),
+                amount,
+            )
             .await
         {
             Ok(_) => SubActionOutcome::Success,

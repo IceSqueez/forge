@@ -3,8 +3,8 @@ use std::sync::Arc;
 use async_trait::async_trait;
 use forge_registry::SubActionConfig;
 use forge_registry::{
-    ChoiceField, ConfigChoice, ConfigProblem, ConfigSpec, RunContext, StepTimer, SubActionCategory,
-    SubActionRunner, TextEditor, TextField, TypedField,
+    ChoiceField, ConfigChoice, ConfigProblem, ConfigSpec, RunContext, StepCatalogEntry, StepTimer,
+    SubActionCategory, SubActionRunner, TextEditor, TextField, TypedField,
 };
 use forge_types::{ArgStack, SubActionOutcome, SubActionTelemetry};
 
@@ -95,30 +95,28 @@ impl EndPollRunner {
     }
 }
 
+impl StepCatalogEntry for EndPollRunner {
+    fn category(&self) -> SubActionCategory {
+        SubActionCategory::PollsPredictions
+    }
+    fn label(&self) -> &str {
+        "End Poll"
+    }
+    fn summary(&self) -> &str {
+        "Ends an active poll immediately. Use 'terminated' to stop with results visible or 'archived' to hide it."
+    }
+    fn search_text(&self) -> &str {
+        "twitch poll end stop terminate archive"
+    }
+    fn icon_name(&self) -> &str {
+        "chart-bar"
+    }
+}
+
 #[async_trait]
 impl SubActionRunner for EndPollRunner {
     fn id(&self) -> &str {
         sub_action_ids::POLL_END
-    }
-
-    fn category(&self) -> SubActionCategory {
-        SubActionCategory::PollsPredictions
-    }
-
-    fn label(&self) -> &str {
-        "End Poll"
-    }
-
-    fn summary(&self) -> &str {
-        "Ends an active poll immediately. Use 'terminated' to stop with results visible or 'archived' to hide it."
-    }
-
-    fn search_text(&self) -> &str {
-        "twitch poll end stop terminate archive"
-    }
-
-    fn icon_name(&self) -> &str {
-        "chart-bar"
     }
 
     fn config_spec(&self) -> Option<ConfigSpec> {

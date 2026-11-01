@@ -3,13 +3,13 @@ use std::sync::Arc;
 use async_trait::async_trait;
 use forge_registry::SubActionConfig;
 use forge_registry::{
-    ConfigSpec, RunContext, StepTimer, SubActionCategory, SubActionRunner, TextEditor, TextField,
-    TypedField,
+    ConfigSpec, RunContext, StepCatalogEntry, StepTimer, SubActionCategory, SubActionRunner,
+    TextEditor, TextField, TypedField,
 };
 use forge_types::{ArgStack, SubActionTelemetry};
 
 use super::step_failure;
-use crate::thumbnail::YoutubeThumbnail;
+use crate::broadcast::thumbnail::YoutubeThumbnail;
 use crate::vocabulary::{config_keys, sub_action_ids};
 
 const IMAGE_PATH: TextField = TextField {
@@ -34,30 +34,28 @@ impl SetThumbnailRunner {
     }
 }
 
+impl StepCatalogEntry for SetThumbnailRunner {
+    fn category(&self) -> SubActionCategory {
+        SubActionCategory::Integration
+    }
+    fn label(&self) -> &str {
+        "Set Thumbnail"
+    }
+    fn summary(&self) -> &str {
+        "Uploads a custom thumbnail image for the active YouTube broadcast."
+    }
+    fn search_text(&self) -> &str {
+        "youtube thumbnail image upload photo broadcast video"
+    }
+    fn icon_name(&self) -> &str {
+        "photo"
+    }
+}
+
 #[async_trait]
 impl SubActionRunner for SetThumbnailRunner {
     fn id(&self) -> &str {
         sub_action_ids::STREAM_SET_THUMBNAIL
-    }
-
-    fn category(&self) -> SubActionCategory {
-        SubActionCategory::Integration
-    }
-
-    fn label(&self) -> &str {
-        "Set Thumbnail"
-    }
-
-    fn summary(&self) -> &str {
-        "Uploads a custom thumbnail image for the active YouTube broadcast."
-    }
-
-    fn search_text(&self) -> &str {
-        "youtube thumbnail image upload photo broadcast video"
-    }
-
-    fn icon_name(&self) -> &str {
-        "photo"
     }
 
     fn config_spec(&self) -> Option<ConfigSpec> {
@@ -92,7 +90,7 @@ mod tests {
     use wiremock::{Mock, MockServer, ResponseTemplate};
 
     use super::*;
-    use crate::active_broadcast_id::ActiveBroadcastIdHandle;
+    use crate::broadcast::active_broadcast_id::ActiveBroadcastIdHandle;
     use forge_types::SubActionOutcome;
     use forge_types::Variant;
     use std::collections::BTreeMap;

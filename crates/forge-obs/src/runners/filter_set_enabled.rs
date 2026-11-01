@@ -3,8 +3,8 @@ use std::sync::Arc;
 use async_trait::async_trait;
 use forge_registry::SubActionConfig;
 use forge_registry::{
-    ConfigProblem, ConfigSpec, RunContext, StepTimer, SubActionCategory, SubActionRunner,
-    TextEditor, TextField, ToggleField, TypedField,
+    ConfigProblem, ConfigSpec, RunContext, StepCatalogEntry, StepTimer, SubActionCategory,
+    SubActionRunner, TextEditor, TextField, ToggleField, TypedField,
 };
 use forge_types::{ArgStack, SubActionTelemetry};
 
@@ -52,30 +52,28 @@ impl FilterSetEnabledRunner {
     }
 }
 
+impl StepCatalogEntry for FilterSetEnabledRunner {
+    fn category(&self) -> SubActionCategory {
+        SubActionCategory::Integration
+    }
+    fn label(&self) -> &str {
+        "Set Filter Enabled"
+    }
+    fn summary(&self) -> &str {
+        "Enables or disables a filter on an OBS source."
+    }
+    fn search_text(&self) -> &str {
+        "obs filter enable disable toggle source effect"
+    }
+    fn icon_name(&self) -> &str {
+        "filter"
+    }
+}
+
 #[async_trait]
 impl SubActionRunner for FilterSetEnabledRunner {
     fn id(&self) -> &str {
         sub_action_ids::FILTER_SET_ENABLED
-    }
-
-    fn category(&self) -> SubActionCategory {
-        SubActionCategory::Integration
-    }
-
-    fn label(&self) -> &str {
-        "Set Filter Enabled"
-    }
-
-    fn summary(&self) -> &str {
-        "Enables or disables a filter on an OBS source."
-    }
-
-    fn search_text(&self) -> &str {
-        "obs filter enable disable toggle source effect"
-    }
-
-    fn icon_name(&self) -> &str {
-        "filter"
     }
 
     fn config_spec(&self) -> Option<ConfigSpec> {

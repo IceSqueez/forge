@@ -3,8 +3,9 @@ use std::sync::Arc;
 use async_trait::async_trait;
 use forge_registry::SubActionConfig;
 use forge_registry::{
-    ConfigProblem, ConfigSpec, NumberField, PickedTextField, RunContext, StepTimer, StoredNumber,
-    SubActionCategory, SubActionRunner, TextPicker, TypedField, ValueBounds,
+    ConfigProblem, ConfigSpec, NumberField, PickedTextField, RunContext, StepCatalogEntry,
+    StepTimer, StoredNumber, SubActionCategory, SubActionRunner, TextPicker, TypedField,
+    ValueBounds,
 };
 use forge_types::{ArgStack, SubActionTelemetry};
 
@@ -46,30 +47,28 @@ impl SetVolumeRunner {
     }
 }
 
+impl StepCatalogEntry for SetVolumeRunner {
+    fn category(&self) -> SubActionCategory {
+        SubActionCategory::Integration
+    }
+    fn label(&self) -> &str {
+        "Set Source Volume"
+    }
+    fn summary(&self) -> &str {
+        "Sets the volume of an audio input in dB."
+    }
+    fn search_text(&self) -> &str {
+        "obs audio volume input set db decibel source"
+    }
+    fn icon_name(&self) -> &str {
+        "volume-2"
+    }
+}
+
 #[async_trait]
 impl SubActionRunner for SetVolumeRunner {
     fn id(&self) -> &str {
         sub_action_ids::AUDIO_SET_VOLUME
-    }
-
-    fn category(&self) -> SubActionCategory {
-        SubActionCategory::Integration
-    }
-
-    fn label(&self) -> &str {
-        "Set Source Volume"
-    }
-
-    fn summary(&self) -> &str {
-        "Sets the volume of an audio input in dB."
-    }
-
-    fn search_text(&self) -> &str {
-        "obs audio volume input set db decibel source"
-    }
-
-    fn icon_name(&self) -> &str {
-        "volume-2"
     }
 
     fn config_spec(&self) -> Option<ConfigSpec> {

@@ -3,13 +3,13 @@ use std::sync::Arc;
 use async_trait::async_trait;
 use forge_registry::SubActionConfig;
 use forge_registry::{
-    ConfigSpec, RunContext, StepTimer, SubActionCategory, SubActionRunner, TextEditor, TextField,
-    TypedField,
+    ConfigSpec, RunContext, StepCatalogEntry, StepTimer, SubActionCategory, SubActionRunner,
+    TextEditor, TextField, TypedField,
 };
 use forge_types::{ArgStack, SubActionTelemetry, Variant};
 
 use super::step_failure;
-use crate::channel_lookup::YoutubeChannelLookup;
+use crate::broadcast::channel_lookup::YoutubeChannelLookup;
 use crate::vocabulary::variables::viewer as variables;
 use crate::vocabulary::{config_keys, sub_action_ids};
 
@@ -35,30 +35,28 @@ impl LookupViewerRunner {
     }
 }
 
+impl StepCatalogEntry for LookupViewerRunner {
+    fn category(&self) -> SubActionCategory {
+        SubActionCategory::Integration
+    }
+    fn label(&self) -> &str {
+        "Lookup Viewer"
+    }
+    fn summary(&self) -> &str {
+        "Looks up a YouTube channel by handle or channel id."
+    }
+    fn search_text(&self) -> &str {
+        "youtube lookup viewer channel handle subscriber stats"
+    }
+    fn icon_name(&self) -> &str {
+        "user"
+    }
+}
+
 #[async_trait]
 impl SubActionRunner for LookupViewerRunner {
     fn id(&self) -> &str {
         sub_action_ids::LOOKUP_VIEWER
-    }
-
-    fn category(&self) -> SubActionCategory {
-        SubActionCategory::Integration
-    }
-
-    fn label(&self) -> &str {
-        "Lookup Viewer"
-    }
-
-    fn summary(&self) -> &str {
-        "Looks up a YouTube channel by handle or channel id."
-    }
-
-    fn search_text(&self) -> &str {
-        "youtube lookup viewer channel handle subscriber stats"
-    }
-
-    fn icon_name(&self) -> &str {
-        "user"
     }
 
     fn config_spec(&self) -> Option<ConfigSpec> {

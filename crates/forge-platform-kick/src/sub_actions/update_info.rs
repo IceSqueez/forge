@@ -4,8 +4,8 @@ use async_trait::async_trait;
 use forge_platform_core::PlatformError;
 use forge_registry::SubActionConfig;
 use forge_registry::{
-    ConfigProblem, ConfigReason, ConfigSpec, Interpolation, RunContext, StepTimer,
-    SubActionCategory, SubActionRunner, TextEditor, TextField, TypedField, ValueBounds,
+    ConfigProblem, ConfigReason, ConfigSpec, Interpolation, RunContext, StepCatalogEntry,
+    StepTimer, SubActionCategory, SubActionRunner, TextEditor, TextField, TypedField, ValueBounds,
 };
 use forge_types::{ArgStack, SubActionOutcome, SubActionTelemetry};
 use futures::future::BoxFuture;
@@ -87,30 +87,28 @@ impl UpdateInfoRunner {
     }
 }
 
+impl StepCatalogEntry for UpdateInfoRunner {
+    fn category(&self) -> SubActionCategory {
+        SubActionCategory::Integration
+    }
+    fn label(&self) -> &str {
+        "Update Channel Info"
+    }
+    fn summary(&self) -> &str {
+        "Updates stream title, category, or tags on the Kick channel. Requires channel:write scope."
+    }
+    fn search_text(&self) -> &str {
+        "kick channel update title category tags stream info"
+    }
+    fn icon_name(&self) -> &str {
+        "edit"
+    }
+}
+
 #[async_trait]
 impl SubActionRunner for UpdateInfoRunner {
     fn id(&self) -> &str {
         sub_action_ids::CHANNEL_UPDATE_INFO
-    }
-
-    fn category(&self) -> SubActionCategory {
-        SubActionCategory::Integration
-    }
-
-    fn label(&self) -> &str {
-        "Update Channel Info"
-    }
-
-    fn summary(&self) -> &str {
-        "Updates stream title, category, or tags on the Kick channel. Requires channel:write scope."
-    }
-
-    fn search_text(&self) -> &str {
-        "kick channel update title category tags stream info"
-    }
-
-    fn icon_name(&self) -> &str {
-        "edit"
     }
 
     fn config_spec(&self) -> Option<ConfigSpec> {

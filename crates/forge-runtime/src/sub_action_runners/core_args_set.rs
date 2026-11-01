@@ -1,7 +1,7 @@
 use async_trait::async_trait;
 use forge_registry::{
-    ConfigProblem, ConfigSpec, ProducedVariable, RunContext, StepTimer, SubActionCategory,
-    SubActionIo, SubActionRunner, TextEditor, TextField, TypedField, ValueField,
+    ConfigProblem, ConfigSpec, ProducedVariable, RunContext, StepCatalogEntry, StepTimer,
+    SubActionCategory, SubActionIo, SubActionRunner, TextEditor, TextField, TypedField, ValueField,
 };
 use forge_types::{
     ArgStack, SubActionConfig, SubActionTelemetry, Variant, VariantKind, strip_var_decoration,
@@ -42,30 +42,28 @@ fn read_config(
 
 pub struct CoreArgsSetRunner;
 
+impl StepCatalogEntry for CoreArgsSetRunner {
+    fn category(&self) -> SubActionCategory {
+        SubActionCategory::Util
+    }
+    fn label(&self) -> &str {
+        "Set Local Arg"
+    }
+    fn summary(&self) -> &str {
+        "Set a variable in the current execution's ArgStack"
+    }
+    fn search_text(&self) -> &str {
+        "set local arg variable execution stack transient"
+    }
+    fn icon_name(&self) -> &str {
+        "variable"
+    }
+}
+
 #[async_trait]
 impl SubActionRunner for CoreArgsSetRunner {
     fn id(&self) -> &str {
         "core.args.set"
-    }
-
-    fn category(&self) -> SubActionCategory {
-        SubActionCategory::Util
-    }
-
-    fn label(&self) -> &str {
-        "Set Local Arg"
-    }
-
-    fn summary(&self) -> &str {
-        "Set a variable in the current execution's ArgStack"
-    }
-
-    fn search_text(&self) -> &str {
-        "set local arg variable execution stack transient"
-    }
-
-    fn icon_name(&self) -> &str {
-        "variable"
     }
 
     fn config_spec(&self) -> Option<ConfigSpec> {

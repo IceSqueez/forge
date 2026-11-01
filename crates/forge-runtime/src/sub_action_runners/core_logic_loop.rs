@@ -4,8 +4,9 @@ use async_trait::async_trait;
 use forge_registry::{
     ChainExecutor, ChainLayout, ChainSignal, ChoiceField, CodeField, CodeKind, CodeLanguage,
     ConfigChoice, ConfigProblem, ConfigSpec, ControlSignal, IntegerEditor, IntegerField,
-    LOOP_KIND_ID, RunContext, StepChainField, StepTimer, StopMark, SubActionCategory, SubActionIo,
-    SubActionRunner, TextEditor, TextField, TypedField, ValueBounds,
+    LOOP_KIND_ID, RunContext, StepCatalogEntry, StepChainField, StepTimer, StopMark,
+    SubActionCategory, SubActionIo, SubActionRunner, TextEditor, TextField, TypedField,
+    ValueBounds,
 };
 use forge_types::{
     ArgStack, EventId, SubActionConfig, SubActionOutcome, SubActionStep, SubActionTelemetry,
@@ -178,30 +179,28 @@ async fn run_body(
     }
 }
 
+impl StepCatalogEntry for CoreLogicLoopRunner {
+    fn category(&self) -> SubActionCategory {
+        SubActionCategory::Logic
+    }
+    fn label(&self) -> &str {
+        "Loop"
+    }
+    fn summary(&self) -> &str {
+        "Repeat a sub-chain a fixed count, over an array, or while a condition holds"
+    }
+    fn search_text(&self) -> &str {
+        "loop repeat for each foreach while count iterate flow control"
+    }
+    fn icon_name(&self) -> &str {
+        "repeat"
+    }
+}
+
 #[async_trait]
 impl SubActionRunner for CoreLogicLoopRunner {
     fn id(&self) -> &str {
         LOOP_KIND_ID
-    }
-
-    fn category(&self) -> SubActionCategory {
-        SubActionCategory::Logic
-    }
-
-    fn label(&self) -> &str {
-        "Loop"
-    }
-
-    fn summary(&self) -> &str {
-        "Repeat a sub-chain a fixed count, over an array, or while a condition holds"
-    }
-
-    fn search_text(&self) -> &str {
-        "loop repeat for each foreach while count iterate flow control"
-    }
-
-    fn icon_name(&self) -> &str {
-        "repeat"
     }
 
     fn config_spec(&self) -> Option<ConfigSpec> {

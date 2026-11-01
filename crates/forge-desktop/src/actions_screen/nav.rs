@@ -354,8 +354,8 @@ mod tests {
     use forge_types::{SubActionConfig, SubActionStep, Variant};
 
     use forge_registry::{
-        FormField, RegistryError, RunContext, SubActionCategory, SubActionRegistry,
-        SubActionRunner, UndecodableReason, UndecodableStep,
+        FormField, RegistryError, RunContext, StepCatalogEntry, SubActionCategory,
+        SubActionRegistry, SubActionRunner, UndecodableReason, UndecodableStep,
     };
     use forge_types::{ArgStack, SubActionTelemetry};
 
@@ -688,30 +688,28 @@ mod tests {
 
     struct CaseListRunner;
 
+    impl StepCatalogEntry for CaseListRunner {
+        fn category(&self) -> SubActionCategory {
+            SubActionCategory::Logic
+        }
+        fn label(&self) -> &str {
+            SWITCH
+        }
+        fn summary(&self) -> &str {
+            SWITCH
+        }
+        fn search_text(&self) -> &str {
+            SWITCH
+        }
+        fn icon_name(&self) -> &str {
+            "bolt"
+        }
+    }
+
     #[async_trait::async_trait]
     impl SubActionRunner for CaseListRunner {
         fn id(&self) -> &str {
             SWITCH
-        }
-
-        fn category(&self) -> SubActionCategory {
-            SubActionCategory::Logic
-        }
-
-        fn label(&self) -> &str {
-            SWITCH
-        }
-
-        fn summary(&self) -> &str {
-            SWITCH
-        }
-
-        fn search_text(&self) -> &str {
-            SWITCH
-        }
-
-        fn icon_name(&self) -> &str {
-            "bolt"
         }
 
         fn default_config(&self) -> SubActionConfig {

@@ -8,12 +8,12 @@ use forge_storage::{BanLedgerRepo, CredentialsRepo};
 use forge_types::Secret;
 use futures::future::BoxFuture;
 
-use crate::auth::YoutubeSignIn;
-use crate::broadcast_lookup::BroadcastLookup;
-use crate::chat_platform::token_source;
-use crate::oauth_client::{
+use crate::account::auth::YoutubeSignIn;
+use crate::account::oauth_client::{
     GOOGLE_OAUTH_BUDGET_CAPACITY, GOOGLE_OAUTH_BUDGET_WINDOW, google_oauth_gateway,
 };
+use crate::broadcast::broadcast_lookup::BroadcastLookup;
+use crate::chat::chat_platform::token_source;
 use crate::{
     ActiveBroadcastIdHandle, GoogleOAuthClient, LiveChatIdHandle, SharedQuota, YoutubeAdBreak,
     YoutubeChannelLookup, YoutubeCredentialsManager, YoutubeDataApi, YoutubeIntegrationBundle,

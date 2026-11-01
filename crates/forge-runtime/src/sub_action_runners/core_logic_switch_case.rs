@@ -1,7 +1,8 @@
 use async_trait::async_trait;
 use forge_registry::{
-    CASE_CHAIN_KEY, CASE_MATCH_KEY, ChainLayout, ConfigSpec, RunContext, StepChainField, StepTimer,
-    SubActionCategory, SubActionRunner, TextEditor, TextField, TypedField,
+    CASE_CHAIN_KEY, CASE_MATCH_KEY, ChainLayout, ConfigSpec, RunContext, StepCatalogEntry,
+    StepChainField, StepTimer, SubActionCategory, SubActionRunner, TextEditor, TextField,
+    TypedField,
 };
 use forge_types::{ArgStack, SubActionConfig, SubActionStep, SubActionTelemetry, Variant};
 
@@ -41,30 +42,28 @@ const CONFIG: ConfigSpec = ConfigSpec::new(&[&EXPRESSION, &CASES, &DEFAULT_CHAIN
 
 pub struct CoreLogicSwitchCaseRunner;
 
+impl StepCatalogEntry for CoreLogicSwitchCaseRunner {
+    fn category(&self) -> SubActionCategory {
+        SubActionCategory::Logic
+    }
+    fn label(&self) -> &str {
+        "Switch / Case"
+    }
+    fn summary(&self) -> &str {
+        "Run the sub-chain whose case matches a value"
+    }
+    fn search_text(&self) -> &str {
+        "switch case match value branch select flow control"
+    }
+    fn icon_name(&self) -> &str {
+        "list-checks"
+    }
+}
+
 #[async_trait]
 impl SubActionRunner for CoreLogicSwitchCaseRunner {
     fn id(&self) -> &str {
         "core.logic.switch_case"
-    }
-
-    fn category(&self) -> SubActionCategory {
-        SubActionCategory::Logic
-    }
-
-    fn label(&self) -> &str {
-        "Switch / Case"
-    }
-
-    fn summary(&self) -> &str {
-        "Run the sub-chain whose case matches a value"
-    }
-
-    fn search_text(&self) -> &str {
-        "switch case match value branch select flow control"
-    }
-
-    fn icon_name(&self) -> &str {
-        "list-checks"
     }
 
     fn config_spec(&self) -> Option<ConfigSpec> {

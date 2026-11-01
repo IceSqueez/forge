@@ -1,7 +1,7 @@
 use std::sync::Arc;
 
 use async_trait::async_trait;
-use forge_registry::{RunContext, StepTimer, SubActionCategory, SubActionRunner};
+use forge_registry::{RunContext, StepCatalogEntry, StepTimer, SubActionCategory, SubActionRunner};
 use forge_types::{ArgStack, SubActionConfig, SubActionTelemetry};
 
 use crate::control::SoundboardControl;
@@ -17,30 +17,28 @@ impl StopAllSoundsRunner {
     }
 }
 
+impl StepCatalogEntry for StopAllSoundsRunner {
+    fn category(&self) -> SubActionCategory {
+        SubActionCategory::Audio
+    }
+    fn label(&self) -> &str {
+        "Stop All Sounds"
+    }
+    fn summary(&self) -> &str {
+        "Stop every soundboard clip currently playing"
+    }
+    fn search_text(&self) -> &str {
+        "stop all sounds clips audio soundboard silence"
+    }
+    fn icon_name(&self) -> &str {
+        "stop-circle"
+    }
+}
+
 #[async_trait]
 impl SubActionRunner for StopAllSoundsRunner {
     fn id(&self) -> &str {
         sub_action_ids::SOUND_STOP_ALL
-    }
-
-    fn category(&self) -> SubActionCategory {
-        SubActionCategory::Audio
-    }
-
-    fn label(&self) -> &str {
-        "Stop All Sounds"
-    }
-
-    fn summary(&self) -> &str {
-        "Stop every soundboard clip currently playing"
-    }
-
-    fn search_text(&self) -> &str {
-        "stop all sounds clips audio soundboard silence"
-    }
-
-    fn icon_name(&self) -> &str {
-        "stop-circle"
     }
 
     async fn execute(

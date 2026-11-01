@@ -1,8 +1,8 @@
 use async_trait::async_trait;
 use forge_registry::{
     ChoiceField, ConfigChoice, ConfigProblem, ConfigSpec, DateTimeField, ProducedVariable,
-    RunContext, StepTimer, SubActionCategory, SubActionIo, SubActionRunner, TypedField,
-    VariableField,
+    RunContext, StepCatalogEntry, StepTimer, SubActionCategory, SubActionIo, SubActionRunner,
+    TypedField, VariableField,
 };
 use forge_types::{ArgStack, SubActionConfig, SubActionTelemetry, Variant, VariantKind};
 use time::{Duration, OffsetDateTime};
@@ -97,30 +97,28 @@ fn read_config(config: &SubActionConfig, args: &ArgStack) -> Result<DiffConfig, 
 
 pub(crate) struct CoreTimeDiffRunner;
 
+impl StepCatalogEntry for CoreTimeDiffRunner {
+    fn category(&self) -> SubActionCategory {
+        SubActionCategory::Util
+    }
+    fn label(&self) -> &str {
+        "Time - Time Difference"
+    }
+    fn summary(&self) -> &str {
+        "Compute `to − from` as a signed float in the given unit (seconds, minutes, hours, or days)"
+    }
+    fn search_text(&self) -> &str {
+        "time diff difference between subtract duration elapsed seconds minutes hours days"
+    }
+    fn icon_name(&self) -> &str {
+        "clock-minus"
+    }
+}
+
 #[async_trait]
 impl SubActionRunner for CoreTimeDiffRunner {
     fn id(&self) -> &str {
         "core.time.diff"
-    }
-
-    fn category(&self) -> SubActionCategory {
-        SubActionCategory::Util
-    }
-
-    fn label(&self) -> &str {
-        "Time - Time Difference"
-    }
-
-    fn summary(&self) -> &str {
-        "Compute `to − from` as a signed float in the given unit (seconds, minutes, hours, or days)"
-    }
-
-    fn search_text(&self) -> &str {
-        "time diff difference between subtract duration elapsed seconds minutes hours days"
-    }
-
-    fn icon_name(&self) -> &str {
-        "clock-minus"
     }
 
     fn config_spec(&self) -> Option<ConfigSpec> {

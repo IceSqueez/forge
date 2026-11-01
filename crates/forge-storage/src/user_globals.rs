@@ -16,30 +16,31 @@ pub struct UserGlobalEntry {
     pub last_modified: OffsetDateTime,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct UserGlobalKey {
+    pub broadcaster_id: String,
+    pub user_id: String,
+    pub name: String,
+}
+
+impl UserGlobalKey {
+    pub fn new(broadcaster_id: &str, user_id: &str, name: &str) -> Self {
+        Self {
+            broadcaster_id: broadcaster_id.to_owned(),
+            user_id: user_id.to_owned(),
+            name: name.to_owned(),
+        }
+    }
+}
+
 #[cfg_attr(feature = "test-mocks", mockall::automock)]
 #[async_trait]
 pub trait UserGlobalsRepo: Send + Sync {
-    async fn get(
-        &self,
-        broadcaster_id: &str,
-        user_id: &str,
-        name: &str,
-    ) -> Result<Option<Variant>, StorageError>;
+    async fn get(&self, key: &UserGlobalKey) -> Result<Option<Variant>, StorageError>;
 
-    async fn set(
-        &self,
-        broadcaster_id: &str,
-        user_id: &str,
-        name: &str,
-        value: Variant,
-    ) -> Result<(), StorageError>;
+    async fn set(&self, key: &UserGlobalKey, value: Variant) -> Result<(), StorageError>;
 
-    async fn delete(
-        &self,
-        broadcaster_id: &str,
-        user_id: &str,
-        name: &str,
-    ) -> Result<bool, StorageError>;
+    async fn delete(&self, key: &UserGlobalKey) -> Result<bool, StorageError>;
 
     async fn list_for_user(
         &self,
@@ -52,13 +53,7 @@ pub trait UserGlobalsRepo: Send + Sync {
         broadcaster_id: &str,
     ) -> Result<Vec<UserGlobalEntry>, StorageError>;
 
-    async fn incr(
-        &self,
-        broadcaster_id: &str,
-        user_id: &str,
-        name: &str,
-        amount: i64,
-    ) -> Result<Variant, StorageError>;
+    async fn incr(&self, key: &UserGlobalKey, amount: i64) -> Result<Variant, StorageError>;
 }
 
 pub fn incremented(

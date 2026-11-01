@@ -5,8 +5,8 @@ use forge_events::{ChatSent, EventSource, TypedEvent};
 use forge_platform_core::PlatformError;
 use forge_registry::SubActionConfig;
 use forge_registry::{
-    ConfigProblem, ConfigSpec, RunContext, StepTimer, SubActionCategory, SubActionRunner,
-    TextEditor, TextField, ToggleField, TypedField,
+    ConfigProblem, ConfigSpec, RunContext, StepCatalogEntry, StepTimer, SubActionCategory,
+    SubActionRunner, TextEditor, TextField, ToggleField, TypedField,
 };
 use forge_types::{ArgStack, PlatformId, SubActionOutcome, SubActionTelemetry};
 use futures::future::BoxFuture;
@@ -87,30 +87,28 @@ impl SendMessageRunner {
     }
 }
 
+impl StepCatalogEntry for SendMessageRunner {
+    fn category(&self) -> SubActionCategory {
+        SubActionCategory::Chat
+    }
+    fn label(&self) -> &str {
+        "Send Message"
+    }
+    fn summary(&self) -> &str {
+        "Posts a message to the Kick channel chat."
+    }
+    fn search_text(&self) -> &str {
+        "kick chat message send say post"
+    }
+    fn icon_name(&self) -> &str {
+        "chat"
+    }
+}
+
 #[async_trait]
 impl SubActionRunner for SendMessageRunner {
     fn id(&self) -> &str {
         sub_action_ids::CHAT_SEND_MESSAGE
-    }
-
-    fn category(&self) -> SubActionCategory {
-        SubActionCategory::Chat
-    }
-
-    fn label(&self) -> &str {
-        "Send Message"
-    }
-
-    fn summary(&self) -> &str {
-        "Posts a message to the Kick channel chat."
-    }
-
-    fn search_text(&self) -> &str {
-        "kick chat message send say post"
-    }
-
-    fn icon_name(&self) -> &str {
-        "chat"
     }
 
     fn config_spec(&self) -> Option<ConfigSpec> {

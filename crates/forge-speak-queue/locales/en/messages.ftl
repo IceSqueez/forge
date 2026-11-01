@@ -58,4 +58,3 @@ msg-speak-event_stream_closed = The speech queue closed before this message fini
 msg-speak-outcome_unknown = It is unknown whether this message was spoken: the queue dropped events while waiting.
 msg-speak-wait_timed_out = Waiting for the speech took too long.
 msg-speak-removed_from_queue = The message was removed from the queue.
-msg-speak-show_speech_unavailable = Speech for an overlay show is not available.

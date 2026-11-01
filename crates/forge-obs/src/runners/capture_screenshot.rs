@@ -4,8 +4,8 @@ use std::sync::Arc;
 use async_trait::async_trait;
 use forge_registry::SubActionConfig;
 use forge_registry::{
-    ConfigProblem, ConfigSpec, Interpolation, PickedTextField, RunContext, StepTimer,
-    SubActionCategory, SubActionRunner, TextPicker, TypedField,
+    ConfigProblem, ConfigSpec, Interpolation, PickedTextField, RunContext, StepCatalogEntry,
+    StepTimer, SubActionCategory, SubActionRunner, TextPicker, TypedField,
 };
 use forge_types::{ArgStack, SubActionTelemetry};
 
@@ -44,30 +44,28 @@ impl CaptureScreenshotRunner {
     }
 }
 
+impl StepCatalogEntry for CaptureScreenshotRunner {
+    fn category(&self) -> SubActionCategory {
+        SubActionCategory::Integration
+    }
+    fn label(&self) -> &str {
+        "Save Source Screenshot"
+    }
+    fn summary(&self) -> &str {
+        "Saves a screenshot of an OBS source to a file, format from the file extension."
+    }
+    fn search_text(&self) -> &str {
+        "obs screenshot capture save source image png jpg file"
+    }
+    fn icon_name(&self) -> &str {
+        "camera"
+    }
+}
+
 #[async_trait]
 impl SubActionRunner for CaptureScreenshotRunner {
     fn id(&self) -> &str {
         sub_action_ids::CAPTURE_SCREENSHOT
-    }
-
-    fn category(&self) -> SubActionCategory {
-        SubActionCategory::Integration
-    }
-
-    fn label(&self) -> &str {
-        "Save Source Screenshot"
-    }
-
-    fn summary(&self) -> &str {
-        "Saves a screenshot of an OBS source to a file, format from the file extension."
-    }
-
-    fn search_text(&self) -> &str {
-        "obs screenshot capture save source image png jpg file"
-    }
-
-    fn icon_name(&self) -> &str {
-        "camera"
     }
 
     fn config_spec(&self) -> Option<ConfigSpec> {

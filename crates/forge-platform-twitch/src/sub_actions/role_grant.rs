@@ -3,7 +3,8 @@ use std::sync::Arc;
 use async_trait::async_trait;
 use forge_registry::SubActionConfig;
 use forge_registry::{
-    ConfigSpec, RunContext, StepTimer, SubActionCategory, SubActionRunner, TypedField,
+    ConfigSpec, RunContext, StepCatalogEntry, StepTimer, SubActionCategory, SubActionRunner,
+    TypedField,
 };
 use forge_types::{ArgStack, SubActionOutcome, SubActionTelemetry};
 
@@ -126,30 +127,28 @@ impl RoleGrantRunner {
     }
 }
 
+impl StepCatalogEntry for RoleGrantRunner {
+    fn category(&self) -> SubActionCategory {
+        SubActionCategory::Moderation
+    }
+    fn label(&self) -> &str {
+        self.spec.label
+    }
+    fn summary(&self) -> &str {
+        self.spec.summary
+    }
+    fn search_text(&self) -> &str {
+        self.spec.search_text
+    }
+    fn icon_name(&self) -> &str {
+        self.spec.icon
+    }
+}
+
 #[async_trait]
 impl SubActionRunner for RoleGrantRunner {
     fn id(&self) -> &str {
         self.spec.id
-    }
-
-    fn category(&self) -> SubActionCategory {
-        SubActionCategory::Moderation
-    }
-
-    fn label(&self) -> &str {
-        self.spec.label
-    }
-
-    fn summary(&self) -> &str {
-        self.spec.summary
-    }
-
-    fn search_text(&self) -> &str {
-        self.spec.search_text
-    }
-
-    fn icon_name(&self) -> &str {
-        self.spec.icon
     }
 
     fn config_spec(&self) -> Option<ConfigSpec> {

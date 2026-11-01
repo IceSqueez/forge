@@ -3,8 +3,8 @@ use std::sync::Arc;
 use async_trait::async_trait;
 use forge_registry::SubActionConfig;
 use forge_registry::{
-    ConfigProblem, ConfigSpec, PickedTextField, RunContext, StepTimer, SubActionCategory,
-    SubActionRunner, TextPicker, ToggleField, TypedField,
+    ConfigProblem, ConfigSpec, PickedTextField, RunContext, StepCatalogEntry, StepTimer,
+    SubActionCategory, SubActionRunner, TextPicker, ToggleField, TypedField,
 };
 use forge_types::{ArgStack, SubActionTelemetry};
 
@@ -47,30 +47,28 @@ impl ExpressionSetRunner {
     }
 }
 
+impl StepCatalogEntry for ExpressionSetRunner {
+    fn category(&self) -> SubActionCategory {
+        SubActionCategory::Integration
+    }
+    fn label(&self) -> &str {
+        "Set Expression"
+    }
+    fn summary(&self) -> &str {
+        "Activates or deactivates a VTube Studio expression."
+    }
+    fn search_text(&self) -> &str {
+        "vtube expression activate toggle face vts"
+    }
+    fn icon_name(&self) -> &str {
+        "mood-smile"
+    }
+}
+
 #[async_trait]
 impl SubActionRunner for ExpressionSetRunner {
     fn id(&self) -> &str {
         sub_action_ids::EXPRESSION_SET
-    }
-
-    fn category(&self) -> SubActionCategory {
-        SubActionCategory::Integration
-    }
-
-    fn label(&self) -> &str {
-        "Set Expression"
-    }
-
-    fn summary(&self) -> &str {
-        "Activates or deactivates a VTube Studio expression."
-    }
-
-    fn search_text(&self) -> &str {
-        "vtube expression activate toggle face vts"
-    }
-
-    fn icon_name(&self) -> &str {
-        "mood-smile"
     }
 
     fn config_spec(&self) -> Option<ConfigSpec> {

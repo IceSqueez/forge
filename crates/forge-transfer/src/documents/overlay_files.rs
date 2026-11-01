@@ -13,7 +13,7 @@ use crate::documents::undo::Undo;
 use crate::error::TransferError;
 
 pub(crate) const PENDING_IMPORT_MARKER: &str = ".forge-import-pending";
-const SET_ASIDE_EXTENSION: &str = "forge-import-previous";
+pub(crate) const SET_ASIDE_EXTENSION: &str = "forge-import-previous";
 
 pub(crate) async fn place_overlay_files(
     overlay_root: &Path,

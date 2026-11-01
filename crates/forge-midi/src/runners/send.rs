@@ -3,8 +3,9 @@ use std::sync::Arc;
 use async_trait::async_trait;
 use forge_registry::SubActionConfig;
 use forge_registry::{
-    ChoiceField, ConfigProblem, ConfigReason, ConfigSpec, Interpolation, RunContext, StepTimer,
-    SubActionCategory, SubActionRunner, TextEditor, TextField, TypedField, ValueBounds,
+    ChoiceField, ConfigProblem, ConfigReason, ConfigSpec, Interpolation, RunContext,
+    StepCatalogEntry, StepTimer, SubActionCategory, SubActionRunner, TextEditor, TextField,
+    TypedField, ValueBounds,
 };
 use forge_types::{ArgStack, MessageRef, SubActionTelemetry, Variant};
 
@@ -152,30 +153,28 @@ impl MidiSendRunner {
     }
 }
 
+impl StepCatalogEntry for MidiSendRunner {
+    fn category(&self) -> SubActionCategory {
+        SubActionCategory::Integration
+    }
+    fn label(&self) -> &str {
+        "Send MIDI Message"
+    }
+    fn summary(&self) -> &str {
+        "Sends a MIDI message (Note On, Note Off, CC, or raw) to an output port."
+    }
+    fn search_text(&self) -> &str {
+        "midi send note on off cc raw output port"
+    }
+    fn icon_name(&self) -> &str {
+        "music"
+    }
+}
+
 #[async_trait]
 impl SubActionRunner for MidiSendRunner {
     fn id(&self) -> &str {
         KIND_ID
-    }
-
-    fn category(&self) -> SubActionCategory {
-        SubActionCategory::Integration
-    }
-
-    fn label(&self) -> &str {
-        "Send MIDI Message"
-    }
-
-    fn summary(&self) -> &str {
-        "Sends a MIDI message (Note On, Note Off, CC, or raw) to an output port."
-    }
-
-    fn search_text(&self) -> &str {
-        "midi send note on off cc raw output port"
-    }
-
-    fn icon_name(&self) -> &str {
-        "music"
     }
 
     fn config_spec(&self) -> Option<ConfigSpec> {

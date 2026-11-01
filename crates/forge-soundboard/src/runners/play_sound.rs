@@ -2,8 +2,8 @@ use std::sync::Arc;
 
 use async_trait::async_trait;
 use forge_registry::{
-    ConfigProblem, ConfigReason, ConfigSpec, RunContext, StepTimer, SubActionCategory,
-    SubActionRunner, TypedField,
+    ConfigProblem, ConfigReason, ConfigSpec, RunContext, StepCatalogEntry, StepTimer,
+    SubActionCategory, SubActionRunner, TypedField,
 };
 use forge_types::{ArgStack, ClipId, SubActionConfig, SubActionTelemetry};
 
@@ -30,30 +30,28 @@ impl PlaySoundRunner {
     }
 }
 
+impl StepCatalogEntry for PlaySoundRunner {
+    fn category(&self) -> SubActionCategory {
+        SubActionCategory::Audio
+    }
+    fn label(&self) -> &str {
+        "Play Sound"
+    }
+    fn summary(&self) -> &str {
+        "Play a soundboard clip on the configured output device"
+    }
+    fn search_text(&self) -> &str {
+        "play sound clip audio soundboard"
+    }
+    fn icon_name(&self) -> &str {
+        "volume"
+    }
+}
+
 #[async_trait]
 impl SubActionRunner for PlaySoundRunner {
     fn id(&self) -> &str {
         sub_action_ids::SOUND_PLAY
-    }
-
-    fn category(&self) -> SubActionCategory {
-        SubActionCategory::Audio
-    }
-
-    fn label(&self) -> &str {
-        "Play Sound"
-    }
-
-    fn summary(&self) -> &str {
-        "Play a soundboard clip on the configured output device"
-    }
-
-    fn search_text(&self) -> &str {
-        "play sound clip audio soundboard"
-    }
-
-    fn icon_name(&self) -> &str {
-        "volume"
     }
 
     fn config_spec(&self) -> Option<ConfigSpec> {

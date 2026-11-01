@@ -3,8 +3,8 @@ use std::sync::Arc;
 use async_trait::async_trait;
 use forge_registry::SubActionConfig;
 use forge_registry::{
-    ConfigProblem, ConfigReason, ConfigSpec, Interpolation, RunContext, StepTimer,
-    SubActionCategory, SubActionIo, SubActionRunner, TextEditor, TextField, TypedField,
+    ConfigProblem, ConfigReason, ConfigSpec, Interpolation, RunContext, StepCatalogEntry,
+    StepTimer, SubActionCategory, SubActionIo, SubActionRunner, TextEditor, TextField, TypedField,
 };
 use forge_types::{ArgStack, SubActionTelemetry};
 
@@ -70,30 +70,28 @@ impl PostEmbedRunner {
     }
 }
 
+impl StepCatalogEntry for PostEmbedRunner {
+    fn category(&self) -> SubActionCategory {
+        SubActionCategory::Integration
+    }
+    fn label(&self) -> &str {
+        "Post Embed"
+    }
+    fn summary(&self) -> &str {
+        "Posts a rich embed message to a Discord webhook."
+    }
+    fn search_text(&self) -> &str {
+        "discord webhook post embed rich card"
+    }
+    fn icon_name(&self) -> &str {
+        "layout-cards"
+    }
+}
+
 #[async_trait]
 impl SubActionRunner for PostEmbedRunner {
     fn id(&self) -> &str {
         sub_action_ids::WEBHOOK_SEND_EMBED
-    }
-
-    fn category(&self) -> SubActionCategory {
-        SubActionCategory::Integration
-    }
-
-    fn label(&self) -> &str {
-        "Post Embed"
-    }
-
-    fn summary(&self) -> &str {
-        "Posts a rich embed message to a Discord webhook."
-    }
-
-    fn search_text(&self) -> &str {
-        "discord webhook post embed rich card"
-    }
-
-    fn icon_name(&self) -> &str {
-        "layout-cards"
     }
 
     fn config_spec(&self) -> Option<ConfigSpec> {

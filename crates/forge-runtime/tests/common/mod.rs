@@ -238,6 +238,7 @@ pub(crate) async fn wiring_parts(
     RuntimeWiringParts {
         paths: forge_paths::AppPaths::at(std::env::temp_dir().join("forge-tests")),
         config: forge_runtime::Config::default(),
+        os: forge_runtime::OsPorts::unavailable(),
         date_names: forge_runtime::DateNamesHandle::default(),
         tasks: forge_net::TaskOwner::new(),
         bus,

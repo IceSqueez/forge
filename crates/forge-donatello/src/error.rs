@@ -1,5 +1,6 @@
 use std::time::Duration;
 
+use crate::status::PollFailure;
 use forge_net::{GatewayFailure, InvalidRequest, ResponseDecodeError};
 use forge_platform_core::PlatformError;
 use forge_storage::StorageError;
@@ -54,13 +55,7 @@ pub enum DonatelloError {
 
 impl DonatelloError {
     pub fn requires_user_action(&self) -> bool {
-        matches!(
-            self,
-            Self::MissingToken
-                | Self::MalformedToken
-                | Self::Unauthorized
-                | Self::ProfileIncomplete
-        )
+        PollFailure::of(self).action_banner().is_some()
     }
 
     pub(crate) fn from_decode(error: ResponseDecodeError) -> Self {

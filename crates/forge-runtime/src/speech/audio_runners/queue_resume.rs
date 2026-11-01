@@ -1,0 +1,60 @@
+use std::sync::Arc;
+
+use async_trait::async_trait;
+use forge_registry::{
+    ConfigSpec, RunContext, StepCatalogEntry, StepTimer, SubActionCategory, SubActionRunner,
+};
+use forge_types::{ArgStack, SubActionConfig, SubActionTelemetry};
+
+use crate::speech::speak_dispatcher::SpeakQueueControl;
+
+const QUEUE_RESUME_KIND_ID: &str = "tts.queue.resume";
+
+pub(crate) struct QueueResumeRunner {
+    speak: Arc<dyn SpeakQueueControl>,
+}
+
+impl QueueResumeRunner {
+    pub(crate) fn new(speak: Arc<dyn SpeakQueueControl>) -> Self {
+        Self { speak }
+    }
+}
+
+impl StepCatalogEntry for QueueResumeRunner {
+    fn category(&self) -> SubActionCategory {
+        SubActionCategory::Tts
+    }
+    fn label(&self) -> &str {
+        "Resume TTS Queue"
+    }
+    fn summary(&self) -> &str {
+        "Resume processing of the TTS speak queue after a pause"
+    }
+    fn search_text(&self) -> &str {
+        "tts queue resume unpause continue"
+    }
+    fn icon_name(&self) -> &str {
+        "play-circle"
+    }
+}
+
+#[async_trait]
+impl SubActionRunner for QueueResumeRunner {
+    fn id(&self) -> &str {
+        QUEUE_RESUME_KIND_ID
+    }
+
+    fn config_spec(&self) -> Option<ConfigSpec> {
+        Some(ConfigSpec::new(&[]))
+    }
+
+    async fn execute(
+        &self,
+        _config: &SubActionConfig,
+        ctx: &RunContext<'_>,
+    ) -> (SubActionTelemetry, Option<ArgStack>) {
+        let timer = StepTimer::start(ctx, QUEUE_RESUME_KIND_ID);
+        let outcome = crate::speech::speak_dispatcher::dispatch_outcome(&self.speak.resume().await);
+        (timer.finish(outcome), None)
+    }
+}

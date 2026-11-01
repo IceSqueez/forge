@@ -166,6 +166,7 @@ mod tests {
     use crate::form::FormField;
     use crate::kind_platform_contract::KindPlatformContract;
     use crate::run_context::RunContext;
+    use crate::runner::StepCatalogEntry;
     use crate::runner::SubActionConfig;
     use async_trait::async_trait;
     use forge_events::Event;
@@ -269,11 +270,7 @@ mod tests {
         kind_id: &'static str,
     }
 
-    #[async_trait]
-    impl SubActionRunner for StubRunner {
-        fn id(&self) -> &str {
-            self.kind_id
-        }
+    impl StepCatalogEntry for StubRunner {
         fn category(&self) -> SubActionCategory {
             SubActionCategory::Util
         }
@@ -288,6 +285,13 @@ mod tests {
         }
         fn icon_name(&self) -> &str {
             "bolt"
+        }
+    }
+
+    #[async_trait]
+    impl SubActionRunner for StubRunner {
+        fn id(&self) -> &str {
+            self.kind_id
         }
         fn default_config(&self) -> SubActionConfig {
             SubActionConfig::new()

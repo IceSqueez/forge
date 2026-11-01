@@ -6,7 +6,9 @@ use std::sync::{Arc, Mutex};
 use async_trait::async_trait;
 use forge_registry::{RunContext, SubActionRunner};
 use forge_runtime::{CoreUsersGetVarRunner, CoreUsersIncrementVarRunner, CoreUsersSetVarRunner};
-use forge_storage::{GlobalEntry, GlobalsRepo, StorageError, UserGlobalEntry, UserGlobalsRepo};
+use forge_storage::{
+    GlobalEntry, GlobalsRepo, StorageError, UserGlobalEntry, UserGlobalKey, UserGlobalsRepo,
+};
 use forge_types::{ArgStack, EventId, SubActionConfig, SubActionOutcome, Variant};
 use time::OffsetDateTime;
 
@@ -173,71 +175,34 @@ impl MapUserGlobals {
     }
 }
 
+fn tuple_of(key: &UserGlobalKey) -> (String, String, String) {
+    (
+        key.broadcaster_id.clone(),
+        key.user_id.clone(),
+        key.name.clone(),
+    )
+}
+
 #[async_trait]
 impl UserGlobalsRepo for MapUserGlobals {
-    async fn get(
-        &self,
-        broadcaster_id: &str,
-        user_id: &str,
-        name: &str,
-    ) -> Result<Option<Variant>, StorageError> {
-        self.get_keys.lock().unwrap().push((
-            broadcaster_id.to_owned(),
-            user_id.to_owned(),
-            name.to_owned(),
-        ));
+    async fn get(&self, key: &UserGlobalKey) -> Result<Option<Variant>, StorageError> {
+        self.get_keys.lock().unwrap().push(tuple_of(key));
         if self.fail {
             return Err(StorageError::NotReady);
         }
-        Ok(self
-            .store
-            .lock()
-            .unwrap()
-            .get(&(
-                broadcaster_id.to_owned(),
-                user_id.to_owned(),
-                name.to_owned(),
-            ))
-            .cloned())
+        Ok(self.store.lock().unwrap().get(&tuple_of(key)).cloned())
     }
 
-    async fn set(
-        &self,
-        broadcaster_id: &str,
-        user_id: &str,
-        name: &str,
-        value: Variant,
-    ) -> Result<(), StorageError> {
+    async fn set(&self, key: &UserGlobalKey, value: Variant) -> Result<(), StorageError> {
         if self.fail {
             return Err(StorageError::NotReady);
         }
-        self.store.lock().unwrap().insert(
-            (
-                broadcaster_id.to_owned(),
-                user_id.to_owned(),
-                name.to_owned(),
-            ),
-            value,
-        );
+        self.store.lock().unwrap().insert(tuple_of(key), value);
         Ok(())
     }
 
-    async fn delete(
-        &self,
-        broadcaster_id: &str,
-        user_id: &str,
-        name: &str,
-    ) -> Result<bool, StorageError> {
-        Ok(self
-            .store
-            .lock()
-            .unwrap()
-            .remove(&(
-                broadcaster_id.to_owned(),
-                user_id.to_owned(),
-                name.to_owned(),
-            ))
-            .is_some())
+    async fn delete(&self, key: &UserGlobalKey) -> Result<bool, StorageError> {
+        Ok(self.store.lock().unwrap().remove(&tuple_of(key)).is_some())
     }
 
     async fn list_for_user(
@@ -257,16 +222,12 @@ impl UserGlobalsRepo for MapUserGlobals {
 
     async fn incr(
         &self,
-        broadcaster_id: &str,
-        user_id: &str,
-        name: &str,
+        key: &UserGlobalKey,
         amount: i64,
     ) -> Result<forge_types::Variant, forge_storage::StorageError> {
-        let current =
-            forge_storage::UserGlobalsRepo::get(self, broadcaster_id, user_id, name).await?;
-        let next = forge_storage::incremented(name, current, amount)?;
-        forge_storage::UserGlobalsRepo::set(self, broadcaster_id, user_id, name, next.clone())
-            .await?;
+        let current = forge_storage::UserGlobalsRepo::get(self, key).await?;
+        let next = forge_storage::incremented(&key.name, current, amount)?;
+        forge_storage::UserGlobalsRepo::set(self, key, next.clone()).await?;
         Ok(next)
     }
 }

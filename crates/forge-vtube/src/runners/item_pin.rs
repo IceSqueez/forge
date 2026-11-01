@@ -3,8 +3,9 @@ use std::sync::Arc;
 use async_trait::async_trait;
 use forge_registry::SubActionConfig;
 use forge_registry::{
-    ChoiceField, ConfigProblem, ConfigSpec, NumberField, OptionalField, RunContext, StepTimer,
-    SubActionCategory, SubActionRunner, TextField, ToggleField, TypedField,
+    ChoiceField, ConfigProblem, ConfigSpec, NumberField, OptionalField, RunContext,
+    StepCatalogEntry, StepTimer, SubActionCategory, SubActionRunner, TextField, ToggleField,
+    TypedField,
 };
 use forge_types::{ArgStack, SubActionTelemetry};
 
@@ -102,30 +103,28 @@ impl ItemPinRunner {
     }
 }
 
+impl StepCatalogEntry for ItemPinRunner {
+    fn category(&self) -> SubActionCategory {
+        SubActionCategory::Integration
+    }
+    fn label(&self) -> &str {
+        "Pin Item"
+    }
+    fn summary(&self) -> &str {
+        "Pins or unpins a loaded VTube Studio item to the current model."
+    }
+    fn search_text(&self) -> &str {
+        "vtube item pin attach model art mesh vts"
+    }
+    fn icon_name(&self) -> &str {
+        "pin"
+    }
+}
+
 #[async_trait]
 impl SubActionRunner for ItemPinRunner {
     fn id(&self) -> &str {
         sub_action_ids::ITEM_PIN
-    }
-
-    fn category(&self) -> SubActionCategory {
-        SubActionCategory::Integration
-    }
-
-    fn label(&self) -> &str {
-        "Pin Item"
-    }
-
-    fn summary(&self) -> &str {
-        "Pins or unpins a loaded VTube Studio item to the current model."
-    }
-
-    fn search_text(&self) -> &str {
-        "vtube item pin attach model art mesh vts"
-    }
-
-    fn icon_name(&self) -> &str {
-        "pin"
     }
 
     fn config_spec(&self) -> Option<ConfigSpec> {

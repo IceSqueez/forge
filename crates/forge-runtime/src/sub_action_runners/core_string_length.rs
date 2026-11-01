@@ -1,7 +1,8 @@
 use async_trait::async_trait;
 use forge_registry::{
-    ChoiceField, ConfigChoice, ConfigProblem, ConfigSpec, ProducedVariable, RunContext, StepTimer,
-    SubActionCategory, SubActionIo, SubActionRunner, TextField, TypedField,
+    ChoiceField, ConfigChoice, ConfigProblem, ConfigSpec, ProducedVariable, RunContext,
+    StepCatalogEntry, StepTimer, SubActionCategory, SubActionIo, SubActionRunner, TextField,
+    TypedField,
 };
 use forge_types::{ArgStack, SubActionConfig, SubActionTelemetry, Variant, VariantKind};
 
@@ -61,30 +62,28 @@ fn read_config(
 
 pub struct CoreStringLengthRunner;
 
+impl StepCatalogEntry for CoreStringLengthRunner {
+    fn category(&self) -> SubActionCategory {
+        SubActionCategory::Util
+    }
+    fn label(&self) -> &str {
+        "String - Length"
+    }
+    fn summary(&self) -> &str {
+        "Get the length of a string in bytes or Unicode scalar values (chars)"
+    }
+    fn search_text(&self) -> &str {
+        "string length size count chars bytes"
+    }
+    fn icon_name(&self) -> &str {
+        "ruler"
+    }
+}
+
 #[async_trait]
 impl SubActionRunner for CoreStringLengthRunner {
     fn id(&self) -> &str {
         "core.string.length"
-    }
-
-    fn category(&self) -> SubActionCategory {
-        SubActionCategory::Util
-    }
-
-    fn label(&self) -> &str {
-        "String - Length"
-    }
-
-    fn summary(&self) -> &str {
-        "Get the length of a string in bytes or Unicode scalar values (chars)"
-    }
-
-    fn search_text(&self) -> &str {
-        "string length size count chars bytes"
-    }
-
-    fn icon_name(&self) -> &str {
-        "ruler"
     }
 
     fn config_spec(&self) -> Option<ConfigSpec> {

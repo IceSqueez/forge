@@ -3,8 +3,8 @@ use std::sync::Arc;
 use async_trait::async_trait;
 use forge_registry::SubActionConfig;
 use forge_registry::{
-    ConfigProblem, ConfigSpec, JsonObjectField, RunContext, StepTimer, SubActionCategory,
-    SubActionRunner, TextEditor, TextField, ToggleField, TypedField,
+    ConfigProblem, ConfigSpec, JsonObjectField, RunContext, StepCatalogEntry, StepTimer,
+    SubActionCategory, SubActionRunner, TextEditor, TextField, ToggleField, TypedField,
 };
 use forge_types::{ArgStack, SubActionTelemetry};
 use serde_json::{Map, Value};
@@ -58,30 +58,28 @@ impl SetInputSettingsRunner {
     }
 }
 
+impl StepCatalogEntry for SetInputSettingsRunner {
+    fn category(&self) -> SubActionCategory {
+        SubActionCategory::Integration
+    }
+    fn label(&self) -> &str {
+        "Set Input Settings"
+    }
+    fn summary(&self) -> &str {
+        "Applies a JSON settings object to an OBS input source."
+    }
+    fn search_text(&self) -> &str {
+        "obs input source settings json apply configure properties"
+    }
+    fn icon_name(&self) -> &str {
+        "settings"
+    }
+}
+
 #[async_trait]
 impl SubActionRunner for SetInputSettingsRunner {
     fn id(&self) -> &str {
         sub_action_ids::SOURCE_SET_INPUT_SETTINGS
-    }
-
-    fn category(&self) -> SubActionCategory {
-        SubActionCategory::Integration
-    }
-
-    fn label(&self) -> &str {
-        "Set Input Settings"
-    }
-
-    fn summary(&self) -> &str {
-        "Applies a JSON settings object to an OBS input source."
-    }
-
-    fn search_text(&self) -> &str {
-        "obs input source settings json apply configure properties"
-    }
-
-    fn icon_name(&self) -> &str {
-        "settings"
     }
 
     fn config_spec(&self) -> Option<ConfigSpec> {

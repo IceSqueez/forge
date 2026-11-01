@@ -3,8 +3,8 @@ use std::sync::Arc;
 use async_trait::async_trait;
 use forge_registry::SubActionConfig;
 use forge_registry::{
-    BoundedTextField, ConfigSpec, RunContext, StepTimer, SubActionCategory, SubActionRunner,
-    TextEditor, TypedField, ValueBounds,
+    BoundedTextField, ConfigSpec, RunContext, StepCatalogEntry, StepTimer, SubActionCategory,
+    SubActionRunner, TextEditor, TypedField, ValueBounds,
 };
 use forge_types::{ArgStack, SubActionOutcome, SubActionTelemetry, Variant};
 
@@ -46,30 +46,28 @@ impl AddBlockedTermRunner {
     }
 }
 
+impl StepCatalogEntry for AddBlockedTermRunner {
+    fn category(&self) -> SubActionCategory {
+        SubActionCategory::Moderation
+    }
+    fn label(&self) -> &str {
+        "Add Blocked Term"
+    }
+    fn summary(&self) -> &str {
+        "Adds a word or phrase to the AutoMod blocked terms list."
+    }
+    fn search_text(&self) -> &str {
+        "twitch automod blocked term add ban word phrase moderation"
+    }
+    fn icon_name(&self) -> &str {
+        "slash"
+    }
+}
+
 #[async_trait]
 impl SubActionRunner for AddBlockedTermRunner {
     fn id(&self) -> &str {
         sub_action_ids::AUTOMOD_ADD_BLOCKED_TERM
-    }
-
-    fn category(&self) -> SubActionCategory {
-        SubActionCategory::Moderation
-    }
-
-    fn label(&self) -> &str {
-        "Add Blocked Term"
-    }
-
-    fn summary(&self) -> &str {
-        "Adds a word or phrase to the AutoMod blocked terms list."
-    }
-
-    fn search_text(&self) -> &str {
-        "twitch automod blocked term add ban word phrase moderation"
-    }
-
-    fn icon_name(&self) -> &str {
-        "slash"
     }
 
     fn config_spec(&self) -> Option<ConfigSpec> {

@@ -2,7 +2,9 @@ use std::sync::Arc;
 
 use async_trait::async_trait;
 use forge_events::{EventSource, GlobalToggled, TypedEvent};
-use forge_registry::{ConfigSpec, RunContext, StepTimer, SubActionCategory, SubActionRunner};
+use forge_registry::{
+    ConfigSpec, RunContext, StepCatalogEntry, StepTimer, SubActionCategory, SubActionRunner,
+};
 use forge_storage::{GlobalsRepo, StorageError};
 use forge_types::{ArgStack, SubActionConfig, SubActionOutcome, SubActionTelemetry};
 
@@ -21,30 +23,28 @@ impl CoreGlobalsToggleRunner {
     }
 }
 
+impl StepCatalogEntry for CoreGlobalsToggleRunner {
+    fn category(&self) -> SubActionCategory {
+        SubActionCategory::Globals
+    }
+    fn label(&self) -> &str {
+        "Toggle Global"
+    }
+    fn summary(&self) -> &str {
+        "Flip a boolean global variable between true and false"
+    }
+    fn search_text(&self) -> &str {
+        "toggle global variable bool boolean flip switch"
+    }
+    fn icon_name(&self) -> &str {
+        "toggle"
+    }
+}
+
 #[async_trait]
 impl SubActionRunner for CoreGlobalsToggleRunner {
     fn id(&self) -> &str {
         "core.globals.toggle"
-    }
-
-    fn category(&self) -> SubActionCategory {
-        SubActionCategory::Globals
-    }
-
-    fn label(&self) -> &str {
-        "Toggle Global"
-    }
-
-    fn summary(&self) -> &str {
-        "Flip a boolean global variable between true and false"
-    }
-
-    fn search_text(&self) -> &str {
-        "toggle global variable bool boolean flip switch"
-    }
-
-    fn icon_name(&self) -> &str {
-        "toggle"
     }
 
     fn config_spec(&self) -> Option<ConfigSpec> {

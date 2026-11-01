@@ -4,7 +4,7 @@ use std::sync::Arc;
 
 use async_trait::async_trait;
 use forge_registry::SubActionConfig;
-use forge_registry::{RunContext, StepTimer, SubActionCategory, SubActionRunner};
+use forge_registry::{RunContext, StepCatalogEntry, StepTimer, SubActionCategory, SubActionRunner};
 use forge_types::{ArgStack, SubActionOutcome, SubActionTelemetry};
 
 use crate::account::identity::SelfIdentity;
@@ -35,30 +35,28 @@ impl ClearChatRunner {
     }
 }
 
+impl StepCatalogEntry for ClearChatRunner {
+    fn category(&self) -> SubActionCategory {
+        SubActionCategory::Moderation
+    }
+    fn label(&self) -> &str {
+        "Clear Chat"
+    }
+    fn summary(&self) -> &str {
+        "Clears all messages from Twitch chat."
+    }
+    fn search_text(&self) -> &str {
+        "twitch chat clear wipe moderation purge"
+    }
+    fn icon_name(&self) -> &str {
+        "eraser"
+    }
+}
+
 #[async_trait]
 impl SubActionRunner for ClearChatRunner {
     fn id(&self) -> &str {
         sub_action_ids::CHAT_CLEAR
-    }
-
-    fn category(&self) -> SubActionCategory {
-        SubActionCategory::Moderation
-    }
-
-    fn label(&self) -> &str {
-        "Clear Chat"
-    }
-
-    fn summary(&self) -> &str {
-        "Clears all messages from Twitch chat."
-    }
-
-    fn search_text(&self) -> &str {
-        "twitch chat clear wipe moderation purge"
-    }
-
-    fn icon_name(&self) -> &str {
-        "eraser"
     }
 
     async fn execute(

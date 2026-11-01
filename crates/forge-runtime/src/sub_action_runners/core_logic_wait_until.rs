@@ -4,7 +4,8 @@ use std::time::Duration;
 use async_trait::async_trait;
 use forge_registry::{
     CodeField, CodeKind, CodeLanguage, ConfigProblem, ConfigSpec, DurationBounds, DurationField,
-    RunContext, StepTimer, SubActionCategory, SubActionIo, SubActionRunner, TypedField,
+    RunContext, StepCatalogEntry, StepTimer, SubActionCategory, SubActionIo, SubActionRunner,
+    TypedField,
 };
 use forge_types::{ArgStack, SubActionConfig, SubActionTelemetry, Variant};
 use tokio::time::Instant;
@@ -68,30 +69,28 @@ impl CoreLogicWaitUntilRunner {
     }
 }
 
+impl StepCatalogEntry for CoreLogicWaitUntilRunner {
+    fn category(&self) -> SubActionCategory {
+        SubActionCategory::Delay
+    }
+    fn label(&self) -> &str {
+        "Wait Until"
+    }
+    fn summary(&self) -> &str {
+        "Poll a condition until it holds or a timeout elapses"
+    }
+    fn search_text(&self) -> &str {
+        "wait until condition poll block timeout flow control"
+    }
+    fn icon_name(&self) -> &str {
+        "hourglass"
+    }
+}
+
 #[async_trait]
 impl SubActionRunner for CoreLogicWaitUntilRunner {
     fn id(&self) -> &str {
         "core.logic.wait_until"
-    }
-
-    fn category(&self) -> SubActionCategory {
-        SubActionCategory::Delay
-    }
-
-    fn label(&self) -> &str {
-        "Wait Until"
-    }
-
-    fn summary(&self) -> &str {
-        "Poll a condition until it holds or a timeout elapses"
-    }
-
-    fn search_text(&self) -> &str {
-        "wait until condition poll block timeout flow control"
-    }
-
-    fn icon_name(&self) -> &str {
-        "hourglass"
     }
 
     fn config_spec(&self) -> Option<ConfigSpec> {

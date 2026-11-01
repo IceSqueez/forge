@@ -298,7 +298,7 @@ pub(crate) async fn run_pre_boot(backend: &Arc<dyn DataProvider>) -> PreBoot {
     let startup_display_formats =
         crate::i18n::resolve_startup_display_formats(settings_repo.as_ref(), startup_language)
             .await;
-    if let Err(e) = forge_runtime::SystemNotifyPort::adopt_app_identity() {
+    if let Err(e) = forge_host::os_adapters::SystemNotifyPort::adopt_app_identity() {
         tracing::warn!(error = %e, "desktop notifications keep the default app identity");
     }
     let date_names = DateNamesHandle::new(crate::i18n::date_names_language(startup_language));

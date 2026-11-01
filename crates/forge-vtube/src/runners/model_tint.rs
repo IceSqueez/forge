@@ -4,7 +4,7 @@ use async_trait::async_trait;
 use forge_registry::SubActionConfig;
 use forge_registry::{
     ConfigProblem, ConfigSpec, IntegerEditor, IntegerField, NumberField, OptionalField, RunContext,
-    StepTimer, SubActionCategory, SubActionRunner, TypedField, ValueBounds,
+    StepCatalogEntry, StepTimer, SubActionCategory, SubActionRunner, TypedField, ValueBounds,
 };
 use forge_types::{ArgStack, SubActionTelemetry};
 
@@ -94,30 +94,28 @@ impl ModelTintRunner {
     }
 }
 
+impl StepCatalogEntry for ModelTintRunner {
+    fn category(&self) -> SubActionCategory {
+        SubActionCategory::Integration
+    }
+    fn label(&self) -> &str {
+        "Tint Model"
+    }
+    fn summary(&self) -> &str {
+        "Applies a color tint over every ArtMesh on the VTube Studio model."
+    }
+    fn search_text(&self) -> &str {
+        "vtube model tint color overlay art mesh vts"
+    }
+    fn icon_name(&self) -> &str {
+        "droplet"
+    }
+}
+
 #[async_trait]
 impl SubActionRunner for ModelTintRunner {
     fn id(&self) -> &str {
         sub_action_ids::MODEL_TINT
-    }
-
-    fn category(&self) -> SubActionCategory {
-        SubActionCategory::Integration
-    }
-
-    fn label(&self) -> &str {
-        "Tint Model"
-    }
-
-    fn summary(&self) -> &str {
-        "Applies a color tint over every ArtMesh on the VTube Studio model."
-    }
-
-    fn search_text(&self) -> &str {
-        "vtube model tint color overlay art mesh vts"
-    }
-
-    fn icon_name(&self) -> &str {
-        "droplet"
     }
 
     fn config_spec(&self) -> Option<ConfigSpec> {

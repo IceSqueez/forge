@@ -39,13 +39,13 @@ pub(crate) use update_privacy::PrivacyStatus;
 pub(crate) use update_privacy::UpdatePrivacyRunner;
 pub(crate) use update_title::UpdateTitleRunner;
 
-use crate::ad_break::YoutubeAdBreak;
-use crate::channel_lookup::YoutubeChannelLookup;
-use crate::moderation::YoutubeModeration;
-use crate::send_chat::YoutubeSendChat;
-use crate::stream_metadata::YoutubeStreamMetadata;
-use crate::stream_stats::YoutubeStreamStats;
-use crate::thumbnail::YoutubeThumbnail;
+use crate::broadcast::ad_break::YoutubeAdBreak;
+use crate::broadcast::channel_lookup::YoutubeChannelLookup;
+use crate::broadcast::stream_metadata::YoutubeStreamMetadata;
+use crate::broadcast::stream_stats::YoutubeStreamStats;
+use crate::broadcast::thumbnail::YoutubeThumbnail;
+use crate::chat::moderation::YoutubeModeration;
+use crate::chat::send_chat::YoutubeSendChat;
 
 #[expect(
     clippy::too_many_arguments,

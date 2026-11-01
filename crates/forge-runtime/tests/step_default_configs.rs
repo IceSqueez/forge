@@ -6,11 +6,11 @@ use std::sync::Arc;
 
 use async_trait::async_trait;
 use forge_events::EventPublisher;
-use forge_registry::SubActionRegistry;
+use forge_registry::{CancelSignal, SubActionRegistry};
 use forge_runtime::{
-    DonationIngest, EventBus, NullEventLogRepo, RuntimeWiring, SpeakDispatcher, SpeechOrigin,
-    TwitchEmoteLexicon, register_donation_sub_actions, register_latest_sub_actions,
-    register_speech_sub_actions,
+    DonationIngest, EventBus, NullEventLogRepo, RuntimeWiring, SpeakDispatcher, SpeakQueueControl,
+    SpeechPorts, SpeechRequest, TwitchEmoteLexicon, VoiceAliasWriter, VoiceDescriptor,
+    register_donation_sub_actions, register_latest_sub_actions, register_speech_sub_actions,
 };
 use forge_storage::{DataProvider, MockDonationRepo};
 use forge_types::{LatestScope, LatestValue, LatestValueReader, MessageRef, Shared};
@@ -21,11 +21,71 @@ struct SilentSpeaker;
 
 #[async_trait]
 impl SpeakDispatcher for SilentSpeaker {
-    async fn speak(
+    async fn speak(&self, _request: SpeechRequest) -> Result<(), MessageRef> {
+        Ok(())
+    }
+
+    async fn speak_queued_for_run(
         &self,
-        _text: String,
-        _voice: Option<String>,
-        _origin: SpeechOrigin,
+        _request: SpeechRequest,
+        _run: CancelSignal,
+    ) -> Result<(), MessageRef> {
+        Ok(())
+    }
+
+    async fn speak_and_wait(
+        &self,
+        _request: SpeechRequest,
+        _cancel: CancelSignal,
+    ) -> Result<(), MessageRef> {
+        Ok(())
+    }
+
+    async fn available_voices(&self) -> Vec<VoiceDescriptor> {
+        Vec::new()
+    }
+}
+
+#[async_trait]
+impl SpeakQueueControl for SilentSpeaker {
+    async fn stop_current(&self) -> Result<(), MessageRef> {
+        Ok(())
+    }
+
+    async fn pause(&self) -> Result<(), MessageRef> {
+        Ok(())
+    }
+
+    async fn resume(&self) -> Result<(), MessageRef> {
+        Ok(())
+    }
+
+    async fn skip_current(&self) -> Result<(), MessageRef> {
+        Ok(())
+    }
+
+    async fn clear_keep_current(&self) -> Result<(), MessageRef> {
+        Ok(())
+    }
+}
+
+#[async_trait]
+impl VoiceAliasWriter for SilentSpeaker {
+    async fn alias_set(
+        &self,
+        _viewer_id: String,
+        _viewer_name: String,
+        _engine_id: String,
+        _voice_id: String,
+    ) -> Result<(), MessageRef> {
+        Ok(())
+    }
+
+    async fn alias_switch(
+        &self,
+        _viewer_id: String,
+        _engine_id: String,
+        _voice_id: String,
     ) -> Result<(), MessageRef> {
         Ok(())
     }
@@ -48,7 +108,7 @@ async fn every_runtime_step() -> (Arc<SubActionRegistry>, TempDir) {
         common::with_every_core_step(RuntimeWiring::new(common::wiring_parts(dp, bus).await));
     register_speech_sub_actions(
         wiring.sub_actions_mut(),
-        Arc::new(SilentSpeaker),
+        SpeechPorts::from_shared(Arc::new(SilentSpeaker)),
         TwitchEmoteLexicon::default(),
     )
     .unwrap();

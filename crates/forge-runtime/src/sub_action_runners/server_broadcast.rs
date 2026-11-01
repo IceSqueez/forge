@@ -3,8 +3,8 @@ use std::sync::Arc;
 use async_trait::async_trait;
 use forge_events::{Event, EventPublisher, EventSource};
 use forge_registry::{
-    ConfigProblem, ConfigSpec, RunContext, StepTimer, SubActionCategory, SubActionRunner,
-    TextEditor, TextField, TypedField,
+    ConfigProblem, ConfigSpec, RunContext, StepCatalogEntry, StepTimer, SubActionCategory,
+    SubActionRunner, TextEditor, TextField, TypedField,
 };
 use forge_types::{ArgStack, SubActionConfig, SubActionOutcome, SubActionTelemetry};
 
@@ -46,30 +46,28 @@ impl ServerBroadcastRunner {
     }
 }
 
+impl StepCatalogEntry for ServerBroadcastRunner {
+    fn category(&self) -> SubActionCategory {
+        SubActionCategory::Server
+    }
+    fn label(&self) -> &str {
+        "Broadcast to Overlay Clients"
+    }
+    fn summary(&self) -> &str {
+        "Push a JSON message to all connected WebSocket clients"
+    }
+    fn search_text(&self) -> &str {
+        "broadcast overlay websocket push event server client message json"
+    }
+    fn icon_name(&self) -> &str {
+        "broadcast"
+    }
+}
+
 #[async_trait]
 impl SubActionRunner for ServerBroadcastRunner {
     fn id(&self) -> &str {
         BROADCAST_KIND_ID
-    }
-
-    fn category(&self) -> SubActionCategory {
-        SubActionCategory::Server
-    }
-
-    fn label(&self) -> &str {
-        "Broadcast to Overlay Clients"
-    }
-
-    fn summary(&self) -> &str {
-        "Push a JSON message to all connected WebSocket clients"
-    }
-
-    fn search_text(&self) -> &str {
-        "broadcast overlay websocket push event server client message json"
-    }
-
-    fn icon_name(&self) -> &str {
-        "broadcast"
     }
 
     fn config_spec(&self) -> Option<ConfigSpec> {

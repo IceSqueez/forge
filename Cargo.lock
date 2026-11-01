@@ -2834,6 +2834,7 @@ dependencies = [
 name = "forge-host"
 version = "0.6.3"
 dependencies = [
+ "arboard",
  "async-trait",
  "forge-audio",
  "forge-discord",
@@ -2867,6 +2868,8 @@ dependencies = [
  "forge-types",
  "forge-vtube",
  "futures-util",
+ "notify-rust",
+ "open",
  "serde",
  "serde_json",
  "tempfile",
@@ -3145,7 +3148,6 @@ dependencies = [
 name = "forge-runtime"
 version = "0.6.3"
 dependencies = [
- "arboard",
  "arc-swap",
  "async-trait",
  "base64 0.23.1",
@@ -3163,8 +3165,6 @@ dependencies = [
  "forge-types",
  "futures-core",
  "futures-util",
- "notify-rust",
- "open",
  "rand 0.10.3",
  "regex",
  "reqwest",
@@ -3189,6 +3189,7 @@ dependencies = [
  "forge-events",
  "forge-net",
  "forge-platform-core",
+ "forge-script",
  "forge-storage",
  "forge-storage-sqlite",
  "forge-test-support",

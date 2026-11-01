@@ -1,7 +1,7 @@
 use async_trait::async_trait;
 use forge_registry::{
-    ChoiceField, ConfigChoice, ConfigProblem, ConfigSpec, RunContext, StepTimer, SubActionCategory,
-    SubActionRunner, TextEditor, TextField, TypedField,
+    ChoiceField, ConfigChoice, ConfigProblem, ConfigSpec, RunContext, StepCatalogEntry, StepTimer,
+    SubActionCategory, SubActionRunner, TextEditor, TextField, TypedField,
 };
 use forge_types::{ArgStack, LogLevel, SCRIPT_LOG_TARGET, SubActionConfig, SubActionTelemetry};
 use tracing::{debug, error, info, trace, warn};
@@ -82,30 +82,28 @@ fn read_config(
 
 pub(crate) struct CoreLogWriteRunner;
 
+impl StepCatalogEntry for CoreLogWriteRunner {
+    fn category(&self) -> SubActionCategory {
+        SubActionCategory::Logic
+    }
+    fn label(&self) -> &str {
+        "Write Log"
+    }
+    fn summary(&self) -> &str {
+        "Emit a log message at a chosen severity level"
+    }
+    fn search_text(&self) -> &str {
+        "log write message debug info warn error trace"
+    }
+    fn icon_name(&self) -> &str {
+        "terminal"
+    }
+}
+
 #[async_trait]
 impl SubActionRunner for CoreLogWriteRunner {
     fn id(&self) -> &str {
         LOG_WRITE_KIND_ID
-    }
-
-    fn category(&self) -> SubActionCategory {
-        SubActionCategory::Logic
-    }
-
-    fn label(&self) -> &str {
-        "Write Log"
-    }
-
-    fn summary(&self) -> &str {
-        "Emit a log message at a chosen severity level"
-    }
-
-    fn search_text(&self) -> &str {
-        "log write message debug info warn error trace"
-    }
-
-    fn icon_name(&self) -> &str {
-        "terminal"
     }
 
     fn config_spec(&self) -> Option<ConfigSpec> {

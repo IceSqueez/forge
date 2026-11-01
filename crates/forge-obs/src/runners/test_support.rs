@@ -178,7 +178,7 @@ impl RecordingSink {
     fn record(&self, call: String) -> Result<(), ObsError> {
         self.calls.lock_recover().push(call);
         if self.fail {
-            Err(ObsError::Disconnected)
+            Err(ObsError::NotConnected)
         } else {
             Ok(())
         }

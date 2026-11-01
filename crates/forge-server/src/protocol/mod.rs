@@ -4,7 +4,7 @@ mod handlers;
 mod helpers;
 mod introspect;
 
-use crate::bus_adapter::ClientFilterSet;
+use crate::delivery::bus_adapter::ClientFilterSet;
 
 pub(crate) use context::{DispatchContext, Services, Session};
 use envelope::RequestAccess;
@@ -139,8 +139,8 @@ mod tests {
     use forge_storage::{DataProvider, StorageError};
 
     use super::*;
-    use crate::bus_adapter::{ClientFilterSet, EventFilter};
-    use crate::server_info::ServerInfo;
+    use crate::delivery::bus_adapter::{ClientFilterSet, EventFilter};
+    use crate::lifecycle::server_info::ServerInfo;
     use forge_storage::GlobalEntry;
     use time::OffsetDateTime;
 

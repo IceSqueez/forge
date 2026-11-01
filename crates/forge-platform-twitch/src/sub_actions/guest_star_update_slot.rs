@@ -4,7 +4,7 @@ use async_trait::async_trait;
 use forge_registry::SubActionConfig;
 use forge_registry::{
     ChoiceField, ConfigProblem, ConfigSpec, IntegerEditor, IntegerField, OptionalField, RunContext,
-    StepTimer, SubActionCategory, SubActionRunner, TypedField, ValueBounds,
+    StepCatalogEntry, StepTimer, SubActionCategory, SubActionRunner, TypedField, ValueBounds,
 };
 use forge_types::{ArgStack, SubActionOutcome, SubActionTelemetry};
 
@@ -112,30 +112,28 @@ impl GuestStarUpdateSlotRunner {
     }
 }
 
+impl StepCatalogEntry for GuestStarUpdateSlotRunner {
+    fn category(&self) -> SubActionCategory {
+        SubActionCategory::Integration
+    }
+    fn label(&self) -> &str {
+        "Update Guest Star Slot Settings"
+    }
+    fn summary(&self) -> &str {
+        "Updates audio, video, or volume settings for a slot in the active Guest Star session."
+    }
+    fn search_text(&self) -> &str {
+        "twitch guest star slot audio video volume settings update collab session"
+    }
+    fn icon_name(&self) -> &str {
+        "adjustments"
+    }
+}
+
 #[async_trait]
 impl SubActionRunner for GuestStarUpdateSlotRunner {
     fn id(&self) -> &str {
         sub_action_ids::GUEST_STAR_UPDATE_SLOT
-    }
-
-    fn category(&self) -> SubActionCategory {
-        SubActionCategory::Integration
-    }
-
-    fn label(&self) -> &str {
-        "Update Guest Star Slot Settings"
-    }
-
-    fn summary(&self) -> &str {
-        "Updates audio, video, or volume settings for a slot in the active Guest Star session."
-    }
-
-    fn search_text(&self) -> &str {
-        "twitch guest star slot audio video volume settings update collab session"
-    }
-
-    fn icon_name(&self) -> &str {
-        "adjustments"
     }
 
     fn config_spec(&self) -> Option<ConfigSpec> {

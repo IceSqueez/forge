@@ -1,7 +1,7 @@
 use async_trait::async_trait;
 use forge_registry::{
-    ConfigSpec, ProducedVariable, RunContext, StepTimer, SubActionCategory, SubActionIo,
-    SubActionRunner, TextField,
+    ConfigSpec, ProducedVariable, RunContext, StepCatalogEntry, StepTimer, SubActionCategory,
+    SubActionIo, SubActionRunner, TextField,
 };
 use forge_types::{ArgStack, SubActionConfig, SubActionTelemetry, Variant, VariantKind};
 
@@ -13,30 +13,28 @@ const CONFIG: ConfigSpec = ConfigSpec::new(&[&SOURCE, &INTO_RESULT]);
 
 pub struct CoreStringUppercaseRunner;
 
+impl StepCatalogEntry for CoreStringUppercaseRunner {
+    fn category(&self) -> SubActionCategory {
+        SubActionCategory::Util
+    }
+    fn label(&self) -> &str {
+        "String - Uppercase"
+    }
+    fn summary(&self) -> &str {
+        "Convert a string to uppercase"
+    }
+    fn search_text(&self) -> &str {
+        "string uppercase upper case convert"
+    }
+    fn icon_name(&self) -> &str {
+        "letter-case-upper"
+    }
+}
+
 #[async_trait]
 impl SubActionRunner for CoreStringUppercaseRunner {
     fn id(&self) -> &str {
         "core.string.uppercase"
-    }
-
-    fn category(&self) -> SubActionCategory {
-        SubActionCategory::Util
-    }
-
-    fn label(&self) -> &str {
-        "String - Uppercase"
-    }
-
-    fn summary(&self) -> &str {
-        "Convert a string to uppercase"
-    }
-
-    fn search_text(&self) -> &str {
-        "string uppercase upper case convert"
-    }
-
-    fn icon_name(&self) -> &str {
-        "letter-case-upper"
     }
 
     fn config_spec(&self) -> Option<ConfigSpec> {

@@ -4,7 +4,6 @@ use std::time::Duration;
 
 use async_trait::async_trait;
 use forge_paths::AppPaths;
-use forge_storage::settings::core_settings;
 use forge_storage::{
     ActionRepo, ActionTelemetry, BanLedgerRepo, CatalogRevision, ChatHistoryRepo, CredentialId,
     CredentialsKeyLoss, CredentialsRepo, DataProvider, DonationRepo, EXPECTED_SCHEMA_VERSION,
@@ -13,18 +12,20 @@ use forge_storage::{
     RevisingScheduledRunRepo, RevisingScriptRepo, RevisingTriggerInstanceRepo, RowClasses, RowGate,
     ScheduledRunRepo, ScriptRecord, ScriptReferences, ScriptRepo, ScriptTelemetry, SettingRow,
     SettingsRepo, SoundboardClipsRepo, StorageError, StoreChange, TriggerInstanceRepo,
-    TtsFiltersRepo, UserGlobalEntry, UserGlobalsRepo, ViewerRepo, VoiceAliasRepo,
+    TtsFiltersRepo, UserGlobalEntry, UserGlobalKey, UserGlobalsRepo, ViewerRepo, VoiceAliasRepo,
 };
 use forge_types::{ActionId, ScriptId, Variant};
 use time::OffsetDateTime;
 use tokio::sync::{Notify, watch};
 use tokio::task::AbortHandle;
 
-use crate::checkpoint_task::spawn_checkpoint_task;
 use crate::error::SqliteStorageError;
-use crate::global_read_tally::spawn_read_flush_task;
 use crate::pool::SqlitePools;
-use crate::retention_task::{RetentionSignals, RetentionTargets, spawn_retention_task};
+use crate::tasks::checkpoint_task::spawn_checkpoint_task;
+use crate::tasks::global_read_tally::spawn_read_flush_task;
+use crate::tasks::retention_task::{
+    RetentionAwareSettings, RetentionSignals, RetentionTargets, spawn_retention_task,
+};
 use crate::{
     SqliteActionRepo, SqliteBanLedgerRepo, SqliteChatHistoryRepo, SqliteCredentialsRepo,
     SqliteDonationRepo, SqliteEventLogRepo, SqliteGlobalsRepo, SqliteHistoryRepo,
@@ -76,7 +77,7 @@ pub struct SqliteBackend {
     pub(crate) pool: SqlitePools,
     globals: SqliteGlobalsRepo,
     user_globals: SqliteUserGlobalsRepo,
-    settings: SqliteSettingsRepo,
+    settings: RetentionAwareSettings,
     action: Arc<dyn ActionRepo>,
     trigger_instance: Arc<dyn TriggerInstanceRepo>,
     queue: Arc<dyn QueueRepo>,
@@ -97,7 +98,6 @@ pub struct SqliteBackend {
     donation: Arc<SqliteDonationRepo>,
     latest_value: Arc<SqliteLatestValueRepo>,
     ban_ledger: Arc<SqliteBanLedgerRepo>,
-    retention_window_changed: Arc<Notify>,
     shutdown: Arc<Notify>,
     retention_running: watch::Receiver<()>,
     checkpoint: AbortHandle,
@@ -115,7 +115,7 @@ impl SqliteBackend {
     pub async fn open(url: &str, paths: &AppPaths) -> Result<Self, SqliteStorageError> {
         let pool = Self::migrate_and_gate(url).await?;
         let key_file = forge_paths::credentials_key_path_in(&paths.data_dir());
-        let key = crate::crypto::load_or_create_key(&key_file)?;
+        let key = crate::codec::crypto::load_or_create_key(&key_file)?;
         let credentials = SqliteCredentialsRepo::new_with_key(pool.clone(), key.key);
         if key.minted {
             report_stranded_credentials(&pool, &credentials).await?;
@@ -147,14 +147,14 @@ impl SqliteBackend {
 
     async fn migrate_and_gate(url: &str) -> Result<SqlitePools, SqliteStorageError> {
         let pool = connect_pools(url).await?;
-        if let Err(e) = crate::migrations::prepare_journal(pool.writer()).await {
+        if let Err(e) = crate::schema::migrations::prepare_journal(pool.writer()).await {
             pool.close().await;
             return Err(e);
         }
         apply_migrations(pool.writer()).await?;
-        crate::registry_migration::migrate_registry_format(pool.writer()).await?;
+        crate::schema::registry_migration::migrate_registry_format(pool.writer()).await?;
 
-        let found = crate::migrations::applied_version(pool.reader()).await?;
+        let found = crate::schema::migrations::applied_version(pool.reader()).await?;
         if found != EXPECTED_SCHEMA_VERSION {
             pool.close().await;
             return Err(SqliteStorageError::SchemaMismatch {
@@ -164,14 +164,6 @@ impl SqliteBackend {
         }
 
         Ok(pool)
-    }
-
-    fn signal_setting_changed(&self, key: &str) {
-        if key == core_settings::EVENT_LOG_RETENTION_DAYS.name()
-            || key == core_settings::ACTION_HISTORY_RETENTION_DAYS.name()
-        {
-            self.retention_window_changed.notify_one();
-        }
     }
 
     fn from_pool_and_credentials(
@@ -222,7 +214,10 @@ impl SqliteBackend {
             checkpoint,
             globals,
             user_globals: SqliteUserGlobalsRepo::new(pool.clone()),
-            settings: SqliteSettingsRepo::new(pool.clone()),
+            settings: RetentionAwareSettings::new(
+                SqliteSettingsRepo::new(pool.clone()),
+                Arc::clone(&retention_window_changed),
+            ),
             action: RevisingActionRepo::wrap_cascading_scheduled_runs(
                 Arc::new(SqliteActionRepo::new(pool.clone())),
                 catalog_revision.clone(),
@@ -256,7 +251,6 @@ impl SqliteBackend {
             latest_value: Arc::new(SqliteLatestValueRepo::new(pool.clone())),
             ban_ledger: Arc::new(SqliteBanLedgerRepo::new(pool.clone())),
             credentials,
-            retention_window_changed,
             shutdown,
             retention_running,
             pool,
@@ -412,36 +406,16 @@ impl GlobalsRepo for SqliteBackend {
 
 #[async_trait]
 impl UserGlobalsRepo for SqliteBackend {
-    async fn get(
-        &self,
-        broadcaster_id: &str,
-        user_id: &str,
-        name: &str,
-    ) -> Result<Option<Variant>, StorageError> {
-        self.user_globals.get(broadcaster_id, user_id, name).await
+    async fn get(&self, key: &UserGlobalKey) -> Result<Option<Variant>, StorageError> {
+        self.user_globals.get(key).await
     }
 
-    async fn set(
-        &self,
-        broadcaster_id: &str,
-        user_id: &str,
-        name: &str,
-        value: Variant,
-    ) -> Result<(), StorageError> {
-        self.user_globals
-            .set(broadcaster_id, user_id, name, value)
-            .await
+    async fn set(&self, key: &UserGlobalKey, value: Variant) -> Result<(), StorageError> {
+        self.user_globals.set(key, value).await
     }
 
-    async fn delete(
-        &self,
-        broadcaster_id: &str,
-        user_id: &str,
-        name: &str,
-    ) -> Result<bool, StorageError> {
-        self.user_globals
-            .delete(broadcaster_id, user_id, name)
-            .await
+    async fn delete(&self, key: &UserGlobalKey) -> Result<bool, StorageError> {
+        self.user_globals.delete(key).await
     }
 
     async fn list_for_user(
@@ -461,16 +435,8 @@ impl UserGlobalsRepo for SqliteBackend {
         self.user_globals.list_for_broadcaster(broadcaster_id).await
     }
 
-    async fn incr(
-        &self,
-        broadcaster_id: &str,
-        user_id: &str,
-        name: &str,
-        amount: i64,
-    ) -> Result<Variant, StorageError> {
-        self.user_globals
-            .incr(broadcaster_id, user_id, name, amount)
-            .await
+    async fn incr(&self, key: &UserGlobalKey, amount: i64) -> Result<Variant, StorageError> {
+        self.user_globals.incr(key, amount).await
     }
 }
 
@@ -487,9 +453,7 @@ impl SettingsRepo for SqliteBackend {
         value: &str,
         classes: RowClasses,
     ) -> Result<(), StorageError> {
-        self.settings.put_row(gate, key, value, classes).await?;
-        self.signal_setting_changed(key);
-        Ok(())
+        self.settings.put_row(gate, key, value, classes).await
     }
 
     async fn load_rows(&self, gate: RowGate) -> Result<Vec<SettingRow>, StorageError> {
@@ -497,9 +461,7 @@ impl SettingsRepo for SqliteBackend {
     }
 
     async fn delete_raw(&self, gate: RowGate, key: &str) -> Result<bool, StorageError> {
-        let deleted = self.settings.delete_raw(gate, key).await?;
-        self.signal_setting_changed(key);
-        Ok(deleted)
+        self.settings.delete_raw(gate, key).await
     }
 }
 
@@ -621,7 +583,7 @@ impl DataProvider for SqliteBackend {
             self.scheduled_run_revision.advance();
         }
         for key in changes.iter().filter_map(StoreChange::changed_setting) {
-            self.signal_setting_changed(key);
+            self.settings.signal_if_retention(key);
         }
         Ok(())
     }
@@ -708,7 +670,7 @@ impl DataProvider for SqliteBackend {
     }
 
     async fn schema_version(&self) -> Result<u32, StorageError> {
-        crate::migrations::applied_version(self.pool.reader())
+        crate::schema::migrations::applied_version(self.pool.reader())
             .await
             .map_err(StorageError::from)
     }
@@ -870,7 +832,7 @@ mod tests {
     async fn retention_signal_is_waiting(backend: &SqliteBackend) -> bool {
         tokio::select! {
             biased;
-            () = backend.retention_window_changed.notified() => true,
+            () = backend.settings.window_changed().notified() => true,
             () = std::future::ready(()) => false,
         }
     }

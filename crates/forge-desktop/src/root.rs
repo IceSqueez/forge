@@ -497,14 +497,14 @@ fn start_boot_notices(handles: &Arc<RuntimeHandles>, navigator: Navigator, cx: &
     crate::system_notices::start_system_notices(
         cx,
         &handles.core.notification_policy,
-        Arc::new(forge_runtime::SystemNotifyPort),
+        Arc::new(forge_host::os_adapters::SystemNotifyPort),
         handles.rt_handle.clone(),
     );
     crate::scheduled_backup_notices::start_scheduled_backup_notices(
         cx,
         &handles.core.scheduled_backups,
         Arc::clone(&handles.backend) as Arc<dyn forge_storage::SettingsRepo>,
-        Arc::new(forge_runtime::SystemNotifyPort),
+        Arc::new(forge_host::os_adapters::SystemNotifyPort),
         handles.rt_handle.clone(),
         navigator,
     );

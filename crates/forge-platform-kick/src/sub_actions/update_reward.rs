@@ -4,8 +4,8 @@ use async_trait::async_trait;
 use forge_platform_core::PlatformError;
 use forge_registry::SubActionConfig;
 use forge_registry::{
-    ConfigProblem, ConfigReason, ConfigSpec, Interpolation, RunContext, StepTimer,
-    SubActionCategory, SubActionRunner, TextEditor, TextField, TypedField, ValueBounds,
+    ConfigProblem, ConfigReason, ConfigSpec, Interpolation, RunContext, StepCatalogEntry,
+    StepTimer, SubActionCategory, SubActionRunner, TextEditor, TextField, TypedField, ValueBounds,
 };
 use forge_types::{ArgStack, SubActionOutcome, SubActionTelemetry};
 use futures::future::BoxFuture;
@@ -93,30 +93,28 @@ impl UpdateRewardRunner {
     }
 }
 
+impl StepCatalogEntry for UpdateRewardRunner {
+    fn category(&self) -> SubActionCategory {
+        SubActionCategory::ChannelPoints
+    }
+    fn label(&self) -> &str {
+        "Update Channel Reward"
+    }
+    fn summary(&self) -> &str {
+        "Updates an existing Kick channel reward. Requires channel:rewards:write scope and reward ownership."
+    }
+    fn search_text(&self) -> &str {
+        "kick channel reward update edit points"
+    }
+    fn icon_name(&self) -> &str {
+        "edit"
+    }
+}
+
 #[async_trait]
 impl SubActionRunner for UpdateRewardRunner {
     fn id(&self) -> &str {
         sub_action_ids::REWARD_UPDATE
-    }
-
-    fn category(&self) -> SubActionCategory {
-        SubActionCategory::ChannelPoints
-    }
-
-    fn label(&self) -> &str {
-        "Update Channel Reward"
-    }
-
-    fn summary(&self) -> &str {
-        "Updates an existing Kick channel reward. Requires channel:rewards:write scope and reward ownership."
-    }
-
-    fn search_text(&self) -> &str {
-        "kick channel reward update edit points"
-    }
-
-    fn icon_name(&self) -> &str {
-        "edit"
     }
 
     fn config_spec(&self) -> Option<ConfigSpec> {

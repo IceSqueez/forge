@@ -91,9 +91,11 @@ jobs:
           FORGE_TWITCH_CLIENT_ID: ${{ secrets.FORGE_TWITCH_CLIENT_ID }}
           FORGE_YOUTUBE_CLIENT_ID: ${{ secrets.FORGE_YOUTUBE_CLIENT_ID }}
           FORGE_YOUTUBE_CLIENT_SECRET: ${{ secrets.FORGE_YOUTUBE_CLIENT_SECRET }}
+          FORGE_KICK_CLIENT_ID: ${{ secrets.FORGE_KICK_CLIENT_ID }}
+          FORGE_KICK_CLIENT_SECRET: ${{ secrets.FORGE_KICK_CLIENT_SECRET }}
         run: |
           missing=0
-          for name in FORGE_TWITCH_CLIENT_ID FORGE_YOUTUBE_CLIENT_ID FORGE_YOUTUBE_CLIENT_SECRET; do
+          for name in FORGE_TWITCH_CLIENT_ID FORGE_YOUTUBE_CLIENT_ID FORGE_YOUTUBE_CLIENT_SECRET FORGE_KICK_CLIENT_ID FORGE_KICK_CLIENT_SECRET; do
             if [[ -z "${!name}" ]]; then
               echo "::error::$name is empty - the caller must pass secrets (secrets: inherit) and the repository secret must be set"
               missing=1
@@ -108,6 +110,8 @@ jobs:
           FORGE_TWITCH_CLIENT_ID: ${{ secrets.FORGE_TWITCH_CLIENT_ID }}
           FORGE_YOUTUBE_CLIENT_ID: ${{ secrets.FORGE_YOUTUBE_CLIENT_ID }}
           FORGE_YOUTUBE_CLIENT_SECRET: ${{ secrets.FORGE_YOUTUBE_CLIENT_SECRET }}
+          FORGE_KICK_CLIENT_ID: ${{ secrets.FORGE_KICK_CLIENT_ID }}
+          FORGE_KICK_CLIENT_SECRET: ${{ secrets.FORGE_KICK_CLIENT_SECRET }}
         run: |
           # option_env! treats an empty value as present, so the marker is
           # exported only for release builds and left unset otherwise.

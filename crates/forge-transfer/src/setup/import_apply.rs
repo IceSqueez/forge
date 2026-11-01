@@ -104,7 +104,7 @@ pub async fn apply_setup_import(
     match import.run().await {
         Ok(()) => {
             import.journal.settle_overlay_dirs().await;
-            import.journal.discard_set_aside_files().await;
+            import.journal.commit().await;
             let cleanup_failures = import.clean_up().await;
             Ok(SetupImportOutcome {
                 safety_snapshot,

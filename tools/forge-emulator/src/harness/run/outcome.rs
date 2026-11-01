@@ -231,6 +231,9 @@ pub enum FailureCause {
     NoOverlayContent {
         observed: usize,
     },
+    PageClosed {
+        reason: String,
+    },
     TaggedOverlayValue {
         pointers: Vec<String>,
     },
@@ -335,6 +338,9 @@ impl fmt::Display for FailureCause {
                 f,
                 "no content frame carrying those values arrived in time, observed {observed}"
             ),
+            Self::PageClosed { reason } => {
+                write!(f, "the overlay page connection closed early: {reason}")
+            }
             Self::TaggedOverlayValue { pointers } => write!(
                 f,
                 "the content frame carries tagged Variant JSON at {}, which renders as [object Object]",

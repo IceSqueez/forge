@@ -500,4 +500,137 @@ mod tests {
             events.iter().map(|event| &event.kind).collect::<Vec<_>>()
         );
     }
+
+    async fn session_for_value() -> ScriptSession {
+        let store = forge_storage::test_support::MemorySettings::new();
+        let backend = sandboxed_backend([0xab; 32]).await.map(Arc::new);
+        ScriptSession::open(
+            &store,
+            CapturingPublisher::shared() as Arc<dyn EventPublisher>,
+            repo_globals(Arc::clone(&backend)),
+            EventId::new(),
+            ScriptCapabilities::default(),
+        )
+        .await
+    }
+
+    fn contract_with_input(name: &str, kind: forge_types::VariantKind) -> ScriptContract {
+        ScriptContract {
+            inputs: vec![forge_types::ScriptInput {
+                name: name.to_owned(),
+                kind,
+            }],
+            returns: None,
+        }
+    }
+
+    #[tokio::test]
+    async fn run_for_value_returns_the_scripts_value_as_a_variant() {
+        let value = session_for_value()
+            .await
+            .run_for_value(
+                "40 + 2".to_owned(),
+                ScriptContract::default(),
+                ArgStack::new(),
+            )
+            .await
+            .unwrap()
+            .unwrap();
+
+        assert_eq!(value, Some(Variant::Int(42)));
+    }
+
+    #[tokio::test]
+    async fn run_for_value_returns_none_for_a_script_without_a_value() {
+        let value = session_for_value()
+            .await
+            .run_for_value(
+                "let ignored = 1;".to_owned(),
+                ScriptContract::default(),
+                ArgStack::new(),
+            )
+            .await
+            .unwrap()
+            .unwrap();
+
+        assert_eq!(value, None);
+    }
+
+    #[tokio::test]
+    async fn run_for_value_exposes_declared_inputs_to_the_script() {
+        let args = ArgStack::new().set("bits".to_owned(), Variant::Int(20));
+
+        let value = session_for_value()
+            .await
+            .run_for_value(
+                "bits * 2".to_owned(),
+                contract_with_input("bits", forge_types::VariantKind::Int),
+                args,
+            )
+            .await
+            .unwrap()
+            .unwrap();
+
+        assert_eq!(value, Some(Variant::Int(40)));
+    }
+
+    #[tokio::test]
+    async fn run_for_value_reports_a_missing_declared_input() {
+        let outcome = session_for_value()
+            .await
+            .run_for_value(
+                "bits".to_owned(),
+                contract_with_input("bits", forge_types::VariantKind::Int),
+                ArgStack::new(),
+            )
+            .await
+            .unwrap();
+
+        assert!(
+            matches!(&outcome, Err(ScriptError::MissingInput { name }) if name == "bits"),
+            "{outcome:?}"
+        );
+    }
+
+    #[tokio::test]
+    async fn run_for_value_reports_an_input_of_the_wrong_kind() {
+        let args = ArgStack::new().set("bits".to_owned(), Variant::String("many".to_owned()));
+
+        let outcome = session_for_value()
+            .await
+            .run_for_value(
+                "bits".to_owned(),
+                contract_with_input("bits", forge_types::VariantKind::Int),
+                args,
+            )
+            .await
+            .unwrap();
+
+        assert!(
+            matches!(
+                &outcome,
+                Err(ScriptError::InputTypeMismatch {
+                    expected: forge_types::VariantKind::Int,
+                    got: forge_types::VariantKind::String,
+                    ..
+                })
+            ),
+            "{outcome:?}"
+        );
+    }
+
+    #[tokio::test]
+    async fn run_for_value_reports_a_script_that_does_not_compile() {
+        let outcome = session_for_value()
+            .await
+            .run_for_value(
+                "let = ;".to_owned(),
+                ScriptContract::default(),
+                ArgStack::new(),
+            )
+            .await
+            .unwrap();
+
+        assert!(outcome.is_err(), "{outcome:?}");
+    }
 }

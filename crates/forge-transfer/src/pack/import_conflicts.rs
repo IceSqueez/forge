@@ -40,36 +40,63 @@ pub(crate) fn detect_conflicts(
     documents: &PackDocuments,
     inventory: &PackInventory,
 ) -> Vec<DetectedItem> {
-    let mut detected = Vec::new();
-    for media in &documents.media {
-        detected.push(DetectedItem::new(
-            PackItemKind::Media,
-            media.id.clone(),
-            &media.label,
-            PackConflict::Clear,
-        ));
-    }
-    for queue in &documents.queues {
-        let named = inventory
-            .queues
-            .values()
-            .find(|local| local.name == queue.name)
-            .map(|local| local.id.to_string());
-        detected.push(DetectedItem::new(
-            PackItemKind::Queue,
-            queue.id.to_string(),
-            &queue.name,
-            conflict_of(inventory.queues.contains_key(&queue.id), named),
-        ));
-    }
-    for script in &documents.scripts {
-        let by_id = inventory.stored_script(script.id);
-        let by_name = inventory.stored_script_named(&script.name);
-        let archived = by_id
-            .as_ref()
-            .or(by_name.as_ref())
-            .is_some_and(|stored| stored.archived);
-        detected.push(
+    let mut detected = media_items(documents);
+    detected.extend(queue_items(documents, inventory));
+    detected.extend(script_items(documents, inventory));
+    detected.extend(global_items(documents, inventory));
+    detected.extend(clip_items(documents, inventory));
+    detected.extend(overlay_items(documents, inventory));
+    detected.extend(trigger_items(documents, inventory));
+    detected.extend(action_items(documents, inventory));
+    detected
+}
+
+fn media_items(documents: &PackDocuments) -> Vec<DetectedItem> {
+    documents
+        .media
+        .iter()
+        .map(|media| {
+            DetectedItem::new(
+                PackItemKind::Media,
+                media.id.clone(),
+                &media.label,
+                PackConflict::Clear,
+            )
+        })
+        .collect()
+}
+
+fn queue_items(documents: &PackDocuments, inventory: &PackInventory) -> Vec<DetectedItem> {
+    documents
+        .queues
+        .iter()
+        .map(|queue| {
+            let named = inventory
+                .queues
+                .values()
+                .find(|local| local.name == queue.name)
+                .map(|local| local.id.to_string());
+            DetectedItem::new(
+                PackItemKind::Queue,
+                queue.id.to_string(),
+                &queue.name,
+                conflict_of(inventory.queues.contains_key(&queue.id), named),
+            )
+        })
+        .collect()
+}
+
+fn script_items(documents: &PackDocuments, inventory: &PackInventory) -> Vec<DetectedItem> {
+    documents
+        .scripts
+        .iter()
+        .map(|script| {
+            let by_id = inventory.stored_script(script.id);
+            let by_name = inventory.stored_script_named(&script.name);
+            let archived = by_id
+                .as_ref()
+                .or(by_name.as_ref())
+                .is_some_and(|stored| stored.archived);
             DetectedItem::new(
                 PackItemKind::Script,
                 script.id.to_string(),
@@ -79,12 +106,17 @@ pub(crate) fn detect_conflicts(
                     by_name.map(|stored| stored.row.id.to_string()),
                 ),
             )
-            .archived_local(archived),
-        );
-    }
-    for global in &documents.globals {
-        let archived = inventory.archived_globals.contains_key(&global.name);
-        detected.push(
+            .archived_local(archived)
+        })
+        .collect()
+}
+
+fn global_items(documents: &PackDocuments, inventory: &PackInventory) -> Vec<DetectedItem> {
+    documents
+        .globals
+        .iter()
+        .map(|global| {
+            let archived = inventory.archived_globals.contains_key(&global.name);
             DetectedItem::new(
                 PackItemKind::Global,
                 global.name.clone(),
@@ -94,41 +126,60 @@ pub(crate) fn detect_conflicts(
                     None,
                 ),
             )
-            .archived_local(archived),
-        );
-    }
-    for clip in &documents.clips {
-        let named = inventory
-            .clips
-            .values()
-            .find(|local| local.name == clip.name)
-            .map(|local| local.id.to_string());
-        detected.push(DetectedItem::new(
-            PackItemKind::Clip,
-            clip.id.to_string(),
-            &clip.name,
-            conflict_of(inventory.clips.contains_key(&clip.id), named),
-        ));
-    }
-    for overlay in &documents.overlays {
-        let named = inventory
-            .overlays
-            .values()
-            .find(|local| local.display_name == overlay.display_name)
-            .map(|local| local.id.as_str().to_owned());
-        let id_matches = inventory
-            .overlays
-            .contains_key(&OverlayId::new(overlay.id.as_str()));
-        detected.push(DetectedItem::new(
-            PackItemKind::Overlay,
-            overlay.id.clone(),
-            &overlay.display_name,
-            conflict_of(id_matches, named),
-        ));
-    }
-    for trigger in &documents.triggers {
-        let archived = inventory.archived_triggers.contains_key(&trigger.id);
-        detected.push(
+            .archived_local(archived)
+        })
+        .collect()
+}
+
+fn clip_items(documents: &PackDocuments, inventory: &PackInventory) -> Vec<DetectedItem> {
+    documents
+        .clips
+        .iter()
+        .map(|clip| {
+            let named = inventory
+                .clips
+                .values()
+                .find(|local| local.name == clip.name)
+                .map(|local| local.id.to_string());
+            DetectedItem::new(
+                PackItemKind::Clip,
+                clip.id.to_string(),
+                &clip.name,
+                conflict_of(inventory.clips.contains_key(&clip.id), named),
+            )
+        })
+        .collect()
+}
+
+fn overlay_items(documents: &PackDocuments, inventory: &PackInventory) -> Vec<DetectedItem> {
+    documents
+        .overlays
+        .iter()
+        .map(|overlay| {
+            let named = inventory
+                .overlays
+                .values()
+                .find(|local| local.display_name == overlay.display_name)
+                .map(|local| local.id.as_str().to_owned());
+            let id_matches = inventory
+                .overlays
+                .contains_key(&OverlayId::new(overlay.id.as_str()));
+            DetectedItem::new(
+                PackItemKind::Overlay,
+                overlay.id.clone(),
+                &overlay.display_name,
+                conflict_of(id_matches, named),
+            )
+        })
+        .collect()
+}
+
+fn trigger_items(documents: &PackDocuments, inventory: &PackInventory) -> Vec<DetectedItem> {
+    documents
+        .triggers
+        .iter()
+        .map(|trigger| {
+            let archived = inventory.archived_triggers.contains_key(&trigger.id);
             DetectedItem::new(
                 PackItemKind::Trigger,
                 trigger.id.to_string(),
@@ -138,17 +189,22 @@ pub(crate) fn detect_conflicts(
                     trigger_name_match(trigger, inventory),
                 ),
             )
-            .archived_local(archived),
-        );
-    }
-    for action in &documents.actions {
-        let named = inventory
-            .actions
-            .values()
-            .find(|local| local.name == action.name)
-            .map(|local| local.id.to_string());
-        let archived = inventory.archived_actions.contains_key(&action.id);
-        detected.push(
+            .archived_local(archived)
+        })
+        .collect()
+}
+
+fn action_items(documents: &PackDocuments, inventory: &PackInventory) -> Vec<DetectedItem> {
+    documents
+        .actions
+        .iter()
+        .map(|action| {
+            let named = inventory
+                .actions
+                .values()
+                .find(|local| local.name == action.name)
+                .map(|local| local.id.to_string());
+            let archived = inventory.archived_actions.contains_key(&action.id);
             DetectedItem::new(
                 PackItemKind::Action,
                 action.id.to_string(),
@@ -158,10 +214,9 @@ pub(crate) fn detect_conflicts(
                     named,
                 ),
             )
-            .archived_local(archived),
-        );
-    }
-    detected
+            .archived_local(archived)
+        })
+        .collect()
 }
 
 fn trigger_name_match(trigger: &TriggerDocument, inventory: &PackInventory) -> Option<String> {

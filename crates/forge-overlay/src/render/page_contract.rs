@@ -18,6 +18,10 @@ pub const SET_FUNCTION: &str = "set";
 pub const SHOW_FUNCTION: &str = "show";
 pub const SOUND_FUNCTION: &str = "sound";
 
+pub const CONTENT_FRAME: &str = "content";
+pub const RELOAD_FRAME: &str = "reload";
+pub const CLEAR_FRAME: &str = "clear";
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct PageFunction {
     pub name: &'static str,

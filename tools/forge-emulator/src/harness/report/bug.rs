@@ -145,6 +145,10 @@ fn title(cause: &FailureCause, expectation: &Expectation, action: &StepAction) -
             "Overlay {} showed nothing after {after}",
             code(&content.overlay)
         ),
+        (FailureCause::PageClosed { .. }, Expectation::OverlayContent(content)) => format!(
+            "Overlay {} page connection closed after {after}",
+            code(&content.overlay)
+        ),
         (FailureCause::TaggedOverlayValue { .. }, Expectation::OverlayContent(content)) => format!(
             "Overlay {} received tagged values after {after}",
             code(&content.overlay)

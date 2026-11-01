@@ -30,7 +30,14 @@ pub(crate) async fn observe_overlay_content(
     .await;
 
     let frames = page.read(|frames| collect(frames.get(from..).unwrap_or_default(), clock));
-    verdict_for(&expected.overlay, frames, &expected.values.0)
+    let (verdict, evidence) = verdict_for(&expected.overlay, frames, &expected.values.0);
+    match (verdict, page.closure()) {
+        (Verdict::Failed(FailureCause::NoOverlayContent { .. }), Some(reason)) => (
+            Verdict::Failed(FailureCause::PageClosed { reason }),
+            evidence,
+        ),
+        (verdict, _) => (verdict, evidence),
+    }
 }
 
 pub(crate) fn verdict_for(

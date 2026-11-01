@@ -84,6 +84,10 @@ pub(crate) fn actual(
         (FailureCause::NoOverlayContent { observed }, Expectation::OverlayContent(content)) => {
             no_overlay_content(*observed, content, outcome)
         }
+        (FailureCause::PageClosed { reason }, _) => Actual {
+            summary: format!("the overlay page's connection closed before content arrived: {reason}"),
+            details: overlay_details(&outcome.evidence),
+        },
         (FailureCause::TaggedOverlayValue { pointers }, _) => Actual {
             summary: format!(
                 "the content frame carries tagged Variant JSON at {}; a page renders that as {}",

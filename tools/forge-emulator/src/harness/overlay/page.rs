@@ -23,6 +23,8 @@ const ID_KEY: &str = "id";
 const STATUS_KEY: &str = "status";
 const ERROR_STATUS: &str = "error";
 const ERROR_MESSAGE_POINTER: &str = "/error/message";
+const CLOSED_BY_SERVER: &str = "the server closed the page connection";
+const STREAM_ENDED: &str = "the page connection ended without a close frame";
 
 #[derive(Debug, Clone)]
 pub struct ReceivedFrame {
@@ -39,6 +41,7 @@ pub struct OverlayPage {
 #[derive(Default)]
 struct Shared {
     frames: Mutex<Vec<ReceivedFrame>>,
+    closed: Mutex<Option<String>>,
     changes: watch::Sender<u64>,
 }
 
@@ -92,6 +95,14 @@ impl OverlayPage {
 
     pub fn is_empty(&self) -> bool {
         self.len() == 0
+    }
+
+    pub fn closure(&self) -> Option<String> {
+        self.shared
+            .closed
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .clone()
     }
 
     pub fn take_frames(&self) -> Vec<ReceivedFrame> {
@@ -237,17 +248,23 @@ async fn read_frames<S>(mut stream: S, shared: Arc<Shared>)
 where
     S: Stream<Item = Result<Message, tungstenite::Error>> + Unpin,
 {
-    while let Some(Ok(message)) = stream.next().await {
-        match message {
-            Message::Text(text) => {
+    let reason = loop {
+        match stream.next().await {
+            Some(Ok(Message::Text(text))) => {
                 let raw = serde_json::from_str::<Value>(text.as_str())
                     .unwrap_or_else(|_| Value::String(text.as_str().to_owned()));
                 record(&shared, raw);
             }
-            Message::Close(_) => break,
-            Message::Binary(_) | Message::Ping(_) | Message::Pong(_) | Message::Frame(_) => {}
+            Some(Ok(Message::Close(_))) => break CLOSED_BY_SERVER.to_owned(),
+            Some(Ok(
+                Message::Binary(_) | Message::Ping(_) | Message::Pong(_) | Message::Frame(_),
+            )) => {}
+            Some(Err(e)) => break e.to_string(),
+            None => break STREAM_ENDED.to_owned(),
         }
-    }
+    };
+    *shared.closed.lock().unwrap_or_else(PoisonError::into_inner) = Some(reason);
+    shared.changes.send_modify(|generation| *generation += 1);
 }
 
 fn record(shared: &Arc<Shared>, raw: Value) {

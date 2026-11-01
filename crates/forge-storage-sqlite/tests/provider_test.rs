@@ -114,17 +114,20 @@ async fn database_unit_file_names_are_exactly_the_files_an_open_backend_keeps_on
 
 #[tokio::test]
 async fn shutdown_closes_the_pool_so_later_queries_fail_instead_of_hanging() {
-    use forge_storage::SettingsRepo;
-
     let backend = common::migrated_backend(TEST_KEY).await;
-    backend
-        .set_theme("catppuccin_mocha")
-        .await
-        .expect("write before shutdown succeeds");
+    forge_storage::write_setting(
+        &*backend,
+        &forge_storage::settings::core_settings::THEME,
+        &Some("catppuccin_mocha".to_owned()),
+    )
+    .await
+    .expect("write before shutdown succeeds");
 
     backend.shutdown().await;
 
-    let result = backend.get_theme().await;
+    let result =
+        forge_storage::read_setting(&*backend, &forge_storage::settings::core_settings::THEME)
+            .await;
     assert!(
         result.is_err(),
         "queries after shutdown must error, not hang"

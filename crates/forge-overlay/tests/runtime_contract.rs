@@ -235,3 +235,18 @@ fn each_margin_key_reaches_the_property_its_stylesheet_pads_by_as_a_share_of_its
         );
     }
 }
+
+#[test]
+fn the_runtime_listens_for_exactly_the_frame_names_the_server_pushes() {
+    for (variable, pushed) in [
+        ("CONTENT_FRAME", forge_overlay::CONTENT_FRAME),
+        ("RELOAD_FRAME", forge_overlay::RELOAD_FRAME),
+        ("CLEAR_FRAME", forge_overlay::CLEAR_FRAME),
+    ] {
+        let declaration = format!("var {variable} = \"{pushed}\";");
+        assert!(
+            RUNTIME_SOURCE.contains(&declaration),
+            "the runtime no longer declares {declaration}"
+        );
+    }
+}

@@ -1,13 +1,13 @@
 #![expect(clippy::expect_used, reason = "test fixtures")]
 use forge_storage::settings::core_settings::{
     ACCENT, AUDIO_VOICE_GATE_HOLD_MS, AUDIO_VOICE_GATE_INPUT_DEVICE_ID, AUDIO_VOICE_GATE_THRESHOLD,
-    EVENT_LOG_RETENTION_DAYS, THEME,
+    EVENT_LOG_RETENTION_DAYS, FONT_BODY, FONT_MONO, LANGUAGE, THEME,
 };
 use forge_storage::{
-    Language, SettingsRepo, VOICE_GATE_DEFAULT_HOLD_MS, VOICE_GATE_DEFAULT_THRESHOLD,
-    VoiceGateSettings, event_log_retention_days, load_setting_rows, reset_setting,
+    VOICE_GATE_DEFAULT_HOLD_MS, VOICE_GATE_DEFAULT_THRESHOLD, VoiceGateSettings,
+    event_log_retention_days, load_setting_rows, read_setting, reset_setting,
     set_event_log_retention_days, set_voice_gate_enabled, set_voice_gate_hold_ms,
-    set_voice_gate_input_device_id, set_voice_gate_threshold, voice_gate_settings,
+    set_voice_gate_input_device_id, set_voice_gate_threshold, voice_gate_settings, write_setting,
 };
 use forge_storage_sqlite::{SqliteBackend, SqliteSettingsRepo};
 
@@ -44,15 +44,17 @@ async fn stored_value(backend: &Sandboxed<SqliteBackend>, name: &str) -> Option<
 #[tokio::test]
 async fn set_then_get_roundtrips_value() {
     let repo = setup().await;
-    repo.set_theme("catppuccin_mocha").await.expect("set");
-    let got = repo.get_theme().await.expect("get");
+    write_setting(&*repo, &THEME, &Some("catppuccin_mocha".to_owned()))
+        .await
+        .expect("set");
+    let got = read_setting(&*repo, &THEME).await.expect("get");
     assert_eq!(got, Some("catppuccin_mocha".to_owned()));
 }
 
 #[tokio::test]
 async fn get_missing_setting_returns_none() {
     let repo = setup().await;
-    let got = repo.get_theme().await.expect("get");
+    let got = read_setting(&*repo, &THEME).await.expect("get");
     assert!(got.is_none());
 }
 
@@ -60,8 +62,12 @@ async fn get_missing_setting_returns_none() {
 async fn loading_rows_returns_every_stored_entry() {
     let repo = setup().await;
     let seeded = load_setting_rows(&*repo).await.expect("load seeded rows");
-    repo.set_theme("catppuccin_mocha").await.expect("set theme");
-    repo.set_accent("lavender").await.expect("set accent");
+    write_setting(&*repo, &THEME, &Some("catppuccin_mocha".to_owned()))
+        .await
+        .expect("set theme");
+    write_setting(&*repo, &ACCENT, &Some("lavender".to_owned()))
+        .await
+        .expect("set accent");
 
     let rows = load_setting_rows(&*repo).await.expect("load rows");
     let value_of = |name: &str| {
@@ -77,10 +83,12 @@ async fn loading_rows_returns_every_stored_entry() {
 #[tokio::test]
 async fn resetting_an_existing_setting_returns_true_and_clears_it() {
     let repo = setup().await;
-    repo.set_theme("inter").await.expect("set");
+    write_setting(&*repo, &THEME, &Some("inter".to_owned()))
+        .await
+        .expect("set");
     let deleted = reset_setting(&*repo, &THEME).await.expect("reset");
     assert!(deleted);
-    let got = repo.get_theme().await.expect("get after reset");
+    let got = read_setting(&*repo, &THEME).await.expect("get after reset");
     assert!(got.is_none());
 }
 
@@ -94,20 +102,34 @@ async fn resetting_a_missing_setting_returns_false() {
 #[tokio::test]
 async fn writing_a_setting_again_overwrites_the_value() {
     let repo = setup().await;
-    repo.set_accent("lavender").await.expect("set 1");
-    repo.set_accent("sky").await.expect("set 2");
-    let got = repo.get_accent().await.expect("get");
+    write_setting(&*repo, &ACCENT, &Some("lavender".to_owned()))
+        .await
+        .expect("set 1");
+    write_setting(&*repo, &ACCENT, &Some("sky".to_owned()))
+        .await
+        .expect("set 2");
+    let got = read_setting(&*repo, &ACCENT).await.expect("get");
     assert_eq!(got, Some("sky".to_owned()));
 }
 
 #[tokio::test]
-async fn language_seeds_en_and_round_trips_through_typed_repo() {
+async fn language_seeds_en_and_round_trips_through_the_setting() {
     let repo = setup().await;
-    assert_eq!(repo.language().await.expect("read seeded"), Language::En);
-    repo.set_language(Language::Uk).await.expect("write Uk");
-    assert_eq!(repo.language().await.expect("read after Uk"), Language::Uk);
-    repo.set_language(Language::En).await.expect("write En");
-    assert_eq!(repo.language().await.expect("read after En"), Language::En);
+    assert_eq!(
+        read_setting(&*repo, &LANGUAGE).await.expect("read seeded"),
+        "en"
+    );
+    for code in ["uk", "en"] {
+        write_setting(&*repo, &LANGUAGE, &code.to_owned())
+            .await
+            .expect("write language");
+        assert_eq!(
+            read_setting(&*repo, &LANGUAGE)
+                .await
+                .expect("read language"),
+            code
+        );
+    }
 }
 
 #[tokio::test]
@@ -142,27 +164,30 @@ async fn event_log_retention_days_invalid_string_falls_back_to_seven() {
 #[tokio::test]
 async fn font_overrides_persist_per_role_and_unset_deletes() {
     let backend = setup_backend().await;
-    backend
-        .set_font_body(Some("Custom Sans".to_owned()))
+    write_setting(&*backend, &FONT_BODY, &Some("Custom Sans".to_owned()))
         .await
         .expect("set body font");
-    backend
-        .set_font_mono(Some("Custom Mono".to_owned()))
+    write_setting(&*backend, &FONT_MONO, &Some("Custom Mono".to_owned()))
         .await
         .expect("set mono font");
     assert_eq!(
-        backend.font_body().await.expect("get body"),
+        read_setting(&*backend, &FONT_BODY).await.expect("get body"),
         Some("Custom Sans".to_owned())
     );
     assert_eq!(
-        backend.font_mono().await.expect("get mono"),
+        read_setting(&*backend, &FONT_MONO).await.expect("get mono"),
         Some("Custom Mono".to_owned())
     );
 
-    backend.set_font_body(None).await.expect("unset body");
-    assert_eq!(backend.font_body().await.expect("get body"), None);
+    write_setting(&*backend, &FONT_BODY, &None)
+        .await
+        .expect("unset body");
     assert_eq!(
-        backend.font_mono().await.expect("get mono"),
+        read_setting(&*backend, &FONT_BODY).await.expect("get body"),
+        None
+    );
+    assert_eq!(
+        read_setting(&*backend, &FONT_MONO).await.expect("get mono"),
         Some("Custom Mono".to_owned()),
         "unsetting one role must not clear the other"
     );
@@ -171,11 +196,13 @@ async fn font_overrides_persist_per_role_and_unset_deletes() {
 #[tokio::test]
 async fn unsetting_a_font_that_was_never_stored_succeeds() {
     let backend = setup_backend().await;
-    backend
-        .set_font_mono(None)
+    write_setting(&*backend, &FONT_MONO, &None)
         .await
         .expect("unset on absent key must not error");
-    assert_eq!(backend.font_mono().await.expect("get mono"), None);
+    assert_eq!(
+        read_setting(&*backend, &FONT_MONO).await.expect("get mono"),
+        None
+    );
 }
 
 #[tokio::test]

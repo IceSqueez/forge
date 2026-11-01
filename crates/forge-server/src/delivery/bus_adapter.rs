@@ -165,15 +165,21 @@ struct ContentFrame<'a> {
     duration_ms: Option<u64>,
 }
 
-const RELOAD_FRAME_JSON: &str = r#"{"frame":"reload"}"#;
-const CLEAR_FRAME_JSON: &str = r#"{"frame":"clear"}"#;
+#[derive(Serialize)]
+struct BareFrame {
+    frame: &'static str,
+}
+
+fn bare_frame_json(frame: &'static str) -> String {
+    serde_json::to_string(&BareFrame { frame }).unwrap_or_default()
+}
 
 fn serialize_content_frame(
     content: &serde_json::Value,
     duration_ms: Option<u64>,
 ) -> Option<String> {
     serde_json::to_string(&ContentFrame {
-        frame: "content",
+        frame: forge_overlay::CONTENT_FRAME,
         content,
         duration_ms,
     })
@@ -341,7 +347,7 @@ impl BusAdapter {
         send_to_overlay(
             &self.registry,
             identity,
-            WsFrame::Text(RELOAD_FRAME_JSON.to_owned()),
+            WsFrame::Text(bare_frame_json(forge_overlay::RELOAD_FRAME)),
         )
         .await;
     }
@@ -350,7 +356,7 @@ impl BusAdapter {
         let reached = send_to_overlay(
             &self.registry,
             Some(identity),
-            WsFrame::Text(CLEAR_FRAME_JSON.to_owned()),
+            WsFrame::Text(bare_frame_json(forge_overlay::CLEAR_FRAME)),
         )
         .await;
         send_to_overlay(&self.registry, Some(identity), WsFrame::Close).await;

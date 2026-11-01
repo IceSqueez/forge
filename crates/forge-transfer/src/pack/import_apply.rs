@@ -106,7 +106,7 @@ pub async fn apply_pack_import(
     match ran {
         Ok(()) => {
             import.undo.settle_overlay_dirs().await;
-            import.undo.discard_set_aside_files().await;
+            import.undo.commit().await;
             Ok(PackImportOutcome {
                 safety_snapshot,
                 written: import.written,
@@ -597,13 +597,12 @@ impl<'a> PackImport<'_, 'a> {
         files: &[OverlayFileDocument],
     ) -> Result<(), TransferError> {
         let staged = self.staged;
-        let undo = &mut self.undo;
         place_overlay_files(
             &self.overlay_root,
             id,
             files,
             |file| staged.file(file),
-            |entry| undo.push(entry),
+            &mut self.undo,
         )
         .await
     }

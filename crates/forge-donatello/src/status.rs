@@ -167,4 +167,65 @@ mod tests {
             );
         }
     }
+
+    const ALL_FAILURES: [PollFailure; 10] = [
+        PollFailure::MissingToken,
+        PollFailure::TokenRejected,
+        PollFailure::TokenUnreadable,
+        PollFailure::ProfileIncomplete,
+        PollFailure::RateLimited,
+        PollFailure::Network,
+        PollFailure::ServerError,
+        PollFailure::MalformedResponse,
+        PollFailure::InvalidDonation,
+        PollFailure::Local,
+    ];
+    const BANNERED: [PollFailure; 4] = [
+        PollFailure::MissingToken,
+        PollFailure::TokenRejected,
+        PollFailure::TokenUnreadable,
+        PollFailure::ProfileIncomplete,
+    ];
+
+    fn distinct<T: Ord>(items: impl IntoIterator<Item = T>) -> usize {
+        items
+            .into_iter()
+            .collect::<std::collections::BTreeSet<_>>()
+            .len()
+    }
+
+    #[test]
+    fn every_failure_has_its_own_message_and_label() {
+        assert_eq!(
+            distinct(ALL_FAILURES.map(|failure| failure.facts().message)),
+            ALL_FAILURES.len()
+        );
+        assert_eq!(
+            distinct(ALL_FAILURES.map(PollFailure::label)),
+            ALL_FAILURES.len()
+        );
+        assert!(
+            ALL_FAILURES
+                .iter()
+                .all(|failure| !failure.label().is_empty())
+        );
+    }
+
+    #[test]
+    fn only_failures_the_user_must_fix_carry_an_action_banner() {
+        let with_banner: Vec<PollFailure> = ALL_FAILURES
+            .into_iter()
+            .filter(|failure| failure.facts().banner.is_some())
+            .collect();
+
+        assert_eq!(with_banner, BANNERED);
+        assert_eq!(
+            distinct(
+                with_banner
+                    .iter()
+                    .filter_map(|failure| failure.facts().banner)
+            ),
+            BANNERED.len()
+        );
+    }
 }

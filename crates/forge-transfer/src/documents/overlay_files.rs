@@ -9,18 +9,20 @@ use forge_types::Variant;
 use crate::bundle::document_layout::safe_segments;
 use crate::bundle::naming::{sibling_with_extension, unique_suffix};
 use crate::documents::model::{DocumentConfig, OverlayFileDocument};
-use crate::documents::undo::Undo;
+use crate::documents::undo::{Undo, UndoJournal};
 use crate::error::TransferError;
 
 pub(crate) const PENDING_IMPORT_MARKER: &str = ".forge-import-pending";
 pub(crate) const SET_ASIDE_EXTENSION: &str = "forge-import-previous";
+pub(crate) const UNCOMMITTED_IMPORT_PREFIX: &str = ".forge-import-uncommitted-";
+pub(crate) const SET_ASIDE_SESSION_SEPARATOR: char = '-';
 
 pub(crate) async fn place_overlay_files(
     overlay_root: &Path,
     id: &OverlayId,
     files: &[OverlayFileDocument],
     locate: impl Fn(&str) -> Option<PathBuf>,
-    mut record: impl FnMut(Undo),
+    undo: &mut UndoJournal,
 ) -> Result<(), TransferError> {
     if files.is_empty() {
         return Ok(());
@@ -35,7 +37,7 @@ pub(crate) async fn place_overlay_files(
     let directory = overlay_root.join(id.as_str());
     if !tokio::fs::try_exists(&directory).await? {
         tokio::fs::create_dir_all(&directory).await?;
-        record(Undo::OverlayDir(directory.clone()));
+        undo.push(Undo::OverlayDir(directory.clone()));
         tokio::fs::write(directory.join(PENDING_IMPORT_MARKER), []).await?;
     }
     for file in files {
@@ -49,16 +51,21 @@ pub(crate) async fn place_overlay_files(
         if let Some(parent) = destination.parent() {
             tokio::fs::create_dir_all(parent).await?;
         }
+        undo.mark_uncommitted(overlay_root).await?;
         let aside = sibling_with_extension(
             &destination,
-            &format!("{SET_ASIDE_EXTENSION}-{}", unique_suffix()),
+            &format!(
+                "{SET_ASIDE_EXTENSION}-{}{SET_ASIDE_SESSION_SEPARATOR}{}",
+                undo.session(),
+                unique_suffix()
+            ),
         );
         let set_aside = match tokio::fs::rename(&destination, &aside).await {
             Ok(()) => Some(aside),
             Err(e) if e.kind() == io::ErrorKind::NotFound => None,
             Err(e) => return Err(e.into()),
         };
-        record(Undo::OverlayFile {
+        undo.push(Undo::OverlayFile {
             path: destination.clone(),
             set_aside,
         });

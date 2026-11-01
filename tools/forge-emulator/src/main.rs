@@ -677,14 +677,15 @@ async fn stress(args: RunArgs) -> Result<ExitCode, EmulatorError> {
         max_attempts: args.attempts,
         shutdown_grace: SHUTDOWN_GRACE,
     };
-    let outcome = tokio::select! {
-        outcome = run_stress(&profile, options) => outcome?,
-        () = stop_requested() => return Ok(ExitCode::from(INTERRUPTED)),
-    };
+    let outcome = run_stress(&profile, options, stop_requested()).await?;
     let files = write_stress_report(&profile, &outcome, &run_root, &absolute(&args.forge))?;
     println!("report: {}", files.markdown.display());
     println!("samples: {}", files.samples.display());
-    Ok(ExitCode::SUCCESS)
+    Ok(if outcome.interrupted {
+        ExitCode::from(INTERRUPTED)
+    } else {
+        ExitCode::SUCCESS
+    })
 }
 
 fn absolute(path: &std::path::Path) -> PathBuf {

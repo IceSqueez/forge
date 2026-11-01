@@ -1,10 +1,14 @@
+use std::collections::BTreeSet;
 use std::io;
 use std::path::Path;
 use std::time::{Duration, SystemTime};
 
 use forge_storage::{OverlayId, OverlayRepo};
 
-use crate::documents::overlay_files::{PENDING_IMPORT_MARKER, SET_ASIDE_EXTENSION};
+use crate::documents::overlay_files::{
+    PENDING_IMPORT_MARKER, SET_ASIDE_EXTENSION, SET_ASIDE_SESSION_SEPARATOR,
+    UNCOMMITTED_IMPORT_PREFIX,
+};
 use crate::error::TransferError;
 
 const ABANDONED_IMPORT_AGE: Duration = Duration::from_hours(1);
@@ -61,14 +65,45 @@ pub struct SetAsideSweep {
     pub removed: usize,
 }
 
-fn replaced_name(name: &str) -> Option<&str> {
+struct SetAside<'a> {
+    replaced: &'a str,
+    session: Option<&'a str>,
+}
+
+fn set_aside_of(name: &str) -> Option<SetAside<'_>> {
     let (replaced, suffix) = name.rsplit_once(&format!(".{SET_ASIDE_EXTENSION}-"))?;
-    (!replaced.is_empty() && !suffix.is_empty()).then_some(replaced)
+    if replaced.is_empty() || suffix.is_empty() {
+        return None;
+    }
+    let session = suffix
+        .split_once(SET_ASIDE_SESSION_SEPARATOR)
+        .map(|(session, _)| session);
+    Some(SetAside { replaced, session })
+}
+
+async fn uncommitted_sessions(overlay_root: &Path) -> Result<BTreeSet<String>, TransferError> {
+    let mut sessions = BTreeSet::new();
+    let mut entries = match tokio::fs::read_dir(overlay_root).await {
+        Ok(entries) => entries,
+        Err(e) if e.kind() == io::ErrorKind::NotFound => return Ok(sessions),
+        Err(e) => return Err(e.into()),
+    };
+    while let Some(entry) = entries.next_entry().await? {
+        let file_name = entry.file_name();
+        if let Some(session) = file_name
+            .to_str()
+            .and_then(|name| name.strip_prefix(UNCOMMITTED_IMPORT_PREFIX))
+        {
+            sessions.insert(session.to_owned());
+        }
+    }
+    Ok(sessions)
 }
 
 pub async fn sweep_set_aside_overlay_files(
     overlay_root: &Path,
 ) -> Result<SetAsideSweep, TransferError> {
+    let uncommitted = uncommitted_sessions(overlay_root).await?;
     let mut sweep = SetAsideSweep::default();
     let mut pending = vec![overlay_root.to_path_buf()];
     while let Some(directory) = pending.pop() {
@@ -83,11 +118,15 @@ pub async fn sweep_set_aside_overlay_files(
                 continue;
             }
             let file_name = entry.file_name();
-            let Some(replaced) = file_name.to_str().and_then(replaced_name) else {
+            let Some(aside) = file_name.to_str().and_then(set_aside_of) else {
                 continue;
             };
-            let replaced = directory.join(replaced);
-            if tokio::fs::try_exists(&replaced).await? {
+            let replaced = directory.join(aside.replaced);
+            let interrupted = aside
+                .session
+                .is_some_and(|session| uncommitted.contains(session));
+            let keep_replacement = !interrupted && tokio::fs::try_exists(&replaced).await?;
+            if keep_replacement {
                 tokio::fs::remove_file(entry.path()).await?;
                 sweep.removed += 1;
             } else {
@@ -95,6 +134,10 @@ pub async fn sweep_set_aside_overlay_files(
                 sweep.restored += 1;
             }
         }
+    }
+    for session in &uncommitted {
+        let marker = overlay_root.join(format!("{UNCOMMITTED_IMPORT_PREFIX}{session}"));
+        tokio::fs::remove_file(&marker).await?;
     }
     Ok(sweep)
 }
@@ -245,5 +288,121 @@ mod tests {
         std::fs::remove_dir(&rig.root).unwrap();
 
         assert_eq!(rig.sweep().await.unwrap(), 0);
+    }
+
+    fn aside_name(file: &str, session: &str) -> String {
+        format!("{file}.{SET_ASIDE_EXTENSION}-{session}{SET_ASIDE_SESSION_SEPARATOR}x1y2z3")
+    }
+
+    fn uncommitted_marker(rig: &Rig, session: &str) -> PathBuf {
+        let marker = rig
+            .root
+            .join(format!("{UNCOMMITTED_IMPORT_PREFIX}{session}"));
+        std::fs::write(&marker, []).unwrap();
+        marker
+    }
+
+    #[tokio::test]
+    async fn a_committed_import_drops_the_old_file_and_keeps_the_new_one() {
+        let rig = Rig::open().await;
+        let folder = rig.folder("overlay");
+        let aside = folder.join(aside_name("alert.css", "abc123"));
+        std::fs::write(&aside, b"old").unwrap();
+
+        let swept = sweep_set_aside_overlay_files(&rig.root).await.unwrap();
+
+        assert_eq!(
+            swept,
+            SetAsideSweep {
+                restored: 0,
+                removed: 1
+            }
+        );
+        assert_eq!(std::fs::read(folder.join("alert.css")).unwrap(), b"body {}");
+        assert!(!aside.exists());
+    }
+
+    #[tokio::test]
+    async fn an_interrupted_import_puts_the_old_file_over_the_partial_one() {
+        let rig = Rig::open().await;
+        let folder = rig.folder("overlay");
+        let aside = folder.join(aside_name("alert.css", "abc123"));
+        std::fs::write(&aside, b"old").unwrap();
+        let marker = uncommitted_marker(&rig, "abc123");
+
+        let swept = sweep_set_aside_overlay_files(&rig.root).await.unwrap();
+
+        assert_eq!(
+            swept,
+            SetAsideSweep {
+                restored: 1,
+                removed: 0
+            }
+        );
+        assert_eq!(std::fs::read(folder.join("alert.css")).unwrap(), b"old");
+        assert!(!aside.exists());
+        assert!(!marker.exists());
+    }
+
+    #[tokio::test]
+    async fn an_interrupted_import_restores_a_file_whose_replacement_never_landed() {
+        let rig = Rig::open().await;
+        let folder = rig.folder("overlay");
+        let aside = folder.join(aside_name("theme.css", "abc123"));
+        std::fs::write(&aside, b"old").unwrap();
+        uncommitted_marker(&rig, "abc123");
+
+        let swept = sweep_set_aside_overlay_files(&rig.root).await.unwrap();
+
+        assert_eq!(swept.restored, 1);
+        assert_eq!(std::fs::read(folder.join("theme.css")).unwrap(), b"old");
+    }
+
+    #[tokio::test]
+    async fn another_sessions_marker_does_not_roll_back_a_committed_import() {
+        let rig = Rig::open().await;
+        let folder = rig.folder("overlay");
+        std::fs::write(folder.join(aside_name("alert.css", "abc123")), b"old").unwrap();
+        let other = uncommitted_marker(&rig, "ffffff");
+
+        let swept = sweep_set_aside_overlay_files(&rig.root).await.unwrap();
+
+        assert_eq!(
+            swept,
+            SetAsideSweep {
+                restored: 0,
+                removed: 1
+            }
+        );
+        assert_eq!(std::fs::read(folder.join("alert.css")).unwrap(), b"body {}");
+        assert!(!other.exists());
+    }
+
+    #[tokio::test]
+    async fn nested_set_aside_files_are_found_and_unrelated_files_are_left() {
+        let rig = Rig::open().await;
+        let folder = rig.folder("overlay");
+        let nested = folder.join("img");
+        std::fs::create_dir(&nested).unwrap();
+        std::fs::write(nested.join(aside_name("logo.png", "abc123")), b"old").unwrap();
+        let unrelated = folder.join("notes.txt");
+        std::fs::write(&unrelated, b"keep").unwrap();
+        uncommitted_marker(&rig, "abc123");
+
+        let swept = sweep_set_aside_overlay_files(&rig.root).await.unwrap();
+
+        assert_eq!(swept.restored, 1);
+        assert_eq!(std::fs::read(nested.join("logo.png")).unwrap(), b"old");
+        assert!(unrelated.exists());
+    }
+
+    #[tokio::test]
+    async fn a_missing_root_sweeps_nothing() {
+        let rig = Rig::open().await;
+        std::fs::remove_dir(&rig.root).unwrap();
+
+        let swept = sweep_set_aside_overlay_files(&rig.root).await.unwrap();
+
+        assert_eq!(swept, SetAsideSweep::default());
     }
 }

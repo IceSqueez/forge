@@ -1,9 +1,10 @@
 use std::io;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 use forge_storage::{DataProvider, MediaBlobId};
 
-use crate::documents::overlay_files::PENDING_IMPORT_MARKER;
+use crate::bundle::naming::unique_suffix;
+use crate::documents::overlay_files::{PENDING_IMPORT_MARKER, UNCOMMITTED_IMPORT_PREFIX};
 
 pub(crate) enum Undo {
     Media(MediaBlobId),
@@ -14,12 +15,54 @@ pub(crate) enum Undo {
     },
 }
 
-#[derive(Default)]
 pub(crate) struct UndoJournal {
     entries: Vec<Undo>,
+    session: String,
+    uncommitted_marker: Option<PathBuf>,
+}
+
+impl Default for UndoJournal {
+    fn default() -> Self {
+        Self {
+            entries: Vec::new(),
+            session: unique_suffix(),
+            uncommitted_marker: None,
+        }
+    }
 }
 
 impl UndoJournal {
+    pub(crate) fn session(&self) -> &str {
+        &self.session
+    }
+
+    pub(crate) async fn mark_uncommitted(&mut self, overlay_root: &Path) -> io::Result<()> {
+        if self.uncommitted_marker.is_some() {
+            return Ok(());
+        }
+        let marker = overlay_root.join(format!("{UNCOMMITTED_IMPORT_PREFIX}{}", self.session));
+        tokio::fs::write(&marker, []).await?;
+        self.uncommitted_marker = Some(marker);
+        Ok(())
+    }
+
+    pub(crate) async fn commit(&mut self) {
+        let Some(marker) = self.uncommitted_marker.take() else {
+            return;
+        };
+        match tokio::fs::remove_file(&marker).await {
+            Ok(()) => self.discard_set_aside_files().await,
+            Err(error) => {
+                tracing::warn!(
+                    %error,
+                    path = %marker.display(),
+                    "overlay import stays uncommitted on disk until the next start"
+                );
+                self.uncommitted_marker = Some(marker);
+            }
+        }
+    }
+
     pub(crate) fn push(&mut self, undo: Undo) {
         self.entries.push(undo);
     }
@@ -40,7 +83,7 @@ impl UndoJournal {
         }
     }
 
-    pub(crate) async fn discard_set_aside_files(&self) {
+    async fn discard_set_aside_files(&self) {
         for entry in &self.entries {
             let Undo::OverlayFile {
                 set_aside: Some(set_aside),
@@ -60,16 +103,22 @@ impl UndoJournal {
     }
 
     pub(crate) async fn roll_back(
-        self,
+        mut self,
         provider: &dyn DataProvider,
     ) -> Result<(), RollbackFailures> {
         let mut failures = Vec::new();
-        for undo in self.entries.into_iter().rev() {
+        for undo in std::mem::take(&mut self.entries).into_iter().rev() {
             if let Err(e) = revert(provider, undo).await {
                 failures.push(e);
             }
         }
         if failures.is_empty() {
+            if let Some(marker) = &self.uncommitted_marker
+                && let Err(e) = tokio::fs::remove_file(marker).await
+                && e.kind() != io::ErrorKind::NotFound
+            {
+                return Err(RollbackFailures(vec![UndoFailure::File(e)]));
+            }
             Ok(())
         } else {
             Err(RollbackFailures(failures))

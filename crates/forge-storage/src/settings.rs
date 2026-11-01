@@ -113,62 +113,6 @@ pub trait SettingsRepo: Send + Sync {
         value: &str,
         classes: RowClasses,
     ) -> Result<(), StorageError>;
-
-    async fn language(&self) -> Result<Language, StorageError> {
-        match read_stored_setting(self, &core_settings::LANGUAGE).await? {
-            Some(code) => code
-                .parse()
-                .map_err(|e: UnknownLanguage| StorageError::Parse(e.to_string())),
-            None => Ok(Language::default()),
-        }
-    }
-
-    async fn set_language(&self, lang: Language) -> Result<(), StorageError> {
-        write_setting(self, &core_settings::LANGUAGE, &lang.to_string()).await
-    }
-
-    async fn get_theme(&self) -> Result<Option<String>, StorageError> {
-        read_setting(self, &core_settings::THEME).await
-    }
-
-    async fn set_theme(&self, theme_key: &str) -> Result<(), StorageError> {
-        write_setting(self, &core_settings::THEME, &Some(theme_key.to_owned())).await
-    }
-
-    async fn get_accent(&self) -> Result<Option<String>, StorageError> {
-        read_setting(self, &core_settings::ACCENT).await
-    }
-
-    async fn set_accent(&self, accent_key: &str) -> Result<(), StorageError> {
-        write_setting(self, &core_settings::ACCENT, &Some(accent_key.to_owned())).await
-    }
-
-    async fn font_body(&self) -> Result<Option<String>, StorageError> {
-        read_setting(self, &core_settings::FONT_BODY).await
-    }
-
-    async fn set_font_body(&self, name: Option<String>) -> Result<(), StorageError> {
-        write_setting(self, &core_settings::FONT_BODY, &name).await
-    }
-
-    async fn font_mono(&self) -> Result<Option<String>, StorageError> {
-        read_setting(self, &core_settings::FONT_MONO).await
-    }
-
-    async fn set_font_mono(&self, name: Option<String>) -> Result<(), StorageError> {
-        write_setting(self, &core_settings::FONT_MONO, &name).await
-    }
-
-    async fn audio_output_device_id(&self) -> Result<Option<String>, StorageError> {
-        read_setting(self, &core_settings::AUDIO_OUTPUT_DEVICE_ID).await
-    }
-
-    async fn set_audio_output_device_id(
-        &self,
-        device_id: Option<String>,
-    ) -> Result<(), StorageError> {
-        write_setting(self, &core_settings::AUDIO_OUTPUT_DEVICE_ID, &device_id).await
-    }
 }
 
 pub(crate) fn decode_bool_setting(s: &str) -> Option<bool> {

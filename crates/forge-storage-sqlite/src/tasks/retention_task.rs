@@ -409,4 +409,87 @@ mod tests {
             vec![newer.started_at]
         );
     }
+
+    const SIGNAL_WAIT: Duration = Duration::from_millis(50);
+
+    async fn aware_settings() -> RetentionAwareSettings {
+        let pool = connect(":memory:").await.unwrap();
+        apply_migrations(&pool).await.unwrap();
+        RetentionAwareSettings::new(
+            SqliteSettingsRepo::new(crate::pool::pools_sharing(pool)),
+            Arc::new(Notify::new()),
+        )
+    }
+
+    async fn signalled(settings: &RetentionAwareSettings) -> bool {
+        tokio::time::timeout(SIGNAL_WAIT, settings.window_changed().notified())
+            .await
+            .is_ok()
+    }
+
+    #[tokio::test]
+    async fn writing_either_retention_window_wakes_the_retention_task() {
+        for setting in [
+            &core_settings::EVENT_LOG_RETENTION_DAYS,
+            &core_settings::ACTION_HISTORY_RETENTION_DAYS,
+        ] {
+            let settings = aware_settings().await;
+
+            forge_storage::write_setting(&settings, setting, &30)
+                .await
+                .unwrap();
+
+            assert!(signalled(&settings).await, "{}", setting.name());
+        }
+    }
+
+    #[tokio::test]
+    async fn resetting_a_retention_window_wakes_the_retention_task() {
+        let settings = aware_settings().await;
+        forge_storage::write_setting(&settings, &core_settings::EVENT_LOG_RETENTION_DAYS, &30)
+            .await
+            .unwrap();
+        assert!(signalled(&settings).await);
+
+        let removed =
+            forge_storage::reset_setting(&settings, &core_settings::EVENT_LOG_RETENTION_DAYS)
+                .await
+                .unwrap();
+
+        assert!(removed);
+        assert!(signalled(&settings).await);
+    }
+
+    #[tokio::test]
+    async fn writing_an_unrelated_setting_leaves_the_retention_task_asleep() {
+        let settings = aware_settings().await;
+
+        forge_storage::write_setting(&settings, &core_settings::CHAT_HISTORY_DISPLAY_LIMIT, &50)
+            .await
+            .unwrap();
+
+        assert!(!signalled(&settings).await);
+    }
+
+    #[tokio::test]
+    async fn settings_read_back_through_the_wrapper() {
+        let settings = aware_settings().await;
+        forge_storage::write_setting(&settings, &core_settings::EVENT_LOG_RETENTION_DAYS, &30)
+            .await
+            .unwrap();
+
+        let days = forge_storage::read_setting(&settings, &core_settings::EVENT_LOG_RETENTION_DAYS)
+            .await
+            .unwrap();
+
+        assert_eq!(days, 30);
+    }
+
+    #[tokio::test]
+    async fn a_signal_for_an_unrelated_key_leaves_the_retention_task_asleep() {
+        let settings = aware_settings().await;
+        settings.signal_if_retention("unrelated.key");
+
+        assert!(!signalled(&settings).await);
+    }
 }

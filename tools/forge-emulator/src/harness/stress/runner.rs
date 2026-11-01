@@ -1,5 +1,6 @@
 use std::collections::BTreeMap;
 use std::fmt;
+use std::future::Future;
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
 use std::time::Duration;
@@ -146,6 +147,7 @@ pub struct StressOutcome {
     pub actions: Vec<String>,
     pub pages: Vec<String>,
     pub forge_exited: bool,
+    pub interrupted: bool,
     pub shutdown: Result<ShutdownReport, EmulatorError>,
     pub warnings_total: BTreeMap<String, u64>,
     pub data_dir: PathBuf,
@@ -161,6 +163,7 @@ fn lock<T>(shared: &Mutex<T>) -> MutexGuard<'_, T> {
 pub async fn run_stress(
     profile: &StressProfile,
     options: StressOptions,
+    stop: impl Future<Output = ()>,
 ) -> Result<StressOutcome, EmulatorError> {
     let account = profile
         .fixture
@@ -190,7 +193,15 @@ pub async fn run_stress(
             return Err(e);
         }
     };
-    let result = drive(profile, &account, &fake, launched, options.shutdown_grace).await;
+    let result = drive(
+        profile,
+        &account,
+        &fake,
+        launched,
+        options.shutdown_grace,
+        stop,
+    )
+    .await;
     fake.shutdown().await;
     result
 }
@@ -201,6 +212,7 @@ async fn drive(
     fake: &FakeTwitch,
     launched: LaunchedForge,
     shutdown_grace: Duration,
+    stop: impl Future<Output = ()>,
 ) -> Result<StressOutcome, EmulatorError> {
     let LaunchedForge {
         process,
@@ -255,9 +267,13 @@ async fn drive(
         mix: FloodMix::new(&profile.stimuli),
         clock,
     };
-    let phases = generator.run_all(&measurement.phase_now, &data_dir).await;
+    let mut phases = Vec::new();
+    let ran = tokio::select! {
+        ran = generator.run_all(&mut phases, &measurement.phase_now, &data_dir) => ran.map(|()| false),
+        () = stop => Ok(true),
+    };
     background.shutdown(Duration::ZERO).await;
-    let phases = phases?;
+    let interrupted = ran?;
     pages.close();
     drop(opened);
     let mut process = process;
@@ -293,6 +309,7 @@ async fn drive(
         actions,
         pages: profile.pages.clone(),
         forge_exited,
+        interrupted,
         shutdown,
         warnings_total,
         data_dir,
@@ -494,11 +511,11 @@ struct Generator<'a> {
 impl Generator<'_> {
     async fn run_all(
         mut self,
+        results: &mut Vec<PhaseResult>,
         phase_now: &Shared<usize>,
         data_dir: &std::path::Path,
-    ) -> Result<Vec<PhaseResult>, EmulatorError> {
+    ) -> Result<(), EmulatorError> {
         let profile = self.profile;
-        let mut results: Vec<PhaseResult> = Vec::new();
         let mut ramp = RampProgress::default();
         for rate in &profile.ramp.rates {
             let phase = Phase {
@@ -559,7 +576,7 @@ impl Generator<'_> {
         if !ramp.knee_found {
             eprintln!("forge-emulator: the ramp ended without reaching a knee");
         }
-        Ok(results)
+        Ok(())
     }
 
     async fn run_phase(

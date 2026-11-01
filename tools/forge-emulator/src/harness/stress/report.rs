@@ -42,7 +42,7 @@ fn render(profile: &StressProfile, outcome: &StressOutcome, forge_binary: &Path)
     let _ = writeln!(out, "{}\n", profile.purpose);
     let _ = writeln!(
         out,
-        "- forge: `{}` ({})\n- data dir: `{}`\n- senders: {}\n- forge exited during run: {}\n- shutdown: {}\n",
+        "- forge: `{}` ({})\n- data dir: `{}`\n- senders: {}\n- forge exited during run: {}\n- interrupted before the last phase: {}\n- shutdown: {}\n",
         forge_binary.display(),
         match &outcome.version {
             Ok(version) => version.clone(),
@@ -51,6 +51,7 @@ fn render(profile: &StressProfile, outcome: &StressOutcome, forge_binary: &Path)
         outcome.data_dir.display(),
         profile.senders,
         outcome.forge_exited,
+        outcome.interrupted,
         match &outcome.shutdown {
             Ok(shutdown) if shutdown.forced => {
                 format!("{} ms, killed after the grace period", shutdown.ms)
@@ -329,6 +330,7 @@ mod tests {
             actions: Vec::new(),
             pages: Vec::new(),
             forge_exited: false,
+            interrupted: false,
             shutdown: Ok(ShutdownReport {
                 ms: 12,
                 forced: false,

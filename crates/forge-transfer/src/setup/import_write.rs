@@ -188,13 +188,12 @@ impl SetupImport<'_, '_> {
                 self.remap
                     .insert(InternalNamespace::Overlay, document.id.clone(), id.as_str());
             }
-            let journal = &mut self.journal;
             place_overlay_files(
                 &self.overlay_root,
                 &id,
                 &document.files,
                 |file| staged.file(file),
-                |undo| journal.push(undo),
+                &mut self.journal,
             )
             .await?;
             self.changes

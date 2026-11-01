@@ -39,3 +39,70 @@ impl RateWindow {
         self.samples.len()
     }
 }
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    const SPAN: Duration = Duration::from_secs(10);
+    const STEP: Duration = Duration::from_secs(1);
+
+    #[test]
+    fn an_empty_window_totals_zero() {
+        let mut window = RateWindow::new(SPAN);
+
+        assert_eq!(window.total_at(Instant::now()), 0);
+        assert_eq!(window.retained(), 0);
+    }
+
+    #[test]
+    fn samples_inside_the_span_add_up() {
+        let start = Instant::now();
+        let mut window = RateWindow::new(SPAN);
+        window.push(start, 5);
+        window.push(start + STEP, 7);
+
+        assert_eq!(window.total_at(start + STEP * 2), 12);
+        assert_eq!(window.retained(), 2);
+    }
+
+    #[test]
+    fn a_sample_exactly_one_span_old_still_counts() {
+        let start = Instant::now();
+        let mut window = RateWindow::new(SPAN);
+        window.push(start, 5);
+
+        assert_eq!(window.total_at(start + SPAN), 5);
+    }
+
+    #[test]
+    fn a_sample_older_than_the_span_is_dropped_and_newer_ones_stay() {
+        let start = Instant::now();
+        let mut window = RateWindow::new(SPAN);
+        window.push(start, 5);
+        window.push(start + SPAN, 7);
+
+        assert_eq!(window.total_at(start + SPAN + STEP), 7);
+        assert_eq!(window.retained(), 1);
+    }
+
+    #[test]
+    fn a_window_that_aged_out_entirely_totals_zero() {
+        let start = Instant::now();
+        let mut window = RateWindow::new(SPAN);
+        window.push(start, 5);
+        window.push(start + STEP, 7);
+
+        assert_eq!(window.total_at(start + SPAN * 3), 0);
+        assert_eq!(window.retained(), 0);
+    }
+
+    #[test]
+    fn totals_saturate_instead_of_overflowing() {
+        let start = Instant::now();
+        let mut window = RateWindow::new(SPAN);
+        window.push(start, u64::MAX);
+        window.push(start + STEP, 1);
+
+        assert_eq!(window.total_at(start + STEP), u64::MAX);
+    }
+}

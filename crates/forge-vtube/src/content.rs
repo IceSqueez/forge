@@ -450,7 +450,7 @@ async fn send_internal(
 
 impl BuiltinContent for VTubeClient {
     fn sections(&self) -> Vec<DetailSection> {
-        let snap = self.content_state.read_recover().clone();
+        let snap = self.content.state.read_recover().clone();
 
         let expression_names: Vec<String> = snap
             .expressions
@@ -733,7 +733,7 @@ mod tests {
     fn expression_chips_use_the_display_name_and_fall_back_to_the_file_name() {
         let c = VTubeClient::new_for_test("ws://127.0.0.1:8001/");
         {
-            let mut s = c.content_state.write_recover();
+            let mut s = c.content.state.write_recover();
             s.expressions = vec![
                 ExpressionItem {
                     name: "Blush".to_owned(),
@@ -771,11 +771,11 @@ mod tests {
     ) -> (tokio::task::JoinHandle<()>, mpsc::UnboundedSender<()>) {
         let (items_changed_tx, items_changed_rx) = mpsc::unbounded_channel();
         let handle = spawn_catalog_metrics_task(
-            Arc::clone(&c.content_state),
-            Arc::clone(&c.health_state),
+            Arc::clone(&c.content.state),
+            Arc::clone(&c.health.state),
             Arc::clone(&c.state),
             req_tx,
-            c.health_tx.clone(),
+            c.health.tx.clone(),
             items_changed_rx,
         );
         (handle, items_changed_tx)
@@ -805,7 +805,7 @@ mod tests {
     #[tokio::test(start_paused = true)]
     async fn the_first_sweep_publishes_the_expression_count_without_asking_for_the_items() {
         let c = connected_client();
-        let mut health_rx = c.health_tx.subscribe();
+        let mut health_rx = c.health.tx.subscribe();
         let (req_tx, mut req_rx) = mpsc::unbounded_channel::<PendingRequest>();
         let (handle, _items_changed_tx) = spawn_sweep(&c, slot_of(req_tx));
 
@@ -825,7 +825,7 @@ mod tests {
     #[tokio::test(start_paused = true)]
     async fn a_burst_of_item_changes_refreshes_the_item_count_once() {
         let c = connected_client();
-        let mut health_rx = c.health_tx.subscribe();
+        let mut health_rx = c.health.tx.subscribe();
         let (req_tx, mut req_rx) = mpsc::unbounded_channel::<PendingRequest>();
         let (handle, items_changed_tx) = spawn_sweep(&c, slot_of(req_tx));
         answer(next_request(&mut req_rx).await, expressions(0));
@@ -854,21 +854,21 @@ mod tests {
     fn the_model_metric_regains_its_parameter_count_after_a_switch() {
         let c = VTubeClient::new_for_test("ws://127.0.0.1:8001/");
         {
-            let mut s = c.health_state.write_recover();
+            let mut s = c.health.state.write_recover();
             s.model_loaded = true;
             s.model_name = "NewAvatar".to_owned();
         }
         {
-            let mut s = c.content_state.write_recover();
+            let mut s = c.content.state.write_recover();
             s.current_model_param_count = Some(55);
         }
-        let mut health_rx = c.health_tx.subscribe();
+        let mut health_rx = c.health.tx.subscribe();
         let mut last_param_count = Some(Some(42));
 
         report_model_secondary(
-            &c.content_state,
-            &c.health_state,
-            &c.health_tx,
+            &c.content.state,
+            &c.health.state,
+            &c.health.tx,
             &mut last_param_count,
         );
 
@@ -882,13 +882,13 @@ mod tests {
     #[test]
     fn the_sweep_leaves_an_unloaded_model_slot_alone() {
         let c = VTubeClient::new_for_test("ws://127.0.0.1:8001/");
-        let mut health_rx = c.health_tx.subscribe();
+        let mut health_rx = c.health.tx.subscribe();
         let mut last_param_count = Some(Some(42));
 
         report_model_secondary(
-            &c.content_state,
-            &c.health_state,
-            &c.health_tx,
+            &c.content.state,
+            &c.health.state,
+            &c.health.tx,
             &mut last_param_count,
         );
 
@@ -1015,16 +1015,16 @@ mod tests {
     async fn a_model_switch_between_equal_parameter_counts_still_republishes_the_count() {
         let c = VTubeClient::new_for_test("ws://127.0.0.1:8001/");
         {
-            let mut s = c.health_state.write_recover();
+            let mut s = c.health.state.write_recover();
             s.model_loaded = true;
             s.model_name = "Avatar A".to_owned();
         }
         {
-            let mut s = c.content_state.write_recover();
+            let mut s = c.content.state.write_recover();
             s.current_model_id = Some("m-a".to_owned());
             s.current_model_param_count = Some(42);
         }
-        let mut health_rx = c.health_tx.subscribe();
+        let mut health_rx = c.health.tx.subscribe();
         let (req_tx, _req_rx) = mpsc::unbounded_channel::<PendingRequest>();
 
         let (handle, items_changed_tx) = spawn_sweep(&c, slot_of(req_tx));
@@ -1035,11 +1035,11 @@ mod tests {
         );
 
         {
-            let mut s = c.health_state.write_recover();
+            let mut s = c.health.state.write_recover();
             s.model_name = "Avatar B".to_owned();
         }
         {
-            let mut s = c.content_state.write_recover();
+            let mut s = c.content.state.write_recover();
             s.current_model_id = Some("m-b".to_owned());
         }
         items_changed_tx.send(()).unwrap();
@@ -1059,15 +1059,15 @@ mod tests {
             let c = VTubeClient::new_for_test("ws://127.0.0.1:8001/");
             c.state.store(state);
             {
-                let mut s = c.health_state.write_recover();
+                let mut s = c.health.state.write_recover();
                 s.model_loaded = true;
                 s.model_name = "Avatar A".to_owned();
             }
             {
-                let mut s = c.content_state.write_recover();
+                let mut s = c.content.state.write_recover();
                 s.current_model_param_count = Some(42);
             }
-            let mut health_rx = c.health_tx.subscribe();
+            let mut health_rx = c.health.tx.subscribe();
             let (req_tx, mut req_rx) = mpsc::unbounded_channel::<PendingRequest>();
 
             let (handle, items_changed_tx) = spawn_sweep(&c, slot_of(req_tx));
@@ -1164,7 +1164,7 @@ mod tests {
         ] {
             let c = VTubeClient::new_for_test("ws://127.0.0.1:8001/");
             {
-                let mut s = c.content_state.write().unwrap();
+                let mut s = c.content.state.write().unwrap();
                 s.models = vec![model("m1", "Avatar")];
                 s.hotkeys = vec![hotkey("h1", "Wave")];
                 s.current_model_id = Some("m1".to_owned());
@@ -1180,7 +1180,7 @@ mod tests {
                 ],
             );
 
-            refresh_models_and_hotkeys(&c.content_state, &req_tx).await;
+            refresh_models_and_hotkeys(&c.content.state, &req_tx).await;
             await_served(done).await;
 
             assert_eq!(signalled(&mut changes).await, expected, "{case}");
@@ -1203,7 +1203,7 @@ mod tests {
             ),
         ] {
             let c = VTubeClient::new_for_test("ws://127.0.0.1:8001/");
-            c.content_state.write().unwrap().expressions = vec![ExpressionItem {
+            c.content.state.write().unwrap().expressions = vec![ExpressionItem {
                 name: "Blush".to_owned(),
                 file: "blush.exp3.json".to_owned(),
                 active: false,
@@ -1215,7 +1215,7 @@ mod tests {
                 vec![serde_json::json!({ "expressions": expressions })],
             );
 
-            refresh_expressions(&c.content_state, &req_tx).await;
+            refresh_expressions(&c.content.state, &req_tx).await;
             await_served(done).await;
 
             assert_eq!(signalled(&mut changes).await, expected, "{case}");
@@ -1237,10 +1237,10 @@ mod tests {
             ],
         );
 
-        refresh_models_and_hotkeys(&c.content_state, &req_tx).await;
+        refresh_models_and_hotkeys(&c.content.state, &req_tx).await;
         await_served(done).await;
 
-        let offered = crate::option_source::hotkey_entries(&c.content_state.read().unwrap());
+        let offered = crate::option_source::hotkey_entries(&c.content.state.read().unwrap());
         assert_eq!(
             offered
                 .iter()
@@ -1275,7 +1275,7 @@ mod tests {
         ] {
             let c = VTubeClient::new_for_test("ws://127.0.0.1:8001/");
             {
-                let mut s = c.content_state.write().unwrap();
+                let mut s = c.content.state.write().unwrap();
                 s.models = vec![model("m1", "Avatar"), model("m2", "Other")];
                 s.current_model_id = Some("m1".to_owned());
             }
@@ -1293,7 +1293,7 @@ mod tests {
                 ],
             );
 
-            refresh_models_and_hotkeys(&c.content_state, &req_tx).await;
+            refresh_models_and_hotkeys(&c.content.state, &req_tx).await;
             await_served(done).await;
 
             assert_eq!(revision_moved(&mut revisions), expected, "{case}");
@@ -1323,13 +1323,13 @@ mod tests {
             ),
         ] {
             let c = VTubeClient::new_for_test("ws://127.0.0.1:8001/");
-            c.content_state.write().unwrap().item_count = before;
+            c.content.state.write().unwrap().item_count = before;
             let mut revisions = forge_platform_core::BuiltinOptionSource::revisions(&c);
             let mut content_revisions = c.content_revisions().expect("vtube declares a signal");
             let (req_tx, req_rx) = mpsc::unbounded_channel::<PendingRequest>();
             let done = serve(req_rx, vec![reply]);
 
-            refresh_items(&c.content_state, &req_tx).await;
+            refresh_items(&c.content.state, &req_tx).await;
             await_served(done).await;
 
             assert_eq!(revision_moved(&mut revisions), expected, "{case}");

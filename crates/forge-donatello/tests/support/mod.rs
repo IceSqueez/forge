@@ -95,7 +95,6 @@ impl RateLimiter for ScriptedLimiter {
 pub(crate) fn config(base_url: &str) -> DonatelloConfig {
     DonatelloConfig {
         base_url: base_url.to_owned(),
-        poll_interval: MAX_POLL_INTERVAL,
     }
 }
 
@@ -106,7 +105,9 @@ pub(crate) fn provider_on(
 ) -> DonatelloProvider {
     let config = config(base_url);
     let gateway = donatello_gateway(&config, limiter).unwrap();
-    DonatelloProvider::new(config, creds, gateway)
+    let provider = DonatelloProvider::new(config, creds, gateway);
+    provider.set_poll_interval(MAX_POLL_INTERVAL);
+    provider
 }
 
 fn ticking_timing() -> DonatelloTiming {
@@ -122,12 +123,11 @@ fn ticking_provider_on(
     creds: Arc<dyn CredentialsRepo>,
     limiter: Arc<dyn RateLimiter>,
 ) -> DonatelloProvider {
-    let config = DonatelloConfig {
-        poll_interval: TICK,
-        ..config(base_url)
-    };
+    let config = config(base_url);
     let gateway = donatello_gateway(&config, limiter).unwrap();
-    DonatelloProvider::new(config, creds, gateway).with_timing(ticking_timing())
+    let provider = DonatelloProvider::new(config, creds, gateway).with_timing(ticking_timing());
+    provider.set_poll_interval(TICK);
+    provider
 }
 
 pub(crate) fn donate(id: &str, created_at: &str) -> Value {

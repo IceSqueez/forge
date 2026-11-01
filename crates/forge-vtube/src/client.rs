@@ -33,6 +33,44 @@ impl Default for VTubeConfig {
     }
 }
 
+pub(crate) struct HealthHub {
+    pub(crate) state: Arc<RwLock<HealthSnapshot>>,
+    pub(crate) tx: broadcast::Sender<HealthDelta>,
+}
+
+pub(crate) struct ContentHub {
+    pub(crate) state: Arc<RwLock<crate::content::ContentSnapshot>>,
+    pub(crate) notifier: crate::content::ContentNotifier,
+}
+
+struct SideTasks {
+    content: std::sync::Mutex<Option<JoinHandle<()>>>,
+    catalog_metrics: std::sync::Mutex<Option<JoinHandle<()>>>,
+    version: std::sync::Mutex<Option<JoinHandle<()>>>,
+}
+
+impl SideTasks {
+    fn new(
+        content: Option<JoinHandle<()>>,
+        catalog_metrics: Option<JoinHandle<()>>,
+        version: Option<JoinHandle<()>>,
+    ) -> Self {
+        Self {
+            content: std::sync::Mutex::new(content),
+            catalog_metrics: std::sync::Mutex::new(catalog_metrics),
+            version: std::sync::Mutex::new(version),
+        }
+    }
+
+    fn abort_all(&self) {
+        for task in [&self.content, &self.catalog_metrics, &self.version] {
+            if let Some(h) = task.lock_recover().take() {
+                h.abort();
+            }
+        }
+    }
+}
+
 pub struct VTubeClient {
     pub(crate) config: VTubeConfig,
     pub(crate) vtube_id: IntegrationId,
@@ -43,14 +81,10 @@ pub struct VTubeClient {
     pub(crate) connected_at: Arc<RwLock<Option<Instant>>>,
     pub(crate) vtube_version: Arc<OnceLock<String>>,
     pub(crate) req_tx: ReqTxSlot,
-    pub(crate) health_state: Arc<RwLock<HealthSnapshot>>,
-    pub(crate) health_tx: broadcast::Sender<HealthDelta>,
-    pub(crate) content_state: Arc<RwLock<crate::content::ContentSnapshot>>,
-    pub(crate) content_notifier: crate::content::ContentNotifier,
+    pub(crate) health: HealthHub,
+    pub(crate) content: ContentHub,
     pub(crate) connected_notifier: mpsc::UnboundedSender<()>,
-    content_task: Arc<std::sync::Mutex<Option<JoinHandle<()>>>>,
-    catalog_metrics_task: Arc<std::sync::Mutex<Option<JoinHandle<()>>>>,
-    version_task: Arc<std::sync::Mutex<Option<JoinHandle<()>>>>,
+    side_tasks: SideTasks,
     pub(crate) auto_reconnect: AutoReconnectSwitch,
     pub(crate) last_failure: Arc<RwLock<Option<MessageRef>>>,
     pub(crate) reconnect_publisher: Arc<dyn EventPublisher>,
@@ -171,14 +205,20 @@ impl VTubeClient {
             connected_at,
             vtube_version,
             req_tx: req_tx_slot,
-            health_state,
-            health_tx,
-            content_state,
-            content_notifier,
+            health: HealthHub {
+                state: health_state,
+                tx: health_tx,
+            },
+            content: ContentHub {
+                state: content_state,
+                notifier: content_notifier,
+            },
             connected_notifier: connected_tx,
-            content_task: Arc::new(std::sync::Mutex::new(Some(content_handle))),
-            catalog_metrics_task: Arc::new(std::sync::Mutex::new(Some(catalog_metrics_handle))),
-            version_task: Arc::new(std::sync::Mutex::new(Some(version_handle))),
+            side_tasks: SideTasks::new(
+                Some(content_handle),
+                Some(catalog_metrics_handle),
+                Some(version_handle),
+            ),
             auto_reconnect,
             last_failure,
             reconnect_publisher: publisher,
@@ -214,15 +254,7 @@ impl VTubeClient {
 
     pub async fn shutdown(&self) {
         let _lifecycle = self.lifecycle.lock().await;
-        for task in [
-            &self.content_task,
-            &self.catalog_metrics_task,
-            &self.version_task,
-        ] {
-            if let Some(h) = task.lock_recover().take() {
-                h.abort();
-            }
-        }
+        self.side_tasks.abort_all();
         let notify = self.shutdown.lock().await.clone();
         notify.notify_one();
         let handle = self.supervisor.lock_recover().take();
@@ -252,14 +284,16 @@ impl VTubeClient {
             connected_at: Arc::new(RwLock::new(None)),
             vtube_version: Arc::new(OnceLock::new()),
             req_tx: Arc::new(tokio::sync::Mutex::new(req_tx)),
-            health_state,
-            health_tx,
-            content_state: Arc::new(RwLock::new(crate::content::ContentSnapshot::default())),
-            content_notifier: crate::content::ContentNotifier::noop(),
+            health: HealthHub {
+                state: health_state,
+                tx: health_tx,
+            },
+            content: ContentHub {
+                state: Arc::new(RwLock::new(crate::content::ContentSnapshot::default())),
+                notifier: crate::content::ContentNotifier::noop(),
+            },
             connected_notifier,
-            content_task: Arc::new(std::sync::Mutex::new(None)),
-            catalog_metrics_task: Arc::new(std::sync::Mutex::new(None)),
-            version_task: Arc::new(std::sync::Mutex::new(None)),
+            side_tasks: SideTasks::new(None, None, None),
             auto_reconnect: AutoReconnectSwitch::new(true),
             last_failure: Arc::new(RwLock::new(None)),
             reconnect_publisher: publisher,
@@ -272,15 +306,7 @@ impl VTubeClient {
 
 impl Drop for VTubeClient {
     fn drop(&mut self) {
-        for task in [
-            &self.content_task,
-            &self.catalog_metrics_task,
-            &self.version_task,
-        ] {
-            if let Some(h) = task.lock_recover().take() {
-                h.abort();
-            }
-        }
+        self.side_tasks.abort_all();
         if let Ok(notify) = self.shutdown.try_lock() {
             notify.notify_one();
         }

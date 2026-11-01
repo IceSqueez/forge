@@ -20,6 +20,7 @@ pub const TEXT_SIZE: &str = "text_size";
 pub const DURATION: &str = "duration";
 pub const SOUND: &str = "sound";
 pub const SPEECH: &str = "speech";
+pub(crate) const SPEECH_KEYS: [&str; 2] = [SPEECH, SPEECH_VOICE];
 pub const SPEECH_VOICE: &str = "speech_voice";
 pub const SHOW: &str = "show";
 pub const ICON: &str = "icon";

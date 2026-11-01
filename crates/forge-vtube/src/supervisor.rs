@@ -2141,7 +2141,7 @@ mod tests {
             let mut vts = FakeVts::bind().await;
             let publisher = CapturingPublisher::shared();
             let (client, mut conn) = connected_session(&mut vts, &publisher).await;
-            let mut deltas = client.health_tx.subscribe();
+            let mut deltas = client.health.tx.subscribe();
 
             answer_seeds(&mut conn).await;
 

@@ -154,8 +154,8 @@ fn tracking_value(face_found: bool) -> HealthValue {
 
 impl BuiltinHealth for VTubeClient {
     fn metrics(&self) -> [HealthMetric; 4] {
-        let snap = self.health_state.read_recover().clone();
-        let content = self.content_state.read_recover().clone();
+        let snap = self.health.state.read_recover().clone();
+        let content = self.content.state.read_recover().clone();
 
         let model_name = if snap.model_loaded {
             snap.model_name.as_str()
@@ -184,7 +184,7 @@ impl BuiltinHealth for VTubeClient {
     }
 
     fn stream(&self) -> HealthStream {
-        let rx = self.health_tx.subscribe();
+        let rx = self.health.tx.subscribe();
         Box::pin(BroadcastStream::new(rx).filter_map(|r| r.ok()))
     }
 }
@@ -237,10 +237,10 @@ mod tests {
     #[test]
     fn the_model_loaded_delta_addresses_the_model_metric() {
         let c = VTubeClient::new_for_test("ws://127.0.0.1:8001/");
-        let mut rx = c.health_tx.subscribe();
+        let mut rx = c.health.tx.subscribe();
 
         let event = model_loaded("MyAvatar");
-        update_from_event(&event, &c.health_state, &c.health_tx);
+        update_from_event(&event, &c.health.state, &c.health.tx);
 
         let delta = rx.try_recv().unwrap();
         assert_eq!(delta.metric, MODEL_METRIC);
@@ -253,10 +253,10 @@ mod tests {
     #[test]
     fn the_tracking_delta_addresses_the_tracking_metric() {
         let c = VTubeClient::new_for_test("ws://127.0.0.1:8001/");
-        let mut rx = c.health_tx.subscribe();
+        let mut rx = c.health.tx.subscribe();
 
         let event = tracking(true);
-        update_from_event(&event, &c.health_state, &c.health_tx);
+        update_from_event(&event, &c.health.state, &c.health.tx);
 
         let delta = rx.try_recv().unwrap();
         assert_eq!(delta.metric, TRACKING_METRIC);
@@ -333,7 +333,7 @@ mod tests {
     fn metrics_report_expression_and_item_counts_from_the_content_snapshot() {
         let c = VTubeClient::new_for_test("ws://127.0.0.1:8001/");
         {
-            let mut s = c.content_state.write_recover();
+            let mut s = c.content.state.write_recover();
             s.expressions = vec![expression_item(), expression_item(), expression_item()];
             s.item_count = Some(7);
         }
@@ -353,12 +353,12 @@ mod tests {
     fn a_loaded_model_is_annotated_with_its_live2d_parameter_count() {
         let c = VTubeClient::new_for_test("ws://127.0.0.1:8001/");
         {
-            let mut s = c.health_state.write_recover();
+            let mut s = c.health.state.write_recover();
             s.model_loaded = true;
             s.model_name = "MyAvatar".to_owned();
         }
         {
-            let mut s = c.content_state.write_recover();
+            let mut s = c.content.state.write_recover();
             s.current_model_param_count = Some(42);
         }
 
@@ -398,7 +398,7 @@ mod tests {
     fn a_stale_name_of_an_unloaded_model_is_not_shown_on_the_tile() {
         let c = VTubeClient::new_for_test("ws://127.0.0.1:8001/");
         {
-            let mut s = c.health_state.write_recover();
+            let mut s = c.health.state.write_recover();
             s.model_loaded = false;
             s.model_name = "GoneAvatar".to_owned();
         }
@@ -410,7 +410,7 @@ mod tests {
     fn a_loaded_model_without_a_name_reads_as_not_loaded() {
         let c = VTubeClient::new_for_test("ws://127.0.0.1:8001/");
         {
-            let mut s = c.health_state.write_recover();
+            let mut s = c.health.state.write_recover();
             s.model_loaded = true;
             s.model_name = String::new();
         }

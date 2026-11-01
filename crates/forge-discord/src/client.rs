@@ -138,7 +138,7 @@ impl DiscordClient {
     }
 
     pub(crate) fn has_webhooks(&self) -> bool {
-        !self.content_state.lock_recover().webhook_names.is_empty()
+        !self.content_state.lock_recover().registry.is_empty()
     }
 
     pub(crate) async fn load_webhook(&self, name: &str) -> Result<WebhookCredential, DiscordError> {

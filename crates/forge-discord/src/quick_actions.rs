@@ -24,7 +24,7 @@ impl QuickActions for DiscordClient {
         let first_webhook = self
             .content_state()
             .lock_recover()
-            .webhook_names
+            .registry
             .first()
             .cloned();
         let enabled = first_webhook.is_some();
@@ -100,7 +100,7 @@ mod tests {
         let c = DiscordClient::new_for_test();
         {
             let mut snap = c.content_state().lock().unwrap();
-            snap.webhook_names.push("alerts".to_owned());
+            snap.registry.insert("alerts");
         }
         let actions = c.actions();
         for action in &actions {
@@ -119,7 +119,7 @@ mod tests {
         let c = DiscordClient::new_for_test();
         {
             let mut snap = c.content_state().lock().unwrap();
-            snap.webhook_names.push("alerts".to_owned());
+            snap.registry.insert("alerts");
         }
         let actions = c.actions();
         let template = &actions
@@ -149,8 +149,8 @@ mod tests {
             .content_state()
             .lock()
             .unwrap()
-            .webhook_names
-            .push("alerts".to_owned());
+            .registry
+            .insert("alerts");
         for client in [bare, configured] {
             let emitted = emitted_codes(&serde_json::json!((client.actions(), client.sections())));
 

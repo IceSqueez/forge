@@ -18,6 +18,7 @@ mod runners;
 mod sink;
 mod status;
 pub mod vocabulary;
+mod webhook_registry;
 mod webhooks;
 
 pub use client::DiscordClient;

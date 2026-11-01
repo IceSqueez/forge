@@ -106,7 +106,7 @@ mod tests {
             .unwrap();
         let status: &dyn BuiltinStatus = &*client;
         let set_lost = |lost: Option<String>| {
-            client.health_state.lock().unwrap().backend_session_lost = lost;
+            client.health.state.lock().unwrap().backend_session_lost = lost;
         };
 
         set_lost(Some("portal gone".to_owned()));

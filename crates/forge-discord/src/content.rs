@@ -1,5 +1,5 @@
 use forge_types::{RecoverMutex, UserText, VerbatimText};
-use std::collections::{HashMap, VecDeque};
+use std::collections::VecDeque;
 use std::sync::{Arc, Mutex};
 
 use time::OffsetDateTime;
@@ -11,6 +11,7 @@ use forge_platform_core::{
 
 use crate::client::DiscordClient;
 use crate::vocabulary::labels;
+use crate::webhook_registry::WebhookRegistry;
 
 pub(crate) const RECENT_POSTS_CAP: usize = 20;
 
@@ -25,8 +26,7 @@ pub(crate) struct SendRecord {
 
 #[derive(Default)]
 pub(crate) struct DiscordContentSnapshot {
-    pub webhook_names: Vec<String>,
-    pub webhook_last_ok: HashMap<String, bool>,
+    pub registry: WebhookRegistry,
     pub recent_posts: VecDeque<SendRecord>,
 }
 
@@ -45,7 +45,7 @@ pub struct WebhookPost {
 impl DiscordClient {
     pub fn webhook_names(&self) -> Vec<String> {
         let snap = self.content_state().lock_recover();
-        snap.webhook_names.clone()
+        snap.registry.names().to_vec()
     }
 
     pub fn recent_posts(&self) -> Vec<WebhookPost> {
@@ -69,7 +69,7 @@ pub(crate) fn record_send(
     had_embed: bool,
     ok: bool,
 ) {
-    snap.webhook_last_ok.insert(webhook_name.to_owned(), ok);
+    snap.registry.record_outcome(webhook_name, ok);
     snap.recent_posts.push_front(SendRecord {
         webhook_name: webhook_name.to_owned(),
         message_id,
@@ -87,10 +87,11 @@ impl BuiltinContent for DiscordClient {
         let snap = self.content_state().lock_recover();
 
         let webhook_items: Vec<ContentListItem> = snap
-            .webhook_names
+            .registry
+            .names()
             .iter()
             .map(|name| {
-                let last_ok = snap.webhook_last_ok.get(name).copied().unwrap_or(false);
+                let last_ok = snap.registry.last_ok(name).unwrap_or(false);
                 ContentListItem {
                     icon: SectionIcon::new("webhook"),
                     icon_tint: None,
@@ -228,7 +229,7 @@ mod tests {
             record_send(&mut snap, "alerts", Some("msg123".to_owned()), false, true);
         }
         let snap = snap_arc.lock().unwrap();
-        assert!(snap.webhook_names.is_empty());
+        assert!(snap.registry.is_empty());
         assert_eq!(snap.recent_posts.len(), 1);
         assert_eq!(snap.recent_posts[0].webhook_name, "alerts");
         assert_eq!(snap.recent_posts[0].message_id.as_deref(), Some("msg123"));
@@ -254,6 +255,6 @@ mod tests {
         let mut snap = snap_arc.lock().unwrap();
         record_send(&mut snap, "alerts", None, false, true);
         record_send(&mut snap, "alerts", None, false, false);
-        assert_eq!(snap.webhook_last_ok.get("alerts"), Some(&false));
+        assert_eq!(snap.registry.last_ok("alerts"), Some(false));
     }
 }

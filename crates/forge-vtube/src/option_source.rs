@@ -134,7 +134,8 @@ impl VTubeClient {
         if !self.connection_state().is_connected() {
             return Err(CollectionFailure::NotConnected);
         }
-        self.content_state
+        self.content
+            .state
             .read()
             .map(|snapshot| read(&snapshot))
             .map_err(|_| CollectionFailure::Transport)
@@ -444,7 +445,7 @@ mod tests {
     #[tokio::test]
     async fn resolve_on_a_disconnected_client_ignores_a_stale_mirror() {
         let client = client();
-        *client.content_state.write().unwrap() = snapshot();
+        *client.content.state.write().unwrap() = snapshot();
         for list in [
             MODEL_LIST,
             HOTKEY_LIST,
@@ -528,7 +529,7 @@ mod tests {
     #[tokio::test]
     async fn a_connected_client_resolves_mirror_lists_from_the_content_snapshot() {
         let (client, _requests) = connected_client();
-        *client.content_state.write().unwrap() = snapshot();
+        *client.content.state.write().unwrap() = snapshot();
         let snap = snapshot();
         for (list, expected) in [
             (MODEL_LIST, model_entries(&snap)),

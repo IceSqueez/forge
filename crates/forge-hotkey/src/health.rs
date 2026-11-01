@@ -14,7 +14,20 @@ use crate::backend::BackendTier;
 use crate::client::HotkeyClient;
 use crate::vocabulary::messages;
 
-pub(crate) type HealthTx = broadcast::Sender<HealthDelta>;
+pub(crate) struct HealthHub {
+    pub(crate) state: Arc<Mutex<HotkeyHealthSnapshot>>,
+    pub(crate) tx: broadcast::Sender<HealthDelta>,
+}
+
+impl HealthHub {
+    pub(crate) fn new() -> Self {
+        let (tx, _) = broadcast::channel(forge_platform_core::HEALTH_CHANNEL_CAPACITY);
+        Self {
+            state: Arc::new(Mutex::new(HotkeyHealthSnapshot::default())),
+            tx,
+        }
+    }
+}
 
 #[derive(Debug, Clone)]
 pub(crate) struct TriggerRecord {
@@ -57,11 +70,6 @@ impl HotkeyHealthSnapshot {
         self.recent_triggers
             .push_back(TriggerRecord { combo, at: now });
     }
-}
-
-pub(crate) fn make_health_state() -> (HealthTx, Arc<Mutex<HotkeyHealthSnapshot>>) {
-    let (tx, _) = broadcast::channel(forge_platform_core::HEALTH_CHANNEL_CAPACITY);
-    (tx, Arc::new(Mutex::new(HotkeyHealthSnapshot::default())))
 }
 
 pub(crate) fn registered_count_health_value(enabled: bool, count: usize) -> HealthValue {
@@ -135,7 +143,7 @@ impl BuiltinHealth for HotkeyClient {
     }
 
     fn stream(&self) -> HealthStream {
-        let rx = self.health_tx.subscribe();
+        let rx = self.health.tx.subscribe();
         Box::pin(BroadcastStream::new(rx).filter_map(|r| r.ok()))
     }
 }

@@ -5,6 +5,7 @@ use forge_types::{ArgStack, MessageCode, NamesLanguage, Variant};
 
 use crate::assets::PageAssets;
 use crate::base;
+use crate::config;
 use crate::motion::{self, MotionProfile};
 use crate::preview::PreviewComposition;
 use crate::source_box::{ContentMargins, DesignSize};
@@ -84,13 +85,27 @@ pub trait OverlayKindDescriptor: Send + Sync {
         );
         defaults.extend(self.look_defaults());
         defaults.extend(motion::motion_defaults(self.motion()));
+        if !self.speaks() {
+            for key in config::SPEECH_KEYS {
+                defaults.remove(key);
+            }
+        }
         defaults
     }
     fn config_fields(&self) -> Vec<SectionedField> {
         let mut fields = self.look_fields();
         fields.extend(motion::motion_fields(self.motion().axes));
-        fields.extend(base::base_fields(self.delivery_disposition()));
+        fields.extend(
+            base::base_fields(self.delivery_disposition())
+                .into_iter()
+                .filter(|sectioned| {
+                    self.speaks() || !config::SPEECH_KEYS.contains(&sectioned.field.key())
+                }),
+        );
         fields
+    }
+    fn speaks(&self) -> bool {
+        true
     }
     fn page_assets(&self) -> PageAssets;
     fn preview(&self, config: &OverlayConfig, language: NamesLanguage) -> PreviewComposition;

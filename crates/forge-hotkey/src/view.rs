@@ -38,7 +38,7 @@ impl HotkeyClient {
             .into_iter()
             .map(|(_, combo)| combo)
             .collect();
-        let snap = self.health_state.lock_recover();
+        let snap = self.health.state.lock_recover();
         HotkeyView {
             enabled: self.enabled.load(Ordering::Relaxed),
             registered,

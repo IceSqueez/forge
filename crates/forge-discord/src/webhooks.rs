@@ -32,7 +32,7 @@ impl DiscordClient {
         names.sort_unstable();
 
         let mut snap = self.content_state().lock_recover();
-        snap.webhook_names.clone_from(&names);
+        snap.registry.replace(&names);
         drop(snap);
 
         Ok(names)
@@ -57,10 +57,7 @@ impl DiscordClient {
             .map_err(|e| DiscordError::Credential(e.to_string()))?;
 
         let mut snap = self.content_state().lock_recover();
-        if !snap.webhook_names.iter().any(|known| known == name) {
-            snap.webhook_names.push(name.to_owned());
-            snap.webhook_names.sort_unstable();
-        }
+        snap.registry.insert(name);
 
         Ok(())
     }
@@ -74,8 +71,7 @@ impl DiscordClient {
             .map_err(|e| DiscordError::Credential(e.to_string()))?;
 
         let mut snap = self.content_state().lock_recover();
-        snap.webhook_names.retain(|known| known != name);
-        snap.webhook_last_ok.remove(name);
+        snap.registry.remove(name);
 
         Ok(removed)
     }

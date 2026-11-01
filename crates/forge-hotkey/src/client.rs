@@ -1,6 +1,6 @@
 use forge_types::{IntegrationId, RecoverMutex, RecoverRwLock};
-use std::collections::{BTreeSet, HashSet};
-use std::sync::atomic::{AtomicBool, AtomicU32, AtomicU64, Ordering};
+use std::collections::BTreeSet;
+use std::sync::atomic::{AtomicBool, AtomicU32, Ordering};
 use std::sync::{Arc, Mutex, RwLock};
 use std::time::Duration;
 
@@ -12,8 +12,8 @@ use crate::backend::{BackendTier, HotkeyBackend, HotkeyId, NullBackend};
 use crate::combo::HotkeyCombo;
 use crate::config::HotkeyConfig;
 use crate::error::HotkeyError;
-use crate::health::{HealthTx, HotkeyHealthSnapshot, make_health_state};
-use crate::hold::{self, HoldMap};
+use crate::health::HealthHub;
+use crate::hold::{self, HoldLedger};
 use crate::main_thread::MainThreadLink;
 use crate::registrations::Registrations;
 use crate::supervisor::{self, SupervisorCommand};
@@ -35,13 +35,10 @@ pub struct HotkeyClient {
     refused: Mutex<Vec<HotkeyCombo>>,
     id_counter: AtomicU32,
     pub(crate) publisher: Arc<dyn EventPublisher>,
-    pub(crate) health_state: Arc<Mutex<HotkeyHealthSnapshot>>,
-    pub(crate) health_tx: HealthTx,
+    pub(crate) health: HealthHub,
     pub(crate) backend_tier: BackendTier,
     pub(crate) enabled: Arc<AtomicBool>,
-    pub(crate) holds: Mutex<HoldMap>,
-    pub(crate) unreleased: Mutex<HashSet<HotkeyId>>,
-    hold_ceiling_secs: AtomicU64,
+    pub(crate) hold: HoldLedger,
     control_tx: mpsc::Sender<SupervisorCommand>,
     registration_serial: tokio::sync::Mutex<()>,
     tasks: TaskOwner,
@@ -54,9 +51,8 @@ impl HotkeyClient {
         backend: Arc<dyn HotkeyBackend>,
         backend_tier: BackendTier,
     ) -> Arc<Self> {
-        let (health_tx, health_state) = make_health_state();
         let (control_tx, control_rx) = mpsc::channel::<SupervisorCommand>(8);
-        let hold_ceiling_secs = AtomicU64::new(config.hold_ceiling_secs.unwrap_or(0));
+        let hold = HoldLedger::new(config.hold_ceiling_secs);
 
         let client = Arc::new(Self {
             id: crate::HOTKEY_INTEGRATION.id,
@@ -66,13 +62,10 @@ impl HotkeyClient {
             refused: Mutex::new(Vec::new()),
             id_counter: AtomicU32::new(1),
             publisher,
-            health_state,
-            health_tx,
+            health: HealthHub::new(),
             backend_tier,
             enabled: Arc::new(AtomicBool::new(true)),
-            holds: Mutex::new(HoldMap::new()),
-            unreleased: Mutex::new(HashSet::new()),
-            hold_ceiling_secs,
+            hold,
             control_tx,
             registration_serial: tokio::sync::Mutex::new(()),
             tasks: TaskOwner::new(),
@@ -151,7 +144,7 @@ impl HotkeyClient {
 
         let combo_str = combo.as_str().to_owned();
 
-        let still_held = self.unreleased.lock_recover().contains(&id);
+        let still_held = self.hold.unreleased.lock_recover().contains(&id);
         if self.os_registration_active() || still_held {
             self.backend.unregister(id).await?;
         }
@@ -219,14 +212,15 @@ impl HotkeyClient {
     }
 
     pub fn hold_ceiling(&self) -> Option<Duration> {
-        match self.hold_ceiling_secs.load(Ordering::Relaxed) {
+        match self.hold.ceiling_secs.load(Ordering::Relaxed) {
             0 => None,
             secs => Some(Duration::from_secs(secs)),
         }
     }
 
     pub fn set_hold_ceiling(&self, secs: Option<u64>) {
-        self.hold_ceiling_secs
+        self.hold
+            .ceiling_secs
             .store(secs.unwrap_or(0), Ordering::Relaxed);
     }
 
@@ -258,7 +252,7 @@ impl HotkeyClient {
     }
 
     fn note_conflict(&self) {
-        let mut snap = self.health_state.lock_recover();
+        let mut snap = self.health.state.lock_recover();
         snap.conflict_count = snap.conflict_count.saturating_add(1);
     }
 
@@ -267,7 +261,7 @@ impl HotkeyClient {
     }
 
     pub fn last_synthesized_release(&self) -> Option<time::OffsetDateTime> {
-        self.health_state.lock_recover().last_synthesized_release_at
+        self.health.state.lock_recover().last_synthesized_release_at
     }
 
     #[cfg(test)]
@@ -276,7 +270,6 @@ impl HotkeyClient {
         use forge_events::test_support::NullPublisher;
 
         let (backend, _tx) = MockPortalBackend::new();
-        let (health_tx, health_state) = make_health_state();
         let (control_tx, _control_rx) = mpsc::channel::<SupervisorCommand>(8);
 
         Arc::new(Self {
@@ -287,15 +280,10 @@ impl HotkeyClient {
             refused: Mutex::new(Vec::new()),
             id_counter: AtomicU32::new(1),
             publisher: Arc::new(NullPublisher),
-            health_state,
-            health_tx,
+            health: HealthHub::new(),
             backend_tier,
             enabled: Arc::new(AtomicBool::new(true)),
-            holds: Mutex::new(HoldMap::new()),
-            unreleased: Mutex::new(HashSet::new()),
-            hold_ceiling_secs: AtomicU64::new(
-                HotkeyConfig::default().hold_ceiling_secs.unwrap_or(0),
-            ),
+            hold: HoldLedger::new(HotkeyConfig::default().hold_ceiling_secs),
             control_tx,
             registration_serial: tokio::sync::Mutex::new(()),
             tasks: TaskOwner::new(),
@@ -1068,7 +1056,7 @@ pub(crate) mod tests {
         press(&inject_tx, id, &c).await;
         release(&inject_tx, id, &c).await;
 
-        let snap = client.health_state.lock().unwrap();
+        let snap = client.health.state.lock().unwrap();
         assert_eq!(snap.recent_triggers.len(), 1);
     }
 

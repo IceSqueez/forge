@@ -8,7 +8,7 @@ use forge_storage::CredentialsRepo;
 use forge_types::IntegrationId;
 
 use crate::api::{DonatelloAccount, DonatelloApi};
-use crate::config::{DonatelloConfig, DonatelloTiming};
+use crate::config::{DEFAULT_POLL_INTERVAL, DonatelloConfig, DonatelloTiming};
 use crate::credentials;
 use crate::error::DonatelloError;
 use crate::health;
@@ -28,7 +28,7 @@ pub struct DonatelloProvider {
 impl DonatelloProvider {
     pub fn new(config: DonatelloConfig, creds: Arc<dyn CredentialsRepo>, gateway: Gateway) -> Self {
         let timing = DonatelloTiming::default();
-        let interval = timing.bounded_poll_interval(config.poll_interval);
+        let interval = timing.bounded_poll_interval(DEFAULT_POLL_INTERVAL);
         Self {
             poll: DonationPoll::new(DONATELLO_INTEGRATION.id, interval, health::metrics),
             config,
@@ -40,7 +40,8 @@ impl DonatelloProvider {
 
     pub fn with_timing(mut self, timing: DonatelloTiming) -> Self {
         self.timing = timing;
-        let interval = self.set_poll_interval(self.config.poll_interval);
+        let current = self.poll.status().poll_interval;
+        let interval = self.set_poll_interval(current);
         self.poll.board().set_poll_interval(interval);
         self
     }

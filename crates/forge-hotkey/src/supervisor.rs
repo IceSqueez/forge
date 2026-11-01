@@ -97,12 +97,12 @@ fn handle_session_event(client: &Arc<HotkeyClient>, event: BackendSessionEvent) 
         emit_portal_event(client, fields::portal::reason::SESSION_LOST, detail);
     }
     let new_value = backend_health_value(client.backend_tier, lost_detail.as_deref());
-    client.health_state.lock_recover().backend_session_lost = lost_detail;
+    client.health.state.lock_recover().backend_session_lost = lost_detail;
     #[expect(
         clippy::let_underscore_must_use,
         reason = "having no subscribers is a normal state"
     )]
-    let _ = client.health_tx.send(HealthDelta {
+    let _ = client.health.tx.send(HealthDelta {
         metric: BACKEND_METRIC,
         new_value,
     });
@@ -131,7 +131,7 @@ fn handle_press(client: &Arc<HotkeyClient>, event: HotkeyFiredEvent) {
     }
 
     let delta = {
-        let mut snap = client.health_state.lock_recover();
+        let mut snap = client.health.state.lock_recover();
         snap.record_trigger(combo_str);
         build_trigger_delta(&snap)
     };
@@ -139,7 +139,7 @@ fn handle_press(client: &Arc<HotkeyClient>, event: HotkeyFiredEvent) {
         clippy::let_underscore_must_use,
         reason = "having no subscribers is a normal state"
     )]
-    let _ = client.health_tx.send(delta);
+    let _ = client.health.tx.send(delta);
 }
 
 async fn handle_supervisor_command(client: &Arc<HotkeyClient>, cmd: SupervisorCommand) {
@@ -237,7 +237,7 @@ async fn disable_engine(client: &Arc<HotkeyClient>) -> Result<(), HotkeyError> {
         }
     }
     if let Some(error) = first_failure {
-        *client.unreleased.lock_recover() = unreleased;
+        *client.hold.unreleased.lock_recover() = unreleased;
         return Err(error);
     }
     emit_engine_state_change(client, false);
@@ -245,7 +245,7 @@ async fn disable_engine(client: &Arc<HotkeyClient>) -> Result<(), HotkeyError> {
 }
 
 fn take_unreleased(client: &HotkeyClient) -> HashSet<HotkeyId> {
-    std::mem::take(&mut client.unreleased.lock_recover())
+    std::mem::take(&mut client.hold.unreleased.lock_recover())
 }
 
 fn record_enable_failures(client: &Arc<HotkeyClient>, failures: &[EnableFailure]) {
@@ -256,7 +256,7 @@ fn record_enable_failures(client: &Arc<HotkeyClient>, failures: &[EnableFailure]
     if conflicts == 0 {
         return;
     }
-    let mut snap = client.health_state.lock_recover();
+    let mut snap = client.health.state.lock_recover();
     snap.conflict_count = snap.conflict_count.saturating_add(conflicts);
 }
 
@@ -290,7 +290,7 @@ fn emit_engine_state_change(client: &Arc<HotkeyClient>, enabled: bool) {
         clippy::let_underscore_must_use,
         reason = "having no subscribers is a normal state"
     )]
-    let _ = client.health_tx.send(delta);
+    let _ = client.health.tx.send(delta);
 }
 
 fn registered_delta(client: &HotkeyClient) -> HealthDelta {
@@ -315,7 +315,7 @@ pub(crate) fn emit_registered(client: &HotkeyClient, combo_str: &str, id_u32: u3
         clippy::let_underscore_must_use,
         reason = "having no subscribers is a normal state"
     )]
-    let _ = client.health_tx.send(delta);
+    let _ = client.health.tx.send(delta);
 }
 
 pub(crate) fn emit_unregistered(client: &HotkeyClient, combo_str: &str, id_u32: u32) {
@@ -330,7 +330,7 @@ pub(crate) fn emit_unregistered(client: &HotkeyClient, combo_str: &str, id_u32: 
         clippy::let_underscore_must_use,
         reason = "having no subscribers is a normal state"
     )]
-    let _ = client.health_tx.send(delta);
+    let _ = client.health.tx.send(delta);
 }
 
 pub(crate) fn emit_portal_unavailable(client: &HotkeyClient, detail: &str) {

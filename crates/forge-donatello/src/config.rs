@@ -42,7 +42,6 @@ impl DonatelloTiming {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct DonatelloConfig {
     pub base_url: String,
-    pub poll_interval: Duration,
 }
 
 impl DonatelloConfig {
@@ -52,7 +51,6 @@ impl DonatelloConfig {
                 .base_url(DONATELLO_API)
                 .trim_end_matches('/')
                 .to_owned(),
-            poll_interval: DEFAULT_POLL_INTERVAL,
         }
     }
 }

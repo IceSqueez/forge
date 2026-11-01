@@ -33,7 +33,7 @@ pub(crate) fn choice(value: &str, label: &str) -> Option<VTubeChoice> {
 
 impl VTubeClient {
     pub(crate) fn catalog_signal(&self) -> CatalogSignal {
-        self.content_state.read_recover().signal.clone()
+        self.content.state.read_recover().signal.clone()
     }
 }
 

@@ -3,8 +3,7 @@ use forge_types::LATEST_DONATION_SLOT;
 use forge_types::{MessageCode, NamesLanguage};
 
 use crate::assets::PageAssets;
-use crate::base;
-use crate::config::{self, SPEECH, SPEECH_VOICE};
+use crate::config;
 use crate::descriptor::{
     ContentFeed, DeliveryDisposition, OverlayConfig, OverlayKindDescriptor, SectionedField,
 };
@@ -21,8 +20,6 @@ pub const CONFIG_SCHEMA_VERSION: u32 = 1;
 
 const DESIGN_WIDTH_PX: u32 = 600;
 const DESIGN_HEIGHT_PX: u32 = 96;
-
-const SPEECH_KEYS: [&str; 2] = [SPEECH, SPEECH_VOICE];
 
 pub struct LatestOverlayKind;
 
@@ -117,30 +114,8 @@ impl OverlayKindDescriptor for LatestOverlayKind {
         fields
     }
 
-    fn default_config(&self) -> OverlayConfig {
-        let mut defaults = base::base_defaults(
-            self.delivery_disposition(),
-            self.default_display_secs(),
-            self.default_design_size(),
-            self.default_margins(),
-        );
-        defaults.extend(self.look_defaults());
-        defaults.extend(motion::motion_defaults(self.motion()));
-        for key in SPEECH_KEYS {
-            defaults.remove(key);
-        }
-        defaults
-    }
-
-    fn config_fields(&self) -> Vec<SectionedField> {
-        let mut fields = self.look_fields();
-        fields.extend(motion::motion_fields(self.motion().axes));
-        fields.extend(
-            base::base_fields(self.delivery_disposition())
-                .into_iter()
-                .filter(|sectioned| !SPEECH_KEYS.contains(&sectioned.field.key())),
-        );
-        fields
+    fn speaks(&self) -> bool {
+        false
     }
 
     fn page_assets(&self) -> PageAssets {

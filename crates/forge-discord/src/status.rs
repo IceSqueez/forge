@@ -45,7 +45,7 @@ impl BuiltinStatus for DiscordClient {
 
     fn activity_count(&self) -> Option<usize> {
         let snap = self.content_state().lock_recover();
-        (!snap.webhook_names.is_empty()).then_some(snap.webhook_names.len())
+        (!snap.registry.is_empty()).then_some(snap.registry.len())
     }
 
     fn header_actions(&self) -> Vec<HeaderAction> {

@@ -49,7 +49,7 @@ impl VTubeSink for VTubeClient {
         let data = json!({ "modelID": model_id });
         let resp = self.send_json_request(MODEL_LOAD_REQUEST, data).await?;
         check_response(&resp)?;
-        self.content_notifier.notify_model_changed();
+        self.content.notifier.notify_model_changed();
         Ok(())
     }
 

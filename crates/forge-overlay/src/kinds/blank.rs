@@ -3,7 +3,6 @@ use forge_types::MessageCode;
 use crate::assets::PageAssets;
 use crate::descriptor::{DeliveryDisposition, OverlayConfig, OverlayKindDescriptor};
 use crate::messages;
-use crate::metrics;
 use crate::preview::{PreviewComposition, PreviewShape, compose};
 
 pub const KIND_ID: &str = "overlay.blank";
@@ -48,11 +47,7 @@ impl OverlayKindDescriptor for BlankOverlayKind {
     }
 
     fn preview(&self, config: &OverlayConfig, _: forge_types::NamesLanguage) -> PreviewComposition {
-        compose(
-            PreviewShape::Blank,
-            metrics::element_sizing(KIND_ID),
-            config,
-        )
+        compose(PreviewShape::Blank, self.sizing(), config)
     }
 
     fn has_visual_page(&self) -> bool {

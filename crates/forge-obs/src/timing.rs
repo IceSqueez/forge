@@ -1,7 +1,7 @@
 use std::time::Duration;
 
-use crate::client::{STATS_POLL_INTERVAL, STATS_POLL_REQUEST_TIMEOUT};
 use crate::session::REQUEST_TIMEOUT;
+use crate::stats_poll::{STATS_POLL_INTERVAL, STATS_POLL_REQUEST_TIMEOUT};
 
 const RECONNECT_BASE_DELAY: Duration = Duration::from_secs(1);
 const RECONNECT_MAX_DELAY: Duration = Duration::from_secs(60);

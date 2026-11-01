@@ -5,7 +5,7 @@ use forge_components::{
 use forge_overlay::metrics::{ALERT, CHAT, FRAME, GOAL, LATEST, SURFACE_RGB, TICKER};
 use forge_overlay::{
     AxisBound, ElementSizing, PreviewComposition, PreviewElement, PreviewFont, PreviewLineRole,
-    PreviewMark, PreviewPosition, PreviewShape, element_sizing,
+    PreviewMark, PreviewPosition, PreviewShape,
 };
 use gpui::{
     AnyElement, App, Div, FontWeight, Length, Pixels, Rgba, SharedString, div, prelude::*, px,
@@ -50,8 +50,8 @@ pub(super) struct ElementPlan {
 }
 
 impl ElementPlan {
-    pub(super) fn of(kind_id: &str, element: PreviewElement) -> Self {
-        let sizing = element_sizing(kind_id);
+    pub(super) fn of(element: PreviewElement) -> Self {
+        let sizing = element.sizing;
         let text_scale = sizing
             .zip(element.text_size)
             .map_or(UNSCALED_TEXT, |(sizing, size)| sizing.text_scale(size));
@@ -597,8 +597,15 @@ mod tests {
     const TICKER_KIND: &str = forge_overlay::kinds::ticker::KIND_ID;
     const AUDIO_KIND: &str = "overlay.audio";
 
-    fn element(text_size: Option<u32>) -> PreviewElement {
-        PreviewElement { text_size }
+    fn element(kind: &str, text_size: Option<u32>) -> PreviewElement {
+        let mut registry = forge_overlay::OverlayKindRegistry::new();
+        forge_overlay::register_builtin_kinds(&mut registry).unwrap();
+        PreviewElement {
+            text_size,
+            sizing: registry
+                .get(kind)
+                .and_then(|descriptor| descriptor.sizing()),
+        }
     }
 
     fn scale() -> Scale {
@@ -625,7 +632,7 @@ mod tests {
             (AUDIO_KIND, Some(40), 1.0),
             (ALERT_KIND, None, 1.0),
         ] {
-            let plan = ElementPlan::of(kind, element(text_size));
+            let plan = ElementPlan::of(element(kind, text_size));
 
             assert_eq!(
                 plan.text_scale(),
@@ -657,7 +664,7 @@ mod tests {
             (FRAME_KIND, [None, None, None, None]),
             (AUDIO_KIND, [None, None, None, None]),
         ] {
-            let plan = ElementPlan::of(kind, element(None));
+            let plan = ElementPlan::of(element(kind, None));
 
             assert_eq!(extents(sized(div(), plan)), expected, "{kind}");
         }

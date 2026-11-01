@@ -4,7 +4,7 @@ mod gateway_support;
 use std::time::Duration;
 
 use forge_net::{
-    CallClass, DEFAULT_RETRY_AFTER_SECS, FormBody, GatewayFailure, GatewayProfile, GatewayRequest,
+    CallClass, DEFAULT_RETRY_AFTER, FormBody, GatewayFailure, GatewayProfile, GatewayRequest,
     HeaderLookup, MAX_REMOTE_COOLDOWN, ThrottleHintFamily, ThrottleScope,
 };
 
@@ -211,7 +211,7 @@ async fn throttle_statuses_become_rate_limited_and_feed_the_limiter_once() {
             GatewayProfile::user_directed(true),
             429,
             vec![],
-            secs(u64::from(DEFAULT_RETRY_AFTER_SECS)),
+            DEFAULT_RETRY_AFTER,
             ThrottleScope::Bucket,
         ),
         (

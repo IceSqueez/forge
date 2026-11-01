@@ -37,7 +37,10 @@ pub use integration::VTUBE_INTEGRATION;
 pub use probe::{VTubeProbeResult, probe_connection, probe_connection_with_timing};
 pub use runners::choices::{AngleRelativeTo, FadeMode, SizeRelativeTo, VertexPinType};
 pub use runners::register_vtube_sub_actions;
-pub use sink::{ItemLoad, ItemMove, ItemPin, ItemPlacement, VTubeSink};
+pub use sink::{
+    CurrentModel, ExpressionList, HotkeyList, ItemList, ItemLoad, ItemMove, ItemPin, ItemPlacement,
+    LoadedItem, ModelMove, ModelTint, ParameterList, VTubeSink,
+};
 pub use switchable_sink::SwitchableVTubeSink;
 pub use timing::VTubeTiming;
 pub use triggers::register_vtube_triggers;

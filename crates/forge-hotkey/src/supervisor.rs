@@ -10,7 +10,7 @@ use tokio::sync::{mpsc, oneshot};
 use tokio::time::MissedTickBehavior;
 
 use crate::backend::{BackendSessionEvent, HotkeyFiredEvent, HotkeyId};
-use crate::binding::HotkeyEdge;
+use crate::bindings::row::HotkeyEdge;
 use crate::client::{EnableFailure, HotkeyClient};
 use crate::combo::HotkeyCombo;
 use crate::error::HotkeyError;

@@ -2,10 +2,10 @@ use std::time::Duration;
 
 use super::call_class::CallClass;
 use super::timings::GatewayTimings;
-use crate::rate_limit::DEFAULT_RETRY_AFTER_SECS;
+use crate::rate_limit::DEFAULT_RETRY_AFTER;
 use crate::throttle_hint::ThrottleHintFamily;
 
-const USER_DIRECTED_NO_HINT_WAIT: Duration = Duration::from_secs(DEFAULT_RETRY_AFTER_SECS as u64);
+const USER_DIRECTED_NO_HINT_WAIT: Duration = DEFAULT_RETRY_AFTER;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum EgressKind {

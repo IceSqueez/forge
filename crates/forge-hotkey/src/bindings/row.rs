@@ -1,7 +1,5 @@
 use forge_types::{ActionId, TriggerInstanceId};
 
-use crate::backend::HotkeyId;
-use crate::client::HotkeyClient;
 use crate::vocabulary::event_kinds;
 
 pub const COMBO_FIELD: &str = "combo";
@@ -97,18 +95,6 @@ impl BindingRow {
 
 pub fn combo_keys(combo: &str) -> Vec<&str> {
     combo.split('+').filter(|part| !part.is_empty()).collect()
-}
-
-pub fn registered_combos(client: &HotkeyClient) -> Vec<(HotkeyId, String)> {
-    client
-        .registered_combos()
-        .into_iter()
-        .map(|(id, combo)| (id, combo.as_str().to_owned()))
-        .collect()
-}
-
-pub fn conflict_count(client: &HotkeyClient) -> usize {
-    client.view().conflicts
 }
 
 #[cfg(test)]
@@ -209,18 +195,5 @@ mod tests {
         for (case, row, expected) in cases {
             assert_eq!(row.primary_action().cloned(), expected, "wrong when {case}");
         }
-    }
-
-    #[tokio::test]
-    async fn conflict_count_counts_a_rejected_re_registration_of_a_held_combo() {
-        let (backend, _tx) = crate::backend::tests::MockPortalBackend::new();
-        let client =
-            crate::client::tests::start_supervised(backend, crate::client::tests::noop_publisher());
-        let combo = crate::combo::HotkeyCombo::parse("Ctrl+F3").unwrap();
-        client.register(combo.clone()).await.unwrap();
-
-        client.register(combo).await.unwrap_err();
-
-        assert_eq!(conflict_count(&client), 1);
     }
 }

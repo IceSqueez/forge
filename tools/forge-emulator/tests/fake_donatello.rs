@@ -319,9 +319,8 @@ async fn real_provider_surfaces_the_fake_rate_limit() {
     assert!(
         matches!(
             failure,
-            Err(PlatformError::RateLimited {
-                retry_after_secs: 4
-            })
+            Err(PlatformError::RateLimited { retry_after })
+                if retry_after == std::time::Duration::from_secs(4)
         ),
         "{failure:?}"
     );

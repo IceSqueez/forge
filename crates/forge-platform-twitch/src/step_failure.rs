@@ -30,9 +30,7 @@ pub(crate) fn helix_message(error: &TwitchError) -> MessageRef {
         TwitchError::BotPhoneUnverified => messages::bot_phone_unverified(),
         TwitchError::BotNotModerator => messages::bot_not_moderator(),
         TwitchError::PermissionDenied(detail) => messages::permission_denied(detail),
-        TwitchError::ShoutoutCooldown { retry_after_secs } => {
-            messages::shoutout_cooldown(*retry_after_secs)
-        }
+        TwitchError::ShoutoutCooldown { retry_after } => messages::shoutout_cooldown(*retry_after),
         TwitchError::NotSignedIn => messages::credentials_unavailable(&error.to_string()),
         other => messages::request_failed(&other.to_string()),
     }
@@ -231,7 +229,7 @@ mod tests {
     #[test]
     fn moderation_failures_map_to_throttle_cooldown_permission_and_refusal_codes() {
         let cooldown = helix_message(&TwitchError::ShoutoutCooldown {
-            retry_after_secs: 90,
+            retry_after: std::time::Duration::from_secs(90),
         });
         assert_eq!(code(&cooldown), "twitch.shoutout_cooldown");
         assert_eq!(cooldown.arg("seconds"), Some(&MessageArg::Int(90)));

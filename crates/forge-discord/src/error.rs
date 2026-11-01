@@ -1,3 +1,5 @@
+use std::time::Duration;
+
 use thiserror::Error;
 
 #[derive(Debug, Error)]
@@ -48,8 +50,8 @@ pub enum DiscordError {
     #[error("transport error: {0}")]
     Connect(String),
 
-    #[error("rate limited; retry after {retry_after_secs:.2}s")]
-    RateLimited { retry_after_secs: f64 },
+    #[error("rate limited; retry after {:.2}s", retry_after.as_secs_f64())]
+    RateLimited { retry_after: Duration },
 
     #[error("webhook not found: {name:?}")]
     WebhookNotFound { name: String },
@@ -90,8 +92,8 @@ impl DiscordError {
     pub(crate) fn detail(&self) -> String {
         match self {
             DiscordError::Connect(msg) => msg.clone(),
-            DiscordError::RateLimited { retry_after_secs } => {
-                format!("retry after {retry_after_secs:.2}s")
+            DiscordError::RateLimited { retry_after } => {
+                format!("retry after {:.2}s", retry_after.as_secs_f64())
             }
             DiscordError::WebhookNotFound { name } => format!("webhook {name:?} not configured"),
             DiscordError::Validation(fault) => fault.to_string(),
@@ -125,7 +127,7 @@ mod tests {
             (DiscordError::Connect("x".to_owned()), "network", None),
             (
                 DiscordError::RateLimited {
-                    retry_after_secs: 1.0,
+                    retry_after: Duration::from_secs(1),
                 },
                 "rate_limited",
                 None,

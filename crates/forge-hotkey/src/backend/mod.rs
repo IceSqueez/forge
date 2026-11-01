@@ -1,3 +1,18 @@
+#[cfg(target_os = "linux")]
+pub(crate) mod evdev;
+#[cfg(target_os = "linux")]
+mod evdev_watch;
+#[cfg(any(target_os = "windows", target_os = "macos"))]
+pub(crate) mod global;
+#[cfg(target_os = "linux")]
+mod owned_fd_readiness;
+#[cfg(target_os = "linux")]
+pub(crate) mod portal;
+#[cfg(target_os = "linux")]
+mod portal_request;
+#[cfg(target_os = "linux")]
+mod portal_trigger;
+
 use std::time::Duration;
 
 use async_trait::async_trait;
@@ -5,7 +20,7 @@ use forge_net::TaskShutdown;
 use serde::{Deserialize, Serialize};
 use tokio::sync::mpsc;
 
-use crate::binding::HotkeyEdge;
+use crate::bindings::row::HotkeyEdge;
 use crate::combo::HotkeyCombo;
 use crate::error::HotkeyError;
 

@@ -4,26 +4,24 @@ use async_trait::async_trait;
 use forge_storage::{MediaBlobId, MediaRepo, SoundboardClipsRepo, StorageError, StoredClip};
 use forge_types::ClipId;
 
-use crate::clip_bindings::canonical_clip;
-use crate::reconciler::HotkeyReconciler;
+use crate::bindings::clip::canonical_clip;
+use crate::bindings::reconciler::HotkeyReconciler;
 
 pub struct HotkeySyncedClipsRepo {
     inner: Arc<dyn SoundboardClipsRepo>,
-    reconciler: Option<Arc<HotkeyReconciler>>,
+    reconciler: Arc<HotkeyReconciler>,
 }
 
 impl HotkeySyncedClipsRepo {
     pub fn wrap(
         inner: Arc<dyn SoundboardClipsRepo>,
-        reconciler: Option<Arc<HotkeyReconciler>>,
+        reconciler: Arc<HotkeyReconciler>,
     ) -> Arc<dyn SoundboardClipsRepo> {
         Arc::new(Self { inner, reconciler })
     }
 
     async fn sync(&self) {
-        if let Some(reconciler) = &self.reconciler {
-            reconciler.reconcile().await;
-        }
+        self.reconciler.reconcile().await;
     }
 }
 

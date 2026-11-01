@@ -1,13 +1,12 @@
-use std::collections::BTreeMap;
-
 use async_trait::async_trait;
 use serde_json::{Value, json};
 
-use forge_types::Variant;
-
 use crate::client::VTubeClient;
 use crate::error::VTubeError;
-use crate::sink::{ItemLoad, ItemMove, ItemPin, VTubeSink, result_keys};
+use crate::sink::{
+    CurrentModel, ExpressionList, HotkeyList, ItemList, ItemLoad, ItemMove, ItemPin, LoadedItem,
+    ModelMove, ModelTint, ParameterList, VTubeSink,
+};
 use crate::vts::message_type::{
     COLOR_TINT_REQUEST, CURRENT_MODEL_REQUEST, EXPRESSION_ACTIVATION_REQUEST,
     EXPRESSION_STATE_REQUEST, HOTKEY_TRIGGER_REQUEST, HOTKEYS_IN_CURRENT_MODEL_REQUEST,
@@ -88,28 +87,21 @@ impl VTubeSink for VTubeClient {
         }
     }
 
-    async fn move_model(
-        &self,
-        x: Option<f64>,
-        y: Option<f64>,
-        rotation: Option<f64>,
-        size: Option<f64>,
-        time_in_seconds: f64,
-    ) -> Result<(), VTubeError> {
+    async fn move_model(&self, request: &ModelMove) -> Result<(), VTubeError> {
         let mut data = json!({
-            "timeInSeconds": time_in_seconds,
+            "timeInSeconds": request.time_in_seconds,
             "valuesAreRelativeToModel": false
         });
-        if let Some(v) = x {
+        if let Some(v) = request.x {
             data["positionX"] = json!(v);
         }
-        if let Some(v) = y {
+        if let Some(v) = request.y {
             data["positionY"] = json!(v);
         }
-        if let Some(v) = rotation {
+        if let Some(v) = request.rotation {
             data["rotation"] = json!(v);
         }
-        if let Some(v) = size {
+        if let Some(v) = request.size {
             data["size"] = json!(v);
         }
         let resp = self.send_json_request(MOVE_MODEL_REQUEST, data).await?;
@@ -138,71 +130,53 @@ impl VTubeSink for VTubeClient {
         check_items_moved(&resp)
     }
 
-    async fn get_current_model(&self) -> Result<Variant, VTubeError> {
+    async fn get_current_model(&self) -> Result<CurrentModel, VTubeError> {
         let resp = self
             .send_json_request(CURRENT_MODEL_REQUEST, json!({}))
             .await?;
         check_response(&resp)?;
-        let mut fields = BTreeMap::new();
-        fields.insert(
-            result_keys::NAME.to_owned(),
-            string_field(&resp, "modelName"),
-        );
-        fields.insert(result_keys::ID.to_owned(), string_field(&resp, "modelID"));
-        fields.insert(
-            result_keys::LOADED.to_owned(),
-            Variant::Bool(resp["modelLoaded"].as_bool().unwrap_or(false)),
-        );
-        Ok(Variant::Object(fields))
+        Ok(CurrentModel {
+            name: string_field(&resp, "modelName"),
+            id: string_field(&resp, "modelID"),
+            loaded: resp["modelLoaded"].as_bool().unwrap_or(false),
+        })
     }
 
-    async fn get_hotkeys(&self) -> Result<Variant, VTubeError> {
+    async fn get_hotkeys(&self) -> Result<HotkeyList, VTubeError> {
         let resp = self
             .send_json_request(HOTKEYS_IN_CURRENT_MODEL_REQUEST, json!({}))
             .await?;
         check_response(&resp)?;
         let entries = resp["availableHotkeys"].as_array();
-        let names = string_array(entries, "name");
-        let ids = string_array(entries, "hotkeyID");
-        let count = i64::try_from(names.len()).unwrap_or(i64::MAX);
-        let mut fields = BTreeMap::new();
-        fields.insert(result_keys::NAMES.to_owned(), Variant::Array(names));
-        fields.insert(result_keys::IDS.to_owned(), Variant::Array(ids));
-        fields.insert(result_keys::COUNT.to_owned(), Variant::Int(count));
-        Ok(Variant::Object(fields))
+        Ok(HotkeyList {
+            names: string_array(entries, "name"),
+            ids: string_array(entries, "hotkeyID"),
+        })
     }
 
-    async fn get_expressions(&self) -> Result<Variant, VTubeError> {
+    async fn get_expressions(&self) -> Result<ExpressionList, VTubeError> {
         let resp = self
             .send_json_request(EXPRESSION_STATE_REQUEST, json!({}))
             .await?;
         check_response(&resp)?;
         let entries = resp["expressions"].as_array();
-        let names = string_array(entries, "name");
-        let active = bool_array(entries, "active");
-        let count = i64::try_from(names.len()).unwrap_or(i64::MAX);
-        let mut fields = BTreeMap::new();
-        fields.insert(result_keys::NAMES.to_owned(), Variant::Array(names));
-        fields.insert(result_keys::ACTIVE.to_owned(), Variant::Array(active));
-        fields.insert(result_keys::COUNT.to_owned(), Variant::Int(count));
-        Ok(Variant::Object(fields))
+        Ok(ExpressionList {
+            names: string_array(entries, "name"),
+            active: bool_array(entries, "active"),
+        })
     }
 
-    async fn get_parameters(&self) -> Result<Variant, VTubeError> {
+    async fn get_parameters(&self) -> Result<ParameterList, VTubeError> {
         let resp = self
             .send_json_request(INPUT_PARAMETER_LIST_REQUEST, json!({}))
             .await?;
         check_response(&resp)?;
         let mut names = string_array(resp["defaultParameters"].as_array(), "name");
         names.extend(string_array(resp["customParameters"].as_array(), "name"));
-        let count = i64::try_from(names.len()).unwrap_or(i64::MAX);
-        let mut fields = BTreeMap::new();
-        fields.insert(result_keys::NAMES.to_owned(), Variant::Array(names));
-        fields.insert(result_keys::COUNT.to_owned(), Variant::Int(count));
-        Ok(Variant::Object(fields))
+        Ok(ParameterList { names })
     }
 
-    async fn get_items(&self) -> Result<Variant, VTubeError> {
+    async fn get_items(&self) -> Result<ItemList, VTubeError> {
         let data = json!({
             "includeAvailableSpots": false,
             "includeItemInstancesInScene": true,
@@ -211,20 +185,10 @@ impl VTubeSink for VTubeClient {
         let resp = self.send_json_request(ITEM_LIST_REQUEST, data).await?;
         check_response(&resp)?;
         let entries = resp["itemInstancesInScene"].as_array();
-        let instance_ids = string_array(entries, "instanceID");
-        let file_names = string_array(entries, "fileName");
-        let count = i64::try_from(instance_ids.len()).unwrap_or(i64::MAX);
-        let mut fields = BTreeMap::new();
-        fields.insert(
-            result_keys::INSTANCE_IDS.to_owned(),
-            Variant::Array(instance_ids),
-        );
-        fields.insert(
-            result_keys::FILE_NAMES.to_owned(),
-            Variant::Array(file_names),
-        );
-        fields.insert(result_keys::COUNT.to_owned(), Variant::Int(count));
-        Ok(Variant::Object(fields))
+        Ok(ItemList {
+            instance_ids: string_array(entries, "instanceID"),
+            file_names: string_array(entries, "fileName"),
+        })
     }
 
     async fn pin_item(&self, request: &ItemPin<'_>) -> Result<(), VTubeError> {
@@ -247,7 +211,7 @@ impl VTubeSink for VTubeClient {
         check_response(&resp)
     }
 
-    async fn load_item(&self, request: &ItemLoad<'_>) -> Result<Variant, VTubeError> {
+    async fn load_item(&self, request: &ItemLoad<'_>) -> Result<LoadedItem, VTubeError> {
         let placement = request.placement;
         let data = json!({
             "fileName": request.file_name,
@@ -268,16 +232,10 @@ impl VTubeSink for VTubeClient {
         });
         let resp = self.send_json_request(ITEM_LOAD_REQUEST, data).await?;
         check_response(&resp)?;
-        let mut fields = BTreeMap::new();
-        fields.insert(
-            result_keys::INSTANCE_ID.to_owned(),
-            string_field(&resp, "instanceID"),
-        );
-        fields.insert(
-            result_keys::FILE_NAME.to_owned(),
-            string_field(&resp, "fileName"),
-        );
-        Ok(Variant::Object(fields))
+        Ok(LoadedItem {
+            instance_id: string_field(&resp, "instanceID"),
+            file_name: string_field(&resp, "fileName"),
+        })
     }
 
     async fn unload_all_items(&self) -> Result<(), VTubeError> {
@@ -286,21 +244,14 @@ impl VTubeSink for VTubeClient {
         check_response(&resp)
     }
 
-    async fn tint_all_art_meshes(
-        &self,
-        color_r: i64,
-        color_g: i64,
-        color_b: i64,
-        color_a: i64,
-        mix_with_scene_lighting: Option<f64>,
-    ) -> Result<(), VTubeError> {
+    async fn tint_all_art_meshes(&self, request: &ModelTint) -> Result<(), VTubeError> {
         let mut color_tint = json!({
-            "colorR": color_r,
-            "colorG": color_g,
-            "colorB": color_b,
-            "colorA": color_a
+            "colorR": request.color_r,
+            "colorG": request.color_g,
+            "colorB": request.color_b,
+            "colorA": request.color_a
         });
-        if let Some(v) = mix_with_scene_lighting {
+        if let Some(v) = request.mix_with_scene_lighting {
             color_tint["mixWithSceneLightingColor"] = json!(v);
         }
         let data = json!({
@@ -332,25 +283,25 @@ impl VTubeSink for VTubeClient {
     }
 }
 
-fn string_field(data: &Value, key: &str) -> Variant {
-    Variant::String(data[key].as_str().unwrap_or("").to_owned())
+fn string_field(data: &Value, key: &str) -> String {
+    data[key].as_str().unwrap_or("").to_owned()
 }
 
-fn string_array(entries: Option<&Vec<Value>>, key: &str) -> Vec<Variant> {
+fn string_array(entries: Option<&Vec<Value>>, key: &str) -> Vec<String> {
     entries
         .map(|arr| {
             arr.iter()
-                .map(|e| Variant::String(e[key].as_str().unwrap_or("").to_owned()))
+                .map(|e| e[key].as_str().unwrap_or("").to_owned())
                 .collect()
         })
         .unwrap_or_default()
 }
 
-fn bool_array(entries: Option<&Vec<Value>>, key: &str) -> Vec<Variant> {
+fn bool_array(entries: Option<&Vec<Value>>, key: &str) -> Vec<bool> {
     entries
         .map(|arr| {
             arr.iter()
-                .map(|e| Variant::Bool(e[key].as_bool().unwrap_or(false)))
+                .map(|e| e[key].as_bool().unwrap_or(false))
                 .collect()
         })
         .unwrap_or_default()

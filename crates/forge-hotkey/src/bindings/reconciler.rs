@@ -5,9 +5,9 @@ use std::sync::{Arc, OnceLock};
 use forge_storage::{SoundboardClipsRepo, TriggerInstanceRepo};
 use tokio::sync::{Mutex, watch};
 
-use crate::binding_store::{bound_hotkey_combos, persisted_hotkey_combos};
+use crate::bindings::clip::{ClipBindings, ClipBindingsWatch, clip_bindings_of};
+use crate::bindings::store::{bound_hotkey_combos, persisted_hotkey_combos};
 use crate::client::HotkeyClient;
-use crate::clip_bindings::{ClipBindings, ClipBindingsWatch, clip_bindings_of};
 use crate::combo::HotkeyCombo;
 use crate::error::HotkeyError;
 

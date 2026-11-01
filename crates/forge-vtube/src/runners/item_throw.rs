@@ -11,7 +11,7 @@ use forge_types::{ArgStack, SubActionTelemetry, Variant};
 use crate::runners::choices::FadeMode;
 use crate::runners::fields::{ITEM_FILE_NAME, ITEM_SIZE, optional_number, read_non_empty};
 use crate::runners::step_failure;
-use crate::sink::{ItemLoad, ItemMove, ItemPlacement, VTubeSink, result_keys};
+use crate::sink::{ItemLoad, ItemMove, ItemPlacement, VTubeSink};
 use crate::vocabulary::{config_keys, messages, sub_action_ids, variables};
 
 const DEFAULT_THROW_SECONDS: f64 = 0.4;
@@ -130,12 +130,7 @@ impl SubActionRunner for ItemThrowRunner {
             .await;
 
         let instance_id = match loaded {
-            Ok(Variant::Object(ref map)) => match map.get(result_keys::INSTANCE_ID) {
-                Some(Variant::String(id)) if !id.is_empty() => id.clone(),
-                _ => {
-                    return (timer.failed(messages::item_instance_missing().into()), None);
-                }
-            },
+            Ok(item) if !item.instance_id.is_empty() => item.instance_id,
             Ok(_) => {
                 return (timer.failed(messages::item_instance_missing().into()), None);
             }

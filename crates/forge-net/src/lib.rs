@@ -37,7 +37,7 @@ pub use header_lookup::HeaderLookup;
 pub use header_value::is_valid_header_value;
 pub use rate_limit::RateLimitUsage;
 pub use rate_limit::{
-    DEFAULT_RETRY_AFTER_SECS, RateLimitError, RateLimitOutcome, RateLimiter, TokenBucketRateLimiter,
+    DEFAULT_RETRY_AFTER, RateLimitError, RateLimitOutcome, RateLimiter, TokenBucketRateLimiter,
 };
 pub use status_reason::{canonical_status_reason, status_class};
 pub use task_owner::{TaskOwner, TaskShutdown};

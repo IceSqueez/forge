@@ -8,7 +8,7 @@ use rustix::fs::inotify::{self, CreateFlags, ReadFlags, WatchFlags};
 use rustix::io::Errno;
 use tokio::io::unix::AsyncFd;
 
-use crate::owned_fd_readiness::register_readiness;
+use crate::backend::owned_fd_readiness::register_readiness;
 
 pub(crate) const INPUT_DIR: &str = "/dev/input";
 pub(crate) const EVENT_NODE_PREFIX: &str = "event";

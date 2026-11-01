@@ -1,6 +1,5 @@
 use forge_events::test_support::NullPublisher;
-use forge_types::{ArgStack, EventId, MessageArg, RecoverMutex, UserText, Variant};
-use std::collections::BTreeMap;
+use forge_types::{ArgStack, EventId, MessageArg, RecoverMutex, UserText};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Mutex, MutexGuard};
 
@@ -8,7 +7,10 @@ use async_trait::async_trait;
 use forge_registry::RunContext;
 
 use crate::error::VTubeError;
-use crate::sink::{ItemLoad, ItemMove, ItemPin, VTubeSink};
+use crate::sink::{
+    CurrentModel, ExpressionList, HotkeyList, ItemList, ItemLoad, ItemMove, ItemPin, LoadedItem,
+    ModelMove, ModelTint, ParameterList, VTubeSink,
+};
 use forge_registry::ConfigChoice;
 
 const SET_PARAM: &str = "set_param";
@@ -126,7 +128,7 @@ impl MockSink {
         }
     }
 
-    fn record_lookup(&self, method: &'static str, data: Variant) -> Result<Variant, VTubeError> {
+    fn record_lookup<T>(&self, method: &'static str, data: T) -> Result<T, VTubeError> {
         self.record(method, Vec::new(), &[]).map(|()| data)
     }
 }
@@ -164,17 +166,16 @@ impl VTubeSink for MockSink {
     async fn deactivate_all_expressions(&self) -> Result<(), VTubeError> {
         self.record("deactivate_all_expressions", Vec::new(), &[])
     }
-    async fn move_model(
-        &self,
-        x: Option<f64>,
-        y: Option<f64>,
-        rotation: Option<f64>,
-        size: Option<f64>,
-        time_in_seconds: f64,
-    ) -> Result<(), VTubeError> {
+    async fn move_model(&self, request: &ModelMove) -> Result<(), VTubeError> {
         self.record(
             "move_model",
-            vec![x, y, rotation, size, Some(time_in_seconds)],
+            vec![
+                request.x,
+                request.y,
+                request.rotation,
+                request.size,
+                Some(request.time_in_seconds),
+            ],
             &[],
         )
     }
@@ -197,86 +198,49 @@ impl VTubeSink for MockSink {
         }
         outcome
     }
-    async fn get_current_model(&self) -> Result<Variant, VTubeError> {
+    async fn get_current_model(&self) -> Result<CurrentModel, VTubeError> {
         self.record_lookup(
             "get_current_model",
-            Variant::Object(BTreeMap::from([
-                ("name".to_owned(), Variant::String("MyAvatar".to_owned())),
-                ("id".to_owned(), Variant::String("model-abc".to_owned())),
-                ("loaded".to_owned(), Variant::Bool(true)),
-            ])),
+            CurrentModel {
+                name: "MyAvatar".to_owned(),
+                id: "model-abc".to_owned(),
+                loaded: true,
+            },
         )
     }
-    async fn get_hotkeys(&self) -> Result<Variant, VTubeError> {
+    async fn get_hotkeys(&self) -> Result<HotkeyList, VTubeError> {
         self.record_lookup(
             "get_hotkeys",
-            Variant::Object(BTreeMap::from([
-                (
-                    "names".to_owned(),
-                    Variant::Array(vec![
-                        Variant::String("Wave".to_owned()),
-                        Variant::String("Blush".to_owned()),
-                    ]),
-                ),
-                (
-                    "ids".to_owned(),
-                    Variant::Array(vec![
-                        Variant::String("hk-1".to_owned()),
-                        Variant::String("hk-2".to_owned()),
-                    ]),
-                ),
-                ("count".to_owned(), Variant::Int(2)),
-            ])),
+            HotkeyList {
+                names: vec!["Wave".to_owned(), "Blush".to_owned()],
+                ids: vec!["hk-1".to_owned(), "hk-2".to_owned()],
+            },
         )
     }
-    async fn get_expressions(&self) -> Result<Variant, VTubeError> {
+    async fn get_expressions(&self) -> Result<ExpressionList, VTubeError> {
         self.record_lookup(
             "get_expressions",
-            Variant::Object(BTreeMap::from([
-                (
-                    "names".to_owned(),
-                    Variant::Array(vec![
-                        Variant::String("Smile.exp3.json".to_owned()),
-                        Variant::String("Angry.exp3.json".to_owned()),
-                    ]),
-                ),
-                (
-                    "active".to_owned(),
-                    Variant::Array(vec![Variant::Bool(true), Variant::Bool(false)]),
-                ),
-                ("count".to_owned(), Variant::Int(2)),
-            ])),
+            ExpressionList {
+                names: vec!["Smile.exp3.json".to_owned(), "Angry.exp3.json".to_owned()],
+                active: vec![true, false],
+            },
         )
     }
-    async fn get_parameters(&self) -> Result<Variant, VTubeError> {
+    async fn get_parameters(&self) -> Result<ParameterList, VTubeError> {
         self.record_lookup(
             "get_parameters",
-            Variant::Object(BTreeMap::from([
-                (
-                    "names".to_owned(),
-                    Variant::Array(vec![
-                        Variant::String("FaceAngleX".to_owned()),
-                        Variant::String("MouthOpen".to_owned()),
-                    ]),
-                ),
-                ("count".to_owned(), Variant::Int(2)),
-            ])),
+            ParameterList {
+                names: vec!["FaceAngleX".to_owned(), "MouthOpen".to_owned()],
+            },
         )
     }
-    async fn get_items(&self) -> Result<Variant, VTubeError> {
+    async fn get_items(&self) -> Result<ItemList, VTubeError> {
         self.record_lookup(
             "get_items",
-            Variant::Object(BTreeMap::from([
-                (
-                    "instance_ids".to_owned(),
-                    Variant::Array(vec![Variant::String("inst-1".to_owned())]),
-                ),
-                (
-                    "file_names".to_owned(),
-                    Variant::Array(vec![Variant::String("crown.png".to_owned())]),
-                ),
-                ("count".to_owned(), Variant::Int(1)),
-            ])),
+            ItemList {
+                instance_ids: vec!["inst-1".to_owned()],
+                file_names: vec!["crown.png".to_owned()],
+            },
         )
     }
 
@@ -288,7 +252,7 @@ impl VTubeSink for MockSink {
         )
     }
 
-    async fn load_item(&self, request: &ItemLoad<'_>) -> Result<Variant, VTubeError> {
+    async fn load_item(&self, request: &ItemLoad<'_>) -> Result<LoadedItem, VTubeError> {
         let placement = request.placement;
         self.record(
             "load_item",
@@ -302,38 +266,25 @@ impl VTubeSink for MockSink {
             ],
             &[],
         )?;
-        Ok(Variant::Object(BTreeMap::from([
-            (
-                "instance_id".to_owned(),
-                Variant::String("inst-new-1".to_owned()),
-            ),
-            (
-                "file_name".to_owned(),
-                Variant::String("crown.png".to_owned()),
-            ),
-        ])))
+        Ok(LoadedItem {
+            instance_id: "inst-new-1".to_owned(),
+            file_name: "crown.png".to_owned(),
+        })
     }
 
     async fn unload_all_items(&self) -> Result<(), VTubeError> {
         self.record("unload_all_items", Vec::new(), &[])
     }
 
-    async fn tint_all_art_meshes(
-        &self,
-        r: i64,
-        g: i64,
-        b: i64,
-        a: i64,
-        mix_with_scene_lighting: Option<f64>,
-    ) -> Result<(), VTubeError> {
+    async fn tint_all_art_meshes(&self, request: &ModelTint) -> Result<(), VTubeError> {
         self.record(
             "tint_all_art_meshes",
             vec![
-                widen(Some(r)),
-                widen(Some(g)),
-                widen(Some(b)),
-                widen(Some(a)),
-                mix_with_scene_lighting,
+                widen(Some(request.color_r)),
+                widen(Some(request.color_g)),
+                widen(Some(request.color_b)),
+                widen(Some(request.color_a)),
+                request.mix_with_scene_lighting,
             ],
             &[],
         )

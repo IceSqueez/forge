@@ -157,8 +157,8 @@ pub(crate) fn network_failed(text: &str) -> MessageRef {
     MessageRef::new(NETWORK_FAILED).with_detail(detail(text))
 }
 
-pub(crate) fn rate_limited(retry_after_secs: f64) -> MessageRef {
-    MessageRef::new(RATE_LIMITED).with_arg(SECONDS_ARG, retry_after_secs)
+pub(crate) fn rate_limited(retry_after: std::time::Duration) -> MessageRef {
+    MessageRef::new(RATE_LIMITED).with_arg(SECONDS_ARG, retry_after.as_secs_f64())
 }
 
 pub(crate) fn webhook_not_found(name: &str) -> MessageRef {
@@ -291,7 +291,7 @@ mod tests {
             health_send(None),
             health_errors_window(),
             network_failed("c"),
-            rate_limited(1.5),
+            rate_limited(Duration::from_secs_f64(1.5)),
             webhook_not_found("alerts"),
             serialization_failed("c"),
             credential_failed("c"),

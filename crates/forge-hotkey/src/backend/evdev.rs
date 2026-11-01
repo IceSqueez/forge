@@ -13,14 +13,14 @@ use forge_net::{TaskOwner, TaskShutdown};
 use tokio::io::unix::AsyncFd;
 use tokio::sync::mpsc;
 
-use crate::backend::{HotkeyBackend, HotkeyFiredEvent, HotkeyId, wall_clock_us};
-use crate::binding::HotkeyEdge;
-use crate::combo::HotkeyCombo;
-use crate::error::HotkeyError;
-use crate::evdev_watch::{
+use crate::backend::evdev_watch::{
     EVENT_NODE_PREFIX, INPUT_DIR, InputDirChange, InputDirChanges, InputDirWatcher,
 };
-use crate::owned_fd_readiness::register_readiness;
+use crate::backend::owned_fd_readiness::register_readiness;
+use crate::backend::{HotkeyBackend, HotkeyFiredEvent, HotkeyId, wall_clock_us};
+use crate::bindings::row::HotkeyEdge;
+use crate::combo::HotkeyCombo;
+use crate::error::HotkeyError;
 use crate::vocabulary::keys::{Key, Modifier, Modifiers};
 
 const EV_SYN: u16 = 0;

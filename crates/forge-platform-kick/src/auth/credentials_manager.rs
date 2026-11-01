@@ -526,7 +526,7 @@ mod tests {
             "undecryptable row: got {undecryptable:?}"
         );
         assert!(
-            matches!(&locked, PlatformError::Io(_)),
+            matches!(&locked, PlatformError::Storage { .. }),
             "locked store must stay retryable: got {locked:?}"
         );
     }

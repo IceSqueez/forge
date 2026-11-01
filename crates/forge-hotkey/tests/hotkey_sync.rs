@@ -77,9 +77,8 @@ async fn synced() -> Synced {
         Arc::clone(&stored),
         Arc::clone(&stored_clips),
     );
-    let repo = HotkeySyncedTriggerRepo::wrap(Arc::clone(&stored), Some(Arc::clone(&reconciler)));
-    let clips =
-        HotkeySyncedClipsRepo::wrap(Arc::clone(&stored_clips), Some(Arc::clone(&reconciler)));
+    let repo = HotkeySyncedTriggerRepo::wrap(Arc::clone(&stored), Arc::clone(&reconciler));
+    let clips = HotkeySyncedClipsRepo::wrap(Arc::clone(&stored_clips), Arc::clone(&reconciler));
     Synced {
         store,
         stored,
@@ -368,7 +367,7 @@ async fn a_refused_write_leaves_the_client_registrations_untouched() {
             Arc::clone(&inner),
             Arc::new(MockSoundboardClipsRepo::new()),
         );
-        let repo = HotkeySyncedTriggerRepo::wrap(inner, Some(reconciler));
+        let repo = HotkeySyncedTriggerRepo::wrap(inner, reconciler);
 
         let batch_of = |instance: &TriggerInstance| TriggerChanges {
             saved: vec![instance.clone()],
@@ -911,8 +910,14 @@ async fn deleting_a_clip_with_its_sources_through_the_synced_repo_reaches_the_in
         .expect_delete_with_sources()
         .times(1)
         .returning(|_, _| Ok(true));
-    let wrapped = HotkeySyncedClipsRepo::wrap(Arc::new(inner), None);
     let store = store().await;
+    let (client, _backend) = recording_client();
+    let reconciler = HotkeyReconciler::new(
+        client,
+        store.provider.trigger_instance_repo(),
+        store.provider.soundboard_clips_repo(),
+    );
+    let wrapped = HotkeySyncedClipsRepo::wrap(Arc::new(inner), reconciler);
 
     let deleted = wrapped
         .delete_with_sources(id, store.provider.media_repo())

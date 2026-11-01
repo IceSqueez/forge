@@ -42,14 +42,14 @@ pub(crate) fn publish_failed(
 pub(crate) fn publish_rate_limited(
     publisher: &dyn EventPublisher,
     webhook_name: &str,
-    retry_after_secs: f64,
+    retry_after: std::time::Duration,
 ) {
     publisher.publish(Event::new(
         EventSource::Discord,
         event_kinds::WEBHOOK_RATE_LIMITED,
         json!({
             (webhook::WEBHOOK_NAME): webhook_name,
-            (rate_limited::RETRY_AFTER_SECS): retry_after_secs,
+            (rate_limited::RETRY_AFTER_SECS): retry_after.as_secs_f64(),
         }),
     ));
 }

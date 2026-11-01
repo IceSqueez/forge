@@ -287,7 +287,7 @@ fn target_key(target: UserTarget<'_>) -> String {
 
 fn shoutout_cooldown(remaining: std::time::Duration) -> TwitchError {
     TwitchError::ShoutoutCooldown {
-        retry_after_secs: remaining.as_secs().max(1),
+        retry_after: remaining.max(std::time::Duration::from_secs(1)),
     }
 }
 
@@ -1078,14 +1078,17 @@ mod tests {
         );
     }
 
-    const COOLDOWN_SLACK_SECS: u64 = 30;
+    const COOLDOWN_SLACK: std::time::Duration = std::time::Duration::from_secs(30);
 
-    fn cooldown_refusal(result: &Result<ActingSender, TwitchError>, interval_secs: u64) -> bool {
+    fn cooldown_refusal(
+        result: &Result<ActingSender, TwitchError>,
+        interval: std::time::Duration,
+    ) -> bool {
         matches!(
             result,
-            Err(TwitchError::ShoutoutCooldown { retry_after_secs })
-                if *retry_after_secs <= interval_secs
-                    && *retry_after_secs + COOLDOWN_SLACK_SECS > interval_secs
+            Err(TwitchError::ShoutoutCooldown { retry_after })
+                if retry_after.as_secs() <= interval.as_secs()
+                    && retry_after.as_secs() + COOLDOWN_SLACK.as_secs() > interval.as_secs()
         )
     }
 
@@ -1118,14 +1121,11 @@ mod tests {
             .await;
 
         assert!(
-            cooldown_refusal(&as_bot, crate::cadence::SHOUTOUT_TARGET_INTERVAL.as_secs()),
+            cooldown_refusal(&as_bot, crate::cadence::SHOUTOUT_TARGET_INTERVAL),
             "{as_bot:?}"
         );
         assert!(
-            cooldown_refusal(
-                &other_target,
-                crate::cadence::SHOUTOUT_CHANNEL_INTERVAL.as_secs()
-            ),
+            cooldown_refusal(&other_target, crate::cadence::SHOUTOUT_CHANNEL_INTERVAL),
             "{other_target:?}"
         );
         assert_eq!(rig.streamer.call_count(), 2);
@@ -1169,7 +1169,7 @@ mod tests {
             - crate::cadence::SHOUTOUT_CHANNEL_INTERVAL
             - std::time::Duration::from_secs(1);
         assert!(
-            cooldown_refusal(&same_by_id, target_window_left.as_secs()),
+            cooldown_refusal(&same_by_id, target_window_left),
             "{same_by_id:?}"
         );
         assert_eq!(calls_after_blocked, 2);

@@ -6,7 +6,7 @@ use crate::vocabulary::messages;
 pub(crate) fn message(error: &DiscordError) -> MessageRef {
     match error {
         DiscordError::Connect(text) => messages::network_failed(text),
-        DiscordError::RateLimited { retry_after_secs } => messages::rate_limited(*retry_after_secs),
+        DiscordError::RateLimited { retry_after } => messages::rate_limited(*retry_after),
         DiscordError::WebhookNotFound { name } => messages::webhook_not_found(name),
         DiscordError::Validation(fault) => validation_message(fault),
         DiscordError::Serde(source) => messages::serialization_failed(&source.to_string()),
@@ -82,7 +82,7 @@ mod tests {
             ),
             (
                 DiscordError::RateLimited {
-                    retry_after_secs: 2.5,
+                    retry_after: std::time::Duration::from_secs_f64(2.5),
                 },
                 "msg-discord-rate_limited",
                 None,
@@ -233,7 +233,7 @@ mod tests {
     #[test]
     fn a_rate_limit_carries_the_wait_as_a_numeric_argument() {
         let mapped = message(&DiscordError::RateLimited {
-            retry_after_secs: 2.5,
+            retry_after: std::time::Duration::from_secs_f64(2.5),
         });
 
         assert!(matches!(mapped.arg("seconds"), Some(MessageArg::Float(_))));

@@ -243,7 +243,7 @@ mod tests {
                 let outcome = managers.forget(platform, refusing.as_ref()).await;
 
                 assert!(
-                    matches!(outcome, Err(PlatformError::Io(_))),
+                    matches!(outcome, Err(PlatformError::Storage { .. })),
                     "{platform:?} wired={wired}: {outcome:?}"
                 );
             }

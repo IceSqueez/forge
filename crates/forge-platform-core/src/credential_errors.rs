@@ -17,7 +17,9 @@ where
     if stored_secret_unrecoverable {
         reauth_required(platform)
     } else {
-        PlatformError::Io(std::io::Error::other(source))
+        PlatformError::Storage {
+            reason: source.to_string(),
+        }
     }
 }
 
@@ -40,11 +42,11 @@ mod tests {
     }
 
     #[test]
-    fn a_recoverable_storage_failure_becomes_io_carrying_the_source_message() {
+    fn a_recoverable_storage_failure_becomes_storage_carrying_the_source_message() {
         let mapped = credential_storage_error("twitch", false, LockedStore);
 
         assert!(
-            matches!(&mapped, PlatformError::Io(io) if io.to_string() == LockedStore.to_string()),
+            matches!(&mapped, PlatformError::Storage { reason } if *reason == LockedStore.to_string()),
             "got {mapped:?}"
         );
     }

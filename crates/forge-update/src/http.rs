@@ -2,7 +2,7 @@ use std::sync::{Arc, OnceLock};
 use std::time::Duration;
 
 use forge_net::{
-    BodyProgress, BodySink, CallClass, DEFAULT_RETRY_AFTER_SECS, Gateway, GatewayFailure,
+    BodyProgress, BodySink, CallClass, DEFAULT_RETRY_AFTER, Gateway, GatewayFailure,
     GatewayProfile, GatewayRequest, GatewayResponse, GatewayTimings, Method, RateLimiter,
     StreamFailure, ThrottleHintFamily, TokenBucketRateLimiter,
 };
@@ -14,7 +14,7 @@ const GITHUB_API_REQUEST_BUDGET: u32 = 60;
 const GITHUB_API_WINDOW: Duration = Duration::from_secs(60 * 60);
 const RELEASE_DOWNLOAD_REQUEST_BUDGET: u32 = 120;
 const RELEASE_DOWNLOAD_WINDOW: Duration = Duration::from_secs(60 * 60);
-const NO_HINT_WAIT: Duration = Duration::from_secs(DEFAULT_RETRY_AFTER_SECS as u64);
+const NO_HINT_WAIT: Duration = DEFAULT_RETRY_AFTER;
 
 const RELEASE_API_PROFILE: GatewayProfile = GatewayProfile::absolute_https(
     CallClass::Catalog,

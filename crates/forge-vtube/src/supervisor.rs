@@ -382,6 +382,12 @@ impl ReconnectingSession for SupervisorContext {
             timing,
             ref transport_layer,
         } = *self;
+        let link = Link {
+            endpoint,
+            state,
+            publisher: &**publisher,
+            last_failure,
+        };
 
         set_connection_state(
             state,
@@ -395,147 +401,19 @@ impl ReconnectingSession for SupervisorContext {
         );
         tracing::debug!(endpoint = %endpoint, "attempting VTube Studio connection");
 
-        let connect_attempt = tokio::select! {
-            outcome = dial_within(endpoint, timing.connect_timeout) => outcome,
-            () = shutdown.notified() => {
-                set_connection_state(state, &**publisher, ConnectionState::Disconnected, ConnectionTransition::Expected);
-                emit_connection_changed(&**publisher, endpoint, false, None, None);
-                return SessionEnd::Stopped;
-            }
+        let mut ws = match dial(endpoint, shutdown, timing, transport_layer).await {
+            Ok(ws) => ws,
+            Err(abort) => return link.conclude(abort, auto_reconnect.is_enabled()),
         };
-
-        let mut ws = match connect_attempt {
-            Ok(ws) => transport_layer(ws),
-            Err(failed) => {
-                tracing::debug!(
-                    endpoint = %endpoint,
-                    error = %failed.detail,
-                    "VTube Studio connection attempt failed"
-                );
-                record_connection_failure(state, last_failure, Some(failed.message));
-                settle_unless_retrying(auto_reconnect.is_enabled(), state, &**publisher);
-                emit_connection_changed(
-                    &**publisher,
-                    endpoint,
-                    false,
-                    Some(VTubeDisconnectReason::ConnectFailed),
-                    Some(failed.detail),
-                );
-                return SessionEnd::AttemptFailed;
-            }
-        };
-
-        let auth_outcome = tokio::select! {
-            outcome = run_auth(&mut ws, &**creds, endpoint, &**publisher, timing) => outcome,
-            () = shutdown.notified() => {
-                announce_stopped(state, &**publisher, endpoint);
-                return SessionEnd::Stopped;
-            }
-        };
-        match auth_outcome {
-            Ok(()) => {}
-            Err(VTubeError::TokenRejected) => {
-                record_reason(state, last_failure, VTubeDisconnectReason::AuthRequired);
-                set_connection_state(
-                    state,
-                    &**publisher,
-                    ConnectionState::Disconnected,
-                    ConnectionTransition::Unexpected,
-                );
-                emit_connection_changed(
-                    &**publisher,
-                    endpoint,
-                    false,
-                    Some(VTubeDisconnectReason::AuthRequired),
-                    None,
-                );
-                return SessionEnd::Stopped;
-            }
-            Err(VTubeError::TokenDenied) => {
-                record_reason(state, last_failure, VTubeDisconnectReason::AuthDenied);
-                set_connection_state(
-                    state,
-                    &**publisher,
-                    ConnectionState::Disconnected,
-                    ConnectionTransition::Unexpected,
-                );
-                emit_connection_changed(
-                    &**publisher,
-                    endpoint,
-                    false,
-                    Some(VTubeDisconnectReason::AuthDenied),
-                    None,
-                );
-                return SessionEnd::Stopped;
-            }
-            Err(VTubeError::TokenTimeout) => {
-                record_reason(state, last_failure, VTubeDisconnectReason::AuthTimeout);
-                set_connection_state(
-                    state,
-                    &**publisher,
-                    ConnectionState::Disconnected,
-                    ConnectionTransition::Unexpected,
-                );
-                emit_connection_changed(
-                    &**publisher,
-                    endpoint,
-                    false,
-                    Some(VTubeDisconnectReason::AuthTimeout),
-                    None,
-                );
-                return SessionEnd::Stopped;
-            }
-            Err(e) => {
-                tracing::debug!(
-                    endpoint = %endpoint,
-                    error = %e,
-                    "auth failed, will retry"
-                );
-                let detail = e.to_string();
-                record_reason(state, last_failure, VTubeDisconnectReason::AuthFailed);
-                settle_unless_retrying(auto_reconnect.is_enabled(), state, &**publisher);
-                emit_connection_changed(
-                    &**publisher,
-                    endpoint,
-                    false,
-                    Some(VTubeDisconnectReason::AuthFailed),
-                    Some(detail),
-                );
-                return SessionEnd::AttemptFailed;
-            }
+        if let Err(abort) = authenticate(&mut ws, &link, shutdown, &**creds, timing).await {
+            return link.conclude(abort, auto_reconnect.is_enabled());
         }
-
-        let subscribe_outcome = tokio::select! {
-            outcome = tokio::time::timeout(timing.handshake_reply_timeout, subscribe_all(&mut ws)) => {
-                outcome.unwrap_or(Err(VTubeError::Timeout))
-            }
-            () = shutdown.notified() => {
-                announce_stopped(state, &**publisher, endpoint);
-                return SessionEnd::Stopped;
-            }
-        };
-        let mut subscriptions = match subscribe_outcome {
-            Ok(requested) => requested,
-            Err(e) => {
-                tracing::debug!(endpoint = %endpoint, error = %e, "event subscription failed, will retry");
-                let detail = e.to_string();
-                record_reason(state, last_failure, VTubeDisconnectReason::SubscribeFailed);
-                settle_unless_retrying(auto_reconnect.is_enabled(), state, &**publisher);
-                emit_connection_changed(
-                    &**publisher,
-                    endpoint,
-                    false,
-                    Some(VTubeDisconnectReason::SubscribeFailed),
-                    Some(detail),
-                );
-                return SessionEnd::AttemptFailed;
-            }
+        let subscriptions = match subscribe(&mut ws, endpoint, shutdown, timing).await {
+            Ok(subscriptions) => subscriptions,
+            Err(abort) => return link.conclude(abort, auto_reconnect.is_enabled()),
         };
 
-        {
-            let mut g = connected_at.write_recover();
-            *g = Some(Instant::now());
-        }
+        *connected_at.write_recover() = Some(Instant::now());
         record_connection_failure(state, last_failure, None);
         set_connection_state(
             state,
@@ -552,175 +430,38 @@ impl ReconnectingSession for SupervisorContext {
         catalog_signal.bump();
         tracing::info!(endpoint = %endpoint, "connected and authenticated to VTube Studio");
 
-        let mut pending: HashMap<String, InFlight> = HashMap::new();
-        let mut last_face_found: Option<bool> = None;
-        let mut expr_tick = tokio::time::interval(timing.expression_poll_interval);
-        let mut sweep_tick = tokio::time::interval(timing.request_sweep_interval);
-        let mut expr_baseline: Option<HashMap<String, bool>> = None;
-        let mut expr_poll: Option<ExpressionPoll> = None;
-        let mut unanswered_polls: u32 = 0;
-        let mut close_reason = VTubeDisconnectReason::SocketClosed;
-
-        let mut seeds = tokio::select! {
-            sent = send_seed_queries(&mut ws, timing.request_timeout) => sent,
-            () = shutdown.notified() => {
-                announce_stopped(state, &**publisher, endpoint);
-                return SessionEnd::Stopped;
-            }
+        let mut session = SessionLoop {
+            ws,
+            endpoint,
+            publisher: &**publisher,
+            health_state,
+            health_tx,
+            content_notifier,
+            catalog_signal,
+            timing,
+            pending: HashMap::new(),
+            seeds: HashMap::new(),
+            subscriptions,
+            last_face_found: None,
+            expr_baseline: None,
+            expr_poll: None,
+            unanswered_polls: 0,
         };
-        content_notifier.notify_model_changed();
-        content_notifier.notify_items_changed();
+        let exit = session.run(req_rx, shutdown).await;
+        drop(session);
 
-        loop {
-            tokio::select! {
-                () = shutdown.notified() => {
-                    clear_session_state(health_state, health_tx);
-                    catalog_signal.bump();
-                    announce_stopped(state, &**publisher, endpoint);
-                    return SessionEnd::Stopped;
-                }
-                Some(req) = req_rx.recv() => {
-                    match tokio::time::timeout(timing.request_timeout, send_text(&mut ws, req.payload)).await {
-                        Ok(Ok(())) => {}
-                        Ok(Err(error)) => {
-                            tracing::info!(endpoint = %endpoint, %error, "VTube Studio write failed; dropping the session");
-                            break;
-                        }
-                        Err(_) => {
-                            tracing::info!(endpoint = %endpoint, "VTube Studio write stalled; dropping the session");
-                            break;
-                        }
-                    }
-                    pending.insert(
-                        req.request_id,
-                        InFlight {
-                            respond_to: req.respond_to,
-                            sent_at: Instant::now(),
-                        },
-                    );
-                }
-                inbound = next_inbound(&mut ws) => {
-                    let val = match inbound {
-                        Inbound::Closed => {
-                            tracing::info!(endpoint = %endpoint, "VTube Studio connection closed");
-                            break;
-                        }
-                        Inbound::Skipped => continue,
-                        Inbound::Envelope(val) => val,
-                    };
-                    let msg_type = val["messageType"].as_str().unwrap_or("");
-                    if is_reply(msg_type) {
-                        let req_id = val["requestID"].as_str().unwrap_or("");
-                        if let Some(in_flight) = pending.remove(req_id) {
-                            #[expect(
-                                clippy::let_underscore_must_use,
-                                reason = "the requester may stop waiting for the reply"
-                            )]
-                            let _ = in_flight.respond_to.send(val["data"].clone());
-                        } else if let Some(query) = seeds.remove(req_id) {
-                            apply_seed(
-                                &query,
-                                &val["data"],
-                                &mut last_face_found,
-                                health_state,
-                                health_tx,
-                            );
-                        } else if let Some(event_name) = subscriptions.remove(req_id) {
-                            if msg_type == API_ERROR_MESSAGE_TYPE {
-                                tracing::warn!(
-                                    endpoint = %endpoint,
-                                    event_name,
-                                    error_id = ?api_error_id(&val),
-                                    "VTube Studio rejected an event subscription; its triggers will not fire"
-                                );
-                            }
-                        } else if msg_type == API_ERROR_MESSAGE_TYPE {
-                            tracing::debug!(
-                                endpoint = %endpoint,
-                                error_id = ?api_error_id(&val),
-                                "VTube Studio error for a request nobody awaits"
-                            );
-                        }
-                    } else if let Some(event) = VtsEvent::decode(&val) {
-                        if matches!(event, VtsEvent::ModelLoaded { .. }) {
-                            content_notifier.notify_model_changed();
-                            expr_baseline = None;
-                        }
-                        if matches!(event, VtsEvent::ModelConfigChanged { .. }) {
-                            content_notifier.notify_model_changed();
-                        }
-                        if event.changes_scene_items() {
-                            catalog_signal.bump();
-                            content_notifier.notify_items_changed();
-                        }
-                        if !is_repeated_face_state(&event, &mut last_face_found) {
-                            crate::events::dispatch_vts_event(&event, &**publisher);
-                        }
-                        update_from_event(&event, health_state, health_tx);
-                    }
-                }
-                _ = expr_tick.tick(), if expr_poll.is_none() => {
-                    let req = new_request(EXPRESSION_STATE_REQUEST, serde_json::json!({ "details": false }));
-                    if let Err(error) = send_ws_msg_within(&mut ws, &req, timing.request_timeout).await {
-                        tracing::info!(endpoint = %endpoint, %error, "VTube Studio poll write failed; dropping the session");
-                        break;
-                    }
-                    let (tx, rx) = oneshot::channel();
-                    let sent_at = Instant::now();
-                    pending.insert(
-                        req.request_id.clone(),
-                        InFlight { respond_to: tx, sent_at },
-                    );
-                    expr_poll = Some(ExpressionPoll {
-                        request_id: req.request_id,
-                        reply: rx,
-                        deadline: sent_at + timing.expression_poll_timeout,
-                    });
-                }
-                result = await_expression_poll(&mut expr_poll) => {
-                    let finished = expr_poll.take();
-                    if let Some(data) = result {
-                        unanswered_polls = 0;
-                        if check_response(&data).is_ok()
-                            && diff_and_emit_expressions(&data, &mut expr_baseline, &**publisher)
-                        {
-                            content_notifier.notify_items_changed();
-                        }
-                    } else {
-                        if let Some(poll) = finished {
-                            pending.remove(&poll.request_id);
-                        }
-                        unanswered_polls += 1;
-                        if unanswered_polls >= UNANSWERED_POLLS_BEFORE_SUSPECT {
-                            tracing::warn!(
-                                endpoint = %endpoint,
-                                "VTube Studio stopped answering the expression poll; dropping the session"
-                            );
-                            close_reason = VTubeDisconnectReason::Unresponsive;
-                            break;
-                        }
-                    }
-                }
-                _ = sweep_tick.tick() => {
-                    if pending.values().any(|f| f.sent_at.elapsed() >= timing.unresponsive_threshold()) {
-                        tracing::warn!(
-                            endpoint = %endpoint,
-                            "VTube Studio left a request unanswered; dropping the session"
-                        );
-                        close_reason = VTubeDisconnectReason::Unresponsive;
-                        break;
-                    }
-                }
+        let close_reason = match exit {
+            LoopExit::Stopped => {
+                clear_session_state(health_state, health_tx);
+                catalog_signal.bump();
+                return link.conclude(Abort::Stopped, false);
             }
-        }
-        pending.clear();
+            LoopExit::StoppedBeforeLive => return link.conclude(Abort::Stopped, false),
+            LoopExit::Lost(reason) => reason,
+        };
         clear_session_state(health_state, health_tx);
         catalog_signal.bump();
-
-        {
-            let mut g = connected_at.write_recover();
-            *g = None;
-        }
+        *connected_at.write_recover() = None;
         record_reason(state, last_failure, close_reason);
         let retry = auto_reconnect.is_enabled();
         settle_unless_retrying(retry, state, &**publisher);
@@ -734,6 +475,368 @@ impl ReconnectingSession for SupervisorContext {
         }
         emit_connection_changed(&**publisher, endpoint, false, Some(close_reason), None);
         SessionEnd::SessionLost
+    }
+}
+
+enum Abort {
+    Stopped,
+    Halted(VTubeDisconnectReason),
+    Retry {
+        failure: Option<MessageRef>,
+        reason: VTubeDisconnectReason,
+        detail: Option<String>,
+    },
+}
+
+impl Abort {
+    fn retry(reason: VTubeDisconnectReason, detail: String) -> Self {
+        Self::Retry {
+            failure: messages::for_disconnect_reason(reason),
+            reason,
+            detail: Some(detail),
+        }
+    }
+}
+
+struct Link<'a> {
+    endpoint: &'a str,
+    state: &'a AtomicConnectionState,
+    publisher: &'a dyn EventPublisher,
+    last_failure: &'a RwLock<Option<MessageRef>>,
+}
+
+impl Link<'_> {
+    fn conclude(&self, abort: Abort, retry: bool) -> SessionEnd {
+        match abort {
+            Abort::Stopped => {
+                announce_stopped(self.state, self.publisher, self.endpoint);
+                SessionEnd::Stopped
+            }
+            Abort::Halted(reason) => {
+                record_reason(self.state, self.last_failure, reason);
+                set_connection_state(
+                    self.state,
+                    self.publisher,
+                    ConnectionState::Disconnected,
+                    ConnectionTransition::Unexpected,
+                );
+                emit_connection_changed(self.publisher, self.endpoint, false, Some(reason), None);
+                SessionEnd::Stopped
+            }
+            Abort::Retry {
+                failure,
+                reason,
+                detail,
+            } => {
+                record_connection_failure(self.state, self.last_failure, failure);
+                settle_unless_retrying(retry, self.state, self.publisher);
+                emit_connection_changed(self.publisher, self.endpoint, false, Some(reason), detail);
+                SessionEnd::AttemptFailed
+            }
+        }
+    }
+}
+
+async fn dial(
+    endpoint: &str,
+    shutdown: &Notify,
+    timing: VTubeTiming,
+    transport_layer: &TransportLayer,
+) -> Result<VtsWs, Abort> {
+    let outcome = tokio::select! {
+        outcome = dial_within(endpoint, timing.connect_timeout) => outcome,
+        () = shutdown.notified() => return Err(Abort::Stopped),
+    };
+    match outcome {
+        Ok(ws) => Ok(transport_layer(ws)),
+        Err(failed) => {
+            tracing::debug!(
+                endpoint = %endpoint,
+                error = %failed.detail,
+                "VTube Studio connection attempt failed"
+            );
+            Err(Abort::Retry {
+                failure: Some(failed.message),
+                reason: VTubeDisconnectReason::ConnectFailed,
+                detail: Some(failed.detail),
+            })
+        }
+    }
+}
+
+async fn authenticate(
+    ws: &mut VtsWs,
+    link: &Link<'_>,
+    shutdown: &Notify,
+    creds: &dyn CredentialsRepo,
+    timing: VTubeTiming,
+) -> Result<(), Abort> {
+    let outcome = tokio::select! {
+        outcome = run_auth(ws, creds, link.endpoint, link.publisher, timing) => outcome,
+        () = shutdown.notified() => return Err(Abort::Stopped),
+    };
+    match outcome {
+        Ok(()) => Ok(()),
+        Err(VTubeError::TokenRejected) => Err(Abort::Halted(VTubeDisconnectReason::AuthRequired)),
+        Err(VTubeError::TokenDenied) => Err(Abort::Halted(VTubeDisconnectReason::AuthDenied)),
+        Err(VTubeError::TokenTimeout) => Err(Abort::Halted(VTubeDisconnectReason::AuthTimeout)),
+        Err(e) => {
+            tracing::debug!(endpoint = %link.endpoint, error = %e, "auth failed, will retry");
+            Err(Abort::retry(
+                VTubeDisconnectReason::AuthFailed,
+                e.to_string(),
+            ))
+        }
+    }
+}
+
+async fn subscribe(
+    ws: &mut VtsWs,
+    endpoint: &str,
+    shutdown: &Notify,
+    timing: VTubeTiming,
+) -> Result<HashMap<String, &'static str>, Abort> {
+    let outcome = tokio::select! {
+        outcome = tokio::time::timeout(timing.handshake_reply_timeout, subscribe_all(ws)) => {
+            outcome.unwrap_or(Err(VTubeError::Timeout))
+        }
+        () = shutdown.notified() => return Err(Abort::Stopped),
+    };
+    outcome.map_err(|e| {
+        tracing::debug!(endpoint = %endpoint, error = %e, "event subscription failed, will retry");
+        Abort::retry(VTubeDisconnectReason::SubscribeFailed, e.to_string())
+    })
+}
+
+enum LoopExit {
+    Stopped,
+    StoppedBeforeLive,
+    Lost(VTubeDisconnectReason),
+}
+
+struct SessionLoop<'a> {
+    ws: VtsWs,
+    endpoint: &'a str,
+    publisher: &'a dyn EventPublisher,
+    health_state: &'a Arc<RwLock<HealthSnapshot>>,
+    health_tx: &'a broadcast::Sender<HealthDelta>,
+    content_notifier: &'a crate::content::ContentNotifier,
+    catalog_signal: &'a crate::catalog::CatalogSignal,
+    timing: VTubeTiming,
+    pending: HashMap<String, InFlight>,
+    seeds: HashMap<String, SeedQuery>,
+    subscriptions: HashMap<String, &'static str>,
+    last_face_found: Option<bool>,
+    expr_baseline: Option<HashMap<String, bool>>,
+    expr_poll: Option<ExpressionPoll>,
+    unanswered_polls: u32,
+}
+
+impl SessionLoop<'_> {
+    async fn run(
+        &mut self,
+        req_rx: &mut mpsc::UnboundedReceiver<PendingRequest>,
+        shutdown: &Notify,
+    ) -> LoopExit {
+        let mut expr_tick = tokio::time::interval(self.timing.expression_poll_interval);
+        let mut sweep_tick = tokio::time::interval(self.timing.request_sweep_interval);
+
+        self.seeds = tokio::select! {
+            sent = send_seed_queries(&mut self.ws, self.timing.request_timeout) => sent,
+            () = shutdown.notified() => return LoopExit::StoppedBeforeLive,
+        };
+        self.content_notifier.notify_model_changed();
+        self.content_notifier.notify_items_changed();
+
+        loop {
+            tokio::select! {
+                () = shutdown.notified() => return LoopExit::Stopped,
+                Some(req) = req_rx.recv() => {
+                    if !self.forward(req).await {
+                        return self.lost(VTubeDisconnectReason::SocketClosed);
+                    }
+                }
+                inbound = next_inbound(&mut self.ws) => match inbound {
+                    Inbound::Closed => {
+                        tracing::info!(endpoint = %self.endpoint, "VTube Studio connection closed");
+                        return self.lost(VTubeDisconnectReason::SocketClosed);
+                    }
+                    Inbound::Skipped => {}
+                    Inbound::Envelope(val) => self.on_envelope(&val),
+                },
+                _ = expr_tick.tick(), if self.expr_poll.is_none() => {
+                    if !self.start_expression_poll().await {
+                        return self.lost(VTubeDisconnectReason::SocketClosed);
+                    }
+                }
+                result = await_expression_poll(&mut self.expr_poll) => {
+                    if let Some(exit) = self.finish_expression_poll(result) {
+                        return exit;
+                    }
+                }
+                _ = sweep_tick.tick() => {
+                    if self.has_stale_request() {
+                        tracing::warn!(
+                            endpoint = %self.endpoint,
+                            "VTube Studio left a request unanswered; dropping the session"
+                        );
+                        return self.lost(VTubeDisconnectReason::Unresponsive);
+                    }
+                }
+            }
+        }
+    }
+
+    fn lost(&mut self, reason: VTubeDisconnectReason) -> LoopExit {
+        self.pending.clear();
+        LoopExit::Lost(reason)
+    }
+
+    async fn forward(&mut self, req: PendingRequest) -> bool {
+        match tokio::time::timeout(
+            self.timing.request_timeout,
+            send_text(&mut self.ws, req.payload),
+        )
+        .await
+        {
+            Ok(Ok(())) => {}
+            Ok(Err(error)) => {
+                tracing::info!(endpoint = %self.endpoint, %error, "VTube Studio write failed; dropping the session");
+                return false;
+            }
+            Err(_) => {
+                tracing::info!(endpoint = %self.endpoint, "VTube Studio write stalled; dropping the session");
+                return false;
+            }
+        }
+        self.pending.insert(
+            req.request_id,
+            InFlight {
+                respond_to: req.respond_to,
+                sent_at: Instant::now(),
+            },
+        );
+        true
+    }
+
+    fn on_envelope(&mut self, val: &serde_json::Value) {
+        let msg_type = val["messageType"].as_str().unwrap_or("");
+        if is_reply(msg_type) {
+            self.on_reply(msg_type, val);
+        } else if let Some(event) = VtsEvent::decode(val) {
+            self.on_event(&event);
+        }
+    }
+
+    fn on_reply(&mut self, msg_type: &str, val: &serde_json::Value) {
+        let req_id = val["requestID"].as_str().unwrap_or("");
+        if let Some(in_flight) = self.pending.remove(req_id) {
+            #[expect(
+                clippy::let_underscore_must_use,
+                reason = "the requester may stop waiting for the reply"
+            )]
+            let _ = in_flight.respond_to.send(val["data"].clone());
+        } else if let Some(query) = self.seeds.remove(req_id) {
+            apply_seed(
+                &query,
+                &val["data"],
+                &mut self.last_face_found,
+                self.health_state,
+                self.health_tx,
+            );
+        } else if let Some(event_name) = self.subscriptions.remove(req_id) {
+            if msg_type == API_ERROR_MESSAGE_TYPE {
+                tracing::warn!(
+                    endpoint = %self.endpoint,
+                    event_name,
+                    error_id = ?api_error_id(val),
+                    "VTube Studio rejected an event subscription; its triggers will not fire"
+                );
+            }
+        } else if msg_type == API_ERROR_MESSAGE_TYPE {
+            tracing::debug!(
+                endpoint = %self.endpoint,
+                error_id = ?api_error_id(val),
+                "VTube Studio error for a request nobody awaits"
+            );
+        }
+    }
+
+    fn on_event(&mut self, event: &VtsEvent) {
+        if matches!(event, VtsEvent::ModelLoaded { .. }) {
+            self.content_notifier.notify_model_changed();
+            self.expr_baseline = None;
+        }
+        if matches!(event, VtsEvent::ModelConfigChanged { .. }) {
+            self.content_notifier.notify_model_changed();
+        }
+        if event.changes_scene_items() {
+            self.catalog_signal.bump();
+            self.content_notifier.notify_items_changed();
+        }
+        if !is_repeated_face_state(event, &mut self.last_face_found) {
+            crate::events::dispatch_vts_event(event, self.publisher);
+        }
+        update_from_event(event, self.health_state, self.health_tx);
+    }
+
+    async fn start_expression_poll(&mut self) -> bool {
+        let req = new_request(
+            EXPRESSION_STATE_REQUEST,
+            serde_json::json!({ "details": false }),
+        );
+        if let Err(error) =
+            send_ws_msg_within(&mut self.ws, &req, self.timing.request_timeout).await
+        {
+            tracing::info!(endpoint = %self.endpoint, %error, "VTube Studio poll write failed; dropping the session");
+            return false;
+        }
+        let (tx, rx) = oneshot::channel();
+        let sent_at = Instant::now();
+        self.pending.insert(
+            req.request_id.clone(),
+            InFlight {
+                respond_to: tx,
+                sent_at,
+            },
+        );
+        self.expr_poll = Some(ExpressionPoll {
+            request_id: req.request_id,
+            reply: rx,
+            deadline: sent_at + self.timing.expression_poll_timeout,
+        });
+        true
+    }
+
+    fn finish_expression_poll(&mut self, result: Option<serde_json::Value>) -> Option<LoopExit> {
+        let finished = self.expr_poll.take();
+        if let Some(data) = result {
+            self.unanswered_polls = 0;
+            if check_response(&data).is_ok()
+                && diff_and_emit_expressions(&data, &mut self.expr_baseline, self.publisher)
+            {
+                self.content_notifier.notify_items_changed();
+            }
+            return None;
+        }
+        if let Some(poll) = finished {
+            self.pending.remove(&poll.request_id);
+        }
+        self.unanswered_polls += 1;
+        if self.unanswered_polls >= UNANSWERED_POLLS_BEFORE_SUSPECT {
+            tracing::warn!(
+                endpoint = %self.endpoint,
+                "VTube Studio stopped answering the expression poll; dropping the session"
+            );
+            return Some(self.lost(VTubeDisconnectReason::Unresponsive));
+        }
+        None
+    }
+
+    fn has_stale_request(&self) -> bool {
+        self.pending
+            .values()
+            .any(|f| f.sent_at.elapsed() >= self.timing.unresponsive_threshold())
     }
 }
 

@@ -7,9 +7,9 @@ use forge_storage::{
 };
 use forge_types::{ActionId, TriggerInstance, TriggerInstanceId, Variant};
 
-use crate::binding::{COMBO_FIELD, HotkeyEdge};
+use crate::bindings::reconciler::HotkeyReconciler;
+use crate::bindings::row::{COMBO_FIELD, HotkeyEdge};
 use crate::combo::HotkeyCombo;
-use crate::reconciler::HotkeyReconciler;
 
 pub struct HotkeySyncedTriggerRepo {
     inner: Arc<dyn TriggerInstanceRepo>,
@@ -19,12 +19,9 @@ pub struct HotkeySyncedTriggerRepo {
 impl HotkeySyncedTriggerRepo {
     pub fn wrap(
         inner: Arc<dyn TriggerInstanceRepo>,
-        reconciler: Option<Arc<HotkeyReconciler>>,
+        reconciler: Arc<HotkeyReconciler>,
     ) -> Arc<dyn TriggerInstanceRepo> {
-        match reconciler {
-            Some(reconciler) => Arc::new(Self { inner, reconciler }),
-            None => inner,
-        }
+        Arc::new(Self { inner, reconciler })
     }
 
     async fn sync(&self) {

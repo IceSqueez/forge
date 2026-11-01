@@ -1,20 +1,19 @@
-mod hotkey_pressed;
-mod hotkey_released;
+mod edge_descriptor;
 
-pub(crate) use hotkey_pressed::HotkeyPressedDescriptor;
-pub(crate) use hotkey_released::HotkeyReleasedDescriptor;
+use edge_descriptor::HotkeyEdgeDescriptor;
 
 use forge_events::Event;
 use forge_registry::{RegistryError, TriggerRegistry};
 use forge_types::{TriggerConfig, UserText, Variant, VerbatimText};
 
+use crate::bindings::row::HotkeyEdge;
 use crate::combo::HotkeyCombo;
 use crate::vocabulary::{fields, messages};
 
 pub fn register_hotkey_triggers(reg: &mut TriggerRegistry) -> Result<(), RegistryError> {
     let mut reg = reg.owned_by(crate::HOTKEY_INTEGRATION.id);
-    reg.register(Box::new(HotkeyPressedDescriptor))?;
-    reg.register(Box::new(HotkeyReleasedDescriptor))?;
+    reg.register(Box::new(HotkeyEdgeDescriptor::new(HotkeyEdge::Press)))?;
+    reg.register(Box::new(HotkeyEdgeDescriptor::new(HotkeyEdge::Release)))?;
     Ok(())
 }
 

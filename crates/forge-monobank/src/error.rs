@@ -1,3 +1,5 @@
+use std::time::Duration;
+
 use forge_net::{GatewayFailure, InvalidRequest, ResponseDecodeError};
 use forge_platform_core::PlatformError;
 use thiserror::Error;
@@ -121,9 +123,9 @@ impl From<MonobankError> for PlatformError {
                 reason: error.to_string(),
             },
             MonobankError::CoolingDown { retry_after_secs }
-            | MonobankError::RateLimited { retry_after_secs } => {
-                PlatformError::RateLimited { retry_after_secs }
-            }
+            | MonobankError::RateLimited { retry_after_secs } => PlatformError::RateLimited {
+                retry_after: Duration::from_secs(u64::from(retry_after_secs)),
+            },
             MonobankError::Http { status } => PlatformError::Http {
                 status,
                 body: String::new(),
@@ -134,10 +136,13 @@ impl From<MonobankError> for PlatformError {
                     reason: error.to_string(),
                 }
             }
-            MonobankError::Credential { .. }
-            | MonobankError::ClientInit { .. }
-            | MonobankError::NoRuntime => {
-                PlatformError::Io(std::io::Error::other(error.to_string()))
+            MonobankError::Credential { .. } => PlatformError::Storage {
+                reason: error.to_string(),
+            },
+            MonobankError::ClientInit { .. } | MonobankError::NoRuntime => {
+                PlatformError::Internal {
+                    reason: error.to_string(),
+                }
             }
         }
     }

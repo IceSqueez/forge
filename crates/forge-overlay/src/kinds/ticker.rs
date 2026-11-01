@@ -7,6 +7,7 @@ use crate::descriptor::{
 };
 use crate::messages;
 use crate::metrics;
+use crate::metrics::ElementSizing;
 use crate::motion::{self, MotionAxes, MotionProfile};
 use crate::preview::{PreviewComposition, PreviewShape, compose};
 use crate::source_box::{ContentMargins, DesignSize};
@@ -97,6 +98,14 @@ impl OverlayKindDescriptor for TickerOverlayKind {
         config::shared_fields()
     }
 
+    fn sizing(&self) -> Option<ElementSizing> {
+        Some(metrics::TICKER_SIZING)
+    }
+
+    fn style_declarations(&self) -> Vec<String> {
+        metrics::TICKER.declarations()
+    }
+
     fn page_assets(&self) -> PageAssets {
         PageAssets {
             markup: include_str!("../../assets/ticker/index.html"),
@@ -106,10 +115,6 @@ impl OverlayKindDescriptor for TickerOverlayKind {
     }
 
     fn preview(&self, config: &OverlayConfig, _: forge_types::NamesLanguage) -> PreviewComposition {
-        compose(
-            PreviewShape::Strip,
-            metrics::element_sizing(KIND_ID),
-            config,
-        )
+        compose(PreviewShape::Strip, self.sizing(), config)
     }
 }

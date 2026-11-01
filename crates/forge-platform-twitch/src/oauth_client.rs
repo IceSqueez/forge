@@ -210,9 +210,9 @@ pub(crate) fn oauth_error(failure: GatewayFailure) -> PlatformError {
     match failure {
         GatewayFailure::Cancelled => PlatformError::DeviceAuthEnded(DeviceAuthEnd::Cancelled),
         GatewayFailure::BudgetExhausted { .. } => PlatformError::RateLimitExhausted,
-        GatewayFailure::RateLimited { retry_after, .. } => PlatformError::RateLimited {
-            retry_after_secs: u32::try_from(retry_after.as_secs()).unwrap_or(u32::MAX),
-        },
+        GatewayFailure::RateLimited { retry_after, .. } => {
+            PlatformError::RateLimited { retry_after }
+        }
         other => match other.status() {
             Some(status) => PlatformError::Http {
                 status,
@@ -455,9 +455,7 @@ mod tests {
                 |e| {
                     matches!(
                         e,
-                        PlatformError::RateLimited {
-                            retry_after_secs: 7
-                        }
+                        PlatformError::RateLimited { retry_after } if *retry_after == Duration::from_secs(7)
                     )
                 },
             ),

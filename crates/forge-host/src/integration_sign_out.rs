@@ -196,7 +196,9 @@ mod tests {
     type Journal = Arc<Mutex<Vec<&'static str>>>;
 
     fn io_failure() -> PlatformError {
-        PlatformError::Io(std::io::Error::other("credentials store is read-only"))
+        PlatformError::Storage {
+            reason: "credentials store is read-only".to_owned(),
+        }
     }
 
     struct RecordingControl {
@@ -456,7 +458,10 @@ mod tests {
         .run(Some(Arc::clone(&control) as Arc<dyn BuiltinControl>))
         .await;
 
-        assert!(matches!(result, Err(PlatformError::Io(_))), "{result:?}");
+        assert!(
+            matches!(result, Err(PlatformError::Storage { .. })),
+            "{result:?}"
+        );
         assert_eq!(
             (
                 registry_holds(&builtins, &forge_obs::OBS_INTEGRATION.id),
@@ -478,7 +483,10 @@ mod tests {
 
         let result = entry_over(route, &journal).run(None).await;
 
-        assert!(matches!(result, Err(PlatformError::Io(_))), "{result:?}");
+        assert!(
+            matches!(result, Err(PlatformError::Storage { .. })),
+            "{result:?}"
+        );
         assert_eq!(journal.lock().unwrap().clone(), Vec::<&str>::new());
     }
 }

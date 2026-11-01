@@ -473,7 +473,9 @@ mod tests {
     }
 
     fn storage_unreadable() -> PlatformError {
-        PlatformError::Io(std::io::Error::other("credential store unreadable"))
+        PlatformError::Storage {
+            reason: "credential store unreadable".to_owned(),
+        }
     }
 
     fn network_down() -> PlatformError {
@@ -1116,7 +1118,7 @@ mod tests {
             ),
             (
                 PlatformError::RateLimited {
-                    retry_after_secs: 30,
+                    retry_after: Duration::from_secs(30),
                 },
                 "30",
             ),

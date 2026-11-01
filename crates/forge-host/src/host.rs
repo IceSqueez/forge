@@ -183,13 +183,11 @@ pub async fn build_host(inputs: HostInputs) -> Host {
         }
     }
 
-    if let Some(reconciler) = &integrations.hotkey_reconciler {
-        spawn_clip_hotkey_dispatcher(
-            bus.as_ref(),
-            reconciler.clip_bindings(),
-            Arc::clone(&soundboard_player),
-        );
-    }
+    spawn_clip_hotkey_dispatcher(
+        bus.as_ref(),
+        integrations.hotkey_reconciler.clip_bindings(),
+        Arc::clone(&soundboard_player),
+    );
 
     let FrozenRuntime {
         catalog,
@@ -225,11 +223,10 @@ pub async fn build_host(inputs: HostInputs) -> Host {
     donations.recover_unannounced().await;
     supervisor.boot().await;
     let integration_states = supervisor.watch().current();
-    if let (Some(reconciler), Some(engine)) = (
-        &integrations.hotkey_reconciler,
-        supervisor.slot(&HOTKEY_INTEGRATION.id),
-    ) {
-        reconciler.enable_engine_on_new_bindings(move || engine.request_enable());
+    if let Some(engine) = supervisor.slot(&HOTKEY_INTEGRATION.id) {
+        integrations
+            .hotkey_reconciler
+            .enable_engine_on_new_bindings(move || engine.request_enable());
     }
     let stream_live = spawn_stream_live_signal(
         &live_viewers,

@@ -582,8 +582,8 @@ pub(crate) fn recipient_rejects_whispers() -> MessageRef {
     MessageRef::new(RECIPIENT_REJECTS_WHISPERS)
 }
 
-pub(crate) fn shoutout_cooldown(retry_after_secs: u64) -> MessageRef {
-    MessageRef::new(SHOUTOUT_COOLDOWN).with_arg("seconds", retry_after_secs)
+pub(crate) fn shoutout_cooldown(retry_after: std::time::Duration) -> MessageRef {
+    MessageRef::new(SHOUTOUT_COOLDOWN).with_arg("seconds", retry_after.as_secs())
 }
 
 pub(crate) fn condition_reward_id(reward: &str) -> MessageRef {
@@ -814,7 +814,7 @@ mod tests {
             recipient_empty(),
             recipient_rejects_whispers(),
             whisper_pattern_invalid("d"),
-            shoutout_cooldown(30),
+            shoutout_cooldown(std::time::Duration::from_secs(30)),
             health_chat_joined(),
             health_eventsub_subs(3),
             health_viewers_live(),

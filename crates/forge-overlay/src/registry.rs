@@ -4,6 +4,7 @@ use std::fmt;
 use crate::config::{effective_overlay_config, validate_overlay_config};
 use crate::descriptor::{OverlayConfig, OverlayKindDescriptor};
 use crate::error::OverlayError;
+use crate::metrics::StyleGuard;
 
 #[derive(Default)]
 pub struct OverlayKindRegistry {
@@ -42,6 +43,19 @@ impl OverlayKindRegistry {
 
     pub fn all(&self) -> impl Iterator<Item = &dyn OverlayKindDescriptor> {
         self.descriptors.values().map(|b| b.as_ref())
+    }
+
+    pub fn style_guards(&self) -> Vec<StyleGuard> {
+        self.all()
+            .filter_map(|descriptor| {
+                let sizing = descriptor.sizing()?;
+                Some(StyleGuard::of(
+                    descriptor.id(),
+                    descriptor.style_declarations(),
+                    sizing,
+                ))
+            })
+            .collect()
     }
 
     pub fn effective_config(

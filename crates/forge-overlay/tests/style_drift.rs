@@ -8,7 +8,6 @@ use forge_overlay::metrics::{
     ALERT, AlertMetrics, CHAT, ChatMetrics, FRAME, FrameMetrics, GOAL, GoalMetrics, LATEST,
     LatestMetrics, TEXT_SCALE_PROPERTY, TICKER, TickerMetrics,
 };
-use forge_overlay::{element_sizing, style_guards};
 
 const SCALED_NUMBERS: &[(&str, &[f32])] = &[
     (ALERT_KIND, &[12.0, 13.0, 14.0, 16.0, 20.0, 22.0, 26.0]),
@@ -91,8 +90,8 @@ fn stylesheet(kind_id: &str) -> &'static str {
 
 #[test]
 fn every_metric_a_guard_names_is_written_verbatim_in_its_kinds_stylesheet() {
-    for guard in style_guards() {
-        let style = stylesheet(guard.kind_id);
+    for guard in registry().style_guards() {
+        let style = stylesheet(&guard.kind_id);
 
         assert!(
             !guard.declarations.is_empty(),
@@ -214,7 +213,9 @@ fn every_kind_whose_element_is_bound_to_the_box_width_keeps_its_text_inside_that
     let widthful: BTreeSet<&str> = reg
         .all()
         .filter(|descriptor| {
-            element_sizing(descriptor.id()).is_some_and(|sizing| sizing.width.is_some())
+            descriptor
+                .sizing()
+                .is_some_and(|sizing| sizing.width.is_some())
         })
         .map(|descriptor| descriptor.id())
         .collect();
@@ -274,7 +275,8 @@ fn single_line_text_ellipsizes_at_the_box_edge_instead_of_spilling() {
 #[test]
 fn a_kind_is_guarded_against_style_drift_exactly_when_it_draws_a_page() {
     let reg = registry();
-    let guarded: BTreeSet<&str> = style_guards().iter().map(|guard| guard.kind_id).collect();
+    let guards = reg.style_guards();
+    let guarded: BTreeSet<&str> = guards.iter().map(|guard| guard.kind_id.as_str()).collect();
     let drawing: BTreeSet<&str> = reg
         .all()
         .filter(|descriptor| descriptor.has_visual_page())

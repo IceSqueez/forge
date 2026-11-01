@@ -3,8 +3,8 @@ use std::time::{Duration, SystemTime};
 
 use async_trait::async_trait;
 use forge_platform_core::{
-    CredentialState, CredentialStateTracker, PlatformError, REFRESH_BUFFER_SECS,
-    SingleFlightRefresh, TokenRotation, credential_storage_error, reauth_required,
+    CredentialState, CredentialStateTracker, PlatformError, REFRESH_BUFFER, SingleFlightRefresh,
+    TokenRotation, credential_storage_error, reauth_required,
 };
 use forge_storage::{CredentialId, CredentialsRepo};
 use forge_types::OAuthToken;
@@ -15,8 +15,6 @@ use crate::credentials::{
 };
 use crate::oauth_client::TwitchOAuthClient;
 use crate::vocabulary::PLATFORM_ID;
-
-const REFRESH_BUFFER: Duration = Duration::from_secs(REFRESH_BUFFER_SECS);
 
 pub struct TwitchCredentialsManager {
     refresh: SingleFlightRefresh<TwitchRotation>,
@@ -235,7 +233,7 @@ impl crate::helix::HelixTokenSource for TwitchCredentialsManager {
 fn token_error_to_helix(e: PlatformError) -> crate::error::TwitchError {
     match e {
         PlatformError::ReauthRequired { .. } => crate::error::TwitchError::ReauthRequired,
-        PlatformError::Io(io) => crate::error::TwitchError::Credentials(io.to_string()),
+        PlatformError::Storage { reason } => crate::error::TwitchError::Credentials(reason),
         PlatformError::Http { status, .. } => crate::error::TwitchError::Credentials(format!(
             "twitch token refresh failed: HTTP {status}"
         )),

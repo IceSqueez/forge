@@ -1,7 +1,5 @@
 use async_trait::async_trait;
 
-use forge_types::Variant;
-
 use crate::error::VTubeError;
 use crate::runners::choices::{AngleRelativeTo, FadeMode, SizeRelativeTo, VertexPinType};
 
@@ -43,6 +41,60 @@ pub struct ItemLoad<'a> {
     pub unload_on_disconnect: bool,
 }
 
+#[derive(Debug, Clone, PartialEq)]
+pub struct ModelMove {
+    pub x: Option<f64>,
+    pub y: Option<f64>,
+    pub rotation: Option<f64>,
+    pub size: Option<f64>,
+    pub time_in_seconds: f64,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct ModelTint {
+    pub color_r: i64,
+    pub color_g: i64,
+    pub color_b: i64,
+    pub color_a: i64,
+    pub mix_with_scene_lighting: Option<f64>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct CurrentModel {
+    pub name: String,
+    pub id: String,
+    pub loaded: bool,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct HotkeyList {
+    pub names: Vec<String>,
+    pub ids: Vec<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ExpressionList {
+    pub names: Vec<String>,
+    pub active: Vec<bool>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ParameterList {
+    pub names: Vec<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ItemList {
+    pub instance_ids: Vec<String>,
+    pub file_names: Vec<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct LoadedItem {
+    pub instance_id: String,
+    pub file_name: String,
+}
+
 #[async_trait]
 pub trait VTubeSink: Send + Sync {
     async fn trigger_hotkey(&self, hotkey_id: &str) -> Result<(), VTubeError>;
@@ -55,59 +107,31 @@ pub trait VTubeSink: Send + Sync {
 
     async fn deactivate_all_expressions(&self) -> Result<(), VTubeError>;
 
-    async fn move_model(
-        &self,
-        x: Option<f64>,
-        y: Option<f64>,
-        rotation: Option<f64>,
-        size: Option<f64>,
-        time_in_seconds: f64,
-    ) -> Result<(), VTubeError>;
+    async fn move_model(&self, request: &ModelMove) -> Result<(), VTubeError>;
 
     async fn move_item(&self, request: &ItemMove<'_>) -> Result<(), VTubeError>;
 
-    async fn get_current_model(&self) -> Result<Variant, VTubeError>;
+    async fn get_current_model(&self) -> Result<CurrentModel, VTubeError>;
 
-    async fn get_hotkeys(&self) -> Result<Variant, VTubeError>;
+    async fn get_hotkeys(&self) -> Result<HotkeyList, VTubeError>;
 
-    async fn get_expressions(&self) -> Result<Variant, VTubeError>;
+    async fn get_expressions(&self) -> Result<ExpressionList, VTubeError>;
 
-    async fn get_parameters(&self) -> Result<Variant, VTubeError>;
+    async fn get_parameters(&self) -> Result<ParameterList, VTubeError>;
 
-    async fn get_items(&self) -> Result<Variant, VTubeError>;
+    async fn get_items(&self) -> Result<ItemList, VTubeError>;
 
     async fn pin_item(&self, request: &ItemPin<'_>) -> Result<(), VTubeError>;
 
-    async fn load_item(&self, request: &ItemLoad<'_>) -> Result<Variant, VTubeError>;
+    async fn load_item(&self, request: &ItemLoad<'_>) -> Result<LoadedItem, VTubeError>;
 
     async fn unload_all_items(&self) -> Result<(), VTubeError>;
 
-    async fn tint_all_art_meshes(
-        &self,
-        color_r: i64,
-        color_g: i64,
-        color_b: i64,
-        color_a: i64,
-        mix_with_scene_lighting: Option<f64>,
-    ) -> Result<(), VTubeError>;
+    async fn tint_all_art_meshes(&self, request: &ModelTint) -> Result<(), VTubeError>;
 
     async fn set_physics_override(
         &self,
         strength: f64,
         override_seconds: f64,
     ) -> Result<(), VTubeError>;
-}
-
-pub(crate) mod result_keys {
-    pub(crate) const NAME: &str = "name";
-    pub(crate) const ID: &str = "id";
-    pub(crate) const LOADED: &str = "loaded";
-    pub(crate) const NAMES: &str = "names";
-    pub(crate) const IDS: &str = "ids";
-    pub(crate) const ACTIVE: &str = "active";
-    pub(crate) const COUNT: &str = "count";
-    pub(crate) const INSTANCE_IDS: &str = "instance_ids";
-    pub(crate) const FILE_NAMES: &str = "file_names";
-    pub(crate) const INSTANCE_ID: &str = "instance_id";
-    pub(crate) const FILE_NAME: &str = "file_name";
 }

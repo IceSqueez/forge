@@ -2,7 +2,7 @@
 
 use std::sync::Arc;
 
-use forge_discord::{DISCORD_CRED_PREFIX, DiscordClient, DiscordError};
+use forge_discord::{DISCORD_CRED_PREFIX, DiscordClient, DiscordError, MentionPolicy};
 use forge_events::EventPublisher;
 use forge_events::test_support::CapturingPublisher;
 use forge_storage::test_support::MemoryCredentials;
@@ -79,7 +79,11 @@ async fn a_saved_webhook_posts_and_reports_the_event_and_a_healthy_send() {
         .mount(&fixture.server)
         .await;
 
-    let message_id = fixture.client.post_text(WEBHOOK, "hello").await.unwrap();
+    let message_id = fixture
+        .client
+        .post_text(WEBHOOK, "hello", MentionPolicy::default())
+        .await
+        .unwrap();
 
     assert_eq!(message_id, "msg-1");
     assert_eq!(fixture.kinds(), [POSTED_KIND]);
@@ -109,7 +113,11 @@ async fn a_rate_limited_post_is_retried_and_recovers() {
         .mount(&fixture.server)
         .await;
 
-    let message_id = fixture.client.post_text(WEBHOOK, "again").await.unwrap();
+    let message_id = fixture
+        .client
+        .post_text(WEBHOOK, "again", MentionPolicy::default())
+        .await
+        .unwrap();
 
     assert_eq!(message_id, "msg-2");
     assert_eq!(fixture.kinds(), [RATE_LIMITED_KIND, POSTED_KIND]);
@@ -127,7 +135,7 @@ async fn a_rejected_post_reports_a_failure_without_the_webhook_token() {
 
     let error = fixture
         .client
-        .post_text(WEBHOOK, "rejected")
+        .post_text(WEBHOOK, "rejected", MentionPolicy::default())
         .await
         .unwrap_err();
 
@@ -159,7 +167,9 @@ async fn a_webhook_stored_before_boot_is_listed_and_a_deleted_one_can_no_longer_
     assert_eq!(client.list_webhooks().await.unwrap(), [WEBHOOK]);
     assert!(client.delete_webhook(WEBHOOK).await.unwrap());
 
-    let after_delete = client.post_text(WEBHOOK, "gone").await;
+    let after_delete = client
+        .post_text(WEBHOOK, "gone", MentionPolicy::default())
+        .await;
     assert!(
         matches!(after_delete, Err(DiscordError::WebhookNotFound { .. })),
         "{after_delete:?}"

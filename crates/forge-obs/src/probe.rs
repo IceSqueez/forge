@@ -1,7 +1,7 @@
 use std::time::{Duration, Instant};
 
-use crate::client::map_obws_error;
 use crate::error::ObsError;
+use crate::obws_error::map_obws_error;
 
 const PROBE_TIMEOUT: Duration = Duration::from_secs(5);
 

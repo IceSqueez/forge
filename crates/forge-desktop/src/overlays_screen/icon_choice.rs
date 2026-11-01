@@ -80,10 +80,14 @@ pub(super) fn icon_art(choice: &IconChoice<'_>) -> Option<GlyphArt> {
     }
 }
 
+fn glyph_label(glyph: &CuratedIcon) -> String {
+    super::kind_visuals::kind_text(glyph.label_code())
+}
+
 pub(super) fn icon_label(choice: &IconChoice<'_>) -> String {
     match choice {
         IconChoice::None => tr!("overlays_icon_none"),
-        IconChoice::Glyph(glyph) => glyph.label(),
+        IconChoice::Glyph(glyph) => glyph_label(glyph),
         IconChoice::Image(image) => image.label.clone(),
         IconChoice::Unresolved(value) => (*value).to_owned(),
     }
@@ -208,10 +212,15 @@ pub(super) fn icon_groups(
                 id: SharedString::from(glyph.name),
                 glyph: GlyphArt::Svg(glyph.bytes()),
                 tint: accent,
-                name: SharedString::from(glyph.label()),
+                name: SharedString::from(glyph_label(glyph)),
                 desc: SharedString::from(glyph.words.join(WORD_SEPARATOR)),
                 state: GridPickerItemState::Normal,
-                matches: Some(Box::new(move |query: &str| glyph.matches(query))),
+                matches: Some(Box::new(move |query: &str| {
+                    glyph.matches(query)
+                        || glyph_label(glyph)
+                            .to_lowercase()
+                            .contains(&query.trim().to_lowercase())
+                })),
             })
             .collect();
         if items.is_empty() {
@@ -703,7 +712,7 @@ mod tests {
         let images = library();
         for (stored, expected) in [
             ("", "overlays_icon_none"),
-            (GLYPH, "Heart"),
+            (GLYPH, "overlay.icon_heart"),
             (&image_reference(BLOB_A), "cat.png"),
             (NOT_A_GLYPH, NOT_A_GLYPH),
         ] {

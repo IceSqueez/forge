@@ -368,10 +368,11 @@ impl AppShell {
             }
             forge_midi::vocabulary::INTEGRATION_ID => return Self::midi_screen(handles, cx),
             forge_hotkey::vocabulary::INTEGRATION_ID => {
-                match handles.integrations.hotkey_reconciler.clone() {
-                    Some(reconciler) => return Self::hotkeys_screen(handles, reconciler, cx),
-                    None => handles.integrations.builtins.get(id),
-                }
+                return Self::hotkeys_screen(
+                    handles,
+                    handles.integrations.hotkey_reconciler.clone(),
+                    cx,
+                );
             }
             forge_discord::vocabulary::INTEGRATION_ID => {
                 match handles.integrations.discord_client.clone() {

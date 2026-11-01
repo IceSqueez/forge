@@ -134,7 +134,7 @@ pub(crate) struct SetupLiveHandles {
 impl SetupLiveHandles {
     pub(crate) fn of(handles: &RuntimeHandles) -> Self {
         Self {
-            hotkeys: handles.integrations.hotkey_reconciler.clone(),
+            hotkeys: Some(handles.integrations.hotkey_reconciler.clone()),
             speak: handles.speech.speak.clone(),
             pipeline_config: handles.speech.pipeline_config.clone(),
             bot_accounts: Some(handles.automation.bot_accounts.clone()),

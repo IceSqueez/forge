@@ -1,5 +1,3 @@
-use crate::kinds::{alert, chat, frame, goal, latest, ticker};
-
 pub const SURFACE_RGB: [u8; 3] = [20, 20, 28];
 pub const PILL_RADIUS: f32 = 999.0;
 
@@ -234,18 +232,6 @@ pub const TICKER_SIZING: ElementSizing = ElementSizing {
     base_text_size: TICKER.headline_size,
 };
 
-pub fn element_sizing(kind_id: &str) -> Option<ElementSizing> {
-    match kind_id {
-        alert::KIND_ID => Some(ALERT_SIZING),
-        chat::KIND_ID => Some(CHAT_SIZING),
-        frame::KIND_ID => Some(FRAME_SIZING),
-        goal::KIND_ID => Some(GOAL_SIZING),
-        latest::KIND_ID => Some(LATEST_SIZING),
-        ticker::KIND_ID => Some(TICKER_SIZING),
-        _ => None,
-    }
-}
-
 impl ElementSizing {
     pub fn default_text_size_px(self) -> u32 {
         self.base_text_size.round() as u32
@@ -269,30 +255,17 @@ impl ElementSizing {
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct StyleGuard {
-    pub kind_id: &'static str,
+    pub kind_id: String,
     pub declarations: Vec<String>,
 }
 
-pub fn style_guards() -> Vec<StyleGuard> {
-    vec![
-        guard(alert::KIND_ID, ALERT.declarations(), ALERT_SIZING),
-        guard(chat::KIND_ID, CHAT.declarations(), CHAT_SIZING),
-        guard(frame::KIND_ID, FRAME.declarations(), FRAME_SIZING),
-        guard(goal::KIND_ID, GOAL.declarations(), GOAL_SIZING),
-        guard(latest::KIND_ID, LATEST.declarations(), LATEST_SIZING),
-        guard(ticker::KIND_ID, TICKER.declarations(), TICKER_SIZING),
-    ]
-}
-
-fn guard(
-    kind_id: &'static str,
-    mut declarations: Vec<String>,
-    sizing: ElementSizing,
-) -> StyleGuard {
-    declarations.extend(sizing.declarations());
-    StyleGuard {
-        kind_id,
-        declarations,
+impl StyleGuard {
+    pub(crate) fn of(kind_id: &str, mut declarations: Vec<String>, sizing: ElementSizing) -> Self {
+        declarations.extend(sizing.declarations());
+        Self {
+            kind_id: kind_id.to_owned(),
+            declarations,
+        }
     }
 }
 

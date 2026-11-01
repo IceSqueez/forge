@@ -184,14 +184,14 @@ mod tests {
 
     async fn supervised_client() -> Arc<VTubeClient> {
         let client = Arc::new(VTubeClient::new_for_test("ws://forge.invalid"));
-        let stop = client.shutdown.lock().await.clone();
+        let stop = client.supervision.stop_notifier().await;
         let supervisor = tokio::spawn(async move { stop.notified().await });
-        *client.supervisor.lock().unwrap() = Some(supervisor);
+        client.supervision.install_task(supervisor);
         client
     }
 
     fn is_torn_down(client: &VTubeClient) -> bool {
-        client.supervisor.lock().unwrap().is_none()
+        !client.supervision.has_task()
     }
 
     fn guarded(

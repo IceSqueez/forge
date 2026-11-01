@@ -10,7 +10,7 @@ use forge_types::{ArgStack, SubActionTelemetry};
 
 use crate::runners::fields::{DURATION, IMMEDIATE_SECONDS, ROTATION, X, Y, optional_number};
 use crate::runners::step_failure;
-use crate::sink::VTubeSink;
+use crate::sink::{ModelMove, VTubeSink};
 use crate::vocabulary::{config_keys, sub_action_ids};
 
 const SIZE: OptionalField<NumberField> = optional_number(config_keys::SIZE, "Size", "-100 to 100");
@@ -97,13 +97,13 @@ impl SubActionRunner for ModelMoveRunner {
         let outcome = step_failure::outcome(
             &self
                 .sink
-                .move_model(
-                    target.x,
-                    target.y,
-                    target.rotation,
-                    target.size,
-                    target.duration.unwrap_or(IMMEDIATE_SECONDS),
-                )
+                .move_model(&ModelMove {
+                    x: target.x,
+                    y: target.y,
+                    rotation: target.rotation,
+                    size: target.size,
+                    time_in_seconds: target.duration.unwrap_or(IMMEDIATE_SECONDS),
+                })
                 .await,
         );
         (timer.finish(outcome), None)

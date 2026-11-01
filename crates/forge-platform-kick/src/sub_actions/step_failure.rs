@@ -5,9 +5,7 @@ use crate::vocabulary::messages;
 
 pub(crate) fn platform_message(error: &PlatformError) -> MessageRef {
     match error {
-        PlatformError::RateLimited { retry_after_secs } => {
-            messages::rate_limited(*retry_after_secs)
-        }
+        PlatformError::RateLimited { retry_after } => messages::rate_limited(*retry_after),
         PlatformError::RateLimitExhausted | PlatformError::QuotaExhausted => {
             messages::rate_budget_exhausted()
         }
@@ -20,6 +18,8 @@ pub(crate) fn platform_message(error: &PlatformError) -> MessageRef {
         PlatformError::Serialization(error) => messages::response_unreadable(&error.to_string()),
         PlatformError::Network { reason } => messages::request_failed(reason),
         PlatformError::Io(_)
+        | PlatformError::Storage { .. }
+        | PlatformError::Internal { .. }
         | PlatformError::UnknownSender { .. }
         | PlatformError::LoopbackPortInUse { .. }
         | PlatformError::Unsupported { .. }
@@ -56,6 +56,8 @@ pub(crate) fn broadcaster_failed(error: &PlatformError) -> UserText {
 
 #[cfg(test)]
 mod tests {
+    use std::time::Duration;
+
     use forge_types::MessageArg;
 
     use super::*;
@@ -83,7 +85,7 @@ mod tests {
             (
                 "rate limited",
                 PlatformError::RateLimited {
-                    retry_after_secs: 7,
+                    retry_after: Duration::from_secs(7),
                 },
                 "kick.rate_limited",
             ),
@@ -242,7 +244,7 @@ mod tests {
     #[test]
     fn rate_limit_carries_the_retry_delay_and_no_detail() {
         let text = failed(&PlatformError::RateLimited {
-            retry_after_secs: 42,
+            retry_after: Duration::from_secs(42),
         });
 
         assert_eq!(message(&text).arg("seconds"), Some(&MessageArg::Int(42)));

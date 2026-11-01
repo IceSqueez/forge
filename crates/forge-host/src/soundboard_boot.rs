@@ -17,7 +17,7 @@ pub(crate) struct SoundboardInputs<'a> {
     pub(crate) backend: &'a Arc<dyn DataProvider>,
     pub(crate) bus: &'a Arc<EventBus>,
     pub(crate) audio_sinks: Arc<dyn AudioSinkFactory>,
-    pub(crate) hotkey_reconciler: Option<Arc<HotkeyReconciler>>,
+    pub(crate) hotkey_reconciler: Arc<HotkeyReconciler>,
 }
 
 pub(crate) async fn build_soundboard(

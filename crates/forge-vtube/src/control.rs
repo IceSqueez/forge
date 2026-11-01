@@ -1,8 +1,6 @@
-use forge_types::{RecoverMutex, RecoverRwLock};
-use std::sync::Arc;
+use forge_types::RecoverRwLock;
 
 use async_trait::async_trait;
-use tokio::sync::Notify;
 
 use forge_platform_core::{
     BuiltinControl, ConnectionState, ConnectionTransition, ControlFailure, ControlOutcome,
@@ -10,89 +8,37 @@ use forge_platform_core::{
 };
 
 use crate::client::VTubeClient;
-use crate::supervisor::SupervisorContext;
 
 #[async_trait]
 impl BuiltinControl for VTubeClient {
     async fn reconnect(&self) -> ControlOutcome {
-        let _lifecycle = self.lifecycle.lock().await;
-        let new_notify = Arc::new(Notify::new());
-        {
-            let mut slot = self.shutdown.lock().await;
-            let old_notify = slot.clone();
-            *slot = Arc::clone(&new_notify);
-            old_notify.notify_one();
-        }
-
-        let old_handle = self.supervisor.lock_recover().take();
-        if let Some(h) = old_handle
-            && let Err(error) = h.await
-        {
-            tracing::warn!(%error, "vtube supervisor task ended abnormally");
-        }
+        let _lifecycle = self.supervision.lifecycle.lock().await;
+        let new_notify = self.supervision.stop_for_restart().await;
 
         crate::supervisor::set_connection_state(
             &self.state,
-            &*self.reconnect_publisher,
+            &*self.supervision.publisher,
             ConnectionState::Connecting,
             ConnectionTransition::Expected,
         );
-        {
-            let mut g = self.connected_at.write_recover();
-            *g = None;
-        }
+        *self.connected_at.write_recover() = None;
         record_connection_failure(&self.state, &self.last_failure, None);
 
         let (new_req_tx, new_req_rx) = tokio::sync::mpsc::unbounded_channel();
-        {
-            let mut tx_slot = self.req_tx.lock().await;
-            *tx_slot = new_req_tx;
-        }
+        *self.req_tx.lock().await = new_req_tx;
 
-        let ctx = SupervisorContext {
-            endpoint: self.config.endpoint.clone(),
-            state: Arc::clone(&self.state),
-            shutdown: new_notify,
-            connected_at: Arc::clone(&self.connected_at),
-            publisher: Arc::clone(&self.reconnect_publisher),
-            creds: Arc::clone(&self.reconnect_creds),
-            req_rx: new_req_rx,
-            health_state: Arc::clone(&self.health.state),
-            health_tx: self.health.tx.clone(),
-            content_notifier: self.content.notifier.clone(),
-            catalog_signal: self.catalog_signal(),
-            connected_notifier: self.connected_notifier.clone(),
-            auto_reconnect: self.auto_reconnect.watch(),
-            last_failure: Arc::clone(&self.last_failure),
-            timing: self.timing,
-            transport_layer: Arc::clone(&self.transport_layer),
-        };
-        let new_handle = tokio::spawn(crate::supervisor::run_supervisor(ctx));
-        {
-            let mut g = self.supervisor.lock_recover();
-            *g = Some(new_handle);
-        }
+        self.launch_supervisor(new_notify, new_req_rx);
 
         Ok(())
     }
 
     async fn disconnect(&self) -> ControlOutcome {
-        let _lifecycle = self.lifecycle.lock().await;
-        let slot = self.shutdown.lock().await;
-        let notify = slot.clone();
-        drop(slot);
-        notify.notify_one();
-
-        let handle = self.supervisor.lock_recover().take();
-        if let Some(h) = handle
-            && let Err(error) = h.await
-        {
-            tracing::warn!(%error, "vtube supervisor task ended abnormally");
-        }
+        let _lifecycle = self.supervision.lifecycle.lock().await;
+        self.supervision.stop().await;
         record_connection_failure(&self.state, &self.last_failure, None);
         crate::supervisor::set_connection_state(
             &self.state,
-            &*self.reconnect_publisher,
+            &*self.supervision.publisher,
             ConnectionState::Disconnected,
             ConnectionTransition::Expected,
         );

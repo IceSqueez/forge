@@ -4,9 +4,9 @@ use std::time::Duration;
 
 use forge_events::{EventPublisher, EventSource, RequestFailed, TypedEvent};
 use forge_net::{
-    CallClass, DEFAULT_RETRY_AFTER_SECS, FailureContext, FailureObserver, Gateway,
-    GatewayBuildError, GatewayFailure, GatewayProfile, GatewayRequest, GatewayResponse,
-    RateLimiter, RequestBody, ThrottleHintFamily, TokenBucketRateLimiter,
+    CallClass, DEFAULT_RETRY_AFTER, FailureContext, FailureObserver, Gateway, GatewayBuildError,
+    GatewayFailure, GatewayProfile, GatewayRequest, GatewayResponse, RateLimiter, RequestBody,
+    ThrottleHintFamily, TokenBucketRateLimiter,
 };
 use forge_platform_core::{PlatformEndpoints, PlatformError};
 
@@ -15,7 +15,7 @@ use crate::quota_state::{SharedQuota, today_pacific};
 const YOUTUBE_CALL_BUDGET_CAPACITY: u32 = 10;
 const YOUTUBE_CALL_BUDGET_WINDOW: Duration = Duration::from_secs(10);
 
-const NO_RETRY_AFTER_WAIT: Duration = Duration::from_secs(DEFAULT_RETRY_AFTER_SECS as u64);
+const NO_RETRY_AFTER_WAIT: Duration = DEFAULT_RETRY_AFTER;
 const BODY_SNIPPET_MAX_CHARS: usize = 200;
 const JSON_CONTENT_TYPE: &str = "application/json";
 const QUOTA_EXCEEDED_REASON: &str = "quotaExceeded";
@@ -182,9 +182,9 @@ impl DataApiError {
             Self::Gateway(failure) => failure,
         };
         match failure {
-            GatewayFailure::RateLimited { retry_after, .. } => PlatformError::RateLimited {
-                retry_after_secs: u32::try_from(retry_after.as_secs()).unwrap_or(u32::MAX),
-            },
+            GatewayFailure::RateLimited { retry_after, .. } => {
+                PlatformError::RateLimited { retry_after }
+            }
             GatewayFailure::BudgetExhausted { .. } => PlatformError::RateLimitExhausted,
             GatewayFailure::Forbidden { excerpt }
                 if excerpt.as_str().contains(QUOTA_EXCEEDED_REASON) =>
@@ -420,8 +420,8 @@ mod tests {
 
     fn maps_to(error: &PlatformError, expected: &Mapped) -> bool {
         match (error, expected) {
-            (PlatformError::RateLimited { retry_after_secs }, Mapped::RateLimited(secs)) => {
-                retry_after_secs == secs
+            (PlatformError::RateLimited { retry_after }, Mapped::RateLimited(secs)) => {
+                retry_after.as_secs() == u64::from(*secs)
             }
             (PlatformError::QuotaExhausted, Mapped::Quota) => true,
             (PlatformError::Auth { reason }, Mapped::MissingScope) => reason == SCOPE,

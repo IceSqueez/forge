@@ -247,7 +247,7 @@ async fn forge_role_ping_post_reaches_the_fake_with_its_message_id_and_mentions(
     let client = forge_client(&fake, &saved_url(&fake));
 
     let message_id = client
-        .post_text_with_mentions(
+        .post_text(
             ALERTS,
             "<@&42> we are live",
             MentionPolicy {
@@ -296,7 +296,7 @@ async fn forge_retries_once_after_the_fake_rate_limits_its_post() {
     let client = forge_client(&fake, &saved_url(&fake));
 
     client
-        .post_text_with_mentions(ALERTS, "hi", MentionPolicy::default())
+        .post_text(ALERTS, "hi", MentionPolicy::default())
         .await
         .unwrap();
 
@@ -342,7 +342,7 @@ async fn forge_post_to_a_revoked_webhook_surfaces_the_404_without_the_token() {
     let client = forge_client(&fake, &revoked);
 
     let err = client
-        .post_text_with_mentions(ALERTS, "hi", MentionPolicy::default())
+        .post_text(ALERTS, "hi", MentionPolicy::default())
         .await
         .unwrap_err();
 

@@ -6,6 +6,7 @@ use forge_types::{ArgStack, MessageCode, NamesLanguage, Variant};
 use crate::assets::PageAssets;
 use crate::base;
 use crate::config;
+use crate::metrics::ElementSizing;
 use crate::motion::{self, MotionProfile};
 use crate::preview::PreviewComposition;
 use crate::source_box::{ContentMargins, DesignSize};
@@ -106,6 +107,12 @@ pub trait OverlayKindDescriptor: Send + Sync {
     }
     fn speaks(&self) -> bool {
         true
+    }
+    fn sizing(&self) -> Option<ElementSizing> {
+        None
+    }
+    fn style_declarations(&self) -> Vec<String> {
+        Vec::new()
     }
     fn page_assets(&self) -> PageAssets;
     fn preview(&self, config: &OverlayConfig, language: NamesLanguage) -> PreviewComposition;

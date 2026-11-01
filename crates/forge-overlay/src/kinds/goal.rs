@@ -7,6 +7,7 @@ use crate::descriptor::{
 };
 use crate::messages;
 use crate::metrics;
+use crate::metrics::ElementSizing;
 use crate::motion::{self, MotionAxes, MotionProfile};
 use crate::preview::{PreviewComposition, PreviewShape, compose};
 use crate::source_box::{ContentMargins, DesignSize};
@@ -93,6 +94,14 @@ impl OverlayKindDescriptor for GoalOverlayKind {
         fields
     }
 
+    fn sizing(&self) -> Option<ElementSizing> {
+        Some(metrics::GOAL_SIZING)
+    }
+
+    fn style_declarations(&self) -> Vec<String> {
+        metrics::GOAL.declarations()
+    }
+
     fn page_assets(&self) -> PageAssets {
         PageAssets {
             markup: include_str!("../../assets/goal/index.html"),
@@ -102,10 +111,6 @@ impl OverlayKindDescriptor for GoalOverlayKind {
     }
 
     fn preview(&self, config: &OverlayConfig, _: forge_types::NamesLanguage) -> PreviewComposition {
-        compose(
-            PreviewShape::ProgressBar,
-            metrics::element_sizing(KIND_ID),
-            config,
-        )
+        compose(PreviewShape::ProgressBar, self.sizing(), config)
     }
 }

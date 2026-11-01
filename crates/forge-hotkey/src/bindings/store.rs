@@ -5,10 +5,10 @@ use forge_storage::{DataProvider, TriggerChanges};
 use forge_types::{ActionId, TriggerInstance, TriggerInstanceId, Variant};
 
 use crate::backend::HotkeyId;
-use crate::binding::{BindingHalf, BindingRow, COMBO_FIELD, HotkeyEdge};
+use crate::bindings::reconciler::HotkeyReconciler;
+use crate::bindings::row::{BindingHalf, BindingRow, COMBO_FIELD, HotkeyEdge};
 use crate::combo::HotkeyCombo;
 use crate::error::HotkeyError;
-use crate::reconciler::HotkeyReconciler;
 
 fn canonical_combo_of(instance: &TriggerInstance) -> Option<String> {
     match instance.overrides.get(COMBO_FIELD) {

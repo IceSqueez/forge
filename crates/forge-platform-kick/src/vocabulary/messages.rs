@@ -1,3 +1,5 @@
+use std::time::Duration;
+
 use forge_types::{MessageCatalog, MessageCode, MessageRef, UpstreamDetail, VerbatimText};
 
 use crate::vocabulary::INTEGRATION_ID;
@@ -173,8 +175,11 @@ pub(crate) fn health_no_usage() -> MessageRef {
     MessageRef::new(HEALTH_NO_USAGE)
 }
 
-pub(crate) fn rate_limited(retry_after_secs: u32) -> MessageRef {
-    MessageRef::new(RATE_LIMITED).with_arg(SECONDS_ARG, i64::from(retry_after_secs))
+pub(crate) fn rate_limited(retry_after: Duration) -> MessageRef {
+    MessageRef::new(RATE_LIMITED).with_arg(
+        SECONDS_ARG,
+        i64::try_from(retry_after.as_secs()).unwrap_or(i64::MAX),
+    )
 }
 
 pub(crate) fn rate_budget_exhausted() -> MessageRef {
@@ -264,7 +269,7 @@ mod tests {
             health_viewers_live(),
             health_resets_in(9),
             health_no_usage(),
-            rate_limited(3),
+            rate_limited(Duration::from_secs(3)),
             rate_budget_exhausted(),
             reauth_required(),
             auth_refused("c"),

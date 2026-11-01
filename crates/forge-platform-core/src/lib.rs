@@ -82,6 +82,6 @@ pub use timestamp::{parse_timestamp, parse_timestamp_logged, timestamp_variant};
 
 pub use auth::pkce_flow::PkceAuthorizeUrl;
 pub use auth::{
-    CALLBACK_PATH, PkceAuthorization, PkceAuthorizeConfig, PkceLoopback, REFRESH_BUFFER_SECS,
+    CALLBACK_PATH, PkceAuthorization, PkceAuthorizeConfig, PkceLoopback, REFRESH_BUFFER,
     SingleFlightRefresh, TokenRotation, TokenSource, expires_within_refresh_buffer,
 };

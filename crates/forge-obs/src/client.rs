@@ -1,6 +1,5 @@
 use crate::vocabulary::labels;
 use forge_types::{IntegrationId, MessageRef, RecoverMutex, RecoverRwLock, UserText, VerbatimText};
-use std::collections::HashMap;
 use std::sync::{Arc, RwLock};
 use std::time::{Duration, Instant};
 
@@ -19,14 +18,17 @@ use forge_platform_core::{
 };
 
 use crate::catalog::{read_lock, write_lock};
-use crate::catalog_revisions::{CatalogBaseline, CatalogRevisions};
+use crate::catalog_revisions::CatalogRevisions;
+use crate::catalog_sync::{CatalogFeeds, CatalogSink, prime_session, snapshot_catalog};
 use crate::connect_failure::{connect_failure_message, credential_state_after};
+use crate::endpoint::parse_endpoint;
 use crate::error::ObsError;
+use crate::event_dispatch::{changes_content_rows_only, changes_option_lists, handle_obs_event};
 use crate::health::{HealthSnapshot, make_health_channel};
-use crate::item_ids::SceneItemIds;
-use crate::mirror::{AppliedEvent, FetchedSnapshot, FetchedTopology, ObsMirror};
-use crate::session::{LiveSession, with_deadline};
-use crate::source::SourceInfo;
+use crate::mirror::ObsMirror;
+use crate::obws_error::map_obws_error;
+use crate::session::LiveSession;
+use crate::stats_poll::spawn_stats_poll;
 use crate::stream_output::StreamOutputFeed;
 use crate::timing::ObsTiming;
 use crate::vocabulary::messages;
@@ -61,7 +63,14 @@ impl Drop for AbortOnDrop {
     }
 }
 
-type SessionSlot = Arc<tokio::sync::RwLock<Option<LiveSession>>>;
+pub(crate) type SessionSlot = Arc<tokio::sync::RwLock<Option<LiveSession>>>;
+
+#[derive(Clone)]
+struct ObsTarget {
+    host: String,
+    port: u16,
+    password: Option<String>,
+}
 
 pub struct ObsClient {
     pub(crate) inner: SessionSlot,
@@ -77,10 +86,8 @@ pub struct ObsClient {
     pub(crate) health_state: Arc<RwLock<HealthSnapshot>>,
     pub(crate) health_tx: broadcast::Sender<HealthDelta>,
     pub(crate) catalog_revisions: Arc<CatalogRevisions>,
-    reconnect_host: String,
-    reconnect_port: u16,
-    reconnect_password: Arc<Option<String>>,
-    reconnect_publisher: Arc<dyn EventPublisher>,
+    target: ObsTarget,
+    publisher: Arc<dyn EventPublisher>,
     auto_reconnect: AutoReconnectSwitch,
     last_failure: Arc<RwLock<Option<MessageRef>>>,
     resync_nudge: Arc<Notify>,
@@ -108,7 +115,6 @@ impl ObsClient {
         let inner: SessionSlot = Arc::new(tokio::sync::RwLock::new(None));
         let state = Arc::new(AtomicConnectionState::new(ConnectionState::Connecting));
         let notify = Arc::new(Notify::new());
-        let shutdown = Arc::new(tokio::sync::Mutex::new(Arc::clone(&notify)));
         let connected_at = Arc::new(RwLock::new(None::<Instant>));
         let obs_version = Arc::new(RwLock::new(None));
         let obs_ws_version = Arc::new(RwLock::new(None::<String>));
@@ -123,37 +129,12 @@ impl ObsClient {
         let resync_nudge = Arc::new(Notify::new());
         let stream_output = StreamOutputFeed::new(Arc::clone(&state), Arc::clone(&health_state));
 
-        let ctx = SupervisorContext {
-            inner: Arc::clone(&inner),
-            state: Arc::clone(&state),
-            shutdown: Arc::clone(&notify),
-            connected_at: Arc::clone(&connected_at),
-            obs_version: Arc::clone(&obs_version),
-            obs_ws_version: Arc::clone(&obs_ws_version),
-            mirror: Arc::clone(&mirror),
-            catalog_revisions: Arc::clone(&catalog_revisions),
-            health_state: Arc::clone(&health_state),
-            health_tx: health_tx.clone(),
-            publisher: Arc::clone(&publisher),
-            auto_reconnect: auto_reconnect.watch(),
-            last_failure: Arc::clone(&last_failure),
-            resync_nudge: Arc::clone(&resync_nudge),
-            stream_output: stream_output.clone(),
-            timing,
-        };
-        let handle = tokio::spawn(run_supervisor(
-            host.clone(),
-            port,
-            stored_password.clone(),
-            ctx,
-        ));
-
-        Ok(Self {
+        let client = Self {
             inner,
             endpoint: endpoint.to_owned(),
             state,
-            shutdown,
-            supervisor: Arc::new(std::sync::Mutex::new(Some(handle))),
+            shutdown: Arc::new(tokio::sync::Mutex::new(Arc::clone(&notify))),
+            supervisor: Arc::new(std::sync::Mutex::new(None)),
             connected_at,
             obs_id: crate::OBS_INTEGRATION.id,
             obs_version,
@@ -162,16 +143,43 @@ impl ObsClient {
             health_tx,
             mirror,
             catalog_revisions,
-            reconnect_host: host,
-            reconnect_port: port,
-            reconnect_password: Arc::new(stored_password),
-            reconnect_publisher: publisher,
+            target: ObsTarget {
+                host,
+                port,
+                password: stored_password,
+            },
+            publisher,
             auto_reconnect,
             last_failure,
             resync_nudge,
             stream_output,
             timing,
-        })
+        };
+        client.launch_supervisor(notify);
+        Ok(client)
+    }
+
+    fn launch_supervisor(&self, shutdown: Arc<Notify>) {
+        let ctx = SupervisorContext {
+            inner: Arc::clone(&self.inner),
+            state: Arc::clone(&self.state),
+            shutdown,
+            connected_at: Arc::clone(&self.connected_at),
+            obs_version: Arc::clone(&self.obs_version),
+            obs_ws_version: Arc::clone(&self.obs_ws_version),
+            mirror: Arc::clone(&self.mirror),
+            catalog_revisions: Arc::clone(&self.catalog_revisions),
+            health_state: Arc::clone(&self.health_state),
+            health_tx: self.health_tx.clone(),
+            publisher: Arc::clone(&self.publisher),
+            auto_reconnect: self.auto_reconnect.watch(),
+            last_failure: Arc::clone(&self.last_failure),
+            resync_nudge: Arc::clone(&self.resync_nudge),
+            stream_output: self.stream_output.clone(),
+            timing: self.timing,
+        };
+        let handle = tokio::spawn(run_supervisor(self.target.clone(), ctx));
+        *self.supervisor.lock_recover() = Some(handle);
     }
 
     pub fn connection_state(&self) -> ConnectionState {
@@ -197,8 +205,8 @@ impl ObsClient {
 
     #[cfg(test)]
     pub fn new_for_test(endpoint: String) -> Self {
-        let (host, port) =
-            parse_endpoint(&endpoint).unwrap_or(("localhost".to_owned(), DEFAULT_OBS_PORT));
+        let (host, port) = parse_endpoint(&endpoint)
+            .unwrap_or(("localhost".to_owned(), crate::endpoint::DEFAULT_OBS_PORT));
         let (health_tx, health_state) = make_health_channel();
         let state = Arc::new(AtomicConnectionState::new(ConnectionState::Disconnected));
         let stream_output = StreamOutputFeed::new(Arc::clone(&state), Arc::clone(&health_state));
@@ -216,10 +224,12 @@ impl ObsClient {
             health_tx,
             mirror: Arc::new(ObsMirror::default()),
             catalog_revisions: Arc::new(CatalogRevisions::default()),
-            reconnect_host: host,
-            reconnect_port: port,
-            reconnect_password: Arc::new(None),
-            reconnect_publisher: Arc::new(forge_events::test_support::NullPublisher),
+            target: ObsTarget {
+                host,
+                port,
+                password: None,
+            },
+            publisher: Arc::new(forge_events::test_support::NullPublisher),
             auto_reconnect: AutoReconnectSwitch::new(true),
             last_failure: Arc::new(RwLock::new(None)),
             resync_nudge: Arc::new(Notify::new()),
@@ -330,7 +340,7 @@ impl BuiltinControl for ObsClient {
 
         settle_connection_state(
             &self.state,
-            &*self.reconnect_publisher,
+            &*self.publisher,
             &self.stream_output,
             ConnectionState::Connecting,
             ConnectionTransition::Expected,
@@ -338,35 +348,7 @@ impl BuiltinControl for ObsClient {
         clear_connected_at(&self.connected_at);
         record_connection_failure(&self.state, &self.last_failure, None);
 
-        let ctx = SupervisorContext {
-            inner: Arc::clone(&self.inner),
-            state: Arc::clone(&self.state),
-            shutdown: new_notify,
-            connected_at: Arc::clone(&self.connected_at),
-            obs_version: Arc::clone(&self.obs_version),
-            obs_ws_version: Arc::clone(&self.obs_ws_version),
-            mirror: Arc::clone(&self.mirror),
-            catalog_revisions: Arc::clone(&self.catalog_revisions),
-            health_state: Arc::clone(&self.health_state),
-            health_tx: self.health_tx.clone(),
-            publisher: Arc::clone(&self.reconnect_publisher),
-            auto_reconnect: self.auto_reconnect.watch(),
-            last_failure: Arc::clone(&self.last_failure),
-            resync_nudge: Arc::clone(&self.resync_nudge),
-            stream_output: self.stream_output.clone(),
-            timing: self.timing,
-        };
-        let password = (*self.reconnect_password).clone();
-        let handle = tokio::spawn(run_supervisor(
-            self.reconnect_host.clone(),
-            self.reconnect_port,
-            password,
-            ctx,
-        ));
-        {
-            let mut g = self.supervisor.lock_recover();
-            *g = Some(handle);
-        }
+        self.launch_supervisor(new_notify);
 
         Ok(())
     }
@@ -385,7 +367,7 @@ impl BuiltinControl for ObsClient {
         record_connection_failure(&self.state, &self.last_failure, None);
         settle_connection_state(
             &self.state,
-            &*self.reconnect_publisher,
+            &*self.publisher,
             &self.stream_output,
             ConnectionState::Disconnected,
             ConnectionTransition::Expected,
@@ -420,9 +402,7 @@ struct SupervisorContext {
 pub const EVENT_BUFFER_CAPACITY: usize = 1024;
 
 struct ObsSupervisor {
-    host: String,
-    port: u16,
-    password: Option<String>,
+    target: ObsTarget,
     ctx: SupervisorContext,
 }
 
@@ -433,8 +413,8 @@ impl ReconnectingSession for ObsSupervisor {
 
     fn retry_scheduled(&self, delay: Duration) {
         tracing::info!(
-            host = %self.host,
-            port = self.port,
+            host = %self.target.host,
+            port = self.target.port,
             delay_ms = delay.as_millis(),
             "reconnecting to OBS"
         );
@@ -451,7 +431,7 @@ impl ReconnectingSession for ObsSupervisor {
     }
 
     fn auto_reconnect_turned_off(&self) {
-        tracing::info!(host = %self.host, port = self.port, "OBS auto-reconnect is off; waiting for a manual connect");
+        tracing::info!(host = %self.target.host, port = self.target.port, "OBS auto-reconnect is off; waiting for a manual connect");
         settle_connection_state(
             &self.ctx.state,
             &*self.ctx.publisher,
@@ -463,9 +443,12 @@ impl ReconnectingSession for ObsSupervisor {
 
     async fn attempt(&mut self, reconnecting: bool) -> SessionEnd {
         let Self {
-            ref host,
-            port,
-            ref password,
+            target:
+                ObsTarget {
+                    ref host,
+                    port,
+                    ref password,
+                },
             ctx:
                 SupervisorContext {
                     ref inner,
@@ -560,14 +543,17 @@ impl ReconnectingSession for ObsSupervisor {
             }
         };
 
+        let sink = CatalogSink {
+            mirror,
+            health_state,
+            health_tx,
+        };
         let primed = tokio::select! {
             outcome = prime_session(
                 &session,
                 obs_version,
                 obs_ws_version,
-                mirror,
-                health_state,
-                health_tx,
+                &sink,
             ) => outcome,
             () = shutdown.notified() => {
                 settle_connection_state(state, &**publisher, stream_output, ConnectionState::Disconnected, ConnectionTransition::Expected);
@@ -703,50 +689,14 @@ impl ReconnectingSession for ObsSupervisor {
     }
 }
 
-async fn run_supervisor(host: String, port: u16, password: Option<String>, ctx: SupervisorContext) {
+async fn run_supervisor(target: ObsTarget, ctx: SupervisorContext) {
     let backoff = Backoff::new(
         ctx.timing.reconnect_base_delay,
         ctx.timing.reconnect_max_delay,
     );
     let auto_reconnect = ctx.auto_reconnect.clone();
-    let mut supervisor = ObsSupervisor {
-        host,
-        port,
-        password,
-        ctx,
-    };
+    let mut supervisor = ObsSupervisor { target, ctx };
     run_reconnect_loop(&mut supervisor, backoff, auto_reconnect).await;
-}
-
-async fn prime_session(
-    session: &LiveSession,
-    obs_version: &RwLock<Option<String>>,
-    obs_ws_version: &RwLock<Option<String>>,
-    mirror: &ObsMirror,
-    health_state: &RwLock<HealthSnapshot>,
-    health_tx: &broadcast::Sender<HealthDelta>,
-) -> Result<(), ObsError> {
-    match session
-        .request("GetVersion", session.obs().general().version())
-        .await
-    {
-        Ok(v) => {
-            *write_lock(obs_version) = Some(v.obs_studio_version.to_string());
-            *write_lock(obs_ws_version) = Some(v.obs_web_socket_version.to_string());
-        }
-        Err(e) if e.is_connection_loss() => return Err(e),
-        Err(e) => tracing::warn!(error = %e, "failed to fetch OBS version"),
-    }
-    snapshot_catalog(session, mirror, health_state, health_tx).await
-}
-
-#[derive(Clone)]
-struct CatalogFeeds {
-    mirror: Arc<ObsMirror>,
-    catalog_revisions: Arc<CatalogRevisions>,
-    health_state: Arc<RwLock<HealthSnapshot>>,
-    health_tx: broadcast::Sender<HealthDelta>,
-    stream_output: StreamOutputFeed,
 }
 
 fn respawn_full_resync(
@@ -764,510 +714,17 @@ fn respawn_full_resync(
         stream_output,
     } = feeds.clone();
     *pending = Some(AbortOnDrop(tokio::spawn(async move {
-        if let Err(e) = snapshot_catalog(&session, &mirror, &health_state, &health_tx).await {
+        let sink = CatalogSink {
+            mirror: &mirror,
+            health_state: &health_state,
+            health_tx: &health_tx,
+        };
+        if let Err(e) = snapshot_catalog(&session, &sink).await {
             tracing::debug!(error = %e, "OBS catalog resync interrupted");
         }
         catalog_revisions.lists_changed();
         stream_output.refresh();
     })));
-}
-
-fn changes_option_lists(ev: &obws::events::Event) -> bool {
-    use obws::events::Event;
-    matches!(
-        ev,
-        Event::SceneCreated { .. }
-            | Event::SceneRemoved { .. }
-            | Event::SceneNameChanged { .. }
-            | Event::SceneListChanged { .. }
-            | Event::CurrentProgramSceneChanged { .. }
-            | Event::InputCreated { .. }
-            | Event::InputRemoved { .. }
-            | Event::InputNameChanged { .. }
-            | Event::SceneItemCreated { .. }
-            | Event::SceneItemRemoved { .. }
-            | Event::SceneItemEnableStateChanged { .. }
-            | Event::CurrentSceneTransitionChanged { .. }
-            | Event::CurrentProfileChanged { .. }
-            | Event::ProfileListChanged { .. }
-            | Event::CurrentSceneCollectionChanged { .. }
-            | Event::SceneCollectionListChanged { .. }
-    )
-}
-
-fn changes_content_rows_only(ev: &obws::events::Event) -> bool {
-    use obws::events::Event;
-    matches!(
-        ev,
-        Event::CurrentPreviewSceneChanged { .. } | Event::SceneItemLockStateChanged { .. }
-    )
-}
-
-fn handle_obs_event(
-    ev: &obws::events::Event,
-    mirror: &ObsMirror,
-    health_state: &RwLock<HealthSnapshot>,
-    health_tx: &broadcast::Sender<HealthDelta>,
-    publisher: &dyn EventPublisher,
-) {
-    let AppliedEvent {
-        previous_scene: from_scene,
-        visibility,
-        lock,
-    } = mirror.apply_event(ev);
-
-    let deltas = crate::events::apply_health_update(ev, &mut health_state.write_recover());
-    for delta in deltas {
-        #[expect(
-            clippy::let_underscore_must_use,
-            reason = "having no subscribers is a normal state"
-        )]
-        let _ = health_tx.send(delta);
-    }
-
-    if let Some(bus_event) = crate::events::map_obs_event(ev, from_scene.as_deref()) {
-        publisher.publish(bus_event);
-    }
-    for event in visibility.into_iter().chain(lock) {
-        publisher.publish(event);
-    }
-}
-
-fn tolerate_rejection<T>(outcome: Result<T, ObsError>) -> Result<Option<T>, ObsError> {
-    match outcome {
-        Ok(value) => Ok(Some(value)),
-        Err(e) if e.is_connection_loss() => Err(e),
-        Err(_) => Ok(None),
-    }
-}
-
-async fn snapshot_catalog(
-    session: &LiveSession,
-    mirror: &ObsMirror,
-    health_state: &RwLock<HealthSnapshot>,
-    health_tx: &broadcast::Sender<HealthDelta>,
-) -> Result<(), ObsError> {
-    for _ in 0..TOPOLOGY_FETCH_ATTEMPTS {
-        if snapshot_catalog_once(session, mirror, health_state, health_tx).await? {
-            return Ok(());
-        }
-    }
-    tracing::warn!(
-        "OBS catalog kept changing during every resync attempt; keeping the live mirror"
-    );
-    Ok(())
-}
-
-async fn snapshot_catalog_once(
-    session: &LiveSession,
-    mirror: &ObsMirror,
-    health_state: &RwLock<HealthSnapshot>,
-    health_tx: &broadcast::Sender<HealthDelta>,
-) -> Result<bool, ObsError> {
-    use obws::requests::inputs::InputId;
-    use obws::requests::scenes::SceneId;
-
-    let obs = session.obs();
-    let started_at = mirror.revision();
-
-    let scenes: Vec<String> =
-        tolerate_rejection(session.request("GetSceneList", obs.scenes().list()).await)?
-            .map(|list| list.scenes.iter().map(|s| s.id.name.clone()).collect())
-            .unwrap_or_default();
-
-    let current_scene: Option<String> = tolerate_rejection(
-        session
-            .request(
-                "GetCurrentProgramScene",
-                obs.scenes().current_program_scene(),
-            )
-            .await,
-    )?
-    .map(|s| s.id.name);
-
-    let current_preview_scene: Option<String> = tolerate_rejection(
-        session
-            .request(
-                "GetCurrentPreviewScene",
-                obs.scenes().current_preview_scene(),
-            )
-            .await,
-    )?
-    .map(|s| s.id.name);
-
-    let mut sources_by_scene: HashMap<String, Vec<SourceInfo>> = HashMap::new();
-    let mut db_cache: HashMap<String, f32> = HashMap::new();
-    let mut fresh_ids = SceneItemIds::default();
-    for scene in &scenes {
-        let Some(items) = tolerate_rejection(
-            session
-                .request(
-                    "GetSceneItemList",
-                    obs.scene_items().list(SceneId::Name(scene)),
-                )
-                .await,
-        )?
-        else {
-            continue;
-        };
-        let mut infos = Vec::with_capacity(items.len());
-        for item in items {
-            fresh_ids.insert(scene, item.id, &item.source_name);
-
-            let visible = tolerate_rejection(
-                session
-                    .request(
-                        "GetSceneItemEnabled",
-                        obs.scene_items().enabled(SceneId::Name(scene), item.id),
-                    )
-                    .await,
-            )?
-            .unwrap_or(true);
-            let locked = tolerate_rejection(
-                session
-                    .request(
-                        "GetSceneItemLocked",
-                        obs.scene_items().locked(SceneId::Name(scene), item.id),
-                    )
-                    .await,
-            )?
-            .unwrap_or(false);
-
-            let kind = item.input_kind;
-            let audio_db = if crate::catalog::is_audio_kind(kind.as_deref()) {
-                match db_cache.get(&item.source_name) {
-                    Some(db) => Some(*db),
-                    None => {
-                        let fetched = tolerate_rejection(
-                            session
-                                .request(
-                                    "GetInputVolume",
-                                    obs.inputs().volume(InputId::Name(&item.source_name)),
-                                )
-                                .await,
-                        )?
-                        .map(|v| v.db);
-                        if let Some(db) = fetched {
-                            db_cache.insert(item.source_name.clone(), db);
-                        }
-                        fetched
-                    }
-                }
-            } else {
-                None
-            };
-            infos.push(SourceInfo {
-                name: item.source_name,
-                visible,
-                locked,
-                audio_db,
-                kind,
-            });
-        }
-        sources_by_scene.insert(scene.clone(), infos);
-    }
-
-    let audio_inputs: Vec<String> = tolerate_rejection(
-        session
-            .request("GetInputList", obs.inputs().list(None))
-            .await,
-    )?
-    .map(|inputs| inputs.into_iter().map(|i| i.id.name).collect())
-    .unwrap_or_default();
-
-    let stream_status = tolerate_rejection(
-        session
-            .request("GetStreamStatus", obs.streaming().status())
-            .await,
-    )?;
-    let record_status = tolerate_rejection(
-        session
-            .request("GetRecordStatus", obs.recording().status())
-            .await,
-    )?;
-
-    let replaced = mirror.replace_snapshot(
-        started_at,
-        FetchedSnapshot {
-            scenes,
-            audio_inputs,
-            sources: sources_by_scene,
-            current_scene,
-            current_preview_scene,
-            ids: fresh_ids,
-        },
-    );
-    if !replaced {
-        return Ok(false);
-    }
-
-    if let Some(status) = stream_status {
-        let mut snapshot = health_state.write_recover();
-        for delta in crate::events::apply_stream_status_update(&status, &mut snapshot) {
-            #[expect(
-                clippy::let_underscore_must_use,
-                reason = "having no subscribers is a normal state"
-            )]
-            let _ = health_tx.send(delta);
-        }
-    }
-    if let Some(status) = record_status {
-        let mut snapshot = health_state.write_recover();
-        for delta in crate::events::apply_record_status_update(&status, &mut snapshot) {
-            #[expect(
-                clippy::let_underscore_must_use,
-                reason = "having no subscribers is a normal state"
-            )]
-            let _ = health_tx.send(delta);
-        }
-    }
-    Ok(true)
-}
-
-async fn reconcile_catalog_topology(
-    session: &LiveSession,
-    mirror: &ObsMirror,
-) -> Result<(), ObsError> {
-    for _ in 0..TOPOLOGY_FETCH_ATTEMPTS {
-        if reconcile_catalog_topology_once(session, mirror).await? {
-            return Ok(());
-        }
-    }
-    tracing::warn!(
-        "OBS catalog kept changing during every reconcile attempt; keeping the live mirror"
-    );
-    Ok(())
-}
-
-async fn reconcile_catalog_topology_once(
-    session: &LiveSession,
-    mirror: &ObsMirror,
-) -> Result<bool, ObsError> {
-    use obws::requests::scenes::SceneId;
-
-    let obs = session.obs();
-    let started_at = mirror.revision();
-
-    let scenes: Vec<String> =
-        tolerate_rejection(session.request("GetSceneList", obs.scenes().list()).await)?
-            .map(|list| list.scenes.iter().map(|s| s.id.name.clone()).collect())
-            .unwrap_or_default();
-
-    let fetched_current_scene: Option<String> = tolerate_rejection(
-        session
-            .request(
-                "GetCurrentProgramScene",
-                obs.scenes().current_program_scene(),
-            )
-            .await,
-    )?
-    .map(|s| s.id.name);
-
-    let fetched_current_preview_scene: Option<String> = tolerate_rejection(
-        session
-            .request(
-                "GetCurrentPreviewScene",
-                obs.scenes().current_preview_scene(),
-            )
-            .await,
-    )?
-    .map(|s| s.id.name);
-
-    let audio_inputs: Vec<String> = tolerate_rejection(
-        session
-            .request("GetInputList", obs.inputs().list(None))
-            .await,
-    )?
-    .map(|inputs| inputs.into_iter().map(|i| i.id.name).collect())
-    .unwrap_or_default();
-
-    let mut fetched_topology: HashMap<String, Vec<(String, Option<String>)>> = HashMap::new();
-    let mut fresh_ids = SceneItemIds::default();
-    for scene in &scenes {
-        let Some(items) = tolerate_rejection(
-            session
-                .request(
-                    "GetSceneItemList",
-                    obs.scene_items().list(SceneId::Name(scene)),
-                )
-                .await,
-        )?
-        else {
-            continue;
-        };
-        let mut entries = Vec::with_capacity(items.len());
-        for item in items {
-            fresh_ids.insert(scene, item.id, &item.source_name);
-            entries.push((item.source_name, item.input_kind));
-        }
-        fetched_topology.insert(scene.clone(), entries);
-    }
-
-    Ok(mirror.reconcile(
-        started_at,
-        FetchedTopology {
-            scenes,
-            audio_inputs,
-            sources: fetched_topology,
-            current_scene: fetched_current_scene,
-            current_preview_scene: fetched_current_preview_scene,
-        },
-        fresh_ids,
-    ))
-}
-
-pub(crate) const STATS_POLL_INTERVAL: Duration = Duration::from_secs(2);
-pub(crate) const STATS_POLL_REQUEST_TIMEOUT: Duration = STATS_POLL_INTERVAL;
-const UNANSWERED_STATS_POLLS_BEFORE_SUSPECT: u32 = 3;
-const TOPOLOGY_FETCH_ATTEMPTS: u32 = 5;
-
-fn spawn_stats_poll(
-    inner: SessionSlot,
-    resync_nudge: Arc<Notify>,
-    feeds: CatalogFeeds,
-    timing: ObsTiming,
-) -> JoinHandle<()> {
-    let CatalogFeeds {
-        mirror,
-        catalog_revisions,
-        health_state,
-        health_tx,
-        stream_output,
-    } = feeds;
-    tokio::spawn(async move {
-        let mut ticker = tokio::time::interval(timing.stats_poll_interval);
-        ticker.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);
-        let mut unanswered_polls: u32 = 0;
-        loop {
-            let nudged = tokio::select! {
-                _ = ticker.tick() => false,
-                () = resync_nudge.notified() => true,
-            };
-
-            let session = {
-                let guard = inner.read().await;
-                let Some(session) = guard.as_ref() else {
-                    continue;
-                };
-                session.clone()
-            };
-
-            if !nudged {
-                let general = session.obs().general();
-                let streaming = session.obs().streaming();
-                let recording = session.obs().recording();
-                let (stats, stream_status, record_status) = tokio::join!(
-                    with_deadline(
-                        timing.stats_poll_request_timeout,
-                        "GetStats",
-                        general.stats()
-                    ),
-                    with_deadline(
-                        timing.stats_poll_request_timeout,
-                        "GetStreamStatus",
-                        streaming.status()
-                    ),
-                    with_deadline(
-                        timing.stats_poll_request_timeout,
-                        "GetRecordStatus",
-                        recording.status()
-                    ),
-                );
-
-                let unanswered = matches!(stats, Err(ObsError::Timeout))
-                    || matches!(stream_status, Err(ObsError::Timeout))
-                    || matches!(record_status, Err(ObsError::Timeout));
-                if unanswered {
-                    unanswered_polls += 1;
-                    if unanswered_polls >= UNANSWERED_STATS_POLLS_BEFORE_SUSPECT {
-                        unanswered_polls = 0;
-                        session.mark_suspect();
-                    }
-                } else {
-                    unanswered_polls = 0;
-                }
-
-                let mut deltas = Vec::new();
-                if let Ok(stats) = stats {
-                    let mut snapshot = health_state.write_recover();
-                    deltas.extend(crate::events::apply_stats_update(&stats, &mut snapshot));
-                }
-                if let Ok(status) = stream_status {
-                    let mut snapshot = health_state.write_recover();
-                    deltas.extend(crate::events::apply_stream_status_update(
-                        &status,
-                        &mut snapshot,
-                    ));
-                }
-                if let Ok(status) = record_status {
-                    let mut snapshot = health_state.write_recover();
-                    deltas.extend(crate::events::apply_record_status_update(
-                        &status,
-                        &mut snapshot,
-                    ));
-                }
-                for delta in deltas {
-                    #[expect(
-                        clippy::let_underscore_must_use,
-                        reason = "having no subscribers is a normal state"
-                    )]
-                    let _ = health_tx.send(delta);
-                }
-                stream_output.refresh();
-            }
-
-            if nudged {
-                let baseline = CatalogBaseline::of(&mirror);
-                if let Err(e) = reconcile_catalog_topology(&session, &mirror).await {
-                    tracing::debug!(error = %e, "OBS catalog reconciliation interrupted");
-                }
-                catalog_revisions.announce_difference(&mirror, &baseline);
-            }
-        }
-    })
-}
-
-const DEFAULT_OBS_PORT: u16 = 4455;
-
-pub fn parse_endpoint(endpoint: &str) -> Result<(String, u16), ObsError> {
-    let invalid = || ObsError::Connect(format!("invalid endpoint '{endpoint}'"));
-    let trimmed = endpoint.trim();
-    if trimmed.starts_with("wss://") {
-        return Err(ObsError::Connect(
-            "TLS endpoints (wss://) are not supported".to_owned(),
-        ));
-    }
-    let without_scheme = trimmed.strip_prefix("ws://").unwrap_or(trimmed);
-    let authority = without_scheme
-        .split(['/', '?', '#'])
-        .next()
-        .unwrap_or_default();
-
-    let (host, port_text) = if authority.starts_with('[') {
-        let close = authority.find(']').ok_or_else(invalid)?;
-        let (host, rest) = authority.split_at(close + 1);
-        let port_text = match rest {
-            "" => None,
-            rest => Some(rest.strip_prefix(':').ok_or_else(invalid)?),
-        };
-        (host, port_text)
-    } else {
-        match authority.rsplit_once(':') {
-            Some((host, port_text)) => (host, Some(port_text)),
-            None => (authority, None),
-        }
-    };
-
-    if host.is_empty() || (!host.starts_with('[') && host.contains(':')) {
-        return Err(invalid());
-    }
-    let port = match port_text {
-        Some(text) => text
-            .parse::<u16>()
-            .map_err(|_| ObsError::Connect(format!("invalid port in endpoint '{endpoint}'")))?,
-        None => DEFAULT_OBS_PORT,
-    };
-    Ok((host.to_owned(), port))
 }
 
 fn required_event_subscriptions() -> obws::requests::EventSubscription {
@@ -1289,37 +746,14 @@ fn clear_connected_at(connected_at: &RwLock<Option<Instant>>) {
     }
 }
 
-fn describe_error_chain(e: &(dyn std::error::Error + 'static)) -> String {
-    let mut parts = vec![e.to_string()];
-    let mut current = e.source();
-    while let Some(source) = current {
-        parts.push(source.to_string());
-        current = source.source();
-    }
-    parts.join(": ")
-}
-
-pub(crate) fn map_obws_error(e: obws::error::Error) -> ObsError {
-    match &e {
-        obws::error::Error::Timeout => ObsError::Timeout,
-        obws::error::Error::Disconnected => ObsError::Disconnected,
-        obws::error::Error::Handshake(obws::client::HandshakeError::NoIdentified) => {
-            ObsError::Authentication
-        }
-        obws::error::Error::Handshake(obws::client::HandshakeError::ConnectionClosed(Some(
-            details,
-        ))) if u16::from(details.code)
-            == u16::from(obws::responses::WebSocketCloseCode::AuthenticationFailed) =>
-        {
-            ObsError::Authentication
-        }
-        _ => ObsError::Connect(describe_error_chain(&e)),
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::collections::HashMap;
+
+    use crate::catalog_sync::tolerate_rejection;
+    use crate::mirror::FetchedTopology;
+    use crate::source::SourceInfo;
     use forge_events::test_support::CapturingPublisher;
 
     use crate::catalog::ObsCatalog;

@@ -1,3 +1,5 @@
+use std::time::Duration;
+
 use forge_net::RateLimitError;
 use thiserror::Error;
 
@@ -37,8 +39,8 @@ pub enum PlatformError {
     #[error("re-authentication required for platform '{platform}'")]
     ReauthRequired { platform: String },
 
-    #[error("rate limited by platform; retry after {retry_after_secs}s")]
-    RateLimited { retry_after_secs: u32 },
+    #[error("rate limited by platform; retry after {}s", retry_after.as_secs())]
+    RateLimited { retry_after: Duration },
 
     #[error("client-side rate limit exhausted; no budget remaining")]
     RateLimitExhausted,
@@ -57,6 +59,12 @@ pub enum PlatformError {
 
     #[error("local I/O error: {0}")]
     Io(#[from] std::io::Error),
+
+    #[error("local storage failure: {reason}")]
+    Storage { reason: String },
+
+    #[error("internal failure: {reason}")]
+    Internal { reason: String },
 
     #[error("endpoint override {variable} refused: {reason}")]
     EndpointOverrideRefused {

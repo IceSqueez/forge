@@ -308,7 +308,9 @@ impl YoutubeModeration {
 }
 
 fn ledger_failure(error: StorageError) -> PlatformError {
-    PlatformError::Io(std::io::Error::other(error))
+    PlatformError::Storage {
+        reason: error.to_string(),
+    }
 }
 
 #[cfg(test)]
@@ -1002,7 +1004,7 @@ mod tests {
 
         let err = moderation.unban(TARGET_CHANNEL).await.unwrap_err();
 
-        assert!(matches!(err, PlatformError::Io(_)), "{err:?}");
+        assert!(matches!(err, PlatformError::Storage { .. }), "{err:?}");
         assert_eq!(request_count(&server).await, 0);
         assert_eq!(quota.lock().await.used_today, 0);
     }

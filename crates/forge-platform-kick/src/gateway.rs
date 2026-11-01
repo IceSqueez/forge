@@ -4,9 +4,8 @@ use std::time::Duration;
 
 use forge_events::{EventPublisher, EventSource, RequestFailed, TypedEvent};
 use forge_net::{
-    CallClass, DEFAULT_RETRY_AFTER_SECS, FailureContext, FailureObserver, Gateway,
-    GatewayBuildError, GatewayFailure, GatewayProfile, GatewayRequest, RateLimiter, RequestBody,
-    ThrottleHintFamily,
+    CallClass, DEFAULT_RETRY_AFTER, FailureContext, FailureObserver, Gateway, GatewayBuildError,
+    GatewayFailure, GatewayProfile, GatewayRequest, RateLimiter, RequestBody, ThrottleHintFamily,
 };
 use forge_platform_core::{EndpointSurface, PlatformEndpoints, PlatformError};
 use forge_types::Secret;
@@ -20,7 +19,7 @@ pub const KICK_CHANNEL_INFO_BUDGET_WINDOW: Duration = CHANNEL_INFO_REFRESH_INTER
 
 pub(crate) const CHANNEL_INFO_REFRESH_INTERVAL: Duration = Duration::from_secs(30);
 
-const NO_RETRY_AFTER_WAIT: Duration = Duration::from_secs(DEFAULT_RETRY_AFTER_SECS as u64);
+const NO_RETRY_AFTER_WAIT: Duration = DEFAULT_RETRY_AFTER;
 const BODY_SNIPPET_MAX_CHARS: usize = 200;
 
 pub(crate) const KICK_GATEWAY_PROFILE: GatewayProfile = GatewayProfile::platform_api(
@@ -134,9 +133,9 @@ pub(crate) fn platform_error(failure: GatewayFailure, reasons: RefusalReasons) -
 
 pub(crate) fn gateway_error(failure: GatewayFailure) -> PlatformError {
     match failure {
-        GatewayFailure::RateLimited { retry_after, .. } => PlatformError::RateLimited {
-            retry_after_secs: u32::try_from(retry_after.as_secs()).unwrap_or(u32::MAX),
-        },
+        GatewayFailure::RateLimited { retry_after, .. } => {
+            PlatformError::RateLimited { retry_after }
+        }
         GatewayFailure::BudgetExhausted { .. } => PlatformError::RateLimitExhausted,
         other => match (other.status(), other.excerpt()) {
             (Some(status), Some(excerpt)) => PlatformError::Http {
@@ -330,16 +329,14 @@ mod tests {
                 |e| {
                     matches!(
                         e,
-                        PlatformError::RateLimited {
-                            retry_after_secs: 42
-                        }
+                        PlatformError::RateLimited { retry_after } if *retry_after == Duration::from_secs(42)
                     )
                 },
             ),
             (
                 ResponseTemplate::new(reqwest::StatusCode::TOO_MANY_REQUESTS),
                 "429 without Retry-After",
-                |e| matches!(e, PlatformError::RateLimited { retry_after_secs } if *retry_after_secs == forge_net::DEFAULT_RETRY_AFTER_SECS),
+                |e| matches!(e, PlatformError::RateLimited { retry_after } if *retry_after == forge_net::DEFAULT_RETRY_AFTER),
             ),
             (
                 ResponseTemplate::new(reqwest::StatusCode::SERVICE_UNAVAILABLE)
@@ -348,9 +345,7 @@ mod tests {
                 |e| {
                     matches!(
                         e,
-                        PlatformError::RateLimited {
-                            retry_after_secs: 7
-                        }
+                        PlatformError::RateLimited { retry_after } if *retry_after == Duration::from_secs(7)
                     )
                 },
             ),
@@ -495,9 +490,7 @@ mod tests {
         assert!(
             matches!(
                 throttled,
-                Err(PlatformError::RateLimited {
-                    retry_after_secs: 3600
-                })
+                Err(PlatformError::RateLimited { retry_after }) if retry_after == Duration::from_secs(3600)
             ),
             "{throttled:?}"
         );

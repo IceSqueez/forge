@@ -86,9 +86,10 @@ impl From<DesignSize> for PreviewCanvas {
     }
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq)]
 pub struct PreviewElement {
     pub text_size: Option<u32>,
+    pub sizing: Option<ElementSizing>,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -158,10 +159,14 @@ fn position_of(shape: PreviewShape, config: &OverlayConfig) -> PreviewPosition {
 
 fn element_of(sizing: Option<ElementSizing>, config: &OverlayConfig) -> PreviewElement {
     let Some(sizing) = sizing else {
-        return PreviewElement { text_size: None };
+        return PreviewElement {
+            text_size: None,
+            sizing: None,
+        };
     };
 
     PreviewElement {
+        sizing: Some(sizing),
         text_size: Some(
             bounded_px(
                 config,

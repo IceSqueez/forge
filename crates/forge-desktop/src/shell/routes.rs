@@ -201,7 +201,7 @@ impl AppShell {
         let rt_handle = handles.rt_handle.clone();
         let bus = Arc::clone(&handles.core.bus);
         let keys = ClipKeyState::new(
-            handles.integrations.hotkey_reconciler.clone(),
+            Some(handles.integrations.hotkey_reconciler.clone()),
             Arc::clone(&handles.backend),
         );
         let switch = Self::integration_switch(topics, handles);

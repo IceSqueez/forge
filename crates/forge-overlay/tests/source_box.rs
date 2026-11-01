@@ -11,7 +11,7 @@ use forge_overlay::config::{
 };
 use forge_overlay::{
     ContentMargins, DesignSize, OverlayConfig, OverlayError, OverlayKindDescriptor, PreviewCanvas,
-    PreviewElement, effective_overlay_config, element_sizing, validate_overlay_config,
+    PreviewElement, effective_overlay_config, validate_overlay_config,
 };
 use forge_registry::FormField;
 use forge_types::Variant;
@@ -120,7 +120,8 @@ fn each_kind_preview_without_a_stored_size_draws_its_own_base_text_size() {
 #[test]
 fn a_chosen_text_size_scales_a_page_by_its_ratio_to_the_kinds_base() {
     for (kind_id, rows) in TEXT_SCALES {
-        let sizing = element_sizing(kind_id).expect("a kind that draws a page has a sizing table");
+        let sizing = with_kind(kind_id, |descriptor| descriptor.sizing())
+            .expect("a kind that draws a page has a sizing table");
 
         for (chosen, expected) in *rows {
             assert_eq!(

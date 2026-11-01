@@ -6,7 +6,7 @@ use crate::error::PlatformError;
 
 use super::local_callback::LocalCallbackDriver;
 
-pub const REFRESH_BUFFER_SECS: u64 = 5 * 60;
+pub const REFRESH_BUFFER: std::time::Duration = std::time::Duration::from_secs(5 * 60);
 
 #[derive(Debug, Clone)]
 pub struct PkceAuthorizeUrl {

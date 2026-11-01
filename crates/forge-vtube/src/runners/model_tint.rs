@@ -10,7 +10,7 @@ use forge_types::{ArgStack, SubActionTelemetry};
 
 use crate::runners::fields::optional_number;
 use crate::runners::step_failure;
-use crate::sink::VTubeSink;
+use crate::sink::{ModelTint, VTubeSink};
 use crate::vocabulary::{config_keys, sub_action_ids};
 
 const CHANNEL_MAX: i64 = 255;
@@ -137,7 +137,13 @@ impl SubActionRunner for ModelTintRunner {
         let outcome = step_failure::outcome(
             &self
                 .sink
-                .tint_all_art_meshes(tint.r, tint.g, tint.b, tint.a, tint.mix_with_scene_lighting)
+                .tint_all_art_meshes(&ModelTint {
+                    color_r: tint.r,
+                    color_g: tint.g,
+                    color_b: tint.b,
+                    color_a: tint.a,
+                    mix_with_scene_lighting: tint.mix_with_scene_lighting,
+                })
                 .await,
         );
         (timer.finish(outcome), None)

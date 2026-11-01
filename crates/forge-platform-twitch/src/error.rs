@@ -52,8 +52,8 @@ pub enum TwitchError {
     PermissionDenied(String),
     #[error("{0}")]
     SendRefused(String),
-    #[error("shoutout cooldown: try again in {retry_after_secs}s")]
-    ShoutoutCooldown { retry_after_secs: u64 },
+    #[error("shoutout cooldown: try again in {}s", retry_after.as_secs())]
+    ShoutoutCooldown { retry_after: std::time::Duration },
     #[error("Twitch rate limit or cooldown reached; try again later")]
     ModerationThrottled,
     #[error("{0}")]

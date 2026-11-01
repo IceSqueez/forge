@@ -5,7 +5,7 @@ use futures_core::future::BoxFuture;
 use time::{Duration, OffsetDateTime};
 use tokio::sync::{Mutex, MutexGuard};
 
-use super::pkce_flow::REFRESH_BUFFER_SECS;
+use super::pkce_flow::REFRESH_BUFFER as REFRESH_WINDOW;
 use crate::credential_errors::reauth_required;
 use crate::credential_state::{CredentialState, CredentialStateTracker};
 use crate::error::PlatformError;
@@ -14,7 +14,7 @@ pub type TokenSource =
     Arc<dyn Fn() -> BoxFuture<'static, Result<String, PlatformError>> + Send + Sync>;
 
 const REFRESH_TASK_LOST: &str = "token refresh did not complete";
-const REFRESH_BUFFER: Duration = Duration::seconds(REFRESH_BUFFER_SECS as i64);
+const REFRESH_BUFFER: Duration = Duration::seconds(REFRESH_WINDOW.as_secs().cast_signed());
 
 pub fn expires_within_refresh_buffer(expires_at: OffsetDateTime) -> bool {
     expires_at <= OffsetDateTime::now_utc() + REFRESH_BUFFER

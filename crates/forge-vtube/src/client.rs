@@ -71,26 +71,109 @@ impl SideTasks {
     }
 }
 
+pub(crate) struct Supervision {
+    pub(crate) lifecycle: tokio::sync::Mutex<()>,
+    shutdown: tokio::sync::Mutex<Arc<Notify>>,
+    task: std::sync::Mutex<Option<JoinHandle<()>>>,
+    pub(crate) publisher: Arc<dyn EventPublisher>,
+    creds: Arc<dyn CredentialsRepo>,
+    connected_notifier: mpsc::UnboundedSender<()>,
+    transport_layer: TransportLayer,
+}
+
+impl Supervision {
+    fn new(
+        shutdown: Arc<Notify>,
+        publisher: Arc<dyn EventPublisher>,
+        creds: Arc<dyn CredentialsRepo>,
+        connected_notifier: mpsc::UnboundedSender<()>,
+        transport_layer: TransportLayer,
+    ) -> Self {
+        Self {
+            lifecycle: tokio::sync::Mutex::new(()),
+            shutdown: tokio::sync::Mutex::new(shutdown),
+            task: std::sync::Mutex::new(None),
+            publisher,
+            creds,
+            connected_notifier,
+            transport_layer,
+        }
+    }
+
+    pub(crate) async fn stop(&self) {
+        let notify = self.shutdown.lock().await.clone();
+        notify.notify_one();
+        self.join().await;
+    }
+
+    pub(crate) async fn stop_for_restart(&self) -> Arc<Notify> {
+        let fresh = Arc::new(Notify::new());
+        {
+            let mut slot = self.shutdown.lock().await;
+            let old = std::mem::replace(&mut *slot, Arc::clone(&fresh));
+            old.notify_one();
+        }
+        self.join().await;
+        fresh
+    }
+
+    async fn join(&self) {
+        let handle = self.task.lock_recover().take();
+        if let Some(h) = handle
+            && let Err(error) = h.await
+        {
+            tracing::warn!(%error, "vtube supervisor task ended abnormally");
+        }
+    }
+
+    fn install(&self, handle: JoinHandle<()>) {
+        *self.task.lock_recover() = Some(handle);
+    }
+
+    fn release(&self) {
+        if let Ok(notify) = self.shutdown.try_lock() {
+            notify.notify_one();
+        }
+        if let Some(handle) = self.task.lock_recover().take() {
+            handle.abort();
+        }
+    }
+
+    #[cfg(test)]
+    pub(crate) async fn stop_notifier(&self) -> Arc<Notify> {
+        self.shutdown.lock().await.clone()
+    }
+
+    #[cfg(test)]
+    pub(crate) fn install_task(&self, handle: JoinHandle<()>) {
+        self.install(handle);
+    }
+
+    #[cfg(test)]
+    pub(crate) fn take_task(&self) -> Option<JoinHandle<()>> {
+        self.task.lock_recover().take()
+    }
+
+    #[cfg(test)]
+    pub(crate) fn has_task(&self) -> bool {
+        self.task.lock_recover().is_some()
+    }
+}
+
 pub struct VTubeClient {
     pub(crate) config: VTubeConfig,
     pub(crate) vtube_id: IntegrationId,
     pub(crate) state: Arc<AtomicConnectionState>,
-    pub(crate) shutdown: Arc<tokio::sync::Mutex<Arc<Notify>>>,
-    pub(crate) lifecycle: tokio::sync::Mutex<()>,
-    pub(crate) supervisor: Arc<std::sync::Mutex<Option<JoinHandle<()>>>>,
     pub(crate) connected_at: Arc<RwLock<Option<Instant>>>,
     pub(crate) vtube_version: Arc<OnceLock<String>>,
     pub(crate) req_tx: ReqTxSlot,
     pub(crate) health: HealthHub,
     pub(crate) content: ContentHub,
-    pub(crate) connected_notifier: mpsc::UnboundedSender<()>,
     side_tasks: SideTasks,
     pub(crate) auto_reconnect: AutoReconnectSwitch,
     pub(crate) last_failure: Arc<RwLock<Option<MessageRef>>>,
-    pub(crate) reconnect_publisher: Arc<dyn EventPublisher>,
-    pub(crate) reconnect_creds: Arc<dyn CredentialsRepo>,
     pub(crate) timing: VTubeTiming,
-    pub(crate) transport_layer: TransportLayer,
+    pub(crate) supervision: Supervision,
 }
 
 impl VTubeClient {
@@ -136,73 +219,48 @@ impl VTubeClient {
         transport_layer: TransportLayer,
     ) -> Self {
         let state = Arc::new(AtomicConnectionState::new(ConnectionState::Connecting));
-        let notify = Arc::new(Notify::new());
-        let shutdown = Arc::new(tokio::sync::Mutex::new(Arc::clone(&notify)));
-        let connected_at = Arc::new(RwLock::new(None::<Instant>));
+        let (req_tx, req_rx) = mpsc::unbounded_channel::<PendingRequest>();
+        let req_tx_slot: ReqTxSlot = Arc::new(tokio::sync::Mutex::new(req_tx));
         let vtube_version = Arc::new(OnceLock::<String>::new());
         let (health_tx, health_state) = make_health_channel();
-        let (req_tx, req_rx) = mpsc::unbounded_channel::<PendingRequest>();
-        let req_tx_slot: ReqTxSlot = Arc::new(tokio::sync::Mutex::new(req_tx.clone()));
         let catalog_signal = crate::catalog::CatalogSignal::default();
         let content_state = Arc::new(RwLock::new(crate::content::ContentSnapshot {
-            signal: catalog_signal.clone(),
+            signal: catalog_signal,
             ..crate::content::ContentSnapshot::default()
         }));
         let (content_notifier, content_changed_rx, items_changed_rx) =
             crate::content::ContentNotifier::new();
         let (connected_tx, connected_rx) = mpsc::unbounded_channel::<()>();
-        let auto_reconnect = AutoReconnectSwitch::new(auto_reconnect);
-        let last_failure = Arc::new(RwLock::new(None::<MessageRef>));
+        let shutdown = Arc::new(Notify::new());
 
-        let content_handle = crate::content::spawn_content_task(
-            Arc::clone(&content_state),
-            Arc::clone(&req_tx_slot),
-            content_changed_rx,
-            content_notifier.items_changed_sender(),
-        );
-        let catalog_metrics_handle = crate::content::spawn_catalog_metrics_task(
-            Arc::clone(&content_state),
-            Arc::clone(&health_state),
-            Arc::clone(&state),
-            Arc::clone(&req_tx_slot),
-            health_tx.clone(),
-            items_changed_rx,
-        );
-        let version_handle = crate::content::spawn_version_fetch(
-            Arc::clone(&req_tx_slot),
-            Arc::clone(&vtube_version),
-            Arc::clone(&state),
-            connected_rx,
+        let side_tasks = SideTasks::new(
+            Some(crate::content::spawn_content_task(
+                Arc::clone(&content_state),
+                Arc::clone(&req_tx_slot),
+                content_changed_rx,
+                content_notifier.items_changed_sender(),
+            )),
+            Some(crate::content::spawn_catalog_metrics_task(
+                Arc::clone(&content_state),
+                Arc::clone(&health_state),
+                Arc::clone(&state),
+                Arc::clone(&req_tx_slot),
+                health_tx.clone(),
+                items_changed_rx,
+            )),
+            Some(crate::content::spawn_version_fetch(
+                Arc::clone(&req_tx_slot),
+                Arc::clone(&vtube_version),
+                Arc::clone(&state),
+                connected_rx,
+            )),
         );
 
-        let ctx = crate::supervisor::SupervisorContext {
-            endpoint: cfg.endpoint.clone(),
-            state: Arc::clone(&state),
-            shutdown: Arc::clone(&notify),
-            connected_at: Arc::clone(&connected_at),
-            publisher: Arc::clone(&publisher),
-            creds: Arc::clone(&creds),
-            req_rx,
-            health_state: Arc::clone(&health_state),
-            health_tx: health_tx.clone(),
-            content_notifier: content_notifier.clone(),
-            catalog_signal,
-            connected_notifier: connected_tx.clone(),
-            auto_reconnect: auto_reconnect.watch(),
-            last_failure: Arc::clone(&last_failure),
-            timing,
-            transport_layer: Arc::clone(&transport_layer),
-        };
-        let handle = tokio::spawn(crate::supervisor::run_supervisor(ctx));
-
-        Self {
+        let client = Self {
             config: cfg,
             vtube_id: crate::VTUBE_INTEGRATION.id,
             state,
-            shutdown,
-            lifecycle: tokio::sync::Mutex::new(()),
-            supervisor: Arc::new(std::sync::Mutex::new(Some(handle))),
-            connected_at,
+            connected_at: Arc::new(RwLock::new(None)),
             vtube_version,
             req_tx: req_tx_slot,
             health: HealthHub {
@@ -213,19 +271,47 @@ impl VTubeClient {
                 state: content_state,
                 notifier: content_notifier,
             },
-            connected_notifier: connected_tx,
-            side_tasks: SideTasks::new(
-                Some(content_handle),
-                Some(catalog_metrics_handle),
-                Some(version_handle),
-            ),
-            auto_reconnect,
-            last_failure,
-            reconnect_publisher: publisher,
-            reconnect_creds: creds,
+            side_tasks,
+            auto_reconnect: AutoReconnectSwitch::new(auto_reconnect),
+            last_failure: Arc::new(RwLock::new(None::<MessageRef>)),
             timing,
-            transport_layer,
-        }
+            supervision: Supervision::new(
+                Arc::clone(&shutdown),
+                publisher,
+                creds,
+                connected_tx,
+                transport_layer,
+            ),
+        };
+        client.launch_supervisor(shutdown, req_rx);
+        client
+    }
+
+    pub(crate) fn launch_supervisor(
+        &self,
+        shutdown: Arc<Notify>,
+        req_rx: mpsc::UnboundedReceiver<PendingRequest>,
+    ) {
+        let ctx = crate::supervisor::SupervisorContext {
+            endpoint: self.config.endpoint.clone(),
+            state: Arc::clone(&self.state),
+            shutdown,
+            connected_at: Arc::clone(&self.connected_at),
+            publisher: Arc::clone(&self.supervision.publisher),
+            creds: Arc::clone(&self.supervision.creds),
+            req_rx,
+            health_state: Arc::clone(&self.health.state),
+            health_tx: self.health.tx.clone(),
+            content_notifier: self.content.notifier.clone(),
+            catalog_signal: self.catalog_signal(),
+            connected_notifier: self.supervision.connected_notifier.clone(),
+            auto_reconnect: self.auto_reconnect.watch(),
+            last_failure: Arc::clone(&self.last_failure),
+            timing: self.timing,
+            transport_layer: Arc::clone(&self.supervision.transport_layer),
+        };
+        self.supervision
+            .install(tokio::spawn(crate::supervisor::run_supervisor(ctx)));
     }
 
     pub fn connection_state(&self) -> ConnectionState {
@@ -253,16 +339,9 @@ impl VTubeClient {
     }
 
     pub async fn shutdown(&self) {
-        let _lifecycle = self.lifecycle.lock().await;
+        let _lifecycle = self.supervision.lifecycle.lock().await;
         self.side_tasks.abort_all();
-        let notify = self.shutdown.lock().await.clone();
-        notify.notify_one();
-        let handle = self.supervisor.lock_recover().take();
-        if let Some(h) = handle
-            && let Err(error) = h.await
-        {
-            tracing::warn!(%error, "vtube supervisor task ended abnormally");
-        }
+        self.supervision.stop().await;
     }
 
     #[cfg(test)]
@@ -278,9 +357,6 @@ impl VTubeClient {
             },
             vtube_id: IntegrationId::new(VTUBE_PLATFORM_ID),
             state: Arc::new(AtomicConnectionState::new(ConnectionState::Disconnected)),
-            shutdown: Arc::new(tokio::sync::Mutex::new(Arc::new(Notify::new()))),
-            lifecycle: tokio::sync::Mutex::new(()),
-            supervisor: Arc::new(std::sync::Mutex::new(None)),
             connected_at: Arc::new(RwLock::new(None)),
             vtube_version: Arc::new(OnceLock::new()),
             req_tx: Arc::new(tokio::sync::Mutex::new(req_tx)),
@@ -292,14 +368,17 @@ impl VTubeClient {
                 state: Arc::new(RwLock::new(crate::content::ContentSnapshot::default())),
                 notifier: crate::content::ContentNotifier::noop(),
             },
-            connected_notifier,
             side_tasks: SideTasks::new(None, None, None),
             auto_reconnect: AutoReconnectSwitch::new(true),
             last_failure: Arc::new(RwLock::new(None)),
-            reconnect_publisher: publisher,
-            reconnect_creds: creds,
             timing: VTubeTiming::default(),
-            transport_layer: bare_transport(),
+            supervision: Supervision::new(
+                Arc::new(Notify::new()),
+                publisher,
+                creds,
+                connected_notifier,
+                bare_transport(),
+            ),
         }
     }
 }
@@ -307,12 +386,7 @@ impl VTubeClient {
 impl Drop for VTubeClient {
     fn drop(&mut self) {
         self.side_tasks.abort_all();
-        if let Ok(notify) = self.shutdown.try_lock() {
-            notify.notify_one();
-        }
-        if let Some(handle) = self.supervisor.lock_recover().take() {
-            handle.abort();
-        }
+        self.supervision.release();
     }
 }
 
@@ -1177,7 +1251,7 @@ pub(crate) mod tests {
         let mut vts = FakeVts::bind().await;
         let publisher = CapturingPublisher::shared();
         let client = parked_after_a_socket_close(&mut vts, &publisher).await;
-        let handle = client.supervisor.lock().unwrap().take().unwrap();
+        let handle = client.supervision.take_task().unwrap();
         assert!(
             !wait_until(PARKED_WINDOW, || handle.is_finished()).await,
             "precondition: the supervisor exited instead of parking"
@@ -1362,7 +1436,7 @@ pub(crate) mod tests {
         )]
         let _ = gate_tx.send(());
 
-        let handle = client.supervisor.lock().unwrap().take().unwrap();
+        let handle = client.supervision.take_task().unwrap();
         let stopped = tokio::time::timeout(SETTLE, handle).await;
         server.abort();
         assert!(

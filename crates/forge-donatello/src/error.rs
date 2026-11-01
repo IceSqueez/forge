@@ -1,3 +1,5 @@
+use std::time::Duration;
+
 use forge_net::{GatewayFailure, InvalidRequest, ResponseDecodeError};
 use forge_platform_core::PlatformError;
 use forge_storage::StorageError;
@@ -110,9 +112,9 @@ impl From<DonatelloError> for PlatformError {
             | DonatelloError::ProfileIncomplete => PlatformError::Auth {
                 reason: error.to_string(),
             },
-            DonatelloError::RateLimited { retry_after_secs } => {
-                PlatformError::RateLimited { retry_after_secs }
-            }
+            DonatelloError::RateLimited { retry_after_secs } => PlatformError::RateLimited {
+                retry_after: Duration::from_secs(u64::from(retry_after_secs)),
+            },
             DonatelloError::RateLimitExhausted => PlatformError::RateLimitExhausted,
             DonatelloError::Http { status } => PlatformError::Http {
                 status,
@@ -124,11 +126,15 @@ impl From<DonatelloError> for PlatformError {
                     reason: error.to_string(),
                 }
             }
-            DonatelloError::Credential(_)
-            | DonatelloError::CredentialBundle { .. }
-            | DonatelloError::ClientInit { .. }
-            | DonatelloError::NoRuntime => {
-                PlatformError::Io(std::io::Error::other(error.to_string()))
+            DonatelloError::Credential(_) | DonatelloError::CredentialBundle { .. } => {
+                PlatformError::Storage {
+                    reason: error.to_string(),
+                }
+            }
+            DonatelloError::ClientInit { .. } | DonatelloError::NoRuntime => {
+                PlatformError::Internal {
+                    reason: error.to_string(),
+                }
             }
         }
     }

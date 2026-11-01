@@ -7,6 +7,7 @@ use crate::descriptor::{
 };
 use crate::messages;
 use crate::metrics;
+use crate::metrics::ElementSizing;
 use crate::motion::{self, MotionAxes, MotionProfile};
 use crate::preview::{PreviewComposition, PreviewShape, compose};
 use crate::source_box::{ContentMargins, DesignSize};
@@ -92,6 +93,14 @@ impl OverlayKindDescriptor for FrameOverlayKind {
         fields
     }
 
+    fn sizing(&self) -> Option<ElementSizing> {
+        Some(metrics::FRAME_SIZING)
+    }
+
+    fn style_declarations(&self) -> Vec<String> {
+        metrics::FRAME.declarations()
+    }
+
     fn page_assets(&self) -> PageAssets {
         PageAssets {
             markup: include_str!("../../assets/frame/index.html"),
@@ -101,10 +110,6 @@ impl OverlayKindDescriptor for FrameOverlayKind {
     }
 
     fn preview(&self, config: &OverlayConfig, _: forge_types::NamesLanguage) -> PreviewComposition {
-        compose(
-            PreviewShape::BorderedFrame,
-            metrics::element_sizing(KIND_ID),
-            config,
-        )
+        compose(PreviewShape::BorderedFrame, self.sizing(), config)
     }
 }

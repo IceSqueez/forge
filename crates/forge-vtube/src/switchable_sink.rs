@@ -1,11 +1,14 @@
-use forge_types::{RecoverRwLock, Variant};
+use forge_types::RecoverRwLock;
 use std::sync::{Arc, RwLock};
 
 use async_trait::async_trait;
 
 use crate::client::VTubeClient;
 use crate::error::VTubeError;
-use crate::sink::{ItemLoad, ItemMove, ItemPin, VTubeSink};
+use crate::sink::{
+    CurrentModel, ExpressionList, HotkeyList, ItemList, ItemLoad, ItemMove, ItemPin, LoadedItem,
+    ModelMove, ModelTint, ParameterList, VTubeSink,
+};
 
 pub struct SwitchableVTubeSink {
     inner: RwLock<Option<Arc<VTubeClient>>>,
@@ -69,18 +72,9 @@ impl VTubeSink for SwitchableVTubeSink {
         client.deactivate_all_expressions().await
     }
 
-    async fn move_model(
-        &self,
-        x: Option<f64>,
-        y: Option<f64>,
-        rotation: Option<f64>,
-        size: Option<f64>,
-        time_in_seconds: f64,
-    ) -> Result<(), VTubeError> {
+    async fn move_model(&self, request: &ModelMove) -> Result<(), VTubeError> {
         let client = self.get()?;
-        client
-            .move_model(x, y, rotation, size, time_in_seconds)
-            .await
+        client.move_model(request).await
     }
 
     async fn move_item(&self, request: &ItemMove<'_>) -> Result<(), VTubeError> {
@@ -88,27 +82,27 @@ impl VTubeSink for SwitchableVTubeSink {
         client.move_item(request).await
     }
 
-    async fn get_current_model(&self) -> Result<Variant, VTubeError> {
+    async fn get_current_model(&self) -> Result<CurrentModel, VTubeError> {
         let client = self.get()?;
         client.get_current_model().await
     }
 
-    async fn get_hotkeys(&self) -> Result<Variant, VTubeError> {
+    async fn get_hotkeys(&self) -> Result<HotkeyList, VTubeError> {
         let client = self.get()?;
         client.get_hotkeys().await
     }
 
-    async fn get_expressions(&self) -> Result<Variant, VTubeError> {
+    async fn get_expressions(&self) -> Result<ExpressionList, VTubeError> {
         let client = self.get()?;
         client.get_expressions().await
     }
 
-    async fn get_parameters(&self) -> Result<Variant, VTubeError> {
+    async fn get_parameters(&self) -> Result<ParameterList, VTubeError> {
         let client = self.get()?;
         client.get_parameters().await
     }
 
-    async fn get_items(&self) -> Result<Variant, VTubeError> {
+    async fn get_items(&self) -> Result<ItemList, VTubeError> {
         let client = self.get()?;
         client.get_items().await
     }
@@ -118,7 +112,7 @@ impl VTubeSink for SwitchableVTubeSink {
         client.pin_item(request).await
     }
 
-    async fn load_item(&self, request: &ItemLoad<'_>) -> Result<Variant, VTubeError> {
+    async fn load_item(&self, request: &ItemLoad<'_>) -> Result<LoadedItem, VTubeError> {
         let client = self.get()?;
         client.load_item(request).await
     }
@@ -128,18 +122,9 @@ impl VTubeSink for SwitchableVTubeSink {
         client.unload_all_items().await
     }
 
-    async fn tint_all_art_meshes(
-        &self,
-        color_r: i64,
-        color_g: i64,
-        color_b: i64,
-        color_a: i64,
-        mix_with_scene_lighting: Option<f64>,
-    ) -> Result<(), VTubeError> {
+    async fn tint_all_art_meshes(&self, request: &ModelTint) -> Result<(), VTubeError> {
         let client = self.get()?;
-        client
-            .tint_all_art_meshes(color_r, color_g, color_b, color_a, mix_with_scene_lighting)
-            .await
+        client.tint_all_art_meshes(request).await
     }
 
     async fn set_physics_override(
@@ -182,7 +167,14 @@ mod tests {
             Err(VTubeError::NotConnected)
         ));
         assert!(matches!(
-            sink.move_model(Some(0.0), None, None, None, 0.5).await,
+            sink.move_model(&ModelMove {
+                x: Some(0.0),
+                y: None,
+                rotation: None,
+                size: None,
+                time_in_seconds: 0.5
+            })
+            .await,
             Err(VTubeError::NotConnected)
         ));
     }

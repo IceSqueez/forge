@@ -4,7 +4,7 @@ use std::time::Duration;
 
 use forge_net::status::BAD_REQUEST;
 use forge_net::{
-    CallClass, DEFAULT_RETRY_AFTER_SECS, FormBody, Gateway, GatewayBuildError, GatewayFailure,
+    CallClass, DEFAULT_RETRY_AFTER, FormBody, Gateway, GatewayBuildError, GatewayFailure,
     GatewayProfile, GatewayRequest, GatewayResponse, RateLimiter, ThrottleHintFamily,
 };
 use forge_platform_core::PkceAuthorization;
@@ -19,7 +19,7 @@ const AUTHORIZATION_CODE_GRANT_TYPE: &str = "authorization_code";
 const REFRESH_GRANT_TYPE: &str = "refresh_token";
 const INVALID_GRANT: &str = "invalid_grant";
 
-const NO_RETRY_AFTER_WAIT: Duration = Duration::from_secs(DEFAULT_RETRY_AFTER_SECS as u64);
+const NO_RETRY_AFTER_WAIT: Duration = DEFAULT_RETRY_AFTER;
 
 pub const GOOGLE_OAUTH_BUDGET_CAPACITY: u32 = 10;
 pub const GOOGLE_OAUTH_BUDGET_WINDOW: Duration = Duration::from_secs(60);
@@ -122,9 +122,9 @@ fn is_invalid_grant(failure: &GatewayFailure) -> bool {
 fn oauth_error(failure: GatewayFailure) -> PlatformError {
     match failure {
         GatewayFailure::BudgetExhausted { .. } => PlatformError::RateLimitExhausted,
-        GatewayFailure::RateLimited { retry_after, .. } => PlatformError::RateLimited {
-            retry_after_secs: u32::try_from(retry_after.as_secs()).unwrap_or(u32::MAX),
-        },
+        GatewayFailure::RateLimited { retry_after, .. } => {
+            PlatformError::RateLimited { retry_after }
+        }
         other => match (other.status(), other.excerpt()) {
             (Some(status), Some(excerpt)) => PlatformError::Http {
                 status,
@@ -181,8 +181,8 @@ mod tests {
             (PlatformError::Http { status, .. }, Mapped::Http(expected)) => {
                 *status == expected.as_u16()
             }
-            (PlatformError::RateLimited { retry_after_secs }, Mapped::RateLimited(secs)) => {
-                retry_after_secs == secs
+            (PlatformError::RateLimited { retry_after }, Mapped::RateLimited(secs)) => {
+                retry_after.as_secs() == u64::from(*secs)
             }
             (PlatformError::MalformedResponse { .. }, Mapped::Malformed) => true,
             _ => false,

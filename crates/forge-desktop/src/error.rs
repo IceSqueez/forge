@@ -116,7 +116,7 @@ mod tests {
             ),
             (
                 DesktopError::Platform(PlatformError::RateLimited {
-                    retry_after_secs: 3,
+                    retry_after: std::time::Duration::from_secs(3),
                 }),
                 "desktop_error_rate_limited",
             ),

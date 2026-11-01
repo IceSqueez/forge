@@ -115,8 +115,7 @@ pub(crate) async fn release_holder(
     match holder {
         ComboHolder::Action(_) => delete_binding(reconciler, backend, combo).await,
         ComboHolder::Clip { id, .. } => {
-            let repo =
-                HotkeySyncedClipsRepo::wrap(backend.soundboard_clips_repo(), Some(reconciler));
+            let repo = HotkeySyncedClipsRepo::wrap(backend.soundboard_clips_repo(), reconciler);
             clear_clip_combo(repo, id).await
         }
     }

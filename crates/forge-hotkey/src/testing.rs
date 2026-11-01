@@ -9,7 +9,7 @@ use forge_events::EventPublisher;
 use tokio::sync::mpsc;
 
 use crate::backend::{BackendTier, HotkeyBackend, HotkeyFiredEvent, HotkeyId};
-use crate::binding::HotkeyEdge;
+use crate::bindings::row::HotkeyEdge;
 use crate::client::HotkeyClient;
 use crate::combo::HotkeyCombo;
 use crate::config::HotkeyConfig;

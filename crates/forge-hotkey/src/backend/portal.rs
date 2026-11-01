@@ -12,17 +12,17 @@ use tokio_stream::StreamExt;
 use zbus::Connection;
 use zbus::{ObjectPath, OwnedObjectPath, OwnedVariant, Variant};
 
-use crate::backend::{
-    BackendSessionEvent, HotkeyBackend, HotkeyFiredEvent, HotkeyId, wall_clock_us,
-};
-use crate::binding::HotkeyEdge;
-use crate::combo::HotkeyCombo;
-use crate::error::HotkeyError;
-use crate::portal_request::{
+use crate::backend::portal_request::{
     PORTAL_DESTINATION, PORTAL_OBJECT_PATH, PortalOutcome, call_with_response, make_token,
     object_path_result,
 };
-use crate::portal_trigger::preferred_trigger;
+use crate::backend::portal_trigger::preferred_trigger;
+use crate::backend::{
+    BackendSessionEvent, HotkeyBackend, HotkeyFiredEvent, HotkeyId, wall_clock_us,
+};
+use crate::bindings::row::HotkeyEdge;
+use crate::combo::HotkeyCombo;
+use crate::error::HotkeyError;
 
 const GLOBAL_SHORTCUTS_INTERFACE: &str = "org.freedesktop.portal.GlobalShortcuts";
 const HOST_REGISTRY_INTERFACE: &str = "org.freedesktop.host.portal.Registry";

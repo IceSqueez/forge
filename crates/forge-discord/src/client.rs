@@ -195,15 +195,6 @@ impl DiscordClient {
         &self,
         webhook_name: &str,
         content: &str,
-    ) -> Result<String, DiscordError> {
-        self.post_text_with_mentions(webhook_name, content, MentionPolicy::default())
-            .await
-    }
-
-    pub async fn post_text_with_mentions(
-        &self,
-        webhook_name: &str,
-        content: &str,
         mentions: MentionPolicy,
     ) -> Result<String, DiscordError> {
         check_content(content)?;
@@ -229,23 +220,6 @@ impl DiscordClient {
     }
 
     pub async fn edit_message(
-        &self,
-        webhook_name: &str,
-        message_id: &str,
-        content: Option<&str>,
-        embed: Option<DiscordEmbed>,
-    ) -> Result<(), DiscordError> {
-        self.edit_message_with_mentions(
-            webhook_name,
-            message_id,
-            content,
-            embed,
-            MentionPolicy::default(),
-        )
-        .await
-    }
-
-    pub async fn edit_message_with_mentions(
         &self,
         webhook_name: &str,
         message_id: &str,
@@ -390,11 +364,7 @@ impl DiscordClient {
             Err(failure) => return Err(self.rejected(webhook_name, &failure, start, record)),
         };
         self.observe_throttle(webhook_name, retry_after, scope);
-        publish_rate_limited(
-            self.publisher.as_ref(),
-            webhook_name,
-            retry_after.as_secs_f64(),
-        );
+        publish_rate_limited(self.publisher.as_ref(), webhook_name, retry_after);
         if retry_after > self.gateway.profile().timings.max_throttle_wait {
             return Err(self.rate_limited(webhook_name, retry_after, start, record));
         }
@@ -444,7 +414,7 @@ impl DiscordClient {
                 .global_wait_duration(Instant::now())
                 .unwrap_or_default();
             let err = DiscordError::RateLimited {
-                retry_after_secs: global_wait.as_secs_f64(),
+                retry_after: global_wait,
             };
             return self.record_failure(webhook_name, start, err, record);
         }
@@ -469,9 +439,7 @@ impl DiscordClient {
         start: Instant,
         record: SendRecord,
     ) -> DiscordError {
-        let err = DiscordError::RateLimited {
-            retry_after_secs: retry_after.as_secs_f64(),
-        };
+        let err = DiscordError::RateLimited { retry_after };
         self.record_failure(webhook_name, start, err, record)
     }
 
@@ -491,17 +459,13 @@ impl DiscordClient {
         let mut rl = self.rate_limiter.lock_recover();
         let now = Instant::now();
         if let Some(wait) = rl.global_wait_duration(now) {
-            let ra = wait.as_secs_f64();
-            publish_rate_limited(self.publisher.as_ref(), webhook_name, ra);
-            return Err(DiscordError::RateLimited {
-                retry_after_secs: ra,
-            });
+            publish_rate_limited(self.publisher.as_ref(), webhook_name, wait);
+            return Err(DiscordError::RateLimited { retry_after: wait });
         }
         if let RateLimitOutcome::Throttled { wait_for } = rl.acquire(now, webhook_name) {
-            let ra = wait_for.as_secs_f64();
-            publish_rate_limited(self.publisher.as_ref(), webhook_name, ra);
+            publish_rate_limited(self.publisher.as_ref(), webhook_name, wait_for);
             return Err(DiscordError::RateLimited {
-                retry_after_secs: ra,
+                retry_after: wait_for,
             });
         }
         Ok(())
@@ -568,8 +532,7 @@ impl DiscordSink for DiscordClient {
         content: &str,
         mentions: MentionPolicy,
     ) -> Result<String, DiscordError> {
-        self.post_text_with_mentions(webhook_name, content, mentions)
-            .await
+        self.post_text(webhook_name, content, mentions).await
     }
 
     async fn post_embed(
@@ -588,7 +551,7 @@ impl DiscordSink for DiscordClient {
         embed: Option<DiscordEmbed>,
         mentions: MentionPolicy,
     ) -> Result<(), DiscordError> {
-        self.edit_message_with_mentions(webhook_name, message_id, content, embed, mentions)
+        self.edit_message(webhook_name, message_id, content, embed, mentions)
             .await
     }
 
@@ -826,7 +789,9 @@ pub(crate) mod tests {
             .mount(&server)
             .await;
 
-        let result = client.post_text("alerts", "hello world").await;
+        let result = client
+            .post_text("alerts", "hello world", MentionPolicy::default())
+            .await;
         assert_eq!(result.unwrap(), "msg001");
     }
 
@@ -844,7 +809,10 @@ pub(crate) mod tests {
             .mount(&server)
             .await;
 
-        client.post_text("alerts", "hello").await.unwrap();
+        client
+            .post_text("alerts", "hello", MentionPolicy::default())
+            .await
+            .unwrap();
 
         let ev = publisher.find_kind("discord.webhook.posted").unwrap();
         assert_eq!(ev.payload["webhook_name"], "alerts");
@@ -939,7 +907,9 @@ pub(crate) mod tests {
             .mount(&server)
             .await;
 
-        let result = client.post_text("alerts", "retry test").await;
+        let result = client
+            .post_text("alerts", "retry test", MentionPolicy::default())
+            .await;
         assert_eq!(result.unwrap(), "msg_retry");
         assert_eq!(received_count(&server).await, 2);
         assert!(publisher.has_kind("discord.webhook.rate_limited"));
@@ -959,7 +929,9 @@ pub(crate) mod tests {
             .mount(&server)
             .await;
 
-        let result = client.post_text("alerts", "double retry").await;
+        let result = client
+            .post_text("alerts", "double retry", MentionPolicy::default())
+            .await;
         assert!(matches!(result, Err(DiscordError::RateLimited { .. })));
         assert_eq!(received_count(&server).await, 2);
         assert!(publisher.has_kind("discord.webhook.failed"));
@@ -984,8 +956,13 @@ pub(crate) mod tests {
             .mount(&server)
             .await;
 
-        client.post_text("alerts", "first").await.unwrap_err();
-        let held = client.post_text("alerts", "second").await;
+        client
+            .post_text("alerts", "first", MentionPolicy::default())
+            .await
+            .unwrap_err();
+        let held = client
+            .post_text("alerts", "second", MentionPolicy::default())
+            .await;
 
         assert!(matches!(held, Err(DiscordError::RateLimited { .. })));
         assert_eq!(received_count(&server).await, 2);
@@ -1006,10 +983,12 @@ pub(crate) mod tests {
             .mount(&server)
             .await;
 
-        let result = client.post_text("alerts", "hi").await;
+        let result = client
+            .post_text("alerts", "hi", MentionPolicy::default())
+            .await;
 
         assert!(
-            matches!(result, Err(DiscordError::RateLimited { retry_after_secs }) if retry_after_secs == OVER_CAP_HINT_SECS),
+            matches!(result, Err(DiscordError::RateLimited { retry_after }) if retry_after.as_secs_f64() == OVER_CAP_HINT_SECS),
             "{result:?}"
         );
         assert_eq!(received_count(&server).await, 1);
@@ -1043,9 +1022,16 @@ pub(crate) mod tests {
                 .mount(&server)
                 .await;
 
-            client.post_text("alerts", "throttled").await.unwrap_err();
-            let same = client.post_text("alerts", "again").await;
-            let other = client.post_text("clips", "elsewhere").await;
+            client
+                .post_text("alerts", "throttled", MentionPolicy::default())
+                .await
+                .unwrap_err();
+            let same = client
+                .post_text("alerts", "again", MentionPolicy::default())
+                .await;
+            let other = client
+                .post_text("clips", "elsewhere", MentionPolicy::default())
+                .await;
 
             assert!(
                 matches!(same, Err(DiscordError::RateLimited { .. })),
@@ -1095,8 +1081,12 @@ pub(crate) mod tests {
             .mount(&server)
             .await;
 
-        let throttled = client.post_text("alerts", "hinted").await;
-        let bare = client.post_text("alerts", "bare").await;
+        let throttled = client
+            .post_text("alerts", "hinted", MentionPolicy::default())
+            .await;
+        let bare = client
+            .post_text("alerts", "bare", MentionPolicy::default())
+            .await;
 
         assert_eq!(throttled.unwrap(), "msg_after_503");
         assert!(publisher.has_kind("discord.webhook.rate_limited"));
@@ -1197,7 +1187,9 @@ pub(crate) mod tests {
             )
             .unwrap();
 
-            let result = client.post_text("alerts", "at the cap").await;
+            let result = client
+                .post_text("alerts", "at the cap", MentionPolicy::default())
+                .await;
 
             assert_eq!(result.is_ok(), retried, "hint {hint}: {result:?}");
             assert_eq!(stub.served(), if retried { 2 } else { 1 }, "hint {hint}");
@@ -1248,7 +1240,9 @@ pub(crate) mod tests {
                 .mount(&server)
                 .await;
 
-            let outcome = client.post_text("alerts", "bucket test").await;
+            let outcome = client
+                .post_text("alerts", "bucket test", MentionPolicy::default())
+                .await;
 
             let budget = client.rate_limiter.lock().unwrap().budget("alerts");
             assert_eq!(budget, expected_budget, "{outcome:?}");
@@ -1275,7 +1269,9 @@ pub(crate) mod tests {
             .mount(&server)
             .await;
 
-        let result = client.post_text("alerts", "test").await;
+        let result = client
+            .post_text("alerts", "test", MentionPolicy::default())
+            .await;
         assert!(matches!(
             result,
             Err(DiscordError::BadResponse { status: 404, .. })
@@ -1300,7 +1296,10 @@ pub(crate) mod tests {
             .mount(&server)
             .await;
 
-        client.post_text("alerts", "test").await.unwrap_err();
+        client
+            .post_text("alerts", "test", MentionPolicy::default())
+            .await
+            .unwrap_err();
 
         let ev = publisher.find_kind("discord.webhook.failed").unwrap();
         assert_eq!(ev.payload["reason"], "http_status");
@@ -1328,9 +1327,18 @@ pub(crate) mod tests {
             .await;
 
         let errors = [
-            client.post_text("alerts", "hi").await.unwrap_err(),
             client
-                .edit_message("alerts", MESSAGE_ID, Some("hi"), None)
+                .post_text("alerts", "hi", MentionPolicy::default())
+                .await
+                .unwrap_err(),
+            client
+                .edit_message(
+                    "alerts",
+                    MESSAGE_ID,
+                    Some("hi"),
+                    None,
+                    MentionPolicy::default(),
+                )
                 .await
                 .unwrap_err(),
             client
@@ -1377,7 +1385,10 @@ pub(crate) mod tests {
         );
         mount_accepting(&server, "POST").await;
 
-        client.post_text("alerts", "hi").await.unwrap();
+        client
+            .post_text("alerts", "hi", MentionPolicy::default())
+            .await
+            .unwrap();
 
         let requests = server.received_requests().await.unwrap();
         assert_eq!(requests[0].url.path(), format!("/api{}", hook_path()));
@@ -1403,7 +1414,10 @@ pub(crate) mod tests {
             .mount(&server)
             .await;
 
-        client.post_text("alerts", "rl test").await.unwrap();
+        client
+            .post_text("alerts", "rl test", MentionPolicy::default())
+            .await
+            .unwrap();
 
         let ev = publisher.find_kind("discord.webhook.rate_limited").unwrap();
         assert_eq!(ev.payload["webhook_name"], "alerts");
@@ -1414,7 +1428,9 @@ pub(crate) mod tests {
     #[tokio::test]
     async fn missing_credential_returns_webhook_not_found() {
         let client = DiscordClient::new_for_test();
-        let result = client.post_text("nonexistent", "hello").await;
+        let result = client
+            .post_text("nonexistent", "hello", MentionPolicy::default())
+            .await;
         assert!(matches!(result, Err(DiscordError::WebhookNotFound { .. })));
     }
 
@@ -1448,7 +1464,13 @@ pub(crate) mod tests {
             .await;
 
         let result = client
-            .edit_message("alerts", MESSAGE_ID, Some("updated"), None)
+            .edit_message(
+                "alerts",
+                MESSAGE_ID,
+                Some("updated"),
+                None,
+                MentionPolicy::default(),
+            )
             .await;
         assert!(result.is_ok(), "{result:?}");
         assert_eq!(request_bodies(&server).await[0]["content"], "updated");
@@ -1477,7 +1499,10 @@ pub(crate) mod tests {
             );
             let client = client_at(&server.uri(), &CapturingPublisher::shared(), &creds);
 
-            let err = client.post_text("alerts", "hi").await.unwrap_err();
+            let err = client
+                .post_text("alerts", "hi", MentionPolicy::default())
+                .await
+                .unwrap_err();
 
             assert!(
                 matches!(err, DiscordError::Validation(_)),
@@ -1513,7 +1538,9 @@ pub(crate) mod tests {
             "1%2F2",
             "\u{0661}",
         ] {
-            let edited = client.edit_message("alerts", bad, Some("x"), None).await;
+            let edited = client
+                .edit_message("alerts", bad, Some("x"), None, MentionPolicy::default())
+                .await;
             let deleted = client.delete_message("alerts", bad).await;
 
             assert!(
@@ -1565,7 +1592,10 @@ pub(crate) mod tests {
             let client = client_at(&server.uri(), &CapturingPublisher::shared(), &creds);
             mount_accepting(&server, "POST").await;
 
-            client.post_text("alerts", "hi").await.unwrap();
+            client
+                .post_text("alerts", "hi", MentionPolicy::default())
+                .await
+                .unwrap();
 
             let requests = server.received_requests().await.unwrap();
             assert_eq!(requests[0].url.path(), hook_path(), "{host}");
@@ -1593,7 +1623,13 @@ pub(crate) mod tests {
             .await;
 
         client
-            .edit_message("alerts", MESSAGE_ID, Some("edited"), None)
+            .edit_message(
+                "alerts",
+                MESSAGE_ID,
+                Some("edited"),
+                None,
+                MentionPolicy::default(),
+            )
             .await
             .unwrap();
         client.delete_message("alerts", MESSAGE_ID).await.unwrap();
@@ -1633,12 +1669,12 @@ pub(crate) mod tests {
 
         let errors = [
             client
-                .post_text_with_mentions("leaky", "hi", MentionPolicy::default())
+                .post_text("leaky", "hi", MentionPolicy::default())
                 .await
                 .unwrap_err(),
             client.post_embed("leaky", embed).await.unwrap_err(),
             client
-                .edit_message_with_mentions(
+                .edit_message(
                     "leaky",
                     MESSAGE_ID,
                     Some("hi"),
@@ -1672,7 +1708,10 @@ pub(crate) mod tests {
         let publisher = CapturingPublisher::shared();
         let client = client_at(&refused_api_base(), &publisher, &creds);
 
-        client.post_text("alerts", "hi").await.unwrap_err();
+        client
+            .post_text("alerts", "hi", MentionPolicy::default())
+            .await
+            .unwrap_err();
 
         assert_eq!(client.send_health().last_send_ok, Some(false));
         let post = client.recent_posts().remove(0);
@@ -1698,7 +1737,10 @@ pub(crate) mod tests {
             .unwrap()
             .observe_global_throttle(Instant::now(), Duration::from_secs(30));
 
-        let err = client.post_text("alerts", "hi").await.unwrap_err();
+        let err = client
+            .post_text("alerts", "hi", MentionPolicy::default())
+            .await
+            .unwrap_err();
 
         assert!(matches!(err, DiscordError::RateLimited { .. }), "{err:?}");
         let throttled = publisher.find_kind("discord.webhook.rate_limited").unwrap();
@@ -1719,7 +1761,7 @@ pub(crate) mod tests {
         .await;
 
         let err = client
-            .edit_message_with_mentions("alerts", MESSAGE_ID, None, None, MentionPolicy::default())
+            .edit_message("alerts", MESSAGE_ID, None, None, MentionPolicy::default())
             .await
             .unwrap_err();
 
@@ -1749,11 +1791,11 @@ pub(crate) mod tests {
         let policy = MentionPolicy::default;
 
         client
-            .post_text_with_mentions("alerts", &at_limit, policy())
+            .post_text("alerts", &at_limit, policy())
             .await
             .expect("post at the limit");
         client
-            .edit_message_with_mentions("alerts", MESSAGE_ID, Some(&at_limit), None, policy())
+            .edit_message("alerts", MESSAGE_ID, Some(&at_limit), None, policy())
             .await
             .expect("edit at the limit");
         client
@@ -1764,11 +1806,11 @@ pub(crate) mod tests {
 
         let refusals = [
             client
-                .post_text_with_mentions("alerts", &over_limit, policy())
+                .post_text("alerts", &over_limit, policy())
                 .await
                 .unwrap_err(),
             client
-                .edit_message_with_mentions("alerts", MESSAGE_ID, Some(&over_limit), None, policy())
+                .edit_message("alerts", MESSAGE_ID, Some(&over_limit), None, policy())
                 .await
                 .unwrap_err(),
             client
@@ -1847,7 +1889,7 @@ pub(crate) mod tests {
 
         for (policy, _) in mention_cases() {
             client
-                .post_text_with_mentions("alerts", "<@&42> @everyone live", policy)
+                .post_text("alerts", "<@&42> @everyone live", policy)
                 .await
                 .unwrap();
         }
@@ -1873,7 +1915,10 @@ pub(crate) mod tests {
         .await;
         mount_accepting(&server, "POST").await;
 
-        client.post_text("alerts", "@everyone test").await.unwrap();
+        client
+            .post_text("alerts", "@everyone test", MentionPolicy::default())
+            .await
+            .unwrap();
 
         let bodies = request_bodies(&server).await;
         assert_eq!(
@@ -1918,7 +1963,7 @@ pub(crate) mod tests {
 
         for (policy, _) in mention_cases() {
             client
-                .edit_message_with_mentions("alerts", MESSAGE_ID, Some("<@&42> live"), None, policy)
+                .edit_message("alerts", MESSAGE_ID, Some("<@&42> live"), None, policy)
                 .await
                 .unwrap();
         }
@@ -1949,7 +1994,7 @@ pub(crate) mod tests {
         };
 
         client
-            .edit_message_with_mentions(
+            .edit_message(
                 "alerts",
                 MESSAGE_ID,
                 None,

@@ -154,7 +154,7 @@ impl OverlaysView {
         let language = self.handles.date_names.language();
         let next = self.selected_definition().and_then(|definition| {
             let composition = self.preview_composition(definition, language)?;
-            let plan = ElementPlan::of(&definition.kind_id, composition.element);
+            let plan = ElementPlan::of(composition.element);
             Some(StagePreview {
                 overlay: definition.id.clone(),
                 composition,

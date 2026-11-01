@@ -309,8 +309,8 @@ async fn select_and_start(
     #[cfg(target_os = "linux")]
     {
         drop(main_thread);
-        use crate::backend_evdev::EvdevBackend;
-        use crate::backend_portal::PortalBackend;
+        use crate::backend::evdev::EvdevBackend;
+        use crate::backend::portal::PortalBackend;
 
         let portal_reason = match PortalBackend::try_new(&config.app_name).await {
             Ok(portal) => {
@@ -353,7 +353,7 @@ async fn select_and_start(
 
     #[cfg(any(target_os = "windows", target_os = "macos"))]
     {
-        use crate::backend_global::GlobalHotkeyBackend;
+        use crate::backend::global::GlobalHotkeyBackend;
 
         match GlobalHotkeyBackend::new(main_thread).await {
             Ok(backend) => {
@@ -430,7 +430,7 @@ pub(crate) mod tests {
         tx: &mpsc::Sender<crate::backend::HotkeyFiredEvent>,
         id: HotkeyId,
         c: &HotkeyCombo,
-        edge: crate::binding::HotkeyEdge,
+        edge: crate::bindings::row::HotkeyEdge,
     ) {
         tx.send(crate::backend::HotkeyFiredEvent {
             id,
@@ -448,7 +448,7 @@ pub(crate) mod tests {
         id: HotkeyId,
         c: &HotkeyCombo,
     ) {
-        send_edge(tx, id, c, crate::binding::HotkeyEdge::Press).await;
+        send_edge(tx, id, c, crate::bindings::row::HotkeyEdge::Press).await;
     }
 
     async fn release(
@@ -456,7 +456,7 @@ pub(crate) mod tests {
         id: HotkeyId,
         c: &HotkeyCombo,
     ) {
-        send_edge(tx, id, c, crate::binding::HotkeyEdge::Release).await;
+        send_edge(tx, id, c, crate::bindings::row::HotkeyEdge::Release).await;
     }
 
     fn released_event(publisher: &CapturingPublisher) -> forge_events::Event {
@@ -1035,7 +1035,7 @@ pub(crate) mod tests {
                     id: *id,
                     combo: c.clone(),
                     timestamp_us: 0,
-                    edge: crate::binding::HotkeyEdge::Press,
+                    edge: crate::bindings::row::HotkeyEdge::Press,
                 })
                 .await
                 .unwrap();

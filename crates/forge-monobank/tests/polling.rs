@@ -202,9 +202,7 @@ async fn statement_rate_limit_is_reported_and_cools_only_the_statement_endpoint(
     assert!(
         matches!(
             failure,
-            Err(PlatformError::RateLimited {
-                retry_after_secs: 90
-            })
+            Err(PlatformError::RateLimited { retry_after }) if retry_after == Duration::from_secs(90)
         ),
         "{failure:?}"
     );

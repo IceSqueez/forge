@@ -12,10 +12,9 @@ use forge_emulator::fakes::vtube::{
 };
 use forge_events::{Event, EventPublisher};
 use forge_storage::{CredentialId, CredentialsRepo};
-use forge_types::Variant;
 use forge_vtube::{
-    AngleRelativeTo, FadeMode, ItemLoad, ItemMove, ItemPin, ItemPlacement, SizeRelativeTo,
-    VTUBE_CREDENTIAL_ID, VTubeClient, VTubeSink, VertexPinType, probe_connection,
+    AngleRelativeTo, FadeMode, ItemLoad, ItemMove, ItemPin, ItemPlacement, ModelMove, ModelTint,
+    SizeRelativeTo, VTUBE_CREDENTIAL_ID, VTubeClient, VTubeSink, VertexPinType, probe_connection,
 };
 use futures_util::{SinkExt, StreamExt};
 use serde_json::{Value, json};
@@ -289,7 +288,7 @@ async fn every_request_forge_sub_actions_send_is_answered_without_an_error() {
     let forge = connected_forge(&fake).await;
     let sink: &dyn VTubeSink = &*forge.client;
 
-    let item = sink
+    let instance = sink
         .load_item(&ItemLoad {
             file_name: STAR,
             placement: ItemPlacement {
@@ -301,13 +300,8 @@ async fn every_request_forge_sub_actions_send_is_answered_without_an_error() {
             unload_on_disconnect: true,
         })
         .await
-        .unwrap();
-    let Variant::Object(item) = item else {
-        panic!("load_item returned {item:?}");
-    };
-    let Some(Variant::String(instance)) = item.get("instance_id").cloned() else {
-        panic!("load_item returned no instance id: {item:?}");
-    };
+        .unwrap()
+        .instance_id;
     let outcomes = [
         ("hotkey", sink.trigger_hotkey(WAVE).await.map(drop)),
         (
@@ -318,9 +312,15 @@ async fn every_request_forge_sub_actions_send_is_answered_without_an_error() {
         ("reset", sink.deactivate_all_expressions().await.map(drop)),
         (
             "move model",
-            sink.move_model(Some(0.1), None, None, Some(-20.0), 0.5)
-                .await
-                .map(drop),
+            sink.move_model(&ModelMove {
+                x: Some(0.1),
+                y: None,
+                rotation: None,
+                size: Some(-20.0),
+                time_in_seconds: 0.5,
+            })
+            .await
+            .map(drop),
         ),
         (
             "move item",
@@ -359,9 +359,15 @@ async fn every_request_forge_sub_actions_send_is_answered_without_an_error() {
         ),
         (
             "tint",
-            sink.tint_all_art_meshes(255, 128, 0, 255, Some(1.0))
-                .await
-                .map(drop),
+            sink.tint_all_art_meshes(&ModelTint {
+                color_r: 255,
+                color_g: 128,
+                color_b: 0,
+                color_a: 255,
+                mix_with_scene_lighting: Some(1.0),
+            })
+            .await
+            .map(drop),
         ),
         (
             "physics",
@@ -405,25 +411,9 @@ async fn forge_lookups_read_back_the_state_the_fake_holds() {
     let items = sink.get_items().await.unwrap();
     let model = sink.get_current_model().await.unwrap();
 
-    let field = |value: &Variant, key: &str| match value {
-        Variant::Object(fields) => fields.get(key).cloned(),
-        _ => None,
-    };
-    assert_eq!(
-        field(&hotkeys, "ids"),
-        Some(Variant::Array(vec![
-            Variant::String(hotkey_id(0, 0)),
-            Variant::String(hotkey_id(0, 1)),
-        ]))
-    );
-    assert_eq!(
-        field(&items, "file_names"),
-        Some(Variant::Array(vec![Variant::String(STAR.to_owned())]))
-    );
-    assert_eq!(
-        field(&model, "name"),
-        Some(Variant::String(AVATAR.to_owned()))
-    );
+    assert_eq!(hotkeys.ids, [hotkey_id(0, 0), hotkey_id(0, 1)]);
+    assert_eq!(items.file_names, [STAR]);
+    assert_eq!(model.name, AVATAR);
     forge.client.shutdown().await;
 }
 

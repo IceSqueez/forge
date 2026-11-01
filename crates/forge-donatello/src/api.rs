@@ -2,7 +2,7 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use forge_net::{
-    CallClass, DEFAULT_RETRY_AFTER_SECS, Gateway, GatewayProfile, GatewayRequest, RateLimiter,
+    CallClass, DEFAULT_RETRY_AFTER, Gateway, GatewayProfile, GatewayRequest, RateLimiter,
     ThrottleHintFamily, TokenBucketRateLimiter,
 };
 use forge_types::Secret;
@@ -20,7 +20,7 @@ const SIZE_PARAM: &str = "size";
 const NOT_FOUND_STATUS: u16 = 404;
 const RATE_LIMIT_BURST: u32 = 20;
 const RATE_LIMIT_WINDOW: Duration = Duration::from_secs(60);
-const NO_RETRY_AFTER_WAIT: Duration = Duration::from_secs(DEFAULT_RETRY_AFTER_SECS as u64);
+const NO_RETRY_AFTER_WAIT: Duration = DEFAULT_RETRY_AFTER;
 
 pub(crate) const PAGE_SIZE: u64 = 20;
 

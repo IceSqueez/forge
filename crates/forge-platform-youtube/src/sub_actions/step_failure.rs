@@ -5,9 +5,7 @@ use crate::vocabulary::messages;
 
 pub(super) fn platform_message(error: &PlatformError) -> MessageRef {
     match error {
-        PlatformError::RateLimited { retry_after_secs } => {
-            messages::rate_limited(*retry_after_secs)
-        }
+        PlatformError::RateLimited { retry_after } => messages::rate_limited(*retry_after),
         PlatformError::RateLimitExhausted => messages::rate_budget_exhausted(),
         PlatformError::QuotaExhausted => messages::quota_exhausted(),
         PlatformError::ReauthRequired { .. } => messages::reauth_required(),
@@ -19,6 +17,8 @@ pub(super) fn platform_message(error: &PlatformError) -> MessageRef {
         PlatformError::Serialization(error) => messages::response_unreadable(&error.to_string()),
         PlatformError::Network { reason } => messages::request_failed(reason),
         PlatformError::Io(_)
+        | PlatformError::Storage { .. }
+        | PlatformError::Internal { .. }
         | PlatformError::UnknownSender { .. }
         | PlatformError::LoopbackPortInUse { .. }
         | PlatformError::Unsupported { .. }
@@ -40,6 +40,8 @@ pub(super) fn outcome<T>(result: &Result<T, PlatformError>) -> SubActionOutcome 
 }
 #[cfg(test)]
 mod tests {
+    use std::time::Duration;
+
     use forge_platform_core::EndpointRefusal;
     use forge_types::MessageArg;
 
@@ -61,7 +63,7 @@ mod tests {
         let cases: Vec<(PlatformError, &str, Option<MessageArg>, bool)> = vec![
             (
                 PlatformError::RateLimited {
-                    retry_after_secs: 12,
+                    retry_after: Duration::from_secs(12),
                 },
                 "youtube.rate_limited",
                 Some(MessageArg::Int(12)),

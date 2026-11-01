@@ -418,7 +418,7 @@ impl DiscordScreenView {
             &self.services.rt_handle,
             async move {
                 client
-                    .post_text(&name, &content)
+                    .post_text(&name, &content, forge_discord::MentionPolicy::default())
                     .await
                     .map(|_| ())
                     .map_err(RepoFailure::from)

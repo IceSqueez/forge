@@ -66,7 +66,7 @@ pub use media::{
     read_icon_value, read_media_value,
 };
 pub use messages::OVERLAY_MESSAGES;
-pub use metrics::{AxisBound, ElementSizing, element_sizing, style_guards};
+pub use metrics::{AxisBound, ElementSizing, StyleGuard};
 pub use motion_scan::{MotionIssue, OverriddenSources, motion_issues};
 pub use page_contract::{
     LookConfigKey, LookContract, PAGE_CONTRACT, PageContract, PageFunction, look_contract,

@@ -13,7 +13,7 @@ use crate::runners::fields::{
     read_non_empty,
 };
 use crate::runners::step_failure;
-use crate::sink::{ItemLoad, ItemPlacement, VTubeSink, result_keys};
+use crate::sink::{ItemLoad, ItemPlacement, VTubeSink};
 use crate::vocabulary::{config_keys, sub_action_ids, variables};
 
 const FADE_TIME: OptionalField<NumberField> =
@@ -136,16 +136,18 @@ impl SubActionRunner for ItemLoadRunner {
             })
             .await
         {
-            Ok(variant) => {
-                let mut stack = ctx.arg_stack.clone();
-                if let Variant::Object(ref map) = variant {
-                    if let Some(v) = map.get(result_keys::INSTANCE_ID) {
-                        stack = stack.set(variables::item::INSTANCE_ID.to_owned(), v.clone());
-                    }
-                    if let Some(v) = map.get(result_keys::FILE_NAME) {
-                        stack = stack.set(variables::item::FILE_NAME.to_owned(), v.clone());
-                    }
-                }
+            Ok(loaded) => {
+                let stack = ctx
+                    .arg_stack
+                    .clone()
+                    .set(
+                        variables::item::INSTANCE_ID.to_owned(),
+                        Variant::String(loaded.instance_id),
+                    )
+                    .set(
+                        variables::item::FILE_NAME.to_owned(),
+                        Variant::String(loaded.file_name),
+                    );
                 (timer.success(), Some(stack))
             }
             Err(e) => (timer.finish(step_failure::failed(&e)), None),

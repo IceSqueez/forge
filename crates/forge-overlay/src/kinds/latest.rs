@@ -10,6 +10,7 @@ use crate::descriptor::{
 use crate::latest::{SLOT_OPTIONS, latest_content, sample_latest_value};
 use crate::messages;
 use crate::metrics;
+use crate::metrics::ElementSizing;
 use crate::motion::{self, MotionAxes, MotionProfile};
 use crate::preview::{PreviewComposition, PreviewShape, compose};
 use crate::source_box::{ContentMargins, DesignSize};
@@ -118,6 +119,14 @@ impl OverlayKindDescriptor for LatestOverlayKind {
         false
     }
 
+    fn sizing(&self) -> Option<ElementSizing> {
+        Some(metrics::LATEST_SIZING)
+    }
+
+    fn style_declarations(&self) -> Vec<String> {
+        metrics::LATEST.declarations()
+    }
+
     fn page_assets(&self) -> PageAssets {
         PageAssets {
             markup: include_str!("../../assets/latest/index.html"),
@@ -130,10 +139,6 @@ impl OverlayKindDescriptor for LatestOverlayKind {
         let sample = sample_latest_value(config::read_str(config, config::SLOT));
         let mut shown = config.clone();
         shown.extend(latest_content(self, config, Some(&sample), language));
-        compose(
-            PreviewShape::LatestCard,
-            metrics::element_sizing(KIND_ID),
-            &shown,
-        )
+        compose(PreviewShape::LatestCard, self.sizing(), &shown)
     }
 }

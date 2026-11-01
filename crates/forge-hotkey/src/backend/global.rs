@@ -11,7 +11,7 @@ use global_hotkey::{GlobalHotKeyEvent, GlobalHotKeyManager, HotKeyState};
 use tokio::sync::mpsc;
 
 use crate::backend::{HotkeyBackend, HotkeyFiredEvent, HotkeyId, wall_clock_us};
-use crate::binding::HotkeyEdge;
+use crate::bindings::row::HotkeyEdge;
 use crate::combo::HotkeyCombo;
 use crate::error::HotkeyError;
 use crate::main_thread::MainThreadLink;

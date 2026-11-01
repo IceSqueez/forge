@@ -1,5 +1,6 @@
 mod catalog;
 mod catalog_revisions;
+mod catalog_sync;
 mod client;
 mod connect_failure;
 mod connect_settings;
@@ -7,12 +8,15 @@ pub mod credentials;
 #[cfg(test)]
 #[path = "../../forge-platform-core/test_support/emitted_codes.rs"]
 mod emitted_codes;
+mod endpoint;
 mod error;
+mod event_dispatch;
 mod events;
 mod health;
 mod integration;
 mod item_ids;
 mod mirror;
+mod obws_error;
 mod option_source;
 mod probe;
 mod quick_actions;
@@ -21,14 +25,16 @@ mod session;
 mod sink;
 mod sink_impl;
 mod source;
+mod stats_poll;
 mod stream_output;
 mod switchable_sink;
 mod timing;
 mod triggers;
 pub mod vocabulary;
 
-pub use client::{EVENT_BUFFER_CAPACITY, ObsClient, parse_endpoint};
+pub use client::{EVENT_BUFFER_CAPACITY, ObsClient};
 pub use connect_settings::{OBS_AUTO_RECONNECT, OBS_CONNECT_ON_LAUNCH};
+pub use endpoint::parse_endpoint;
 pub use error::ObsError;
 pub use integration::OBS_INTEGRATION;
 pub use probe::probe_connection;

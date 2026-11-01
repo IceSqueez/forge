@@ -191,6 +191,9 @@ impl GatePublisher {
     fn unavailable(&mut self, reason: String) {
         self.shared.gate_open.store(false, Ordering::Release);
         self.published_open = false;
+        self.shared
+            .level_bits
+            .store(0.0f32.to_bits(), Ordering::Relaxed);
         self.state_tx
             .send_replace(VoiceGateState::Unavailable(reason));
     }
@@ -607,6 +610,8 @@ mod tests {
             if open_was_published {
                 parked.monitor.publisher.forward_gate();
             }
+            let level = &parked.monitor.publisher.shared.level_bits;
+            level.store(0.5f32.to_bits(), Ordering::Relaxed);
 
             parked
                 .monitor
@@ -615,6 +620,12 @@ mod tests {
             let control = parked.monitor.next_control(PATIENCE_SPENT);
 
             assert!(control.is_none(), "{case}: nothing was posted");
+            let level = &parked.monitor.publisher.shared.level_bits;
+            assert_eq!(
+                f32::from_bits(level.load(Ordering::Relaxed)),
+                0.0,
+                "{case}: the meter froze on the last peak"
+            );
             assert_eq!(
                 parked.state(),
                 VoiceGateState::Unavailable(REOPEN_REFUSED.to_owned()),

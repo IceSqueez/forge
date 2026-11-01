@@ -23,6 +23,9 @@ pub(crate) enum SapiError {
 
     #[error("synthesis stopped past its deadline")]
     Timeout,
+
+    #[error("the voice did not confirm that abandoned speech stopped")]
+    VoiceStillBusy,
 }
 
 impl SapiError {
@@ -54,7 +57,8 @@ impl From<SapiError> for TtsError {
             SapiError::ComInit(_)
             | SapiError::Catalog { .. }
             | SapiError::InvalidTokenString { .. }
-            | SapiError::NoCatalog => TtsError::EngineUnavailable {
+            | SapiError::NoCatalog
+            | SapiError::VoiceStillBusy => TtsError::EngineUnavailable {
                 id,
                 detail: error.to_string(),
             },

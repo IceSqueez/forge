@@ -136,11 +136,15 @@ pub(crate) fn capture_pcm(
     let text_utf16: Vec<u16> = text.encode_utf16().chain(std::iter::once(0)).collect();
     let pcwstr = windows::core::PCWSTR(text_utf16.as_ptr());
 
-    // SAFETY: pcwstr points into text_utf16, which is NUL-terminated and stays alive until wait_for_speech below has seen the voice finish or has purged it, so SAPI never reads it after this frame.
+    // SAFETY: pcwstr points into text_utf16, which is NUL-terminated and stays alive until wait_for_speech below has seen the voice finish or has purged it, and is leaked when the voice never confirms it stopped, so SAPI cannot read freed memory.
     unsafe { voice.Speak(pcwstr, (speak_flags | SPF_ASYNC.0) as u32, None) }
         .map_err(SapiError::synthesis_call("ISpVoice::Speak"))?;
 
-    crate::speech_wait::wait_for_speech(voice, watch)?;
+    let waited = crate::speech_wait::wait_for_speech(voice, watch);
+    if matches!(waited, Err(SapiError::VoiceStillBusy)) {
+        std::mem::forget(text_utf16);
+    }
+    waited?;
 
     // SAFETY: com_stream is a live IStream owned by this function; the new-position out-parameter is None.
     unsafe { com_stream.Seek(0i64, STREAM_SEEK_SET, None) }

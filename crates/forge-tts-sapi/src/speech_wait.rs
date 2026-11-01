@@ -15,14 +15,8 @@ pub(crate) fn wait_for_speech(voice: &ISpVoice, watch: &AbandonWatch<'_>) -> Res
         match finished_within(voice, POLL_SLICE_MS) {
             Ok(true) => return last_speak_result(voice),
             Ok(false) if !watch.is_abandoned() => {}
-            Ok(false) => {
-                purge_speech(voice);
-                return Err(SapiError::Timeout);
-            }
-            Err(error) => {
-                purge_speech(voice);
-                return Err(error);
-            }
+            Ok(false) => return purge_speech(voice).and(Err(SapiError::Timeout)),
+            Err(error) => return purge_speech(voice).and(Err(error)),
         }
     }
 }
@@ -46,13 +40,18 @@ fn last_speak_result(voice: &ISpVoice) -> Result<(), SapiError> {
         .map_err(SapiError::synthesis_call("ISpVoice::Speak"))
 }
 
-fn purge_speech(voice: &ISpVoice) {
+fn purge_speech(voice: &ISpVoice) -> Result<(), SapiError> {
     // SAFETY: a null text with SPF_PURGEBEFORESPEAK is the documented purge request and SAPI reads no text pointer for it.
     let purged = unsafe { voice.Speak(PCWSTR::null(), SPF_PURGEBEFORESPEAK.0 as u32, None) };
     if let Err(error) = purged {
         tracing::warn!(%error, "SAPI refused to purge abandoned speech");
     }
-    if let Err(error) = finished_within(voice, WAIT_WITHOUT_LIMIT_MS) {
-        tracing::warn!(%error, "SAPI wait after purge failed");
+    match finished_within(voice, WAIT_WITHOUT_LIMIT_MS) {
+        Ok(true) => Ok(()),
+        Ok(false) => Err(SapiError::VoiceStillBusy),
+        Err(error) => {
+            tracing::warn!(%error, "SAPI wait after purge failed");
+            Err(SapiError::VoiceStillBusy)
+        }
     }
 }

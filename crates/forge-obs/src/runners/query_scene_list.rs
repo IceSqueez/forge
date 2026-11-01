@@ -97,14 +97,14 @@ mod tests {
         assert!(matches!(telemetry.outcome, SubActionOutcome::Success));
         let stack = stack.unwrap();
         assert_eq!(
-            stack.get("obs.scenes.all_names"),
+            stack.get("obs.scenes.names"),
             Some(&Variant::Array(vec![
                 Variant::String("Intro".to_owned()),
                 Variant::String("Gameplay".to_owned()),
             ])),
         );
         assert_eq!(
-            stack.get("obs.scenes.current"),
+            stack.get("obs.scene"),
             Some(&Variant::String("Gameplay".to_owned())),
         );
     }

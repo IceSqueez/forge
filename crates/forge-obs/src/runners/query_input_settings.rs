@@ -120,13 +120,13 @@ mod tests {
         assert!(matches!(telemetry.outcome, SubActionOutcome::Success));
         let stack = stack.unwrap();
         assert_eq!(
-            stack.get("obs.input.kind"),
+            stack.get("obs.source.kind"),
             Some(&Variant::String("text_ft2_source_v2".to_owned())),
         );
         let expected_settings = Variant::Object(BTreeMap::from([(
             "text".to_owned(),
             Variant::String("hello".to_owned()),
         )]));
-        assert_eq!(stack.get("obs.input.settings"), Some(&expected_settings));
+        assert_eq!(stack.get("obs.source.settings"), Some(&expected_settings));
     }
 }

@@ -10,7 +10,7 @@ pub(crate) mod scene {
     pub(crate) const NAME: &str = "obs.scene.name";
     pub(crate) const NAME_OLD: &str = "obs.scene.name_old";
     pub(crate) const NAME_NEW: &str = "obs.scene.name_new";
-    pub(crate) const ALL_NAMES: &str = "obs.scene_names";
+    pub(crate) const ALL_NAMES: &str = "obs.scenes.names";
 }
 
 pub(crate) mod source {
@@ -36,12 +36,12 @@ pub(crate) mod filter {
 
 pub(crate) mod collection {
     pub(crate) const NAME: &str = "obs.collection";
-    pub(crate) const ALL_NAMES: &str = "obs.collection.all_names";
+    pub(crate) const ALL_NAMES: &str = "obs.collections.names";
 }
 
 pub(crate) mod profile {
     pub(crate) const NAME: &str = "obs.profile.name";
-    pub(crate) const ALL_NAMES: &str = "obs.profile.all_names";
+    pub(crate) const ALL_NAMES: &str = "obs.profiles.names";
 }
 
 pub(crate) mod recording {
@@ -72,15 +72,15 @@ pub(crate) mod transition {
 }
 
 pub(crate) mod scene_query {
-    pub(crate) const ALL_NAMES: &str = "obs.scenes.all_names";
-    pub(crate) const CURRENT: &str = "obs.scenes.current";
+    pub(crate) const ALL_NAMES: &str = "obs.scenes.names";
+    pub(crate) const CURRENT: &str = "obs.scene";
 }
 
 pub(crate) mod source_query {
-    pub(crate) const ALL_NAMES: &str = "obs.sources.all_names";
+    pub(crate) const ALL_NAMES: &str = "obs.sources.names";
 }
 
 pub(crate) mod input_query {
-    pub(crate) const SETTINGS: &str = "obs.input.settings";
-    pub(crate) const KIND: &str = "obs.input.kind";
+    pub(crate) const SETTINGS: &str = "obs.source.settings";
+    pub(crate) const KIND: &str = "obs.source.kind";
 }

@@ -89,7 +89,7 @@ mod tests {
         assert!(matches!(telemetry.outcome, SubActionOutcome::Success));
         let stack = stack.unwrap();
         assert_eq!(
-            stack.get("obs.sources.all_names"),
+            stack.get("obs.sources.names"),
             Some(&Variant::Array(vec![
                 Variant::String("Mic".to_owned()),
                 Variant::String("Desktop Audio".to_owned()),

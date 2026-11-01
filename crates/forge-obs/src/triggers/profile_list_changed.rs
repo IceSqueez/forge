@@ -64,7 +64,7 @@ mod tests {
         );
         let stack = PROFILE_LIST_CHANGED.build_arg_stack(&event);
         assert_eq!(
-            stack.get("obs.profile.all_names"),
+            stack.get("obs.profiles.names"),
             Some(&Variant::Array(vec![
                 Variant::String("Streaming".to_owned()),
                 Variant::String("Recording".to_owned()),
@@ -81,7 +81,7 @@ mod tests {
         );
         let stack = PROFILE_LIST_CHANGED.build_arg_stack(&event);
         assert_eq!(
-            stack.get("obs.profile.all_names"),
+            stack.get("obs.profiles.names"),
             Some(&Variant::Array(vec![
                 Variant::String("Streaming".to_owned()),
                 Variant::String("Recording".to_owned()),
@@ -93,6 +93,6 @@ mod tests {
     fn arg_stack_omits_key_when_all_names_absent() {
         let event = Event::new(EventSource::Obs, "obs.profile.list_changed", json!({}));
         let stack = PROFILE_LIST_CHANGED.build_arg_stack(&event);
-        assert!(stack.get("obs.profile.all_names").is_none());
+        assert!(stack.get("obs.profiles.names").is_none());
     }
 }

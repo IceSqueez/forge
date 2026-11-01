@@ -66,7 +66,7 @@ mod tests {
         );
         let stack = COLLECTION_LIST_CHANGED.build_arg_stack(&event);
         assert_eq!(
-            stack.get("obs.collection.all_names"),
+            stack.get("obs.collections.names"),
             Some(&Variant::Array(vec![
                 Variant::String("Main".to_owned()),
                 Variant::String("Alt".to_owned()),
@@ -83,7 +83,7 @@ mod tests {
         );
         let stack = COLLECTION_LIST_CHANGED.build_arg_stack(&event);
         assert_eq!(
-            stack.get("obs.collection.all_names"),
+            stack.get("obs.collections.names"),
             Some(&Variant::Array(vec![
                 Variant::String("Main".to_owned()),
                 Variant::String("Alt".to_owned()),
@@ -95,6 +95,6 @@ mod tests {
     fn arg_stack_omits_key_when_all_names_absent() {
         let event = Event::new(EventSource::Obs, "obs.collection.list_changed", json!({}));
         let stack = COLLECTION_LIST_CHANGED.build_arg_stack(&event);
-        assert!(stack.get("obs.collection.all_names").is_none());
+        assert!(stack.get("obs.collections.names").is_none());
     }
 }

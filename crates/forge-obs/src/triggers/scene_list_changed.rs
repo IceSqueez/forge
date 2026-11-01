@@ -69,7 +69,7 @@ mod tests {
         );
         let stack = d.build_arg_stack(&event);
         assert_eq!(
-            stack.get("obs.scene_names"),
+            stack.get("obs.scenes.names"),
             Some(&Variant::Array(vec![
                 Variant::String("Menu".to_owned()),
                 Variant::String("Gameplay".to_owned()),
@@ -88,7 +88,7 @@ mod tests {
         );
         let stack = d.build_arg_stack(&event);
         assert_eq!(
-            stack.get("obs.scene_names"),
+            stack.get("obs.scenes.names"),
             Some(&Variant::Array(vec![
                 Variant::String("Menu".to_owned()),
                 Variant::String("Gameplay".to_owned()),
@@ -100,6 +100,6 @@ mod tests {
     fn build_arg_stack_omits_key_when_all_names_missing() {
         let d = SCENE_LIST_CHANGED;
         let event = Event::new(EventSource::Obs, "obs.scene.list_changed", json!({}));
-        assert_eq!(d.build_arg_stack(&event).get("obs.scene_names"), None);
+        assert_eq!(d.build_arg_stack(&event).get("obs.scenes.names"), None);
     }
 }

@@ -127,7 +127,10 @@ fn serve_auth(listener: TcpListener) -> mpsc::UnboundedReceiver<String> {
                     let Message::Text(text) = message else {
                         continue;
                     };
-                    let request: Value = serde_json::from_str(text.as_str()).unwrap();
+                    let Ok(request) = serde_json::from_str::<Value>(text.as_str()) else {
+                        let _ = seen_tx.send(format!("undecodable frame: {}", text.as_str()));
+                        return;
+                    };
                     let token = request["token"].as_str().unwrap_or_default().to_owned();
                     let reply = if token == TOKEN {
                         json!({ "id": request["id"], "status": "ok" })

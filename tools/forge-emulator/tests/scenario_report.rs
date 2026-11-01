@@ -27,6 +27,7 @@ use time::macros::datetime;
 
 mod support;
 use support::EMULATOR;
+use support::http_status;
 
 const CHAT_ID: &str = "01J8ZQ0000000000000000CHAT";
 const COMMAND_ID: &str = "01J8ZQ00000000000000000CMD";
@@ -35,6 +36,11 @@ const START_ID: &str = "01J8ZQ0000000000000000STRT";
 const STEP_SUBSCRIBED: usize = 1;
 const STEP_CHAT: usize = 2;
 const STEP_CROWD: usize = 3;
+const STEP_RUN_ACTION: usize = 4;
+const STEP_RECONNECT: usize = 5;
+const STEP_SET_GLOBAL: usize = 6;
+const OVERLAY_STEP_ALERT_CHAT: usize = 3;
+const OVERLAY_EXPECT_CONTENT: usize = 0;
 
 const EXPECT_CHAT: usize = 0;
 const EXPECT_STARTED: usize = 1;
@@ -405,7 +411,7 @@ fn event_stream_failures_spell_out_counts_near_misses_and_gaps() {
         Case {
             label: "wrong count in a crowd",
             step: STEP_CROWD,
-            expectation: 0,
+            expectation: EXPECT_CHAT,
             cause: FailureCause::WrongCount {
                 expected: 4,
                 observed: 5,
@@ -622,9 +628,24 @@ fn fake_twitch_ledger_failures_summarise_sessions_requests_and_statuses() {
             cause: FailureCause::NoSubscription,
             evidence: Evidence::Ledger(LedgerExcerpt {
                 requests: vec![
-                    request("POST", subscriptions, 409, CredentialCheck::Accepted),
-                    request("POST", subscriptions, 401, CredentialCheck::WrongBearer),
-                    request("POST", subscriptions, 401, CredentialCheck::MissingBearer),
+                    request(
+                        "POST",
+                        subscriptions,
+                        http_status::CONFLICT,
+                        CredentialCheck::Accepted,
+                    ),
+                    request(
+                        "POST",
+                        subscriptions,
+                        http_status::UNAUTHORIZED,
+                        CredentialCheck::WrongBearer,
+                    ),
+                    request(
+                        "POST",
+                        subscriptions,
+                        http_status::UNAUTHORIZED,
+                        CredentialCheck::MissingBearer,
+                    ),
                 ],
                 subscriptions: vec![RecordedSubscription {
                     id: "sub-1".to_owned(),
@@ -664,7 +685,7 @@ fn fake_twitch_ledger_failures_summarise_sessions_requests_and_statuses() {
                         ..request(
                             "GET",
                             "/helix/moderation/banned",
-                            404,
+                            http_status::NOT_FOUND,
                             CredentialCheck::Accepted,
                         )
                     },
@@ -673,7 +694,7 @@ fn fake_twitch_ledger_failures_summarise_sessions_requests_and_statuses() {
                         ..request(
                             "DELETE",
                             "/helix/chat/messages",
-                            404,
+                            http_status::NOT_FOUND,
                             CredentialCheck::MissingClientId,
                         )
                     },
@@ -699,9 +720,24 @@ fn fake_twitch_ledger_failures_summarise_sessions_requests_and_statuses() {
             },
             evidence: Evidence::Ledger(LedgerExcerpt {
                 requests: vec![
-                    request("POST", subscriptions, 202, CredentialCheck::Accepted),
-                    request("POST", subscriptions, 409, CredentialCheck::Accepted),
-                    request("POST", subscriptions, 409, CredentialCheck::Accepted),
+                    request(
+                        "POST",
+                        subscriptions,
+                        http_status::ACCEPTED,
+                        CredentialCheck::Accepted,
+                    ),
+                    request(
+                        "POST",
+                        subscriptions,
+                        http_status::CONFLICT,
+                        CredentialCheck::Accepted,
+                    ),
+                    request(
+                        "POST",
+                        subscriptions,
+                        http_status::CONFLICT,
+                        CredentialCheck::Accepted,
+                    ),
                 ],
                 ..LedgerExcerpt::default()
             }),
@@ -800,19 +836,19 @@ fn a_failed_step_action_becomes_a_bug_told_from_that_step_actor() {
             "the fake Twitch delivers all 8 messages to forge's EventSub session",
         ),
         (
-            4,
+            STEP_RUN_ACTION,
             "As the streamer I run action `Ping` with arguments `{\"x\":1}`",
             "Action `Ping` could not be run",
             "forge accepts the request to run action `Ping`",
         ),
         (
-            5,
+            STEP_RECONNECT,
             "As Twitch I ask forge to reconnect its EventSub session and wait up to 4s for the successor",
             "forge did not reconnect its EventSub session",
             "forge opens a successor EventSub session within 4s",
         ),
         (
-            6,
+            STEP_SET_GLOBAL,
             "As the streamer I set persisted global `mood` to `\"calm\"`",
             "Global `mood` could not be set",
             "forge accepts setting global `mood`",
@@ -1194,7 +1230,7 @@ async fn neither_seeded_token_appears_in_any_rendered_report() {
                 ..request(
                     "POST",
                     "/helix/eventsub/subscriptions",
-                    401,
+                    http_status::UNAUTHORIZED,
                     CredentialCheck::WrongBearer,
                 )
             }],
@@ -1278,11 +1314,12 @@ fn tagged_evidence() -> Evidence {
 fn overlay_bug(cause: FailureCause, evidence: Evidence) -> (Scenario, ScenarioOutcome, BugEntry) {
     let scenario = overlay_scenario();
     let mut steps = all_passed(&scenario);
-    let failed = &mut steps[3];
+    let failed = &mut steps[OVERLAY_STEP_ALERT_CHAT];
     failed.status = StepStatus::Failed;
-    failed.expectations[0].verdict = Verdict::Failed(cause);
-    failed.expectations[0].deadline_ms = Some(5000);
-    failed.expectations[0].evidence = evidence;
+    let expectation = &mut failed.expectations[OVERLAY_EXPECT_CONTENT];
+    expectation.verdict = Verdict::Failed(cause);
+    expectation.deadline_ms = Some(5000);
+    expectation.evidence = evidence;
     let outcome = outcome(&scenario, steps);
     let bug = only_bug(&scenario, &outcome);
     (scenario, outcome, bug)

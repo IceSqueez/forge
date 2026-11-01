@@ -253,3 +253,32 @@ impl EmulatorError {
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn abandoned() -> EmulatorError {
+        EmulatorError::AlreadyRunning {
+            line: "cause line".to_owned(),
+        }
+        .with_teardown_failure(EmulatorError::Output {
+            reason: "teardown reason".to_owned(),
+        })
+    }
+
+    #[test]
+    fn a_failed_teardown_keeps_the_exit_code_of_the_first_failure() {
+        assert_eq!(abandoned().exit_code(), EXIT_ALREADY_RUNNING);
+    }
+
+    #[test]
+    fn a_failed_teardown_reports_both_failures() {
+        let text = abandoned().to_string();
+
+        assert!(
+            text.contains("cause line") && text.contains("teardown reason"),
+            "{text}"
+        );
+    }
+}

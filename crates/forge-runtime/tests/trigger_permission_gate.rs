@@ -1,4 +1,9 @@
-#![expect(clippy::panic, clippy::unwrap_used, reason = "test fixtures")]
+#![expect(
+    clippy::expect_used,
+    clippy::panic,
+    clippy::unwrap_used,
+    reason = "test fixtures"
+)]
 mod common;
 use std::collections::BTreeMap;
 use std::sync::Arc;
@@ -21,6 +26,7 @@ use tempfile::TempDir;
 
 const CHAT_COMMAND_KIND: &str = "test.chat.command";
 const PLAIN_KIND: &str = "test.plain.ping";
+const FENCE_KIND: &str = "test.fence.ping";
 
 struct FakeDescriptor {
     id: &'static str,
@@ -94,6 +100,13 @@ fn register_fake_triggers(registry: &mut TriggerRegistry) {
             family: None,
         }))
         .unwrap();
+    registry
+        .register(Box::new(FakeDescriptor {
+            id: FENCE_KIND,
+            prefix: "test.fence",
+            family: None,
+        }))
+        .unwrap();
 }
 
 fn instance(kind_id: &str, rung: PermissionRung, cooldown_secs: u32) -> TriggerInstance {
@@ -154,6 +167,7 @@ fn plain_event(user: &str) -> Event {
 struct Harness {
     bus: Arc<EventBus>,
     sub: EventSubscription,
+    fence_action: ActionId,
     _runtime: FrozenRuntime,
     _media: TempDir,
 }
@@ -172,18 +186,21 @@ async fn harness(instances: &[(&TriggerInstance, ActionId)]) -> Harness {
     };
     dp.queue_repo().save(&queue).await.unwrap();
 
+    let fence = instance(FENCE_KIND, PermissionRung::Everyone, 0);
+    let fence_action = ActionId::new();
     let mut saved_actions = Vec::new();
-    for (inst, action_id) in instances {
-        if !saved_actions.contains(action_id) {
+    let fenced = instances.iter().copied().chain([(&fence, fence_action)]);
+    for (inst, action_id) in fenced {
+        if !saved_actions.contains(&action_id) {
             dp.action_repo()
-                .save(&log_action(*action_id, queue_id))
+                .save(&log_action(action_id, queue_id))
                 .await
                 .unwrap();
-            saved_actions.push(*action_id);
+            saved_actions.push(action_id);
         }
         dp.trigger_instance_repo().save(inst).await.unwrap();
         dp.trigger_instance_repo()
-            .link_action(*action_id, inst.id)
+            .link_action(action_id, inst.id)
             .await
             .unwrap();
     }
@@ -198,13 +215,13 @@ async fn harness(instances: &[(&TriggerInstance, ActionId)]) -> Harness {
     Harness {
         bus,
         sub,
+        fence_action,
         _runtime: runtime,
         _media: media,
     }
 }
 
 const HANG_GUARD: Duration = Duration::from_secs(30);
-const QUIET_AFTER: Duration = Duration::from_millis(200);
 
 async fn next_kind(sub: &mut EventSubscription, target: &str) -> Option<Event> {
     tokio::time::timeout(HANG_GUARD, async {
@@ -226,28 +243,38 @@ fn count(seen: &[Event], kind: &str) -> usize {
 }
 
 async fn drain_kinds(
-    sub: &mut EventSubscription,
+    h: &mut Harness,
     targets: &[&str],
     settled: impl Fn(&[Event]) -> bool,
 ) -> Vec<Event> {
+    let fence_action = h.fence_action.to_string();
     let mut seen = Vec::new();
-    let reached = tokio::time::timeout(HANG_GUARD, async {
-        while !settled(&seen) {
-            match sub.recv().await {
+    let mut fence_published = false;
+    tokio::time::timeout(HANG_GUARD, async {
+        loop {
+            if !fence_published && settled(&seen) {
+                h.bus.publish(Event::new(
+                    EventSource::Twitch,
+                    FENCE_KIND,
+                    json!({ "user": "fence" }),
+                ));
+                fence_published = true;
+            }
+            match h.sub.recv().await {
+                Ok(ev)
+                    if ev.kind == "action.done"
+                        && ev.payload["action_id"].as_str() == Some(fence_action.as_str()) =>
+                {
+                    return;
+                }
                 Ok(ev) if targets.contains(&ev.kind.as_str()) => seen.push(ev),
                 Ok(_) | Err(EventsError::LaggingReceiver) => {}
                 Err(e) => panic!("bus failed: {e:?}"),
             }
         }
     })
-    .await;
-    if reached.is_ok() {
-        while let Ok(Ok(ev)) = tokio::time::timeout(QUIET_AFTER, sub.recv()).await {
-            if targets.contains(&ev.kind.as_str()) {
-                seen.push(ev);
-            }
-        }
-    }
+    .await
+    .expect("the evaluator never reached the fence");
     seen
 }
 
@@ -284,7 +311,7 @@ async fn two_instances_matching_one_message_each_emit_their_own_command_matched(
     let mut h = harness(&[(&first, ActionId::new()), (&second, ActionId::new())]).await;
 
     h.bus.publish(chat_event("rando", vec![]));
-    let matched = drain_kinds(&mut h.sub, &["command.matched"], |s| s.len() >= 2).await;
+    let matched = drain_kinds(&mut h, &["command.matched"], |s| s.len() >= 2).await;
     assert_eq!(
         matched.len(),
         2,
@@ -298,7 +325,7 @@ async fn one_instance_on_two_actions_records_a_single_refusal_per_message() {
     let mut h = harness(&[(&inst, ActionId::new()), (&inst, ActionId::new())]).await;
 
     h.bus.publish(chat_event("rando", vec![]));
-    let seen = drain_kinds(&mut h.sub, &["command.matched", "trigger.blocked"], |s| {
+    let seen = drain_kinds(&mut h, &["command.matched", "trigger.blocked"], |s| {
         count(s, "command.matched") >= 1 && count(s, "trigger.blocked") >= 1
     })
     .await;
@@ -327,7 +354,7 @@ async fn one_authorized_instance_on_two_actions_matches_once_and_dispatches_twic
     let mut h = harness(&[(&inst, ActionId::new()), (&inst, ActionId::new())]).await;
 
     h.bus.publish(chat_event("rando", vec![]));
-    let seen = drain_kinds(&mut h.sub, &["command.matched", "action.done"], |s| {
+    let seen = drain_kinds(&mut h, &["command.matched", "action.done"], |s| {
         count(s, "command.matched") >= 1 && count(s, "action.done") >= 2
     })
     .await;
@@ -352,7 +379,7 @@ async fn two_instances_matching_one_message_get_independent_gate_outcomes() {
     let mut h = harness(&[(&open, ActionId::new()), (&gated, ActionId::new())]).await;
 
     h.bus.publish(chat_event("rando", vec![]));
-    let seen = drain_kinds(&mut h.sub, &["trigger.blocked", "action.done"], |s| {
+    let seen = drain_kinds(&mut h, &["trigger.blocked", "action.done"], |s| {
         count(s, "trigger.blocked") >= 1 && count(s, "action.done") >= 1
     })
     .await;

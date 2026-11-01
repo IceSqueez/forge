@@ -757,4 +757,61 @@ mod tests {
         assert_eq!(account.login, "alice");
         assert_eq!(account.client_id, TwitchAccount::default().client_id);
     }
+
+    #[test]
+    fn debug_output_of_every_connection_and_account_hides_its_secrets() {
+        const SECRET: &str = "s3cret-value";
+        let secret = || SECRET.to_owned();
+        let rendered = [
+            format!(
+                "{:?}",
+                ObsConnection {
+                    password: secret(),
+                    port: 1
+                }
+            ),
+            format!(
+                "{:?}",
+                VTubeConnection {
+                    token: secret(),
+                    port: 1
+                }
+            ),
+            format!(
+                "{:?}",
+                DiscordWebhook {
+                    name: "hook".to_owned(),
+                    url: secret()
+                }
+            ),
+            format!(
+                "{:?}",
+                TwitchAccount {
+                    access_token: secret(),
+                    ..TwitchAccount::default()
+                }
+            ),
+            format!(
+                "{:?}",
+                YouTubeAccount {
+                    access_token: secret(),
+                    refresh_token: secret(),
+                    ..YouTubeAccount::default()
+                }
+            ),
+            format!(
+                "{:?}",
+                KickAccount {
+                    client_secret: secret(),
+                    access_token: secret(),
+                    refresh_token: secret(),
+                    ..KickAccount::default()
+                }
+            ),
+        ];
+
+        for text in rendered {
+            assert!(!text.contains(SECRET), "{text}");
+        }
+    }
 }

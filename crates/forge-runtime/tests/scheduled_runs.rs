@@ -45,6 +45,7 @@ use tokio::sync::{Notify, mpsc, oneshot};
 use tokio::time::{Instant, timeout};
 
 const DEADLINE: Duration = Duration::from_secs(30);
+const RUNTIME_IDLE_TICK: Duration = Duration::from_millis(1);
 const FIVE_MINUTES: Duration = Duration::from_secs(5 * 60);
 const ONE_SECOND: Duration = Duration::from_secs(1);
 
@@ -1193,14 +1194,10 @@ async fn an_idle_scheduler_reads_the_next_due_time_only_at_boot_and_on_a_revisio
     ));
 
     tokio::time::advance(Duration::from_secs(24 * 60 * 60)).await;
-    for _ in 0..64 {
-        tokio::task::yield_now().await;
-    }
+    tokio::time::sleep(RUNTIME_IDLE_TICK).await;
     let idle = reads.load(Ordering::SeqCst);
     revision.advance();
-    for _ in 0..64 {
-        tokio::task::yield_now().await;
-    }
+    tokio::time::sleep(RUNTIME_IDLE_TICK).await;
 
     assert_eq!((idle, reads.load(Ordering::SeqCst)), (1, 2));
 }
@@ -1798,9 +1795,7 @@ async fn stop_returns_without_waiting_for_the_next_due_time() {
         CatalogRevision::new(),
         CatchUpSettle::immediately(),
     ));
-    for _ in 0..64 {
-        tokio::task::yield_now().await;
-    }
+    tokio::time::sleep(RUNTIME_IDLE_TICK).await;
     let asked = Instant::now();
 
     assert_eq!(

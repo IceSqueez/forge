@@ -339,4 +339,61 @@ mod tests {
     fn input_picker_returns_none_when_the_host_reports_no_devices() {
         assert_eq!(pick_default_input_device(&[]), None);
     }
+
+    fn named(id: &str, name: &str, is_default: bool) -> DeviceInfo {
+        DeviceInfo {
+            id: DeviceId::new(id),
+            name: name.to_owned(),
+            is_default,
+        }
+    }
+
+    fn ids(devices: &[DeviceInfo]) -> Vec<&str> {
+        devices.iter().map(|d| d.id.as_str()).collect()
+    }
+
+    #[test]
+    fn selectable_devices_drop_noise_and_keep_the_first_of_each_name() {
+        let listed = vec![
+            named("hw:CARD=Mic", "Mic", false),
+            named("pipewire", "Speakers", false),
+            named("speakers-copy", "Speakers", false),
+            named("headset", "Headset", false),
+        ];
+
+        let kept = selectable_devices(listed);
+
+        assert_eq!(ids(&kept), ["pipewire", "headset"]);
+    }
+
+    #[test]
+    fn a_default_hidden_as_a_duplicate_name_is_listed_again() {
+        let listed = vec![
+            named("speakers-a", "Speakers", false),
+            named("speakers-b", "Speakers", true),
+        ];
+
+        let kept = selectable_devices(listed);
+
+        assert_eq!(ids(&kept), ["speakers-a", "speakers-b"]);
+    }
+
+    #[test]
+    fn a_noise_default_is_never_listed_again() {
+        let listed = vec![
+            named("hw:CARD=Mic", "Mic", true),
+            named("pipewire", "Speakers", false),
+        ];
+
+        let kept = selectable_devices(listed);
+
+        assert_eq!(ids(&kept), ["pipewire"]);
+    }
+
+    #[test]
+    fn a_kept_default_is_not_listed_twice() {
+        let kept = selectable_devices(vec![named("pipewire", "Speakers", true)]);
+
+        assert_eq!(ids(&kept), ["pipewire"]);
+    }
 }

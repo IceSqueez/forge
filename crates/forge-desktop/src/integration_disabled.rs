@@ -733,6 +733,20 @@ mod tests {
         );
     }
 
+    #[gpui::test]
+    fn an_enable_that_could_not_start_raises_an_error_toast(cx: &mut TestAppContext) {
+        let rt = runtime();
+        let (storage, _) = seeded_storage(&rt);
+        let view = open(cx, &rt, &storage, obs(), None);
+        cx.update(|cx| cx.set_global(forge_components::Toasts::new()));
+
+        view.update(cx, |view, cx| {
+            view.apply_enable_outcome(Err(crate::test_support::start_failure("port in use")), cx)
+        });
+
+        assert_eq!(cx.update(|cx| crate::test_support::error_toasts(cx)), 1);
+    }
+
     struct Heard {
         screens: Vec<Screen>,
         _sub: gpui::Subscription,

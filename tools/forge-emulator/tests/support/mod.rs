@@ -149,3 +149,23 @@ pub fn shipped_json(directory: &str) -> Vec<PathBuf> {
     files.sort();
     files
 }
+
+pub mod http_status {
+    use reqwest::StatusCode;
+
+    pub const OK: u16 = StatusCode::OK.as_u16();
+    pub const CREATED: u16 = StatusCode::CREATED.as_u16();
+    pub const ACCEPTED: u16 = StatusCode::ACCEPTED.as_u16();
+    pub const NO_CONTENT: u16 = StatusCode::NO_CONTENT.as_u16();
+    pub const FOUND: u16 = StatusCode::FOUND.as_u16();
+    pub const BAD_REQUEST: u16 = StatusCode::BAD_REQUEST.as_u16();
+    pub const UNAUTHORIZED: u16 = StatusCode::UNAUTHORIZED.as_u16();
+    pub const FORBIDDEN: u16 = StatusCode::FORBIDDEN.as_u16();
+    pub const NOT_FOUND: u16 = StatusCode::NOT_FOUND.as_u16();
+    pub const METHOD_NOT_ALLOWED: u16 = StatusCode::METHOD_NOT_ALLOWED.as_u16();
+    pub const CONFLICT: u16 = StatusCode::CONFLICT.as_u16();
+    pub const TOO_MANY_REQUESTS: u16 = StatusCode::TOO_MANY_REQUESTS.as_u16();
+    pub const SERVICE_UNAVAILABLE: u16 = StatusCode::SERVICE_UNAVAILABLE.as_u16();
+}
+
+pub const YOUTUBE_CLIENT_ID: &str = "emulator-youtube-client";

@@ -41,6 +41,7 @@ use tokio_tungstenite::tungstenite::Message;
 use tokio_tungstenite::{MaybeTlsStream, WebSocketStream};
 
 mod support;
+use support::http_status;
 
 use support::LOOPBACK;
 
@@ -105,7 +106,12 @@ impl PretendForge {
                 tokio::select! {
                     incoming = socket.next() => match incoming {
                         Some(Ok(Message::Text(text))) => {
-                            let request: Value = serde_json::from_str(text.as_str()).unwrap();
+                            let Ok(request) = serde_json::from_str::<Value>(text.as_str()) else {
+                                let _ = requests_tx.send(json!({
+                                    "request": format!("undecodable frame: {}", text.as_str()),
+                                }));
+                                break;
+                            };
                             let reply = answer(&request, behaviour, &publisher);
                             let _ = requests_tx.send(request);
                             if socket.send(Message::Text(reply.to_string().into())).await.is_err() {
@@ -153,7 +159,8 @@ impl PretendForge {
         let pushes = self.pushes.clone();
         let socket_url = fake.eventsub_ws_url().to_owned();
         let api = fake.api_base_url().to_owned();
-        tokio::spawn(async move {
+        let closes_on_panic = self.pushes.clone();
+        let session = tokio::spawn(async move {
             let (mut socket, session_id) = open_session(&socket_url).await;
             for subscription_type in [CHAT, SUBSCRIBE] {
                 subscribe_session(&api, &session_id, subscription_type).await;
@@ -179,6 +186,11 @@ impl PretendForge {
                     }
                     _ => {}
                 }
+            }
+        });
+        tokio::spawn(async move {
+            if session.await.is_err() {
+                let _ = closes_on_panic.send(Value::Null);
             }
         });
     }
@@ -298,7 +310,7 @@ async fn subscribe_session(api: &str, session_id: &str, subscription_type: &str)
         .await
         .unwrap()
         .status();
-    assert_eq!(status.as_u16(), 202);
+    assert_eq!(status.as_u16(), http_status::ACCEPTED);
 }
 
 struct Harness {
@@ -602,7 +614,7 @@ async fn a_failed_expectation_fails_its_step_and_later_steps_never_run() {
         subscribed(),
         ping_chat(json!([
             { "event": { "name": "chat", "kind": "chat.message", "within_ms": 5000 } },
-            { "event": { "name": "started", "kind": "action.start", "within_ms": 200 } },
+            { "event": { "name": "started", "kind": "action.start", "within_ms": http_status::OK } },
             { "caused_by": { "effect": "started", "cause": "chat" } }
         ])),
         { "do": { "run_action": { "action": "Ping" } } }
@@ -808,7 +820,7 @@ async fn events_published_before_a_step_starts_never_satisfy_its_expectations() 
             },
             {
                 "do": { "pause": { "ms": 1, "reason": "separates the steps" } },
-                "expect": [ { "event": { "kind": "custom.early", "within_ms": 200 } } ]
+                "expect": [ { "event": { "kind": "custom.early", "within_ms": http_status::OK } } ]
             }
         ]),
     );
@@ -1326,7 +1338,7 @@ async fn donations_polled_fails_when_no_list_is_read_after_the_step_begins() {
     donatello_list(&harness).await;
     let scenario = donatello_only_scenario(json!([
         ready(),
-        { "do": { "donations_polled": { "within_ms": 200 } } }
+        { "do": { "donations_polled": { "within_ms": http_status::OK } } }
     ]));
 
     let steps = harness.run(&scenario).await;
@@ -1805,7 +1817,18 @@ fn youtube_data_api(
     .unwrap()
 }
 
-fn forge_youtube_echo(fake: &FakeYouTube) -> tokio::task::JoinHandle<()> {
+struct EchoForge {
+    _cancel: tokio_util::sync::DropGuard,
+    echo: tokio::task::JoinHandle<()>,
+}
+
+impl Drop for EchoForge {
+    fn drop(&mut self) {
+        self.echo.abort();
+    }
+}
+
+fn forge_youtube_echo(fake: &FakeYouTube) -> EchoForge {
     let endpoints = youtube_endpoints(fake);
     let live_chat = forge_platform_youtube::LiveChatIdHandle::new();
     let api = youtube_data_api(&endpoints);
@@ -1820,8 +1843,9 @@ fn forge_youtube_echo(fake: &FakeYouTube) -> tokio::task::JoinHandle<()> {
         Arc::new(forge_storage::MockBanLedgerRepo::new()),
     );
     let sender = forge_platform_youtube::YoutubeSendChat::new(api, youtube_token(fake), live_chat);
-    tokio::spawn(async move {
-        let polling = tokio::spawn(poller.run(tokio_util::sync::CancellationToken::new()));
+    let cancel = tokio_util::sync::CancellationToken::new();
+    let polling = tokio::spawn(poller.run(cancel.clone()));
+    let echo = tokio::spawn(async move {
         while let Some(event) = event_rx.recv().await {
             let text = event.payload["message_text"].as_str().unwrap_or_default();
             if event.kind == youtube_kinds::CHAT_MESSAGE && text.starts_with('!') {
@@ -1829,7 +1853,11 @@ fn forge_youtube_echo(fake: &FakeYouTube) -> tokio::task::JoinHandle<()> {
             }
         }
         polling.abort();
-    })
+    });
+    EchoForge {
+        _cancel: cancel.drop_guard(),
+        echo,
+    }
 }
 
 #[tokio::test]
@@ -1863,7 +1891,7 @@ async fn youtube_chat_reaches_a_polling_forge_and_its_reply_satisfies_youtube_re
     ]));
 
     let steps = harness.run(&scenario).await;
-    forge.abort();
+    drop(forge);
 
     assert_eq!(
         verdicts(&steps[2]),

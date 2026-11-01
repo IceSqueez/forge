@@ -359,6 +359,8 @@ fn catalog_over(repo: &Arc<SpyActionRepo>) -> Arc<Catalog> {
     Catalog::new(repo.clone(), Arc::new(instances), CatalogRevision::new())
 }
 
+const ENGINE_DRAIN_GRACE: std::time::Duration = std::time::Duration::from_secs(30);
+
 #[tokio::test]
 async fn successful_execution_records_one_success_row() {
     let repo = Arc::new(SpyActionRepo::new());
@@ -383,7 +385,9 @@ async fn successful_execution_records_one_success_row() {
         repo.written.until(|| repo.records().len() == 1).await,
         "a completed run must record exactly one telemetry row",
     );
+    engine.stopped(ENGINE_DRAIN_GRACE).await;
     let records = repo.records();
+    assert_eq!(records.len(), 1);
     assert_eq!(records[0].0, id);
     assert_eq!(records[0].2, ExecutionStatus::Success);
 }
@@ -415,7 +419,9 @@ async fn failed_execution_records_one_error_row() {
         repo.written.until(|| repo.records().len() == 1).await,
         "a failed run must record exactly one telemetry row",
     );
+    engine.stopped(ENGINE_DRAIN_GRACE).await;
     let records = repo.records();
+    assert_eq!(records.len(), 1);
     assert_eq!(
         records[0].2,
         ExecutionStatus::Error,

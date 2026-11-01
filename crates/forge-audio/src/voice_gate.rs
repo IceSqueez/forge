@@ -350,3 +350,125 @@ fn input_stream_error_fn(
         tracing::debug!("voice gate monitor stopped; stream failure dropped");
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    const THRESHOLD: f32 = 0.5;
+    const NEVER_RELEASES: u64 = u64::MAX;
+    const RELEASES_AT_ONCE: u64 = 0;
+
+    struct Gate {
+        epoch: Instant,
+        shared: GateShared,
+        is_active: AtomicBool,
+        last_active_nanos: AtomicU64,
+        state_tx: watch::Sender<VoiceGateState>,
+        state_rx: watch::Receiver<VoiceGateState>,
+    }
+
+    impl Gate {
+        fn holding_for(hold_nanos: u64) -> Self {
+            let (state_tx, state_rx) = watch::channel(VoiceGateState::Inactive);
+            Self {
+                epoch: Instant::now(),
+                shared: GateShared {
+                    level_bits: AtomicU32::new(0.0f32.to_bits()),
+                    threshold_bits: AtomicU32::new(THRESHOLD.to_bits()),
+                    hold_nanos: AtomicU64::new(hold_nanos),
+                },
+                is_active: AtomicBool::new(false),
+                last_active_nanos: AtomicU64::new(0),
+                state_tx,
+                state_rx,
+            }
+        }
+
+        fn tick(&self, peak: f32) {
+            gate_tick(
+                peak,
+                self.epoch,
+                &self.shared,
+                &self.is_active,
+                &self.last_active_nanos,
+                &self.state_tx,
+            );
+        }
+
+        fn state_published(&mut self) -> Option<VoiceGateState> {
+            self.state_rx
+                .has_changed()
+                .unwrap()
+                .then(|| self.state_rx.borrow_and_update().clone())
+        }
+    }
+
+    #[test]
+    fn a_peak_at_the_threshold_opens_the_gate() {
+        let mut gate = Gate::holding_for(NEVER_RELEASES);
+
+        gate.tick(THRESHOLD);
+
+        assert_eq!(gate.state_published(), Some(VoiceGateState::Active));
+    }
+
+    #[test]
+    fn a_peak_just_under_the_threshold_leaves_the_gate_closed() {
+        let mut gate = Gate::holding_for(RELEASES_AT_ONCE);
+
+        gate.tick(f32::from_bits(THRESHOLD.to_bits() - 1));
+
+        assert_eq!(gate.state_published(), None);
+    }
+
+    #[test]
+    fn a_held_open_gate_announces_active_only_once() {
+        let mut gate = Gate::holding_for(NEVER_RELEASES);
+        gate.tick(THRESHOLD);
+        gate.state_published();
+
+        gate.tick(1.0);
+
+        assert_eq!(gate.state_published(), None);
+    }
+
+    #[test]
+    fn silence_inside_the_hold_keeps_the_gate_open() {
+        let mut gate = Gate::holding_for(NEVER_RELEASES);
+        gate.tick(THRESHOLD);
+        gate.state_published();
+
+        gate.tick(0.0);
+
+        assert_eq!(gate.state_published(), None);
+    }
+
+    #[test]
+    fn silence_past_the_hold_closes_the_gate_and_announces_it_once() {
+        let mut gate = Gate::holding_for(RELEASES_AT_ONCE);
+        gate.tick(THRESHOLD);
+        gate.state_published();
+
+        gate.tick(0.0);
+        let closed = gate.state_published();
+        gate.tick(0.0);
+
+        assert_eq!(
+            (closed, gate.state_published()),
+            (Some(VoiceGateState::Inactive), None)
+        );
+    }
+
+    #[test]
+    fn every_tick_reports_its_peak_as_the_level() {
+        let gate = Gate::holding_for(NEVER_RELEASES);
+
+        gate.tick(0.25);
+
+        assert_eq!(
+            f32::from_bits(gate.shared.level_bits.load(Ordering::Relaxed)),
+            0.25
+        );
+    }
+}

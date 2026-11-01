@@ -1308,20 +1308,17 @@ mod tests {
             _: &forge_types::SubActionConfig,
             ctx: &forge_registry::RunContext<'_>,
         ) -> (forge_types::SubActionTelemetry, Option<ArgStack>) {
-            loop {
-                if ctx.cancel.is_cancelled() {
+            tokio::select! {
+                () = ctx.cancel.cancelled() => {
                     #[expect(
                         clippy::let_underscore_must_use,
                         reason = "the receiver may already be gone"
                     )]
                     let _ = self.cancelled.send(());
-                    break;
                 }
-                if let Ok(permit) = self.release.try_acquire() {
-                    permit.forget();
-                    break;
+                permit = self.release.acquire() => {
+                    permit.expect("the test never closes the semaphore").forget();
                 }
-                tokio::time::sleep(Duration::from_millis(2)).await;
             }
             (
                 forge_types::SubActionTelemetry {
@@ -1398,20 +1395,19 @@ mod tests {
         QueueScheduler::spawn(engine, Arc::clone(bus), queues)
     }
 
-    async fn record(sub: &mut EventSubscription, window: Duration) -> Vec<Event> {
-        let deadline = tokio::time::Instant::now() + window;
-        let mut seen = Vec::new();
-        loop {
-            let remaining = deadline.saturating_duration_since(tokio::time::Instant::now());
-            if remaining.is_zero() {
-                break;
+    async fn next_queue_event(sub: &mut EventSubscription) -> Option<String> {
+        tokio::time::timeout(HANG_GUARD, async {
+            loop {
+                match sub.recv().await {
+                    Ok(ev) if ev.kind.starts_with("queue.") => return Some(ev.kind),
+                    Ok(_) => {}
+                    Err(_) => return None,
+                }
             }
-            match tokio::time::timeout(remaining, sub.recv()).await {
-                Ok(Ok(ev)) => seen.push(ev),
-                _ => break,
-            }
-        }
-        seen
+        })
+        .await
+        .ok()
+        .flatten()
     }
 
     fn ids_of(events: &[Event], kind: &str) -> Vec<String> {
@@ -1524,12 +1520,20 @@ mod tests {
             "action.skipped must link caused_by to the triggering event"
         );
 
-        assert!(
-            record(&mut sub, Duration::from_millis(180))
-                .await
-                .iter()
-                .all(|ev| ev.kind != "action.done"),
-            "paused queue must not execute action"
+        let fence = ActionId::new();
+        dp.action_repo()
+            .save(&log_action(fence, q_id))
+            .await
+            .unwrap();
+        sched.set_mode(q_id, QueueMode::RUNNING).await.unwrap();
+        sched.dispatch(req(q_id, fence)).await.unwrap();
+        let first_done = collect_event(&mut sub, "action.done")
+            .await
+            .expect("the fence run must finish on the resumed queue");
+        assert_eq!(
+            first_done.payload["action_id"].as_str(),
+            Some(fence.to_string().as_str()),
+            "the first finished run must be the fence, not the refused dispatch"
         );
         sched.shutdown();
     }
@@ -1638,11 +1642,12 @@ mod tests {
         let mut sub = bus.subscribe();
         sched.set_mode(q_id, QueueMode::PAUSED).await.unwrap();
 
-        let seen = record(&mut sub, Duration::from_millis(200)).await;
-        let kinds: Vec<&str> = seen.iter().map(|ev| ev.kind.as_str()).collect();
-        assert!(
-            kinds.iter().all(|kind| !kind.starts_with("queue.")),
-            "an unchanged mode must publish no queue event, saw {kinds:?}"
+        sched.set_mode(q_id, QueueMode::RUNNING).await.unwrap();
+        let first = next_queue_event(&mut sub).await;
+        assert_eq!(
+            first.as_deref(),
+            Some("queue.resumed"),
+            "the unchanged mode published a queue event before the real change"
         );
         sched.shutdown();
     }
@@ -1818,6 +1823,38 @@ mod tests {
 
         let outcome = sched.deregister(QueueId::new()).await.unwrap();
         assert_eq!(outcome, MembershipOutcome::NotFound);
+        sched.shutdown();
+    }
+
+    #[tokio::test]
+    async fn ensure_live_adds_a_queue_the_scheduler_does_not_hold() {
+        let dp = make_dp().await;
+        let q_id = QueueId::new();
+        let bus = EventBus::new(Arc::new(NullEventLogRepo));
+        let sched = spawn_sched(&dp, &bus, Arc::new(SubActionRegistry::new()), vec![]);
+
+        let outcome = sched.ensure_live(nonblocking(q_id)).await.unwrap();
+
+        assert_eq!(outcome, MembershipOutcome::Applied);
+        assert!(sched.queue_states().await.unwrap().contains_key(&q_id));
+        sched.shutdown();
+    }
+
+    #[tokio::test]
+    async fn ensure_live_applies_new_settings_to_a_queue_already_running() {
+        let q_id = QueueId::new();
+        let (a, b) = (ActionId::new(), ActionId::new());
+        let (_dp, _bus, sched, _held) = serial_queue_with_held(&[(a, true), (b, true)], q_id).await;
+
+        let outcome = sched.ensure_live(nonblocking(q_id)).await.unwrap();
+        sched.dispatch(req(q_id, a)).await.unwrap();
+        sched.dispatch(req(q_id, b)).await.unwrap();
+
+        assert_eq!(outcome, MembershipOutcome::Applied);
+        assert_eq!(
+            settles_at(&sched, q_id, depth(0, 2, 0)).await,
+            Some(depth(0, 2, 0))
+        );
         sched.shutdown();
     }
 

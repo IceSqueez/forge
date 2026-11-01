@@ -29,6 +29,7 @@ use tokio_tungstenite::tungstenite::Message;
 use tokio_tungstenite::{MaybeTlsStream, WebSocketStream};
 
 mod support;
+use support::http_status;
 
 use forge_storage::test_support::MemoryCredentials;
 use support::endpoints_from;
@@ -179,7 +180,7 @@ async fn forge_chat_joins_the_chatroom_the_channel_api_names() {
         (
             KickSurface::ChannelApi,
             "/api/v2/channels/forge_emulator",
-            200,
+            http_status::OK,
             PUSHER_APP_KEY
         )
     );
@@ -360,7 +361,7 @@ async fn public_api_without_the_current_token_is_unauthorized() {
         let ledger = fake.ledger();
         assert_eq!(
             (status.as_u16(), last_request(&ledger).credentials),
-            (401, expected),
+            (http_status::UNAUTHORIZED, expected),
             "{authorization:?}"
         );
     }
@@ -385,7 +386,7 @@ async fn malformed_send_bodies_are_refused_with_400() {
             .await
             .unwrap()
             .status();
-        assert_eq!(status.as_u16(), 400, "{body}");
+        assert_eq!(status.as_u16(), http_status::BAD_REQUEST, "{body}");
     }
 }
 
@@ -438,7 +439,13 @@ async fn channel_info_for_an_unknown_slug_is_not_found() {
     let fake = start(FakeKickSetup::default()).await;
     let fetched = channel_info(&fake).fetch(FOREIGN_SLUG).await;
     assert!(
-        matches!(fetched, Err(KickError::Http { status: 404, .. })),
+        matches!(
+            fetched,
+            Err(KickError::Http {
+                status: http_status::NOT_FOUND,
+                ..
+            })
+        ),
         "{fetched:?}"
     );
 }
@@ -495,7 +502,7 @@ async fn refused_refresh_requires_reauthentication() {
         );
         assert_eq!(
             (last_request(&ledger).surface, last_request(&ledger).status),
-            (KickSurface::OAuth, 400),
+            (KickSurface::OAuth, http_status::BAD_REQUEST),
             "{refresh:?}"
         );
     }
@@ -548,7 +555,7 @@ async fn unmodeled_routes_are_recorded_as_unexpected_404s() {
         let recorded = last_request(&ledger);
         assert_eq!(
             (status.as_u16(), recorded.modeled, recorded.surface),
-            (404, false, surface),
+            (http_status::NOT_FOUND, false, surface),
             "{method} {path}"
         );
     }

@@ -198,6 +198,7 @@ mod tests {
     use crate::NullEventLogRepo;
 
     const TWITCH: &str = "twitch";
+    const RUNTIME_IDLE_TICK: Duration = Duration::from_millis(1);
     const SECOND: Duration = Duration::from_secs(1);
     const ALL_ON: NotificationPreferences = NotificationPreferences {
         action_failure_notice: true,
@@ -215,9 +216,7 @@ mod tests {
     }
 
     async fn settle() {
-        for _ in 0..64 {
-            tokio::task::yield_now().await;
-        }
+        tokio::time::sleep(RUNTIME_IDLE_TICK).await;
     }
 
     async fn rig(preferences: NotificationPreferences) -> Rig {
@@ -466,13 +465,17 @@ mod tests {
     }
 
     const UNTIL_SPACING_ENDS: Duration = MIN_CUE_SPACING.saturating_sub(HELD_DROP_AFTER_CUE);
+    const RIG_IDLE_TICKS_BEFORE_THE_CHECK: u32 = 3;
+    const LAST_QUIET_MOMENT: Duration = UNTIL_SPACING_ENDS
+        .saturating_sub(RUNTIME_IDLE_TICK.saturating_mul(RIG_IDLE_TICKS_BEFORE_THE_CHECK))
+        .saturating_sub(MILLI);
 
     #[tokio::test(start_paused = true)]
     async fn loss_held_by_cue_spacing_cues_exactly_when_spacing_ends() {
         let mut rig = rig_after_twitch_cue(&[KICK]).await;
         rig.elapse(HELD_DROP_AFTER_CUE).await;
         drop_link(&mut rig, KICK, ConnectionTransition::Unexpected).await;
-        assert!(rig.elapse(UNTIL_SPACING_ENDS - MILLI).await.is_empty());
+        assert!(rig.elapse(LAST_QUIET_MOMENT).await.is_empty());
         assert_eq!(rig.elapse(MILLI).await, loss_cue(&[KICK]));
     }
 
@@ -481,7 +484,7 @@ mod tests {
         let mut rig = rig_after_twitch_cue(&[KICK]).await;
         rig.elapse(HELD_DROP_AFTER_CUE).await;
         drop_link(&mut rig, KICK, ConnectionTransition::Unexpected).await;
-        rig.elapse(UNTIL_SPACING_ENDS - MILLI).await;
+        rig.elapse(LAST_QUIET_MOMENT).await;
         rig.publish(link_of(
             KICK,
             ConnectionState::Connected,

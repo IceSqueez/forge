@@ -787,9 +787,18 @@ async fn hotkey_triggers_that_cannot_run_are_refused_with_their_error_ids() {
     )
     .await;
 
-    assert_eq!(error_id(&unknown), Some(202));
-    assert_eq!(error_id(&in_item), Some(207));
-    assert_eq!(error_id(&no_model), Some(201));
+    assert_eq!(
+        error_id(&unknown),
+        Some(forge_emulator::fakes::vtube::ERROR_HOTKEY_NOT_FOUND)
+    );
+    assert_eq!(
+        error_id(&in_item),
+        Some(forge_emulator::fakes::vtube::ERROR_HOTKEY_LIVE2D_ITEM_NOT_FOUND)
+    );
+    assert_eq!(
+        error_id(&no_model),
+        Some(forge_emulator::fakes::vtube::ERROR_HOTKEY_NO_MODEL_LOADED)
+    );
 }
 
 #[tokio::test]
@@ -1191,12 +1200,12 @@ async fn model_moves_need_their_required_fields_and_at_most_two_seconds() {
         (
             "over two seconds",
             json!({ "timeInSeconds": 2.1, "valuesAreRelativeToModel": false }),
-            Some(302),
+            Some(forge_emulator::fakes::vtube::ERROR_MOVE_MODEL_OUT_OF_RANGE),
         ),
         (
             "no relative flag",
             json!({ "timeInSeconds": 0.5 }),
-            Some(301),
+            Some(forge_emulator::fakes::vtube::ERROR_MOVE_MODEL_MISSING_FIELDS),
         ),
     ];
     for (what, data, expected) in cases {

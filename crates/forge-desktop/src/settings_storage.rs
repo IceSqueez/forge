@@ -933,6 +933,85 @@ mod tests {
         }
     }
 
+    fn refused_setting(
+        key: &str,
+        cx: &mut TestAppContext,
+        write: impl FnOnce(&mut SettingsStorageView, &mut gpui::Context<SettingsStorageView>),
+        shown: impl Fn(&SettingsStorageView, &gpui::App) -> String,
+    ) -> (String, String, usize) {
+        let rig = rig(cx);
+        cx.update(|cx| cx.set_global(forge_components::Toasts::new()));
+        rig.backend.fail_writes(key);
+        let before = rig.view.read_with(cx, |view, cx| shown(view, cx));
+
+        rig.view.update(cx, write);
+        pump(&rig.rt);
+        cx.run_until_parked();
+
+        let after = rig.view.read_with(cx, |view, cx| shown(view, cx));
+        (
+            before,
+            after,
+            cx.update(|cx| crate::test_support::error_toasts(cx)),
+        )
+    }
+
+    fn assert_rolled_back((before, after, toasts): (String, String, usize)) {
+        assert_eq!((after, toasts), (before, 1));
+    }
+
+    #[gpui::test]
+    fn a_refused_per_viewer_limit_is_taken_back_with_a_toast(cx: &mut TestAppContext) {
+        assert_rolled_back(refused_setting(
+            forge_storage::settings::core_settings::CHAT_HISTORY_PER_VIEWER_LIMIT.name(),
+            cx,
+            |view, cx| view.select_per_viewer_preset(25, cx),
+            |view, cx| view.per_viewer_input.read(cx).content().to_owned(),
+        ));
+    }
+
+    #[gpui::test]
+    fn a_refused_display_limit_is_taken_back_with_a_toast(cx: &mut TestAppContext) {
+        assert_rolled_back(refused_setting(
+            forge_storage::settings::core_settings::CHAT_HISTORY_DISPLAY_LIMIT.name(),
+            cx,
+            |view, cx| {
+                view.display_input
+                    .update(cx, |input, cx| input.set_content("321".to_owned(), cx));
+                view.commit_display(cx);
+            },
+            |view, cx| view.display_input.read(cx).content().to_owned(),
+        ));
+    }
+
+    #[gpui::test]
+    fn a_refused_event_log_retention_is_taken_back_with_a_toast(cx: &mut TestAppContext) {
+        assert_rolled_back(refused_setting(
+            forge_storage::settings::core_settings::EVENT_LOG_RETENTION_DAYS.name(),
+            cx,
+            |view, cx| {
+                view.retention_input
+                    .update(cx, |input, cx| input.set_content("90".to_owned(), cx));
+                view.commit_retention(cx);
+            },
+            |view, cx| view.retention_input.read(cx).content().to_owned(),
+        ));
+    }
+
+    #[gpui::test]
+    fn a_refused_history_retention_is_taken_back_with_a_toast(cx: &mut TestAppContext) {
+        assert_rolled_back(refused_setting(
+            forge_storage::settings::core_settings::ACTION_HISTORY_RETENTION_DAYS.name(),
+            cx,
+            |view, cx| {
+                view.history_retention_input
+                    .update(cx, |input, cx| input.set_content("30".to_owned(), cx));
+                view.commit_history_retention(cx);
+            },
+            |view, cx| view.history_retention_input.read(cx).content().to_owned(),
+        ));
+    }
+
     #[gpui::test]
     fn committing_a_custom_zero_selects_unlimited_and_stops_per_viewer_trimming(
         cx: &mut TestAppContext,

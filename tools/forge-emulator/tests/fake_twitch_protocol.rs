@@ -4,6 +4,12 @@ use std::time::Duration;
 
 mod support;
 
+fn owner() -> String {
+    forge_emulator::fixture::TwitchAccount::default().user_id
+}
+
+use support::http_status;
+
 use forge_emulator::EmulatorError;
 use forge_emulator::fakes::twitch::{
     CredentialCheck, FakeGoal, FakeTwitch, FakeTwitchConfig, Viewer, ViewerBadge,
@@ -57,7 +63,7 @@ fn subscription_body(subscription_type: &str, session_id: &str) -> Value {
     json!({
         "type": subscription_type,
         "version": "1",
-        "condition": { "broadcaster_user_id": "100000001", "user_id": "100000001" },
+        "condition": { "broadcaster_user_id": owner(), "user_id": owner() },
         "transport": { "method": "websocket", "session_id": session_id },
     })
 }
@@ -143,7 +149,7 @@ async fn accepted_subscription_is_answered_and_recorded_with_its_condition() {
 
     let (status, body) = subscribe(&fake, CHAT, &session_id).await;
 
-    assert_eq!(status, 202);
+    assert_eq!(status, http_status::ACCEPTED);
     let created = &body["data"][0];
     assert_eq!(created["type"], CHAT);
     assert_eq!(created["transport"]["session_id"], session_id.as_str());
@@ -205,7 +211,7 @@ async fn refused_credentials_answer_401_and_create_no_subscription() {
         }
         let status = request.send().await.unwrap().status().as_u16();
 
-        assert_eq!(status, 401, "case {expected:?}");
+        assert_eq!(status, http_status::UNAUTHORIZED, "case {expected:?}");
         let ledger = fake.ledger();
         assert_eq!(ledger.requests[index].credentials, expected);
         assert!(ledger.subscriptions.is_empty(), "case {expected:?}");
@@ -222,7 +228,7 @@ async fn malformed_bodies_on_modeled_endpoints_answer_400() {
     let mut no_type = subscription_body(CHAT, &session_id);
     no_type.as_object_mut().unwrap().remove("type");
     let mut scalar_condition = subscription_body(CHAT, &session_id);
-    scalar_condition["condition"] = json!("100000001");
+    scalar_condition["condition"] = json!(owner());
     let cases = [
         (subscriptions, json!("not an object")),
         (subscriptions, no_type),
@@ -231,13 +237,13 @@ async fn malformed_bodies_on_modeled_endpoints_answer_400() {
         (subscriptions, subscription_body(CHAT, "no-such-session")),
         (
             "/helix/chat/messages",
-            json!({ "broadcaster_id": "100000001", "sender_id": "100000001" }),
+            json!({ "broadcaster_id": owner(), "sender_id": owner() }),
         ),
     ];
 
     for (path, body) in cases {
         let (status, _) = post_json(&fake, path, &body).await;
-        assert_eq!(status, 400, "{path} with {body}");
+        assert_eq!(status, http_status::BAD_REQUEST, "{path} with {body}");
     }
     let ledger = fake.ledger();
     assert!(ledger.subscriptions.is_empty());
@@ -252,7 +258,7 @@ async fn repeating_a_subscription_on_one_session_answers_409() {
     subscribe(&fake, CHAT, &session_id).await;
     let (status, _) = subscribe(&fake, CHAT, &session_id).await;
 
-    assert_eq!(status, 409);
+    assert_eq!(status, http_status::CONFLICT);
     assert_eq!(fake.ledger().subscriptions.len(), 1);
 }
 
@@ -268,14 +274,14 @@ async fn unmodeled_requests_answer_404_and_are_flagged_unexpected() {
     ];
 
     for (method, path) in &cases {
-        let url = format!("{}{path}?broadcaster_id=100000001", fake.api_base_url());
+        let url = format!("{}{path}?broadcaster_id={}", fake.api_base_url(), owner());
         let status = support::twitch_authorized(&client, method.clone(), url)
             .send()
             .await
             .unwrap()
             .status()
             .as_u16();
-        assert_eq!(status, 404, "{method} {path}");
+        assert_eq!(status, http_status::NOT_FOUND, "{method} {path}");
     }
 
     let ledger = fake.ledger();
@@ -290,7 +296,7 @@ async fn unmodeled_requests_answer_404_and_are_flagged_unexpected() {
     assert_eq!(unexpected, expected);
     assert_eq!(
         ledger.requests[0].query,
-        vec![("broadcaster_id".to_owned(), "100000001".to_owned())]
+        vec![("broadcaster_id".to_owned(), owner())]
     );
 }
 
@@ -470,11 +476,14 @@ async fn user_lookup_resolves_the_broadcaster_and_known_viewers_only() {
         .await
         .unwrap();
     let client = reqwest::Client::new();
+    let owner = owner();
+    let by_id = format!("?id={owner}");
+    let by_id_and_login = format!("?id={owner}&login=alice");
     let cases: [(&str, &[&str]); 5] = [
-        ("", &["100000001"]),
-        ("?id=100000001", &["100000001"]),
+        ("", &[owner.as_str()]),
+        (by_id.as_str(), &[owner.as_str()]),
         ("?login=ALICE", &["200000042"]),
-        ("?id=100000001&login=alice", &["100000001", "200000042"]),
+        (by_id_and_login.as_str(), &[owner.as_str(), "200000042"]),
         ("?login=nobody", &[]),
     ];
 
@@ -609,7 +618,7 @@ async fn a_tapped_fake_streams_helix_requests_to_the_tap_and_keeps_none() {
     let (status, _) = post_json(&fake, "/helix/chat/messages", &body).await;
     let tapped = timeout(DEADLINE, tap.recv()).await.unwrap().unwrap();
 
-    assert_eq!(status, 200);
+    assert_eq!(status, http_status::OK);
     assert_eq!(tapped.request.body, Some(body));
     assert!(fake.ledger().requests.is_empty());
 }
@@ -648,8 +657,8 @@ async fn session_holding_two_subscriptions_of_one_type_gets_one_notification() {
     let fake = start().await;
     let (mut socket, session_id) = connect_to(fake.eventsub_ws_url()).await;
     for condition in [
-        json!({ "to_broadcaster_user_id": "100000001" }),
-        json!({ "from_broadcaster_user_id": "100000001" }),
+        json!({ "to_broadcaster_user_id": owner() }),
+        json!({ "from_broadcaster_user_id": owner() }),
     ] {
         let mut body = subscription_body(topics::CHANNEL_RAID, &session_id);
         body["condition"] = condition;
@@ -726,7 +735,7 @@ async fn whisper_from_the_broadcaster_is_accepted_with_no_content() {
     )
     .await;
 
-    assert_eq!(status, 204);
+    assert_eq!(status, http_status::NO_CONTENT);
     assert_eq!(fake.ledger().unexpected_requests().count(), 0);
 }
 
@@ -735,15 +744,30 @@ async fn whisper_requests_twitch_would_refuse_are_refused() {
     let fake = start().await;
     let broadcaster = config().broadcaster_user_id;
     let cases = [
-        ("200000999", "200000042", json!({ "message": "psst" }), 401),
-        (broadcaster.as_str(), "", json!({ "message": "psst" }), 400),
+        (
+            "200000999",
+            "200000042",
+            json!({ "message": "psst" }),
+            http_status::UNAUTHORIZED,
+        ),
+        (
+            broadcaster.as_str(),
+            "",
+            json!({ "message": "psst" }),
+            http_status::BAD_REQUEST,
+        ),
         (
             broadcaster.as_str(),
             "200000042",
             json!({ "message": "" }),
-            400,
+            http_status::BAD_REQUEST,
         ),
-        (broadcaster.as_str(), "200000042", json!({}), 400),
+        (
+            broadcaster.as_str(),
+            "200000042",
+            json!({}),
+            http_status::BAD_REQUEST,
+        ),
     ];
 
     for (from, to, body, expected) in cases {
@@ -762,7 +786,7 @@ async fn channel_followers_answers_from_the_injected_follows() {
             "user_id": user_id,
             "user_login": login,
             "user_name": login,
-            "broadcaster_user_id": "100000001",
+            "broadcaster_user_id": owner(),
             "broadcaster_user_login": "streamer",
             "broadcaster_user_name": "streamer",
             "followed_at": followed_at,
@@ -849,7 +873,7 @@ fn ban_event(user_id: &str, login: &str, ends_at: Option<&str>) -> Value {
         "user_id": user_id,
         "user_login": login,
         "user_name": login.to_uppercase(),
-        "broadcaster_user_id": "100000001",
+        "broadcaster_user_id": owner(),
         "broadcaster_user_login": "streamer",
         "broadcaster_user_name": "streamer",
         "moderator_user_id": "300000001",

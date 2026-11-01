@@ -558,3 +558,51 @@ fn a_finished_rollback_report_is_taken_once() {
     assert!(matches!(first, Some(UpdateReport::RolledBack { .. })));
     assert_eq!(second, None);
 }
+
+fn supervise_with_nothing_pending(
+    data_dir: &std::path::Path,
+    clock: &FakeClock,
+) -> Result<SupervisorOutcome, UpdateError> {
+    let unit = super::harness::database_unit();
+    crate::run_supervisor(crate::SupervisorContext {
+        data_dir,
+        database: &unit,
+        settings: settings(),
+        host: &mut super::harness::FakeHost::new([]),
+        clock,
+        schema: &super::harness::FixedSchema(None),
+    })
+}
+
+#[cfg(unix)]
+#[test]
+fn a_supervisor_finding_the_lock_held_retries_until_it_comes_free() {
+    let data = tempfile::tempdir().unwrap();
+    let held = crate::supervisor_lock::SupervisorLock::try_acquire(data.path())
+        .unwrap()
+        .unwrap();
+    let clock = FakeClock::new().on_first_sleep(move || drop(held));
+
+    let outcome = supervise_with_nothing_pending(data.path(), &clock).unwrap();
+
+    assert_eq!(outcome, SupervisorOutcome::NothingPending);
+    assert_eq!(clock.elapsed(), settings().file_retry_delay);
+}
+
+#[test]
+fn a_supervisor_gives_up_as_busy_only_after_its_retry_budget() {
+    let data = tempfile::tempdir().unwrap();
+    let _held = crate::supervisor_lock::SupervisorLock::try_acquire(data.path())
+        .unwrap()
+        .unwrap();
+    let clock = FakeClock::new();
+
+    let result = supervise_with_nothing_pending(data.path(), &clock);
+
+    let budget = settings().file_retry_delay * settings().file_retry_attempts;
+    assert!(
+        matches!(result, Err(UpdateError::SupervisorBusy)),
+        "{result:?}"
+    );
+    assert_eq!(clock.elapsed(), budget);
+}

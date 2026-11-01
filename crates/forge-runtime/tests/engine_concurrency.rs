@@ -46,6 +46,7 @@ const FAILURE_REASON: &str = "scene not found";
 const CANCELLED_REASON: &str = "saw the cancel";
 const LONG_WAIT_MS: i64 = 60_000;
 const SETTLE_ROUNDS: usize = 200;
+const RUNTIME_IDLE_TICK: Duration = Duration::from_millis(1);
 const QUIET_STEP: Duration = Duration::from_secs(5);
 const QUIET_ROUNDS: usize = 4;
 const SAVE_DEADLINE: Duration = Duration::from_secs(2);
@@ -440,7 +441,7 @@ async fn settle(
             return;
         }
         last = Some(state);
-        tokio::task::yield_now().await;
+        tokio::time::sleep(RUNTIME_IDLE_TICK).await;
     }
     panic!("the queue never settled to {what}, last saw {last:?}");
 }

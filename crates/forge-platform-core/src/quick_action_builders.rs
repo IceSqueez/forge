@@ -183,3 +183,98 @@ impl QuickAction {
         Self { fields, ..self }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn label() -> MessageCode {
+        MessageCode::from_static("test", "label")
+    }
+
+    fn action_with(fields: Vec<QuickActionField>) -> QuickAction {
+        QuickAction::new(label(), "bolt", QuickActionAccent::default(), "test.step")
+            .with_fields(fields)
+    }
+
+    #[test]
+    fn a_new_action_cannot_run_until_it_is_enabled() {
+        let action = action_with(Vec::new());
+
+        assert!(!action.is_runnable());
+        assert!(action.enabled_if(true).is_runnable());
+    }
+
+    #[test]
+    fn built_defaults_reach_the_step_under_their_keys_and_kinds() {
+        let action = action_with(vec![
+            QuickActionField::toggle("flag", label(), true),
+            QuickActionField::int("count", label(), 7, 1, 10),
+            QuickActionField::static_choice(
+                "mode",
+                label(),
+                "b",
+                &[("a", label()), ("b", label())],
+            ),
+            QuickActionField::text("free", label()).with_default_text("hello"),
+        ]);
+
+        let step = action.merge_config(&BTreeMap::new());
+
+        assert_eq!(
+            step.config,
+            BTreeMap::from([
+                ("flag".to_owned(), Variant::Bool(true)),
+                ("count".to_owned(), Variant::Int(7)),
+                ("mode".to_owned(), Variant::String("b".to_owned())),
+                ("free".to_owned(), Variant::String("hello".to_owned())),
+            ])
+        );
+    }
+
+    #[test]
+    fn an_int_field_takes_its_bounds_in_low_then_high_order() {
+        let field = QuickActionField::int("count", label(), 5, 2, 9);
+
+        let verdicts = [1, 2, 9, 10].map(|n| field.kind.accepts(&QuickActionFieldValue::Int(n)));
+
+        assert_eq!(verdicts, [false, true, true, false]);
+    }
+
+    #[test]
+    fn a_static_choice_accepts_only_its_listed_values() {
+        let field = QuickActionField::static_choice("mode", label(), "a", &[("a", label())]);
+
+        let verdicts = ["a", "z"].map(|value| {
+            field
+                .kind
+                .accepts(&QuickActionFieldValue::Text(value.to_owned()))
+        });
+
+        assert_eq!(verdicts, [true, false]);
+    }
+
+    #[test]
+    fn with_config_seeds_the_step_and_a_field_value_overrides_it() {
+        let action = action_with(vec![QuickActionField::text("free", label())]).with_config(
+            BTreeMap::from([
+                ("free".to_owned(), Variant::String("seed".to_owned())),
+                ("fixed".to_owned(), Variant::Int(1)),
+            ]),
+        );
+        let values = BTreeMap::from([(
+            "free".to_owned(),
+            QuickActionFieldValue::Text("typed".to_owned()),
+        )]);
+
+        let step = action.merge_config(&values);
+
+        assert_eq!(
+            step.config,
+            BTreeMap::from([
+                ("free".to_owned(), Variant::String("typed".to_owned())),
+                ("fixed".to_owned(), Variant::Int(1)),
+            ])
+        );
+    }
+}

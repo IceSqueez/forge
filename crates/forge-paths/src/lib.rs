@@ -130,30 +130,38 @@ mod tests {
 
     use super::*;
 
-    static CREDENTIALS_KEY_ENV_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
+    static ENV_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
 
     #[expect(unsafe_code, reason = "env mutation is unsafe in edition 2024")]
-    fn with_credentials_key_env<R>(value: Option<&str>, body: impl FnOnce() -> R) -> R {
-        let _guard = CREDENTIALS_KEY_ENV_LOCK
+    fn with_env<R>(name: &str, value: Option<&str>, body: impl FnOnce() -> R) -> R {
+        let _guard = ENV_LOCK
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner);
-        let previous = std::env::var_os(CREDENTIALS_KEY_FILE_ENV);
-        // SAFETY: CREDENTIALS_KEY_ENV_LOCK serialises every test in this binary that touches this variable, and no other code in it reads it.
+        let previous = std::env::var_os(name);
+        // SAFETY: ENV_LOCK serialises every test in this binary that touches these variables, and every other test in it reads neither.
         unsafe {
             match value {
-                Some(v) => std::env::set_var(CREDENTIALS_KEY_FILE_ENV, v),
-                None => std::env::remove_var(CREDENTIALS_KEY_FILE_ENV),
+                Some(v) => std::env::set_var(name, v),
+                None => std::env::remove_var(name),
             }
         }
         let result = body();
-        // SAFETY: still under CREDENTIALS_KEY_ENV_LOCK, restoring the value seen on entry.
+        // SAFETY: still under ENV_LOCK, restoring the value seen on entry.
         unsafe {
             match previous {
-                Some(v) => std::env::set_var(CREDENTIALS_KEY_FILE_ENV, v),
-                None => std::env::remove_var(CREDENTIALS_KEY_FILE_ENV),
+                Some(v) => std::env::set_var(name, v),
+                None => std::env::remove_var(name),
             }
         }
         result
+    }
+
+    fn with_credentials_key_env<R>(value: Option<&str>, body: impl FnOnce() -> R) -> R {
+        with_env(CREDENTIALS_KEY_FILE_ENV, value, body)
+    }
+
+    fn default_data_dir() -> PathBuf {
+        with_env(DATA_DIR_ENV, None, data_dir)
     }
 
     #[test]
@@ -202,8 +210,17 @@ mod tests {
     }
 
     #[test]
+    fn a_data_dir_override_wins_and_an_empty_one_is_ignored() {
+        let overridden = with_env(DATA_DIR_ENV, Some("/srv/forge-data"), data_dir);
+        let empty = with_env(DATA_DIR_ENV, Some(""), data_dir);
+
+        assert_eq!(overridden, PathBuf::from("/srv/forge-data"));
+        assert_eq!(empty, default_data_dir());
+    }
+
+    #[test]
     fn data_dir_ends_with_app_segment() {
-        let path = data_dir();
+        let path = default_data_dir();
         let last = path.file_name().and_then(|s| s.to_str()).unwrap_or("");
         assert_eq!(last, app_segment());
     }
@@ -211,7 +228,7 @@ mod tests {
     #[cfg(target_os = "linux")]
     #[test]
     fn linux_data_dir_appends_forge_only() {
-        let suffix = data_dir()
+        let suffix = default_data_dir()
             .strip_prefix(base_dirs().data_dir())
             .unwrap()
             .to_path_buf();
@@ -221,7 +238,7 @@ mod tests {
     #[cfg(target_os = "windows")]
     #[test]
     fn windows_data_dir_appends_forge_only() {
-        let suffix = data_dir()
+        let suffix = default_data_dir()
             .strip_prefix(base_dirs().data_dir())
             .unwrap()
             .to_path_buf();
@@ -231,7 +248,7 @@ mod tests {
     #[cfg(target_os = "macos")]
     #[test]
     fn macos_data_dir_uses_bundle_id() {
-        let suffix = data_dir()
+        let suffix = default_data_dir()
             .strip_prefix(base_dirs().data_dir())
             .unwrap()
             .to_path_buf();

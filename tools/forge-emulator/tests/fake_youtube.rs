@@ -27,12 +27,12 @@ use tokio::task::JoinHandle;
 use tokio::time::timeout;
 
 mod support;
+use support::http_status;
 
 use forge_storage::test_support::MemoryCredentials;
 use support::{endpoints_from, static_token_source};
 
 const WAIT: Duration = Duration::from_secs(30);
-const CLIENT_ID: &str = "emulator-youtube-client";
 const CLIENT_SECRET: &str = "emulator-youtube-client-secret";
 
 struct CancelOnDrop(JoinHandle<()>);
@@ -87,7 +87,7 @@ fn google_oauth(endpoints: &PlatformEndpoints) -> GoogleOAuthClient {
     ));
     GoogleOAuthClient::new(
         google_oauth_gateway(endpoints, limiter).unwrap(),
-        CLIENT_ID.to_owned(),
+        support::YOUTUBE_CLIENT_ID.to_owned(),
         forge_types::Secret::new(CLIENT_SECRET),
     )
 }
@@ -163,9 +163,11 @@ impl ForgePoller {
             ActiveBroadcastIdHandle::new(),
             Arc::new(forge_storage::MockBanLedgerRepo::new()),
         );
-        let cancel = tokio_util::sync::CancellationToken::new();
         let task = tokio::spawn(async move {
-            poller.run(cancel).await.ok();
+            poller
+                .run(tokio_util::sync::CancellationToken::new())
+                .await
+                .ok();
         });
         Self {
             events,
@@ -192,7 +194,9 @@ async fn chat_polled(fake: &FakeYouTube) {
         ledger
             .requests
             .iter()
-            .any(|request| request.path == LIVE_CHAT_MESSAGES_PATH && request.status == 200)
+            .any(|request| {
+                request.path == LIVE_CHAT_MESSAGES_PATH && request.status == http_status::OK
+            })
             .then_some(())
     })
     .await
@@ -218,7 +222,7 @@ async fn manager(
             channel_id: account.channel_id,
             channel_title: account.channel_title,
             channel_handle: handle.map(ToOwned::to_owned),
-            client_id: CLIENT_ID.to_owned(),
+            client_id: support::YOUTUBE_CLIENT_ID.to_owned(),
             expires_at,
         })
         .await
@@ -363,7 +367,7 @@ async fn chat_list_carries_the_configured_polling_interval() {
     let (status, page) = list_chat(&fake, None).await;
     assert_eq!(
         (status, page["pollingIntervalMillis"].as_u64()),
-        (200, Some(4321))
+        (http_status::OK, Some(4321))
     );
 }
 
@@ -380,12 +384,12 @@ async fn chat_list_is_refused_with_the_documented_reason_for_each_unusable_chat(
         (
             "never live",
             list_chat(&never_live, None).await,
-            (403, "liveChatEnded"),
+            (http_status::FORBIDDEN, "liveChatEnded"),
         ),
         (
             "ended and delivered",
             list_chat(&ended, Some(&past_end)).await,
-            (403, "liveChatEnded"),
+            (http_status::FORBIDDEN, "liveChatEnded"),
         ),
         (
             "unknown chat id",
@@ -395,12 +399,12 @@ async fn chat_list_is_refused_with_the_documented_reason_for_each_unusable_chat(
                 &[("liveChatId", "other"), ("part", "snippet")],
             )
             .await,
-            (404, "liveChatNotFound"),
+            (http_status::NOT_FOUND, "liveChatNotFound"),
         ),
         (
             "foreign page token",
             list_chat(&unknown, Some("not-ours")).await,
-            (400, "badRequest"),
+            (http_status::BAD_REQUEST, "badRequest"),
         ),
     ];
     for (label, (status, body), expected) in cases {
@@ -419,7 +423,7 @@ async fn ended_chat_delivers_chat_ended_event_with_offline_at() {
             page["items"][0]["snippet"]["type"].as_str(),
             page["offlineAt"].is_string()
         ),
-        (200, Some("chatEndedEvent"), true)
+        (http_status::OK, Some("chatEndedEvent"), true)
     );
 }
 
@@ -471,7 +475,7 @@ async fn forge_send_into_an_ended_chat_is_refused_as_live_chat_ended() {
     let refused = sender.send("too late").await;
 
     assert!(
-        matches!(&refused, Err(PlatformError::Http { status: 403, body }) if body.contains("liveChatEnded")),
+        matches!(&refused, Err(PlatformError::Http { status: http_status::FORBIDDEN, body }) if body.contains("liveChatEnded")),
         "{refused:?}"
     );
 }
@@ -484,22 +488,22 @@ async fn malformed_inserts_are_refused_with_the_documented_reason() {
         (
             "no liveChatId",
             json!({ "snippet": { "type": "textMessageEvent", "textMessageDetails": { "messageText": "x" } } }),
-            (400, "liveChatIdRequired"),
+            (http_status::BAD_REQUEST, "liveChatIdRequired"),
         ),
         (
             "another chat",
             json!({ "snippet": { "liveChatId": "other", "type": "textMessageEvent", "textMessageDetails": { "messageText": "x" } } }),
-            (404, "liveChatNotFound"),
+            (http_status::NOT_FOUND, "liveChatNotFound"),
         ),
         (
             "no type",
             json!({ "snippet": { "liveChatId": chat, "textMessageDetails": { "messageText": "x" } } }),
-            (400, "typeRequired"),
+            (http_status::BAD_REQUEST, "typeRequired"),
         ),
         (
             "blank text",
             json!({ "snippet": { "liveChatId": chat, "type": "textMessageEvent", "textMessageDetails": { "messageText": " " } } }),
-            (400, "messageTextRequired"),
+            (http_status::BAD_REQUEST, "messageTextRequired"),
         ),
     ];
     for (label, body, expected) in cases {
@@ -536,7 +540,7 @@ async fn data_api_without_the_current_token_is_unauthorized() {
         let status = request.send().await.unwrap().status().as_u16();
         assert_eq!(
             (status, last_request(&fake).credentials),
-            (401, expected),
+            (http_status::UNAUTHORIZED, expected),
             "{bearer:?}"
         );
     }
@@ -650,7 +654,7 @@ async fn subscription_list_answers_from_the_seeded_subscribers_of_this_channel()
             "public subscriber",
             public,
             channel_id.as_str(),
-            200,
+            http_status::OK,
             Some(1),
             "",
         ),
@@ -658,7 +662,7 @@ async fn subscription_list_answers_from_the_seeded_subscribers_of_this_channel()
             "private subscriber",
             private,
             channel_id.as_str(),
-            403,
+            http_status::FORBIDDEN,
             None,
             "subscriptionForbidden",
         ),
@@ -666,7 +670,7 @@ async fn subscription_list_answers_from_the_seeded_subscribers_of_this_channel()
             "unknown viewer",
             "UCnotSubscribed000000001",
             channel_id.as_str(),
-            200,
+            http_status::OK,
             Some(0),
             "",
         ),
@@ -674,7 +678,7 @@ async fn subscription_list_answers_from_the_seeded_subscribers_of_this_channel()
             "another channel",
             public,
             "UCsomeoneElse00000000001",
-            200,
+            http_status::OK,
             Some(0),
             "",
         ),
@@ -770,7 +774,7 @@ async fn token_retired_by_a_refresh_is_unauthorized() {
         .status()
         .as_u16();
 
-    assert_eq!(status, 401);
+    assert_eq!(status, http_status::UNAUTHORIZED);
 }
 
 #[tokio::test]
@@ -807,7 +811,11 @@ async fn refresh_ledger_keeps_the_form_but_never_the_client_secret() {
                 .and_then(|body| body.get("client_secret")),
             refresh.body.as_ref().and_then(|body| body.get("client_id")),
         ),
-        (TOKEN_PATH, Some(&json!(REDACTED)), Some(&json!(CLIENT_ID)))
+        (
+            TOKEN_PATH,
+            Some(&json!(REDACTED)),
+            Some(&json!(support::YOUTUBE_CLIENT_ID))
+        )
     );
 }
 
@@ -828,12 +836,15 @@ async fn malformed_refresh_forms_are_refused_with_googles_error_codes() {
             "invalid_request",
         ),
         (
-            vec![("client_id", CLIENT_ID), ("grant_type", "password")],
+            vec![
+                ("client_id", support::YOUTUBE_CLIENT_ID),
+                ("grant_type", "password"),
+            ],
             "unsupported_grant_type",
         ),
         (
             vec![
-                ("client_id", CLIENT_ID),
+                ("client_id", support::YOUTUBE_CLIENT_ID),
                 ("grant_type", "refresh_token"),
                 ("refresh_token", "spent"),
             ],
@@ -852,7 +863,7 @@ async fn malformed_refresh_forms_are_refused_with_googles_error_codes() {
         let body: Value = response.json().await.unwrap();
         assert_eq!(
             (status, body["error"].as_str()),
-            (400, Some(expected)),
+            (http_status::BAD_REQUEST, Some(expected)),
             "{form:?}"
         );
     }
@@ -885,7 +896,7 @@ async fn unmodeled_routes_are_recorded_as_unexpected_404s() {
             .unwrap()
             .status()
             .as_u16();
-        assert_eq!(status, 404);
+        assert_eq!(status, http_status::NOT_FOUND);
     }
     assert_eq!(fake.ledger().unexpected_requests().count(), 3);
 }

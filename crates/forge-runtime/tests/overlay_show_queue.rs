@@ -33,6 +33,7 @@ const CHAT_KIND: &str = "overlay.chat";
 const GOAL_KIND: &str = "overlay.goal";
 
 const STAGE: &str = "stage-alert";
+const RUNTIME_IDLE_TICK: Duration = Duration::from_millis(1);
 const SIDE: &str = "side-alert";
 
 const HEADLINE_KEY: &str = "headline";
@@ -238,12 +239,22 @@ impl Harness {
         }
     }
 
+    async fn until_waiting(&self, id: &OverlayId) {
+        for _ in 0..1_000 {
+            if self.service.pending_shows(id) > 0 {
+                return;
+            }
+            tokio::time::sleep(RUNTIME_IDLE_TICK).await;
+        }
+        panic!("no show ever waited behind '{id:?}'");
+    }
+
     async fn until_on_screen(&self, id: &str, shown: usize) {
         for _ in 0..1_000 {
             if self.sink.arrivals(id).len() >= shown {
                 return;
             }
-            tokio::task::yield_now().await;
+            tokio::time::sleep(RUNTIME_IDLE_TICK).await;
         }
         panic!("the presenter never put show {shown} of '{id}' on the page");
     }
@@ -661,9 +672,7 @@ async fn a_waiting_step_whose_show_is_dropped_before_it_runs_fails_at_once() {
         let started = Instant::now();
 
         let ((telemetry, _), ()) = tokio::join!(runner.execute(&waiting_step, &ctx), async {
-            while harness.service.pending_shows(&id) == 0 {
-                tokio::task::yield_now().await;
-            }
+            harness.until_waiting(&id).await;
             match change {
                 Lifecycle::Delete => {
                     harness.service.delete(&id).await.unwrap();
@@ -699,9 +708,7 @@ async fn a_waiting_step_whose_show_is_cleared_fails_at_once() {
     let started = Instant::now();
 
     let ((telemetry, _), cleared) = tokio::join!(runner.execute(&waiting_step, &ctx), async {
-        while harness.service.pending_shows(&id) == 0 {
-            tokio::task::yield_now().await;
-        }
+        harness.until_waiting(&id).await;
         harness.service.clear_shows(&id)
     });
 
@@ -831,9 +838,7 @@ async fn stopping_the_owner_ends_a_presenter_mid_show() {
     let harness = harness(vec![definition(STAGE, ALERT_KIND)]);
     let showing = harness.queue(STAGE, "showing", None).await;
     let waiting = harness.queue(STAGE, "waiting", None).await;
-    for _ in 0..16 {
-        tokio::task::yield_now().await;
-    }
+    tokio::time::sleep(RUNTIME_IDLE_TICK).await;
 
     let stopped = harness.tasks.shutdown(Duration::from_secs(1)).await;
     drop(waiting);

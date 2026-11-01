@@ -328,6 +328,30 @@ fn staged_payload_without_database(staged: &StagedRestore) -> BTreeMap<String, V
 }
 
 #[tokio::test]
+async fn a_backup_that_cannot_take_its_destination_fails_and_leaves_no_partial_file() {
+    let live = LiveData::new().await;
+    let folder = TempDir::new().unwrap();
+    let occupied = folder.path().join("taken.forgebackup");
+    std::fs::create_dir(&occupied).unwrap();
+    std::fs::write(occupied.join("kept"), b"kept").unwrap();
+
+    let result = write_full_backup(FullBackupRequest {
+        provider: live.provider.clone(),
+        data_dir: live.data_dir(),
+        destination: BackupDestination::File(occupied.clone()),
+        passphrase: Passphrase::new(PASSPHRASE.to_owned()),
+    })
+    .await;
+    live.provider.shutdown().await;
+
+    assert!(matches!(result, Err(TransferError::Io(_))), "{result:?}");
+    assert_eq!(
+        files_under(folder.path()).keys().collect::<Vec<_>>(),
+        [&"taken.forgebackup/kept".to_owned()],
+    );
+}
+
+#[tokio::test]
 async fn full_backup_round_trip_stages_the_backup_scope_byte_for_byte() {
     let live = LiveData::new().await;
     let bundle = write_full_backup(FullBackupRequest {

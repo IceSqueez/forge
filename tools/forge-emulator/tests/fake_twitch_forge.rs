@@ -27,6 +27,7 @@ use tokio::sync::mpsc;
 use tokio::time::timeout;
 
 mod support;
+use support::http_status;
 
 const DEADLINE: Duration = Duration::from_secs(30);
 const CHAT_MESSAGE_KIND: &str = twitch_kinds::CHANNEL_CHAT_MESSAGE;
@@ -230,7 +231,8 @@ async fn forge_routes_a_refused_bearer_to_reauth_required() {
     assert!(!ledger.requests.is_empty());
     assert!(
         ledger.requests.iter().all(
-            |request| request.credentials == CredentialCheck::WrongBearer && request.status == 401
+            |request| request.credentials == CredentialCheck::WrongBearer
+                && request.status == http_status::UNAUTHORIZED
         ),
         "{:?}",
         ledger.requests

@@ -17,6 +17,7 @@ use futures_util::StreamExt;
 use serde_json::{Value, json};
 
 mod support;
+use support::http_status;
 
 use forge_storage::test_support::MemoryCredentials;
 
@@ -64,6 +65,11 @@ fn ids(page: &Value) -> Vec<String> {
         .collect()
 }
 
+fn nudge_poll(provider: &DonatelloProvider) {
+    const ANY_OTHER_CADENCE: Duration = Duration::from_secs(11);
+    provider.set_poll_interval(ANY_OTHER_CADENCE);
+}
+
 #[tokio::test]
 async fn me_answers_the_account_for_the_configured_token() {
     let fake = fake_with(FakeDonatelloConfig::default()).await;
@@ -72,8 +78,8 @@ async fn me_answers_the_account_for_the_configured_token() {
     let status = response.status().as_u16();
     let body: Value = response.json().await.unwrap();
 
-    assert_eq!(status, 200);
-    assert_eq!(body["nickname"], "fake-streamer");
+    assert_eq!(status, http_status::OK);
+    assert_eq!(body["nickname"], FakeDonatelloConfig::default().nickname);
 }
 
 #[tokio::test]
@@ -91,7 +97,7 @@ async fn wrong_or_missing_token_is_refused_with_the_documented_body() {
         assert_eq!(
             (status, body),
             (
-                401,
+                http_status::UNAUTHORIZED,
                 json!({ "success": false, "message": UNAUTHORIZED_MESSAGE })
             ),
             "{path} {token:?}"
@@ -113,7 +119,7 @@ async fn incomplete_profile_answers_not_found_on_me() {
 
     assert_eq!(
         (status, body["message"].as_str()),
-        (404, Some(PROFILE_INCOMPLETE_MESSAGE))
+        (http_status::NOT_FOUND, Some(PROFILE_INCOMPLETE_MESSAGE))
     );
 }
 
@@ -184,7 +190,9 @@ async fn each_queued_fault_answers_one_donates_request_then_the_list_returns() {
     fake.fail_next_donates(DonatesFault::TooManyRequests {
         retry_after_secs: Some(9),
     });
-    fake.fail_next_donates(DonatesFault::ServerError { status: 503 });
+    fake.fail_next_donates(DonatesFault::ServerError {
+        status: http_status::SERVICE_UNAVAILABLE,
+    });
     fake.fail_next_donates(DonatesFault::MalformedJson);
     let path = "/donates?page=0&size=20";
 
@@ -193,7 +201,7 @@ async fn each_queued_fault_answers_one_donates_request_then_the_list_returns() {
     let malformed = get(&fake, path, Some(FAKE_DONATELLO_TOKEN)).await;
     let healthy = get(&fake, path, Some(FAKE_DONATELLO_TOKEN)).await;
 
-    assert_eq!(limited.status().as_u16(), 429);
+    assert_eq!(limited.status(), reqwest::StatusCode::TOO_MANY_REQUESTS);
     assert_eq!(
         limited
             .headers()
@@ -201,12 +209,12 @@ async fn each_queued_fault_answers_one_donates_request_then_the_list_returns() {
             .and_then(|v| v.to_str().ok()),
         Some("9")
     );
-    assert_eq!(failing.status().as_u16(), 503);
+    assert_eq!(failing.status(), reqwest::StatusCode::SERVICE_UNAVAILABLE);
     assert!(
         serde_json::from_slice::<Value>(&malformed.bytes().await.unwrap()).is_err(),
         "the malformed fault must not parse"
     );
-    assert_eq!(healthy.status().as_u16(), 200);
+    assert_eq!(healthy.status(), reqwest::StatusCode::OK);
 }
 
 #[tokio::test]
@@ -215,13 +223,13 @@ async fn non_numeric_paging_is_refused_and_recorded() {
 
     let response = get(&fake, "/donates?page=x&size=20", Some(FAKE_DONATELLO_TOKEN)).await;
 
-    assert_eq!(response.status().as_u16(), 400);
+    assert_eq!(response.status(), reqwest::StatusCode::BAD_REQUEST);
     assert_eq!(
         fake.requests()
             .iter()
             .map(|r| (r.page, r.size, r.status))
             .collect::<Vec<_>>(),
-        [(None, Some(20), 400)]
+        [(None, Some(20), http_status::BAD_REQUEST)]
     );
 }
 
@@ -289,7 +297,7 @@ async fn real_provider_reads_history_from_the_fake_then_a_live_donation() {
     let history = next(&mut stream).await.unwrap();
 
     fake.donate(donation(1).with_message("gl hf"));
-    provider.set_poll_interval(Duration::from_secs(11));
+    nudge_poll(&provider);
     let live = next(&mut stream).await.unwrap();
 
     assert_eq!(

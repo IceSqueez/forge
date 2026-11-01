@@ -78,7 +78,7 @@ fn donatello_commands_parse_into_what_the_fake_should_do() {
         (
             "fail 503",
             Some(DonatelloCommand::Fail(DonatesFault::ServerError {
-                status: 503,
+                status: reqwest::StatusCode::SERVICE_UNAVAILABLE.as_u16(),
             })),
         ),
         (

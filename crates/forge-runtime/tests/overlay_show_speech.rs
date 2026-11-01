@@ -45,7 +45,7 @@ const REVEAL: &str = "reveal";
 const ALERT_WINDOW: Duration =
     Duration::from_secs(forge_overlay::DEFAULT_DISPLAY_SECS.unsigned_abs());
 const NEVER: Duration = Duration::from_secs(24 * 60 * 60);
-const CANCEL_POLL: Duration = Duration::from_millis(10);
+const RUNTIME_IDLE_TICK: Duration = Duration::from_millis(1);
 
 #[derive(Debug, Clone)]
 struct Frame {
@@ -205,18 +205,16 @@ impl ScriptedSpeaker {
         span: Duration,
         cancel: &CancelSignal,
     ) -> Result<(), MessageRef> {
-        let ends = Instant::now() + span;
-        while Instant::now() < ends {
-            if cancel.is_cancelled() {
+        tokio::select! {
+            () = tokio::time::sleep(span) => Ok(()),
+            () = cancel.cancelled() => {
                 self.spoken.lock().unwrap()[index].cancelled = true;
-                return Err(MessageRef::new(MessageCode::from_static(
+                Err(MessageRef::new(MessageCode::from_static(
                     "speak",
                     "skipped_cancelled",
-                )));
+                )))
             }
-            tokio::time::sleep(CANCEL_POLL).await;
         }
-        Ok(())
     }
 }
 
@@ -384,7 +382,7 @@ impl Harness {
             if self.speaker.spoken().len() >= count {
                 return;
             }
-            tokio::task::yield_now().await;
+            tokio::time::sleep(RUNTIME_IDLE_TICK).await;
         }
         panic!("speech {count} was never requested");
     }
@@ -714,9 +712,7 @@ async fn a_show_whose_voice_is_not_installed_is_shown_silently_and_its_failure_i
         if let OverlayDispatch::Queued(ticket) = dispatch {
             finished(ticket).await;
         }
-        for _ in 0..100 {
-            tokio::task::yield_now().await;
-        }
+        tokio::time::sleep(RUNTIME_IDLE_TICK).await;
 
         let failures: Vec<Event> = harness
             .bus

@@ -41,7 +41,7 @@ async fn stored_bearer_token(backend: &SqliteBackend) -> Option<String> {
 }
 
 async fn reopen(dir: &Path) -> SqliteBackend {
-    let hex = std::fs::read_to_string(dir.join("credentials-key")).unwrap();
+    let hex = std::fs::read_to_string(dir.join(forge_paths::CREDENTIALS_KEY_FILE_NAME)).unwrap();
     let hex = hex.trim();
     assert_eq!(
         hex.len(),
@@ -57,9 +57,29 @@ async fn reopen(dir: &Path) -> SqliteBackend {
         "sqlite://{}?mode=rw",
         dir.join(forge_storage::DATABASE_FILE_NAME).display()
     );
-    SqliteBackend::open_for_test(&url, key, dir.join("media"), None)
+    SqliteBackend::open_for_test(&url, key, dir.join(forge_paths::MEDIA_DIR_NAME), None)
         .await
         .unwrap()
+}
+
+async fn seed_and_reopen(
+    fixture: &Fixture,
+    integration: &forge_types::IntegrationId,
+) -> (TempDir, Arc<SqliteBackend>, bool) {
+    let (dir, _) = seed_fresh(fixture).await;
+    let backend = Arc::new(reopen(dir.path()).await);
+    let configured = forge_storage::has_credentials_for(backend.as_ref(), integration)
+        .await
+        .unwrap();
+    (dir, backend, configured)
+}
+
+fn expected_token(token_expired: bool, refreshed: String, seeded: &str) -> String {
+    if token_expired {
+        refreshed
+    } else {
+        seeded.to_owned()
+    }
 }
 
 fn log_step(message: &str) -> SubActionStep {
@@ -768,18 +788,14 @@ async fn a_seeded_kick_account_is_served_by_forges_manager_refreshing_only_when_
         .unwrap();
         let overrides = fake.endpoint_overrides();
         let endpoints = endpoints_from(&overrides);
-        let (dir, _) = seed_fresh(&Fixture {
-            kick: Some(account.clone()),
-            ..Fixture::default()
-        })
-        .await;
-        let backend = Arc::new(reopen(dir.path()).await);
-        let configured = forge_storage::has_credentials_for(
-            backend.as_ref(),
+        let (_dir, backend, configured) = seed_and_reopen(
+            &Fixture {
+                kick: Some(account.clone()),
+                ..Fixture::default()
+            },
             &forge_platform_kick::KICK_INTEGRATION.id,
         )
-        .await
-        .unwrap();
+        .await;
         let oauth = forge_platform_kick::KickOAuthClient::new(
             &endpoints,
             forge_platform_kick::kick_oauth_gateway(
@@ -811,11 +827,8 @@ async fn a_seeded_kick_account_is_served_by_forges_manager_refreshing_only_when_
         let user_id = manager.user_id().await.unwrap();
         backend.shutdown().await;
 
-        let expected_token = if token_expired {
-            fake.access_token()
-        } else {
-            account.access_token.clone()
-        };
+        let expected_token =
+            expected_token(token_expired, fake.access_token(), &account.access_token);
         assert_eq!(
             (configured, served, user_id),
             (true, expected_token, account.user_id),
@@ -841,18 +854,14 @@ async fn a_seeded_youtube_account_is_served_by_forges_manager_refreshing_only_wh
         .unwrap();
         let overrides = fake.endpoint_overrides();
         let endpoints = endpoints_from(&overrides);
-        let (dir, _) = seed_fresh(&Fixture {
-            youtube: Some(account.clone()),
-            ..Fixture::default()
-        })
-        .await;
-        let backend = Arc::new(reopen(dir.path()).await);
-        let configured = forge_storage::has_credentials_for(
-            backend.as_ref(),
+        let (_dir, backend, configured) = seed_and_reopen(
+            &Fixture {
+                youtube: Some(account.clone()),
+                ..Fixture::default()
+            },
             &forge_platform_youtube::YOUTUBE_INTEGRATION.id,
         )
-        .await
-        .unwrap();
+        .await;
         let oauth = forge_platform_youtube::GoogleOAuthClient::new(
             forge_platform_youtube::google_oauth_gateway(
                 &endpoints,
@@ -862,7 +871,7 @@ async fn a_seeded_youtube_account_is_served_by_forges_manager_refreshing_only_wh
                 )),
             )
             .unwrap(),
-            "emulator-youtube-client".to_owned(),
+            support::YOUTUBE_CLIENT_ID.to_owned(),
             forge_types::Secret::new("emulator-youtube-secret"),
         );
         let api = forge_platform_youtube::YoutubeDataApi::new(
@@ -880,11 +889,8 @@ async fn a_seeded_youtube_account_is_served_by_forges_manager_refreshing_only_wh
         let stored = manager.load().await.unwrap().unwrap();
         backend.shutdown().await;
 
-        let expected_token = if token_expired {
-            fake.access_token()
-        } else {
-            account.access_token.clone()
-        };
+        let expected_token =
+            expected_token(token_expired, fake.access_token(), &account.access_token);
         assert_eq!(
             (configured, served, stored.channel_id, stored.channel_handle),
             (

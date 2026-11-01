@@ -133,3 +133,30 @@ pub async fn classify(conn: &mut SqliteConnection) -> Result<JournalState, Sqlit
 fn unrecognized(reason: String) -> SqliteStorageError {
     SqliteStorageError::UnrecognizedJournal { reason }
 }
+
+#[cfg(test)]
+mod tests {
+    use sqlx::migrate::MigrateError;
+
+    use super::*;
+
+    #[test]
+    fn a_failed_migration_names_the_version_the_error_carries() {
+        for (error, expected) in [
+            (
+                MigrateError::ExecuteMigration(sqlx::Error::PoolClosed, 12),
+                "12",
+            ),
+            (MigrateError::VersionMissing(13), "13"),
+            (MigrateError::VersionMismatch(14), "14"),
+            (MigrateError::VersionNotPresent(15), "15"),
+            (MigrateError::Dirty(16), "16"),
+            (MigrateError::VersionTooOld(1, 2), UNIDENTIFIED_MIGRATION),
+        ] {
+            let SqliteStorageError::Migration { migration, .. } = migration_failed(error) else {
+                panic!("a migrate error must stay a migration failure");
+            };
+            assert_eq!(migration, expected);
+        }
+    }
+}

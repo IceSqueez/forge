@@ -102,4 +102,23 @@ mod tests {
             "{rendered}"
         );
     }
+
+    #[test]
+    fn debug_output_of_seeded_records_hides_their_secrets() {
+        const SECRET: &str = "s3cret-value";
+        let server = SeededServer {
+            port: 1,
+            bearer_token: SECRET.to_owned(),
+        };
+        let overlay = SeededOverlay {
+            id: "id".to_owned(),
+            display_name: "name".to_owned(),
+            kind_id: "kind".to_owned(),
+            credential: SECRET.to_owned(),
+        };
+
+        let text = format!("{server:?} {overlay:?}");
+
+        assert!(!text.contains(SECRET), "{text}");
+    }
 }

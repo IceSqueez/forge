@@ -740,6 +740,26 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn a_failed_replay_keeps_the_storage_cause_off_the_wire() {
+        const CAUSE: &str = "database /home/streamer/forge.db is locked";
+        let ctx = ctx_over(ScriptedHistory::failing_replay_with(Some(
+            RuntimeError::Storage(StorageError::Connection {
+                reason: CAUSE.to_owned(),
+            }),
+        )));
+        let req = WsEnvelope {
+            id: Some("15".into()),
+            inner: WsRequest::ReplayEvent {
+                event_id: EventId::new().to_string(),
+            },
+        };
+
+        let resp = dispatch(req, &ctx).await;
+
+        assert!(!format!("{resp:?}").contains("forge.db"), "{resp:?}");
+    }
+
+    #[tokio::test]
     async fn replay_event_valid_id_returns_ok_and_emits_replayed_event() {
         let ctx = make_ctx(true, false);
         let original = Event::new(EventSource::Core, "test.original", serde_json::json!({}));

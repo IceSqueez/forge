@@ -169,7 +169,7 @@ async fn forge_client_primes_its_catalog_and_publishes_connected() {
         .ledger()
         .requests
         .into_iter()
-        .filter(|r| r.code == 204)
+        .filter(|r| r.code == forge_emulator::fakes::obs::STATUS_UNKNOWN_REQUEST_TYPE)
         .collect();
     assert!(unanswered.is_empty(), "{unanswered:?}");
 }
@@ -294,9 +294,21 @@ async fn failing_requests_answer_with_the_spec_status_code() {
             json!({ "sceneName": "Main", "sceneItemId": 99 }),
             600,
         ),
-        ("GetCurrentPreviewScene", json!({}), 506),
-        ("StopStream", json!({}), 501),
-        ("TriggerHotkeyByName", json!({}), 204),
+        (
+            "GetCurrentPreviewScene",
+            json!({}),
+            forge_emulator::fakes::obs::STATUS_STUDIO_MODE_NOT_ACTIVE,
+        ),
+        (
+            "StopStream",
+            json!({}),
+            forge_emulator::fakes::obs::STATUS_OUTPUT_NOT_RUNNING,
+        ),
+        (
+            "TriggerHotkeyByName",
+            json!({}),
+            forge_emulator::fakes::obs::STATUS_UNKNOWN_REQUEST_TYPE,
+        ),
     ] {
         let response = request(&mut socket, request_type, data).await;
         assert_eq!(

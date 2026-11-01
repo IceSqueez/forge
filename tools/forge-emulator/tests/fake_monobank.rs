@@ -19,6 +19,7 @@ use serde_json::{Value, json};
 use time::OffsetDateTime;
 
 mod support;
+use support::http_status;
 
 use forge_storage::test_support::MemoryCredentials;
 
@@ -93,7 +94,7 @@ async fn client_info_lists_the_configured_jars() {
     let status = response.status().as_u16();
     let body: Value = response.json().await.unwrap();
 
-    assert_eq!(status, 200);
+    assert_eq!(status, http_status::OK);
     assert_eq!(
         body["jars"][0],
         json!({
@@ -125,7 +126,10 @@ async fn wrong_or_missing_token_is_refused_with_forbidden() {
         let body: Value = response.json().await.unwrap();
         assert_eq!(
             (status, body),
-            (403, json!({ "errorDescription": UNKNOWN_TOKEN_MESSAGE })),
+            (
+                http_status::FORBIDDEN,
+                json!({ "errorDescription": UNKNOWN_TOKEN_MESSAGE })
+            ),
             "{path} {token:?}"
         );
     }
@@ -141,7 +145,7 @@ async fn statement_lists_the_window_newest_first_with_inclusive_bounds() {
 
     let (status, items) = statement(&fake, JAR, T0 + 2, T0 + 5).await;
 
-    assert_eq!(status, 200);
+    assert_eq!(status, http_status::OK);
     assert_eq!(ids(&items), ["TX-0005", "TX-0004", "TX-0003", "TX-0002"]);
 }
 
@@ -203,7 +207,7 @@ async fn statement_refuses_unknown_jars_and_invalid_windows() {
         (JAR, T0, T0 + MAX_STATEMENT_WINDOW_SECS + 1),
     ] {
         let (status, body) = statement(&fake, jar, from, to).await;
-        assert_eq!(status, 400, "{jar} {from} {to}");
+        assert_eq!(status, http_status::BAD_REQUEST, "{jar} {from} {to}");
         assert!(body["errorDescription"].is_string(), "{body}");
     }
 }
@@ -214,7 +218,7 @@ async fn longest_allowed_window_is_served() {
 
     let (status, _) = statement(&fake, JAR, T0, T0 + MAX_STATEMENT_WINDOW_SECS).await;
 
-    assert_eq!(status, 200);
+    assert_eq!(status, http_status::OK);
 }
 
 #[tokio::test]
@@ -267,12 +271,12 @@ async fn each_endpoint_allows_one_call_per_window() {
 
     assert_eq!(
         (first.status().as_u16(), other_endpoint.status().as_u16()),
-        (200, 200)
+        (http_status::OK, http_status::OK)
     );
     assert_eq!(
         (again_status, again_body),
         (
-            429,
+            http_status::TOO_MANY_REQUESTS,
             json!({ "errorDescription": TOO_MANY_REQUESTS_MESSAGE })
         )
     );
@@ -294,7 +298,7 @@ async fn endpoint_answers_again_once_its_window_has_passed() {
 
     assert_eq!(
         (first.status().as_u16(), later.status().as_u16()),
-        (200, 200)
+        (http_status::OK, http_status::OK)
     );
 }
 
@@ -305,7 +309,7 @@ async fn redirect_points_every_call_at_the_foreign_origin() {
 
     let response = get(&fake, "/personal/client-info", Some(FAKE_MONOBANK_TOKEN)).await;
 
-    assert_eq!(response.status().as_u16(), 302);
+    assert_eq!(response.status(), reqwest::StatusCode::FOUND);
     assert_eq!(
         response
             .headers()
@@ -399,7 +403,7 @@ async fn real_provider_connects_within_the_banks_call_limit() {
 
     assert_eq!(jars.len(), 2);
     assert!(
-        fake.requests().iter().all(|r| r.status == 200),
+        fake.requests().iter().all(|r| r.status == http_status::OK),
         "{:?}",
         fake.requests()
     );
@@ -510,7 +514,12 @@ async fn real_provider_keeps_the_token_away_from_a_redirect_target() {
     let result = provider.verify_token(FAKE_MONOBANK_TOKEN).await;
 
     assert!(
-        matches!(result, Err(MonobankError::Http { status: 302 })),
+        matches!(
+            result,
+            Err(MonobankError::Http {
+                status: http_status::FOUND
+            })
+        ),
         "{result:?}"
     );
     assert!(target.requests().is_empty(), "{:?}", target.requests());

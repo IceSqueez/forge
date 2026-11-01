@@ -1,6 +1,21 @@
 #![allow(clippy::unwrap_used)]
-use forge_emulator::harness::scenario::Scenario;
+use forge_emulator::harness::scenario::{
+    MAX_CHATTER_PER_VIEWER, MAX_CROWD_MESSAGES, MAX_CROWD_VIEWERS, MAX_KEEPALIVE_MS, MAX_PAUSE_MS,
+    MAX_READY_MS, MAX_WAIT_MS, Scenario,
+};
 use serde_json::{Value, json};
+
+fn out_of_range(max: impl std::fmt::Display, got: impl std::fmt::Display) -> &'static str {
+    format!("must be between 1 and {max}, got {got}").leak()
+}
+
+fn too_many_messages() -> &'static str {
+    format!(
+        "sends {} messages, more than the limit of {MAX_CROWD_MESSAGES}",
+        MAX_CROWD_MESSAGES + 1
+    )
+    .leak()
+}
 
 fn base() -> Value {
     json!({
@@ -182,7 +197,7 @@ fn fixture_and_fake_setup_problems_are_located() {
             keepalive_zero,
             vec![(
                 "fakes.twitch.keepalive_interval_ms",
-                "must be between 1 and 14000, got 0",
+                out_of_range(MAX_KEEPALIVE_MS, 0),
             )],
         ),
         (
@@ -190,7 +205,7 @@ fn fixture_and_fake_setup_problems_are_located() {
             keepalive_over,
             vec![(
                 "fakes.twitch.keepalive_interval_ms",
-                "must be between 1 and 14000, got 14001",
+                out_of_range(MAX_KEEPALIVE_MS, MAX_KEEPALIVE_MS + 1),
             )],
         ),
     ]);
@@ -272,21 +287,21 @@ fn step_problems_are_located() {
             "pause out of range with no reason",
             with_steps([
                 step(json!({ "pause": { "ms": 0, "reason": " " } })),
-                step(json!({ "pause": { "ms": 5001, "reason": "x" } })),
+                step(json!({ "pause": { "ms": MAX_PAUSE_MS + 1, "reason": "x" } })),
             ]),
             vec![
-                ("steps[2].do.pause.ms", "must be between 1 and 5000, got 0"),
+                ("steps[2].do.pause.ms", out_of_range(MAX_PAUSE_MS, 0)),
                 ("steps[2].do.pause.reason", "must not be blank"),
                 (
                     "steps[3].do.pause.ms",
-                    "must be between 1 and 5000, got 5001",
+                    out_of_range(MAX_PAUSE_MS, MAX_PAUSE_MS + 1),
                 ),
             ],
         ),
         (
             "subscription wait with blank and repeated types",
             with_steps([step(json!({
-                "twitch_subscribed": { "types": ["", "channel.follow", "channel.follow"], "within_ms": 120001 }
+                "twitch_subscribed": { "types": ["", "channel.follow", "channel.follow"], "within_ms": MAX_WAIT_MS + 1 }
             }))]),
             vec![
                 (
@@ -299,7 +314,7 @@ fn step_problems_are_located() {
                 ),
                 (
                     "steps[2].do.twitch_subscribed.within_ms",
-                    "must be between 1 and 120000, got 120001",
+                    out_of_range(MAX_WAIT_MS, MAX_WAIT_MS + 1),
                 ),
             ],
         ),
@@ -332,7 +347,7 @@ fn deadline_bounds_reject_zero_and_one_over_the_ceiling() {
     let mut ready_zero = base();
     ready_zero["steps"][0]["do"]["forge_ready"]["within_ms"] = json!(0);
     let mut ready_over = base();
-    ready_over["steps"][0]["do"]["forge_ready"]["within_ms"] = json!(300_001);
+    ready_over["steps"][0]["do"]["forge_ready"]["within_ms"] = json!(MAX_READY_MS + 1);
 
     assert_cases(vec![
         (
@@ -340,7 +355,7 @@ fn deadline_bounds_reject_zero_and_one_over_the_ceiling() {
             ready_zero,
             vec![(
                 "steps[0].do.forge_ready.within_ms",
-                "must be between 1 and 300000, got 0",
+                out_of_range(MAX_READY_MS, 0),
             )],
         ),
         (
@@ -348,17 +363,17 @@ fn deadline_bounds_reject_zero_and_one_over_the_ceiling() {
             ready_over,
             vec![(
                 "steps[0].do.forge_ready.within_ms",
-                "must be between 1 and 300000, got 300001",
+                out_of_range(MAX_READY_MS, MAX_READY_MS + 1),
             )],
         ),
         (
             "reconnect wait over",
             with_steps([step(
-                json!({ "session_reconnect": { "within_ms": 120_001 } }),
+                json!({ "session_reconnect": { "within_ms": MAX_WAIT_MS + 1 } }),
             )]),
             vec![(
                 "steps[2].do.session_reconnect.within_ms",
-                "must be between 1 and 120000, got 120001",
+                out_of_range(MAX_WAIT_MS, MAX_WAIT_MS + 1),
             )],
         ),
     ]);
@@ -372,7 +387,7 @@ fn crowd_problems_are_located() {
             with_steps([step(crowd(json!({ "viewers": 0, "chatter": ["hi"] })))]),
             vec![(
                 "steps[2].do.crowd.viewers",
-                "must be between 1 and 100000, got 0",
+                out_of_range(MAX_CROWD_VIEWERS, 0),
             )],
         ),
         (
@@ -382,7 +397,7 @@ fn crowd_problems_are_located() {
             ))]),
             vec![(
                 "steps[2].do.crowd.viewers",
-                "must be between 1 and 100000, got 100001",
+                out_of_range(MAX_CROWD_VIEWERS, MAX_CROWD_VIEWERS + 1),
             )],
         ),
         (
@@ -468,29 +483,26 @@ fn crowd_problems_are_located() {
         (
             "one message over the crowd ceiling",
             with_steps([step(crowd(json!({
-                "viewers": 100_000,
+                "viewers": MAX_CROWD_VIEWERS,
                 "chatter": ["hi"],
                 "chatter_per_viewer": 10,
                 "command_senders": 1,
                 "commands": ["!ping"]
             })))]),
-            vec![(
-                "steps[2].do.crowd",
-                "sends 1000001 messages, more than the limit of 1000000",
-            )],
+            vec![("steps[2].do.crowd", too_many_messages())],
         ),
         (
             "chatter per viewer and spacing over their ceilings",
             with_steps([step(crowd(json!({
                 "viewers": 1,
                 "chatter": ["hi"],
-                "chatter_per_viewer": 21,
+                "chatter_per_viewer": MAX_CHATTER_PER_VIEWER + 1,
                 "spacing_ms": 1001
             })))]),
             vec![
                 (
                     "steps[2].do.crowd.chatter_per_viewer",
-                    "must be between 1 and 20, got 21",
+                    out_of_range(MAX_CHATTER_PER_VIEWER, MAX_CHATTER_PER_VIEWER + 1),
                 ),
                 (
                     "steps[2].do.crowd.spacing_ms",
@@ -517,16 +529,16 @@ fn event_expectation_problems_are_located() {
                 ("steps[0].expect[0].event.kind", "must not be blank"),
                 (
                     "steps[0].expect[0].event.within_ms",
-                    "must be between 1 and 120000, got 0",
+                    out_of_range(MAX_WAIT_MS, 0),
                 ),
             ],
         ),
         (
             "deadline one over the ceiling",
-            on_ready(json!({ "event": { "kind": "global.set", "within_ms": 120_001 } })),
+            on_ready(json!({ "event": { "kind": "global.set", "within_ms": MAX_WAIT_MS + 1 } })),
             vec![(
                 "steps[0].expect[0].event.within_ms",
-                "must be between 1 and 120000, got 120001",
+                out_of_range(MAX_WAIT_MS, MAX_WAIT_MS + 1),
             )],
         ),
         (
@@ -587,7 +599,7 @@ fn event_expectation_problems_are_located() {
             on_ready(json!({ "event_absent": { "kind": "trigger.blocked", "window_ms": 0 } })),
             vec![(
                 "steps[0].expect[0].event_absent.window_ms",
-                "must be between 1 and 120000, got 0",
+                out_of_range(MAX_WAIT_MS, 0),
             )],
         ),
     ]);
@@ -905,7 +917,7 @@ fn ledger_and_log_expectation_problems_are_located() {
 fn every_bound_accepts_its_exact_limits() {
     let mut scenario = with_steps([
         step(json!({ "pause": { "ms": 1, "reason": "lower" } })),
-        step(json!({ "pause": { "ms": 5000, "reason": "upper" } })),
+        step(json!({ "pause": { "ms": MAX_PAUSE_MS, "reason": "upper" } })),
         expecting(
             crowd(json!({
                 "viewers": 1000,
@@ -914,7 +926,7 @@ fn every_bound_accepts_its_exact_limits() {
                 "spacing_ms": 1000
             })),
             json!([
-                { "event": { "kind": "chat.message", "within_ms": 120000 } },
+                { "event": { "kind": "chat.message", "within_ms": MAX_WAIT_MS } },
                 { "event_absent": { "kind": "trigger.blocked", "window_ms": 1 } },
                 { "twitch_request_count": { "path": "/helix/users", "min": 2, "max": 2 } }
             ]),
@@ -922,11 +934,11 @@ fn every_bound_accepts_its_exact_limits() {
         step(crowd(
             json!({ "viewers": 1, "command_senders": 1, "commands": ["!ping"], "spacing_ms": 0 }),
         )),
-        step(json!({ "session_reconnect": { "within_ms": 120000 } })),
+        step(json!({ "session_reconnect": { "within_ms": MAX_WAIT_MS } })),
         step(json!({ "set_global": { "name": "score", "value": { "a": [1, 2.5, true] } } })),
     ]);
-    scenario["steps"][0]["do"]["forge_ready"]["within_ms"] = json!(300_000);
-    scenario["fakes"]["twitch"]["keepalive_interval_ms"] = json!(14_000);
+    scenario["steps"][0]["do"]["forge_ready"]["within_ms"] = json!(MAX_READY_MS);
+    scenario["fakes"]["twitch"]["keepalive_interval_ms"] = json!(MAX_KEEPALIVE_MS);
     assert_eq!(problems(scenario), Vec::new());
 }
 
@@ -989,7 +1001,9 @@ fn overlay_step_and_expectation_problems_are_located() {
         (
             "unbounded deadlines on both halves of the vocabulary",
             with_overlay(with_steps([
-                step(json!({ "overlay_page": { "overlay": "Alert Box", "within_ms": 120001 } })),
+                step(
+                    json!({ "overlay_page": { "overlay": "Alert Box", "within_ms": MAX_WAIT_MS + 1 } }),
+                ),
                 expecting(
                     pause(),
                     json!([{ "overlay_content": { "overlay": "Alert Box", "values": { "headline": "hi" }, "within_ms": 0 } }]),
@@ -998,11 +1012,11 @@ fn overlay_step_and_expectation_problems_are_located() {
             vec![
                 (
                     "steps[2].do.overlay_page.within_ms",
-                    "must be between 1 and 120000, got 120001",
+                    out_of_range(MAX_WAIT_MS, MAX_WAIT_MS + 1),
                 ),
                 (
                     "steps[3].expect[0].overlay_content.within_ms",
-                    "must be between 1 and 120000, got 0",
+                    out_of_range(MAX_WAIT_MS, 0),
                 ),
             ],
         ),
@@ -1213,11 +1227,11 @@ fn discord_fake_and_post_expectation_problems_are_located() {
         (
             "a deadline over the ceiling",
             with_discord(with_steps([posted(
-                json!({ "webhook": "go-live", "within_ms": 120_001 }),
+                json!({ "webhook": "go-live", "within_ms": MAX_WAIT_MS + 1 }),
             )])),
             vec![(
                 "steps[2].expect[0].discord_post.within_ms",
-                "must be between 1 and 120000, got 120001",
+                out_of_range(MAX_WAIT_MS, MAX_WAIT_MS + 1),
             )],
         ),
         (
@@ -1226,7 +1240,7 @@ fn discord_fake_and_post_expectation_problems_are_located() {
                 "webhook": "go-live",
                 "content_contains": "<@&",
                 "mention_parse": ["everyone", "roles", "users"],
-                "within_ms": 120_000
+                "within_ms": MAX_WAIT_MS
             }))])),
             Vec::new(),
         ),
@@ -1354,7 +1368,7 @@ fn obs_fake_step_and_expectation_problems_are_located() {
                 ),
                 (
                     "steps[2].expect[0].obs_request.within_ms",
-                    "must be between 1 and 120000, got 0",
+                    out_of_range(MAX_WAIT_MS, 0),
                 ),
             ],
         ),
@@ -1487,7 +1501,7 @@ fn donation_service_setup_and_step_problems_are_located() {
             vec![
                 (
                     "steps[1].do.forge_restart.within_ms",
-                    "must be between 1 and 300000, got 0",
+                    out_of_range(MAX_READY_MS, 0),
                 ),
                 (
                     "steps[1].do.forge_restart.offline[0].id",
@@ -1723,7 +1737,7 @@ fn kick_fake_step_and_expectation_problems_are_located() {
                 ),
                 (
                     "steps[4].do.kick_channel_polled.within_ms",
-                    "must be between 1 and 120000, got 0",
+                    out_of_range(MAX_WAIT_MS, 0),
                 ),
             ],
         ),
@@ -1765,7 +1779,7 @@ fn kick_fake_step_and_expectation_problems_are_located() {
                 ),
                 (
                     "steps[2].expect[0].kick_request.within_ms",
-                    "must be between 1 and 120000, got 0",
+                    out_of_range(MAX_WAIT_MS, 0),
                 ),
                 (
                     "steps[2].expect[1].kick_request_count",
@@ -1827,7 +1841,7 @@ fn youtube_fake_step_and_expectation_problems_are_located() {
                 ("fakes.youtube.live_chat_id", "must not be blank"),
                 (
                     "fakes.youtube.polling_interval_ms",
-                    "must be between 1 and 120000, got 0",
+                    out_of_range(MAX_WAIT_MS, 0),
                 ),
             ],
         ),
@@ -1887,7 +1901,7 @@ fn youtube_fake_step_and_expectation_problems_are_located() {
                 ),
                 (
                     "steps[4].do.youtube_chat_polled.within_ms",
-                    "must be between 1 and 120000, got 0",
+                    out_of_range(MAX_WAIT_MS, 0),
                 ),
             ],
         ),
@@ -1958,7 +1972,7 @@ fn youtube_fake_step_and_expectation_problems_are_located() {
                 ),
                 (
                     "steps[2].expect[0].youtube_request.within_ms",
-                    "must be between 1 and 120000, got 0",
+                    out_of_range(MAX_WAIT_MS, 0),
                 ),
                 (
                     "steps[2].expect[1].youtube_request_count",

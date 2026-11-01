@@ -8,6 +8,7 @@ use forge_emulator::fixture::{DiscordWebhook, Fixture};
 use serde_json::{Value, json};
 
 mod support;
+use support::http_status;
 
 use forge_storage::test_support::MemoryCredentials;
 
@@ -45,7 +46,7 @@ async fn post_with_wait_answers_the_created_message_and_records_the_payload() {
         .await
         .unwrap();
 
-    assert_eq!(response.status().as_u16(), 200);
+    assert_eq!(response.status(), reqwest::StatusCode::OK);
     let message: Value = response.json().await.unwrap();
     let posts = fake.posts();
     assert_eq!(posts.len(), 1);
@@ -73,7 +74,7 @@ async fn post_without_wait_answers_no_content_and_mints_distinct_message_ids() {
             .await
             .unwrap()
             .status();
-        assert_eq!(status.as_u16(), 204);
+        assert_eq!(status.as_u16(), http_status::NO_CONTENT);
     }
 
     let posts = fake.posts();
@@ -97,7 +98,7 @@ async fn unknown_webhook_answers_not_found_with_the_discord_error_code() {
         .await
         .unwrap();
 
-    assert_eq!(response.status().as_u16(), 404);
+    assert_eq!(response.status(), reqwest::StatusCode::NOT_FOUND);
     let body: Value = response.json().await.unwrap();
     assert_eq!(body["code"], UNKNOWN_WEBHOOK_CODE);
     assert_eq!(fake.posts()[0].webhook, None);
@@ -115,14 +116,14 @@ async fn scripted_rate_limit_answers_one_429_with_retry_after_then_accepts_again
     };
 
     let limited = send().await.unwrap();
-    assert_eq!(limited.status().as_u16(), 429);
+    assert_eq!(limited.status(), reqwest::StatusCode::TOO_MANY_REQUESTS);
     assert_eq!(limited.headers()["retry-after"], "0.25");
     let body: Value = limited.json().await.unwrap();
     assert_eq!(body["retry_after"], 0.25);
 
-    assert_eq!(send().await.unwrap().status().as_u16(), 200);
+    assert_eq!(send().await.unwrap().status(), reqwest::StatusCode::OK);
     let statuses: Vec<u16> = fake.posts().iter().map(|post| post.status).collect();
-    assert_eq!(statuses, [429, 200]);
+    assert_eq!(statuses, [http_status::TOO_MANY_REQUESTS, http_status::OK]);
 }
 
 #[tokio::test]
@@ -141,8 +142,8 @@ async fn edit_and_delete_address_the_message_under_the_webhook() {
         .await
         .unwrap();
 
-    assert_eq!(edited.status().as_u16(), 200);
-    assert_eq!(deleted.status().as_u16(), 204);
+    assert_eq!(edited.status(), reqwest::StatusCode::OK);
+    assert_eq!(deleted.status(), reqwest::StatusCode::NO_CONTENT);
     let recorded: Vec<(String, Option<String>)> = fake
         .posts()
         .into_iter()
@@ -163,7 +164,7 @@ async fn method_the_webhook_does_not_model_is_refused() {
 
     let status = http().patch(&url).send().await.unwrap().status();
 
-    assert_eq!(status.as_u16(), 405);
+    assert_eq!(status.as_u16(), http_status::METHOD_NOT_ALLOWED);
 }
 
 #[tokio::test]
@@ -301,7 +302,7 @@ async fn forge_retries_once_after_the_fake_rate_limits_its_post() {
         .unwrap();
 
     let statuses: Vec<u16> = fake.posts().iter().map(|post| post.status).collect();
-    assert_eq!(statuses, [429, 200]);
+    assert_eq!(statuses, [http_status::TOO_MANY_REQUESTS, http_status::OK]);
 }
 
 #[tokio::test]
@@ -348,7 +349,10 @@ async fn forge_post_to_a_revoked_webhook_surfaces_the_404_without_the_token() {
 
     assert!(matches!(
         err,
-        forge_discord::DiscordError::BadResponse { status: 404, .. }
+        forge_discord::DiscordError::BadResponse {
+            status: http_status::NOT_FOUND,
+            ..
+        }
     ));
     assert!(!err.to_string().contains(token), "{err}");
     assert!(!format!("{err:?}").contains(token), "{err:?}");

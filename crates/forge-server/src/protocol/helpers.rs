@@ -127,4 +127,15 @@ mod tests {
             );
         }
     }
+
+    #[test]
+    fn a_runtime_failure_tells_the_client_nothing_about_its_cause() {
+        let response = runtime_failure(&"/home/streamer/forge/forge.db is locked");
+
+        let WsResponse::Error { code, message } = response else {
+            panic!("a runtime failure must answer with an error");
+        };
+        assert_eq!(code, WsErrorCode::RuntimeError);
+        assert_eq!(message, RUNTIME_FAILURE_MESSAGE);
+    }
 }

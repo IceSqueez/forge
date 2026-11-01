@@ -33,6 +33,7 @@ use tokio::sync::watch;
 
 const GATE_KIND_ID: &str = "test.gate";
 const SETTLE_ROUNDS: usize = 200;
+const RUNTIME_IDLE_TICK: Duration = Duration::from_millis(1);
 const QUIET_STEP: Duration = Duration::from_secs(5);
 const QUIET_ROUNDS: usize = 4;
 
@@ -275,7 +276,7 @@ async fn settle(
             return state;
         }
         last = Some(state);
-        tokio::task::yield_now().await;
+        tokio::time::sleep(RUNTIME_IDLE_TICK).await;
     }
     panic!("the queue never settled to {what}, last saw {last:?}");
 }

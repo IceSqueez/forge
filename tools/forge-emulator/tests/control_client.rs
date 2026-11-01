@@ -31,7 +31,7 @@ const ABANDON_TIMEOUT: Duration = Duration::from_secs(1);
 
 struct FakeForge {
     endpoint: ControlEndpoint,
-    requests: mpsc::UnboundedReceiver<Value>,
+    requests: mpsc::UnboundedReceiver<Result<Value, serde_json::Error>>,
     frames: mpsc::UnboundedSender<Option<Message>>,
 }
 
@@ -52,7 +52,7 @@ impl FakeForge {
                 tokio::select! {
                     incoming = socket.next() => match incoming {
                         Some(Ok(Message::Text(text))) => {
-                            let _ = requests_tx.send(serde_json::from_str(text.as_str()).unwrap());
+                            let _ = requests_tx.send(serde_json::from_str(text.as_str()));
                         }
                         Some(Ok(_)) => {}
                         _ => break,
@@ -93,6 +93,7 @@ impl FakeForge {
             .await
             .expect("client sent a request in time")
             .expect("fake forge still running")
+            .expect("the client sent a JSON frame")
     }
 
     fn send(&self, frame: Value) {

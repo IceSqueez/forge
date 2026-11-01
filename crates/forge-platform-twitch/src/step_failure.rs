@@ -70,6 +70,21 @@ mod tests {
     }
 
     #[test]
+    fn an_unknown_login_reports_the_login_not_a_refused_request() {
+        let message = helix_message(&TwitchError::UserNotFound {
+            login: "ghost_viewer".to_owned(),
+        });
+
+        assert_eq!(code(&message), "twitch.user_not_found");
+        assert_eq!(
+            message.arg("login"),
+            Some(&MessageArg::Verbatim(forge_types::VerbatimText::new(
+                "ghost_viewer"
+            )))
+        );
+    }
+
+    #[test]
     fn each_helix_error_maps_to_its_own_code_with_status_and_detail_only_where_they_exist() {
         let cases: [(TwitchError, &str, Option<i64>, Option<&str>); 6] = [
             (TwitchError::RateLimited, "twitch.rate_limited", None, None),

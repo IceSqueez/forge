@@ -71,7 +71,9 @@ pub(crate) fn server_settings_unavailable(error: &impl std::fmt::Display) {
 
 fn bind_failure_cause(error: &ServerError) -> &'static str {
     match error {
-        ServerError::Bind { .. } => CAUSE_ADDRESS_UNAVAILABLE,
+        ServerError::Bind { .. } | ServerError::InvalidBindAddress { .. } => {
+            CAUSE_ADDRESS_UNAVAILABLE
+        }
         ServerError::LanBindNotEnabled { .. } => CAUSE_LAN_BIND_DISABLED,
         _ => CAUSE_OTHER,
     }
@@ -89,7 +91,7 @@ mod tests {
             (
                 ServerError::Bind {
                     addr: addr.to_string(),
-                    reason: "Address already in use (os error 98)".to_owned(),
+                    source: std::io::ErrorKind::AddrInUse.into(),
                 },
                 "address_unavailable",
             ),

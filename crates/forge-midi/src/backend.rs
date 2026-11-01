@@ -51,7 +51,7 @@ impl MidirBackend {
             })?
             .clone();
         output
-            .connect(&port, "forge-midi")
+            .connect(&port, &self.client_name)
             .map_err(|e| MidiError::MidirConnect(e.to_string()))
     }
 }
@@ -114,7 +114,7 @@ impl MidiBackend for MidirBackend {
         let conn = input
             .connect(
                 &port,
-                "forge-midi",
+                &self.client_name,
                 move |timestamp, data, _| {
                     if let Err(mpsc::error::TrySendError::Full(_)) =
                         event_tx.try_send((timestamp, data.to_vec()))

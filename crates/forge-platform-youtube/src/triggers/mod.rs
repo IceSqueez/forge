@@ -182,6 +182,26 @@ mod tests {
     }
 
     #[test]
+    fn no_youtube_trigger_stamps_an_actor_it_does_not_declare() {
+        for descriptor in youtube_registry().all() {
+            let actors = descriptor.actors();
+            let stack = descriptor.build_arg_stack(&empty_event(descriptor));
+            for role in ActorRole::ALL
+                .into_iter()
+                .filter(|role| !actors.declares(*role))
+            {
+                let name = CanonicalVariable::actor(role, ActorSlot::Platform).name();
+                assert_eq!(
+                    stack.get(name),
+                    None,
+                    "'{}' stamps '{name}'",
+                    descriptor.id()
+                );
+            }
+        }
+    }
+
+    #[test]
     fn a_broadcast_trigger_names_no_actor_because_the_wire_attributes_it_to_nobody() {
         let registry = youtube_registry();
         for id in BROADCAST_TRIGGERS {

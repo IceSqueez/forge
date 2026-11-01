@@ -14,7 +14,6 @@ pub(crate) use handlers::{
     handle_do_action, handle_get_actions, handle_get_active_viewers, handle_get_events,
     handle_get_global, handle_get_globals, handle_get_info, handle_get_overlay_files,
     handle_get_user_globals, handle_replay_event, handle_set_global, handle_trigger_code_event,
-    mime_for_extension,
 };
 
 use context::{handle_authenticate, is_authenticated, read_refused, unauthenticated};
@@ -697,6 +696,21 @@ mod tests {
         assert!(history.asked().is_empty());
     }
 
+    #[test]
+    fn an_arg_shaped_like_a_tagged_variant_stays_a_plain_object() {
+        let stack = super::helpers::build_arg_stack(serde_json::json!({
+            "reward": { "type": "bonus", "value": 5 },
+        }));
+
+        let Some(forge_types::Variant::Object(reward)) = stack.get("reward") else {
+            panic!("the arg must arrive as an object");
+        };
+        assert_eq!(
+            reward.get("type"),
+            Some(&forge_types::Variant::String("bonus".to_owned()))
+        );
+    }
+
     #[tokio::test]
     async fn replay_event_maps_history_outcomes_to_wire_error_codes() {
         let ghost = EventId::new();
@@ -713,7 +727,7 @@ mod tests {
                 })),
                 "RUNTIME_ERROR",
             ),
-            ("not-an-event-id".to_owned(), None, "NOT_FOUND"),
+            ("not-an-event-id".to_owned(), None, "INVALID_PAYLOAD"),
         ];
 
         for (event_id, failure, expected) in cases {

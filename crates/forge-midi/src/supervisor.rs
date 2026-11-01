@@ -5,7 +5,8 @@ use std::sync::atomic::Ordering;
 use std::sync::{Arc, Weak};
 use std::time::{Duration, Instant};
 
-const DEVICE_POLL_INTERVAL: Duration = Duration::from_secs(2);
+pub(crate) const DEVICE_POLL_INTERVAL: Duration = Duration::from_secs(2);
+const PORT_EVENT_CAPACITY: usize = 64;
 
 use time::OffsetDateTime;
 use tokio::sync::mpsc;
@@ -27,7 +28,19 @@ use crate::monitor::{bus_payload, to_monitor_event};
 use crate::vocabulary::event_kinds;
 use crate::vocabulary::fields::port as port_fields;
 
-pub(crate) type RawEvent = (u64, Vec<u8>, String);
+pub(crate) type RawEvent = (u64, Vec<u8>, Arc<str>);
+
+#[derive(Clone, Copy)]
+enum EngineState {
+    Enabled,
+    Disabled,
+}
+
+#[derive(Clone, Copy)]
+enum PortChange {
+    Added,
+    Removed,
+}
 
 #[derive(Default)]
 struct PortState {
@@ -114,7 +127,7 @@ async fn handle_supervisor_command(
             ports.handles.clear();
             ports.publish(client);
             client.enabled().store(false, Ordering::Relaxed);
-            emit_engine_state_change(client, false);
+            emit_engine_state_change(client, EngineState::Disabled);
         }
         SupervisorCommand::Enable => {
             client.enabled().store(true, Ordering::Relaxed);
@@ -124,17 +137,16 @@ async fn handle_supervisor_command(
                 }
             }
             ports.publish(client);
-            emit_engine_state_change(client, true);
+            emit_engine_state_change(client, EngineState::Enabled);
         }
     }
     ControlFlow::Continue(())
 }
 
-fn emit_engine_state_change(client: &Arc<MidiClient>, enabled: bool) {
-    let kind = if enabled {
-        event_kinds::ENGINE_ENABLED
-    } else {
-        event_kinds::ENGINE_DISABLED
+fn emit_engine_state_change(client: &Arc<MidiClient>, state: EngineState) {
+    let (kind, enabled) = match state {
+        EngineState::Enabled => (event_kinds::ENGINE_ENABLED, true),
+        EngineState::Disabled => (event_kinds::ENGINE_DISABLED, false),
     };
     client
         .publisher()
@@ -232,14 +244,19 @@ fn diff_input_ports(
             open_input_port(client, merged_tx, handles, port);
         }
         if !old_names.contains(port.name.as_str()) {
-            emit_port_event(client, &port.name, PortDirection::Input, true);
+            emit_port_event(client, &port.name, PortDirection::Input, PortChange::Added);
         }
     }
 
     for port in old {
         if !new_names.contains(port.name.as_str()) {
             handles.remove(&port.name);
-            emit_port_event(client, &port.name, PortDirection::Input, false);
+            emit_port_event(
+                client,
+                &port.name,
+                PortDirection::Input,
+                PortChange::Removed,
+            );
         }
     }
 }
@@ -250,14 +267,19 @@ fn diff_output_ports(client: &Arc<MidiClient>, old: &[MidiPortInfo], new: &[Midi
 
     for port in new {
         if !old_names.contains(port.name.as_str()) {
-            emit_port_event(client, &port.name, PortDirection::Output, true);
+            emit_port_event(client, &port.name, PortDirection::Output, PortChange::Added);
         }
     }
 
     for port in old {
         if !new_names.contains(port.name.as_str()) {
             client.backend().release_output(&port.name);
-            emit_port_event(client, &port.name, PortDirection::Output, false);
+            emit_port_event(
+                client,
+                &port.name,
+                PortDirection::Output,
+                PortChange::Removed,
+            );
         }
     }
 }
@@ -268,15 +290,19 @@ fn open_input_port(
     handles: &mut HashMap<String, Box<dyn InputHandle>>,
     port: &MidiPortInfo,
 ) {
-    let (port_tx, mut port_rx) = mpsc::channel::<(u64, Vec<u8>)>(64);
+    let (port_tx, mut port_rx) = mpsc::channel::<(u64, Vec<u8>)>(PORT_EVENT_CAPACITY);
     match client.backend().open_input(&port.name, port_tx) {
         Ok(handle) => {
             handles.insert(port.name.clone(), handle);
             let merged = merged_tx.clone();
-            let pname = port.name.clone();
+            let port_name: Arc<str> = Arc::from(port.name.as_str());
             tokio::spawn(async move {
                 while let Some((ts, data)) = port_rx.recv().await {
-                    if merged.send((ts, data, pname.clone())).await.is_err() {
+                    if merged
+                        .send((ts, data, Arc::clone(&port_name)))
+                        .await
+                        .is_err()
+                    {
                         break;
                     }
                 }
@@ -288,11 +314,15 @@ fn open_input_port(
     }
 }
 
-fn emit_port_event(client: &Arc<MidiClient>, name: &str, direction: PortDirection, added: bool) {
-    let kind = if added {
-        event_kinds::PORT_ADDED
-    } else {
-        event_kinds::PORT_REMOVED
+fn emit_port_event(
+    client: &Arc<MidiClient>,
+    name: &str,
+    direction: PortDirection,
+    change: PortChange,
+) {
+    let kind = match change {
+        PortChange::Added => event_kinds::PORT_ADDED,
+        PortChange::Removed => event_kinds::PORT_REMOVED,
     };
     let event = Event::new(
         EventSource::Midi,

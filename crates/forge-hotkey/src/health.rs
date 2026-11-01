@@ -10,6 +10,8 @@ use forge_platform_core::{
     BuiltinHealth, HealthDelta, HealthMetric, HealthMetricId, HealthStream, HealthText, HealthValue,
 };
 
+#[cfg(target_os = "linux")]
+use crate::backend::BackendTier;
 use crate::client::HotkeyClient;
 use crate::vocabulary::messages;
 
@@ -111,7 +113,7 @@ impl BuiltinHealth for HotkeyClient {
         };
 
         let portal_value =
-            backend_health_value(self.portal_available, view.backend_session_lost.as_deref());
+            backend_health_value(self.backend_tier, view.backend_session_lost.as_deref());
 
         [
             HealthMetric {
@@ -140,29 +142,26 @@ impl BuiltinHealth for HotkeyClient {
 }
 
 #[cfg(target_os = "linux")]
-pub(crate) fn backend_health_value(
-    portal_available: Option<bool>,
-    session_lost: Option<&str>,
-) -> HealthValue {
-    match (portal_available, session_lost) {
-        (Some(true), Some(detail)) => HealthValue::Status {
+pub(crate) fn backend_health_value(tier: BackendTier, session_lost: Option<&str>) -> HealthValue {
+    match (tier, session_lost) {
+        (BackendTier::Native, Some(detail)) => HealthValue::Status {
             label: messages::health_portal_session_lost().into(),
             active: false,
             detail: Some(HealthText::Text(
                 forge_types::VerbatimText::new(detail).into(),
             )),
         },
-        (Some(true), None) => HealthValue::Status {
+        (BackendTier::Native, None) => HealthValue::Status {
             label: messages::health_portal_active().into(),
             active: true,
             detail: None,
         },
-        (Some(false), _) => HealthValue::Status {
+        (BackendTier::Fallback, _) => HealthValue::Status {
             label: messages::health_portal_evdev_fallback().into(),
             active: false,
             detail: None,
         },
-        (None, _) => HealthValue::Status {
+        (BackendTier::Unavailable, _) => HealthValue::Status {
             label: messages::health_portal_permission_denied().into(),
             active: false,
             detail: None,
@@ -365,14 +364,14 @@ mod tests {
         let lost = "bind failed";
         for (available, session_lost, label, active, detail) in [
             (
-                Some(true),
+                BackendTier::Native,
                 None,
                 messages::health_portal_active(),
                 true,
                 None,
             ),
             (
-                Some(true),
+                BackendTier::Native,
                 Some(lost),
                 messages::health_portal_session_lost(),
                 false,
@@ -381,21 +380,21 @@ mod tests {
                 )),
             ),
             (
-                Some(false),
+                BackendTier::Fallback,
                 None,
                 messages::health_portal_evdev_fallback(),
                 false,
                 None,
             ),
             (
-                Some(false),
+                BackendTier::Fallback,
                 Some(lost),
                 messages::health_portal_evdev_fallback(),
                 false,
                 None,
             ),
             (
-                None,
+                BackendTier::Unavailable,
                 None,
                 messages::health_portal_permission_denied(),
                 false,

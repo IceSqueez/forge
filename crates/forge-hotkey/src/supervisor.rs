@@ -96,7 +96,7 @@ fn handle_session_event(client: &Arc<HotkeyClient>, event: BackendSessionEvent) 
     if let Some(detail) = &lost_detail {
         emit_portal_event(client, fields::portal::reason::SESSION_LOST, detail);
     }
-    let new_value = backend_health_value(client.portal_available, lost_detail.as_deref());
+    let new_value = backend_health_value(client.backend_tier, lost_detail.as_deref());
     client.health_state.lock_recover().backend_session_lost = lost_detail;
     #[expect(
         clippy::let_underscore_must_use,

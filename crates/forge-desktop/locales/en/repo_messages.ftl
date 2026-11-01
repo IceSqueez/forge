@@ -13,6 +13,7 @@ msg-repo-operation_failed = The operation failed. Details are in the log.
 msg-repo-data_dir_unavailable = forge could not create its data folder { $path }.
 msg-repo-startup_stopped = The app could not finish starting. Try again.
 msg-repo-file_failed = The file could not be read or written. Details are in the log.
+msg-repo-server_address_invalid = { $address } is not a valid server address.
 msg-repo-server_address_busy = The server could not listen on { $address }. Another program may be using that port.
 msg-repo-server_lan_disabled = This address needs LAN access, which is turned off in the server settings.
 msg-repo-server_switched_off = The server is switched off in settings.

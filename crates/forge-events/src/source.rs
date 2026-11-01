@@ -153,4 +153,22 @@ mod tests {
             );
         }
     }
+
+    #[test]
+    fn every_source_has_one_spelling_across_as_str_serde_and_from_str() {
+        for source in EventSource::ALL {
+            assert_eq!(
+                serde_json::to_value(source).unwrap(),
+                serde_json::json!(source.as_str()),
+                "{source:?}"
+            );
+            assert_eq!(source.as_str().parse::<EventSource>().ok(), Some(source));
+        }
+    }
+
+    #[test]
+    fn a_spelling_outside_the_roster_is_refused() {
+        assert!("Twitch".parse::<EventSource>().is_err());
+        assert!("".parse::<EventSource>().is_err());
+    }
 }

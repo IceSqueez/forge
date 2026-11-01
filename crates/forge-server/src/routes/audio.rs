@@ -8,24 +8,15 @@ use axum::routing::{get, post};
 use serde::Deserialize;
 
 use crate::audio_clips::PageVerdict;
+use crate::clip_paths::{CLIP_PATH_PREFIX, REPORT_PATH_PREFIX};
 use crate::routes::overlays::{NOSNIFF, cors_header_value};
 use crate::server::AppState;
 
-const CLIP_PATH_PREFIX: &str = "/audio/v1/clip/";
-const REPORT_PATH_PREFIX: &str = "/audio/v1/report/";
 const CAPABILITY_PATTERN: &str = "{capability}";
 
 const MAX_REPORT_BODY_BYTES: usize = 2 * 1024;
 const MAX_REASON_CHARS: usize = 200;
 const NO_STORE: &str = "no-store";
-
-pub(crate) fn clip_path(capability: &str) -> String {
-    format!("{CLIP_PATH_PREFIX}{capability}")
-}
-
-pub(crate) fn report_path(capability: &str) -> String {
-    format!("{REPORT_PATH_PREFIX}{capability}")
-}
 
 pub(crate) fn router() -> Router<AppState> {
     Router::new()
@@ -108,6 +99,7 @@ fn cross_origin_headers(state: &AppState, request_headers: &HeaderMap) -> Header
 
 #[cfg(test)]
 mod tests {
+    use crate::clip_paths::{clip_path, report_path};
     use std::collections::BTreeMap;
     use std::net::SocketAddr;
     use std::path::{Path as FsPath, PathBuf};
@@ -166,7 +158,6 @@ mod tests {
                         duration_ms: CLIP_DURATION_MS,
                     },
                 )
-                .await
                 .expect("offer")
         }
 
@@ -390,12 +381,7 @@ mod tests {
     {
         let fixture = serve_default().await;
         let (ticket, outcome) = fixture.offer().await;
-        assert!(
-            fixture
-                .handle
-                .admit_audio_players(ticket.capability(), 2)
-                .await
-        );
+        assert!(fixture.handle.admit_audio_players(ticket.capability(), 2));
 
         let first = fixture.fetch(ticket.clip_path()).await;
         let second = fixture.fetch(ticket.clip_path()).await;
@@ -713,10 +699,7 @@ mod tests {
         assert_eq!(unfetched_outcome.recv().await, ClipOutcome::ServerStopped);
         assert_eq!(fetched_outcome.recv().await, ClipOutcome::ServerStopped);
         assert!(
-            !fixture
-                .handle
-                .revoke_audio_clip(unfetched.capability())
-                .await,
+            !fixture.handle.revoke_audio_clip(unfetched.capability()),
             "a discarded clip is already gone"
         );
     }

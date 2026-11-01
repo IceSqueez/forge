@@ -569,4 +569,14 @@ mod tests {
             assert_eq!(state.apply_event(probe), expected, "{case}");
         }
     }
+
+    #[test]
+    fn a_voice_catalog_change_bumps_the_revision_and_reports_a_repaint() {
+        let mut state = SpeakState::new();
+        let before = state.voice_catalog_revision();
+
+        assert!(state.apply_event(SpeakEvent::VoiceCatalogChanged));
+
+        assert_eq!(state.voice_catalog_revision(), before + 1);
+    }
 }

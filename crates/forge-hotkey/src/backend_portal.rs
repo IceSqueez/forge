@@ -12,7 +12,9 @@ use tokio_stream::StreamExt;
 use zbus::Connection;
 use zbus::{ObjectPath, OwnedObjectPath, OwnedVariant, Variant};
 
-use crate::backend::{BackendSessionEvent, HotkeyBackend, HotkeyFiredEvent, HotkeyId};
+use crate::backend::{
+    BackendSessionEvent, HotkeyBackend, HotkeyFiredEvent, HotkeyId, wall_clock_us,
+};
 use crate::binding::HotkeyEdge;
 use crate::combo::HotkeyCombo;
 use crate::error::HotkeyError;
@@ -670,13 +672,6 @@ async fn close_session(conn: &Connection, session_path: &str) {
     if let Err(e) = proxy.call::<_, _, ()>("Close", &()).await {
         tracing::debug!(error = %e, "portal session Close failed");
     }
-}
-
-fn wall_clock_us() -> u64 {
-    std::time::SystemTime::now()
-        .duration_since(std::time::UNIX_EPOCH)
-        .map(|d| u64::try_from(d.as_micros()).unwrap_or(u64::MAX))
-        .unwrap_or_default()
 }
 
 async fn signal_listener_task(

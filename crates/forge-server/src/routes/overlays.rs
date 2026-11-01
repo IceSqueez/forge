@@ -6,8 +6,8 @@ use forge_storage::OverlayId;
 use std::path::{Path, PathBuf};
 use tokio_util::io::ReaderStream;
 
+use crate::media_type::mime_for_extension;
 use crate::origin::accepts_origin;
-use crate::protocol::mime_for_extension;
 use crate::server::AppState;
 
 const OVERLAY_ENTRY_DOCUMENT: &str = "index.html";
@@ -1321,7 +1321,7 @@ mod tests {
         let (handle, addr) = make_overlay_server(root, true, MemCreds::new()).await;
 
         for required in [true, false] {
-            handle.set_http_overlay_token_required(required).await;
+            handle.set_http_overlay_token_required(required);
             for target in [
                 format!("/overlays/{FIXTURE_OVERLAY_TOKEN}"),
                 format!("/overlays/{FIXTURE_OVERLAY_TOKEN}/"),
@@ -1377,7 +1377,7 @@ mod tests {
         let tokenless = "/overlays/alerts/config.json";
         let tokened = format!("/overlays/{FIXTURE_OVERLAY_TOKEN}/alerts/config.json");
 
-        handle.set_http_overlay_token_required(false).await;
+        handle.set_http_overlay_token_required(false);
         assert_eq!(
             get_status_and_body(addr, tokenless).await.0,
             reqwest::StatusCode::OK
@@ -1388,7 +1388,7 @@ mod tests {
             "a copied URL must keep working while the requirement is off"
         );
 
-        handle.set_http_overlay_token_required(true).await;
+        handle.set_http_overlay_token_required(true);
         assert_eq!(
             get_status_and_body(addr, tokenless).await.0,
             reqwest::StatusCode::NOT_FOUND

@@ -10,19 +10,11 @@ use crate::combo::HotkeyCombo;
 use crate::error::HotkeyError;
 use crate::reconciler::HotkeyReconciler;
 
-fn combo_of(instance: &TriggerInstance) -> Option<&String> {
+fn canonical_combo_of(instance: &TriggerInstance) -> Option<String> {
     match instance.overrides.get(COMBO_FIELD) {
-        Some(Variant::String(combo)) => Some(combo),
+        Some(Variant::String(combo)) => HotkeyCombo::canonical_or_raw(combo),
         _ => None,
     }
-}
-
-fn canonical_combo_of(instance: &TriggerInstance) -> Option<String> {
-    combo_of(instance).map(|combo| {
-        HotkeyCombo::parse(combo)
-            .map(|parsed| parsed.as_str().to_owned())
-            .unwrap_or_else(|_| combo.clone())
-    })
 }
 
 pub async fn load_bindings(
@@ -83,13 +75,12 @@ async fn hotkey_instances_for_combo(
     backend: &Arc<dyn DataProvider>,
     combo_str: &str,
 ) -> Result<Vec<TriggerInstance>, HotkeyError> {
+    let wanted = HotkeyCombo::canonical_or_raw(combo_str);
     let instances = backend.trigger_instance_repo().list_all().await?;
     Ok(instances
         .into_iter()
         .filter(|instance| HotkeyEdge::from_kind(&instance.kind_id).is_some())
-        .filter(|instance| {
-            canonical_combo_of(instance).is_some_and(|existing| existing == combo_str)
-        })
+        .filter(|instance| wanted.is_some() && canonical_combo_of(instance) == wanted)
         .collect())
 }
 
@@ -231,9 +222,7 @@ pub async fn rebind_combo(
     combo_str: String,
 ) -> Result<(), HotkeyError> {
     let target_combo = HotkeyCombo::parse(&combo_str)?;
-    let previous_combo = HotkeyCombo::parse(&previous_combo)
-        .map(|parsed| parsed.as_str().to_owned())
-        .unwrap_or(previous_combo);
+    let previous_combo = HotkeyCombo::canonical_or_raw(&previous_combo).unwrap_or(previous_combo);
     if previous_combo == target_combo.as_str() {
         return Ok(());
     }

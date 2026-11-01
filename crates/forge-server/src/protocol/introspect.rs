@@ -1,16 +1,21 @@
+use forge_events::EventSource;
 use forge_storage::CredentialsRepo;
 use forge_types::PlatformId;
 
 use crate::bus_adapter::BusAdapter;
 
 const CREDENTIAL_ID_SEPARATOR: char = ':';
+const WILDCARD: &str = "*";
 
 pub(crate) async fn build_connected_accounts(
     creds: &dyn CredentialsRepo,
 ) -> Vec<serde_json::Value> {
     let ids = match creds.list_ids().await {
         Ok(ids) => ids,
-        Err(_) => return vec![],
+        Err(error) => {
+            tracing::warn!(%error, "connected accounts unreadable");
+            return vec![];
+        }
     };
     ids.into_iter()
         .filter_map(|id| {
@@ -33,7 +38,12 @@ pub(crate) async fn build_connected_clients(bus_adapter: &BusAdapter) -> Vec<ser
             let subscriptions: Vec<serde_json::Value> = row
                 .subscriptions
                 .iter()
-                .map(|f| serde_json::json!({ "source": f.source, "type": f.kind }))
+                .map(|f| {
+                    serde_json::json!({
+                        "source": f.source.map_or(WILDCARD, EventSource::as_str),
+                        "type": f.kind.as_deref().unwrap_or(WILDCARD),
+                    })
+                })
                 .collect();
             serde_json::json!({
                 "client_id": row.id.to_string(),
@@ -55,10 +65,9 @@ mod tests {
     use std::sync::Arc;
     use std::sync::atomic::AtomicU64;
 
-    use forge_events::EventSource;
     use forge_runtime::{EventBus, NullEventLogRepo};
 
-    use super::{build_connected_accounts, build_connected_clients};
+    use super::{EventSource, build_connected_accounts, build_connected_clients};
     use crate::bus_adapter::{BusAdapter, ClientFilterSet, EventFilter, OverlayClientClass};
     use crate::test_helpers::TestDataProvider;
     use crate::ws_client::WsClient;

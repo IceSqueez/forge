@@ -71,7 +71,7 @@ mod tests {
 
     #[tokio::test]
     async fn connection_connected_after_register() {
-        let c = HotkeyClient::new_for_test(Some(true));
+        let c = HotkeyClient::new_for_test(crate::backend::BackendTier::Native);
         let s: &dyn BuiltinStatus = &*c;
         c.register(HotkeyCombo::parse("Ctrl+G").unwrap())
             .await

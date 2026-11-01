@@ -487,6 +487,18 @@ mod tests {
         assert!(!lifecycle.snapshot().raid_pending);
     }
 
+    #[tokio::test(start_paused = true)]
+    async fn a_started_raid_stops_being_pending_when_the_countdown_runs_out() {
+        let lifecycle = TwitchLifecycle::new();
+        lifecycle.raid_started();
+
+        tokio::time::advance(RAID_COUNTDOWN - Duration::from_millis(1)).await;
+        assert!(lifecycle.snapshot().raid_pending);
+
+        tokio::time::advance(Duration::from_millis(1)).await;
+        assert!(!lifecycle.snapshot().raid_pending);
+    }
+
     #[test]
     fn our_own_outgoing_raid_notification_clears_the_pending_raid() {
         let lifecycle = TwitchLifecycle::new();

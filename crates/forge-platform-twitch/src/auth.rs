@@ -1,6 +1,7 @@
 use crate::endpoint_surfaces::TWITCH_OAUTH;
 use std::time::{Duration, SystemTime};
 
+use tokio::sync::watch;
 use tokio::time::Instant;
 
 use forge_net::{Gateway, GatewayRequest};
@@ -104,11 +105,29 @@ pub struct UserInfo {
 }
 
 #[derive(Debug, Clone)]
+pub struct PollCadence(watch::Receiver<Duration>);
+
+impl PollCadence {
+    pub fn fixed(interval: Duration) -> Self {
+        Self(watch::channel(interval).1)
+    }
+
+    pub fn current(&self) -> Duration {
+        *self.0.borrow()
+    }
+
+    pub async fn changed(&mut self) -> Option<Duration> {
+        self.0.changed().await.ok()?;
+        Some(*self.0.borrow_and_update())
+    }
+}
+
+#[derive(Debug, Clone)]
 pub struct DeviceCodeInfo {
     pub user_code: String,
     pub verification_uri: String,
     pub expires_at: SystemTime,
-    pub poll_interval: Duration,
+    pub poll_cadence: PollCadence,
 }
 
 #[derive(Debug, Clone)]
@@ -172,7 +191,7 @@ pub struct TwitchAuthFlow {
     helix: Gateway,
     scopes: &'static [&'static str],
     pending: Option<PendingDevice>,
-    poll_interval: Duration,
+    poll_interval: watch::Sender<Duration>,
     timing: DeviceTiming,
 }
 
@@ -189,7 +208,7 @@ impl TwitchAuthFlow {
             helix,
             scopes: TWITCH_BROADCASTER_SCOPES,
             pending: None,
-            poll_interval: DEFAULT_POLL_INTERVAL,
+            poll_interval: watch::Sender::new(DEFAULT_POLL_INTERVAL),
             timing: DeviceTiming::default(),
         }
     }
@@ -221,20 +240,21 @@ impl TwitchAuthFlow {
             code: authorization.device_code,
             deadline,
         });
-        self.poll_interval = self.timing.poll_interval.unwrap_or_else(|| {
+        let poll_interval = self.timing.poll_interval.unwrap_or_else(|| {
             Duration::from_secs(authorization.interval.max(MIN_POLL_INTERVAL_SECS))
         });
+        self.poll_interval.send_replace(poll_interval);
         info!(
             scopes = self.scopes.len(),
             expires_in_secs = authorization.expires_in,
-            poll_interval_secs = self.poll_interval.as_secs(),
+            poll_interval_secs = poll_interval.as_secs(),
             "twitch device authorization started"
         );
         Ok(DeviceCodeInfo {
             user_code: authorization.user_code,
             verification_uri: authorization.verification_uri,
             expires_at,
-            poll_interval: self.poll_interval,
+            poll_cadence: PollCadence(self.poll_interval.subscribe()),
         })
     }
 
@@ -249,7 +269,7 @@ impl TwitchAuthFlow {
             reason: "wait_for_authorization called before start".into(),
         })?;
 
-        let mut next_wait = self.poll_interval;
+        let mut next_wait = *self.poll_interval.borrow();
         let grant = loop {
             let remaining = time_left(deadline)?;
             tokio::select! {
@@ -259,21 +279,21 @@ impl TwitchAuthFlow {
                 }
                 () = tokio::time::sleep(next_wait.min(remaining)) => {}
             }
-            next_wait = self.poll_interval;
+            next_wait = *self.poll_interval.borrow();
             match self.oauth.poll_device_token(&device_code, &cancel).await? {
                 DevicePoll::Pending => {
                     trace!("twitch device authorization still pending");
                 }
                 DevicePoll::SlowDown => {
-                    self.poll_interval += self.timing.slow_down_increment;
-                    next_wait = self.poll_interval;
+                    next_wait += self.timing.slow_down_increment;
+                    self.poll_interval.send_replace(next_wait);
                     debug!(
-                        poll_interval_secs = self.poll_interval.as_secs(),
+                        poll_interval_secs = next_wait.as_secs(),
                         "twitch asked us to slow the device-code polling"
                     );
                 }
                 DevicePoll::Throttled { wait } => {
-                    next_wait = wait.max(self.poll_interval);
+                    next_wait = wait.max(next_wait);
                     debug!(
                         wait_secs = next_wait.as_secs(),
                         "twitch device-code polling throttled; waiting before the next poll"
@@ -426,7 +446,7 @@ mod tests {
             code: Secret::new("DEV123"),
             deadline: tokio::time::Instant::now() + Duration::from_secs(3600),
         });
-        flow.poll_interval = QUICK_POLL;
+        flow.poll_interval.send_replace(QUICK_POLL);
         flow
     }
 
@@ -925,6 +945,7 @@ mod tests {
         arrivals: tokio::sync::mpsc::UnboundedReceiver<std::time::Instant>,
         started: std::time::Instant,
         cancel: CancellationToken,
+        cadence: PollCadence,
         waiting: tokio::task::JoinHandle<Result<TwitchAuthBundle, PlatformError>>,
     }
 
@@ -963,7 +984,7 @@ mod tests {
             )
             .with_timing(timing);
             let started = std::time::Instant::now();
-            flow.start().await.unwrap();
+            let cadence = flow.start().await.unwrap().poll_cadence;
             let cancel = CancellationToken::new();
             let waiting = tokio::spawn({
                 let cancel = cancel.clone();
@@ -976,6 +997,7 @@ mod tests {
                 arrivals,
                 started,
                 cancel,
+                cadence,
                 waiting,
             }
         }
@@ -1063,6 +1085,11 @@ mod tests {
         assert!(
             rig.no_poll_arrives_for(NEVER_WITHIN).await,
             "a slow_down answer must lengthen the pause before the next poll"
+        );
+        assert_eq!(
+            rig.cadence.current(),
+            FAST_POLL_INTERVAL + UNREACHABLE_INCREMENT,
+            "the sign-in card reads the interval slow_down raised"
         );
         assert_eq!(rig.cancelled().await, DeviceAuthEnd::Cancelled);
     }

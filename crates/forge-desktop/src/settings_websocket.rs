@@ -936,13 +936,6 @@ mod tests {
         }
     }
 
-    fn live_overlay_token(
-        rt: &tokio::runtime::Runtime,
-        server: &ServerHandle,
-    ) -> forge_types::Secret {
-        rt.block_on(server.overlay_token())
-    }
-
     fn overlay_page_status(rt: &tokio::runtime::Runtime, server: &ServerHandle) -> String {
         rt.block_on(async {
             use tokio::io::{AsyncReadExt, AsyncWriteExt};
@@ -1179,7 +1172,7 @@ mod tests {
         let rt = runtime();
         let (backend, mut writes) = test_backend();
         let server = stopped_handle(&rt, &backend);
-        let before = rt.block_on(server.reads_require_auth());
+        let before = server.reads_require_auth();
         let view = settings_view_with_server(cx, &rt, backend, Some(server.clone()));
         settle(cx, &rt);
         while writes.try_recv().is_ok() {}
@@ -1190,7 +1183,7 @@ mod tests {
         assert_eq!(
             (
                 before,
-                rt.block_on(server.reads_require_auth()),
+                server.reads_require_auth(),
                 crate::test_support::writes_to(&mut writes, AUTH_REQUIRED_FOR_READS.name()),
             ),
             (false, true, vec!["true".to_owned()])
@@ -1202,7 +1195,7 @@ mod tests {
         let rt = runtime();
         let (backend, _writes) = test_backend();
         let server = stopped_handle(&rt, &backend);
-        let before = live_overlay_token(&rt, &server);
+        let before = server.overlay_token();
         let view = settings_view_with_server(cx, &rt, backend, Some(server.clone()));
 
         view.update(cx, |this, cx| this.request_overlay_token_regenerate(cx));
@@ -1211,7 +1204,7 @@ mod tests {
         settle(cx, &rt);
 
         assert!(!view.read_with(cx, |this, _| this.overlay_token_confirm_open));
-        assert_eq!(live_overlay_token(&rt, &server), before);
+        assert_eq!(server.overlay_token(), before);
     }
 
     #[gpui::test]
@@ -1234,7 +1227,7 @@ mod tests {
         let (backend, _writes) = test_backend();
         backend.seed_raw(&SERVER_OVERLAY_ROOT, &overlay_root.path().to_string_lossy());
         let server = stopped_handle(&rt, &backend);
-        let before = live_overlay_token(&rt, &server);
+        let before = server.overlay_token();
         let view = settings_view_with_server(cx, &rt, backend, Some(server.clone()));
         settle(cx, &rt);
 
@@ -1246,7 +1239,7 @@ mod tests {
             view.read_with(cx, |this, _| !this.overlay_token_regenerating)
         });
 
-        let after = live_overlay_token(&rt, &server);
+        let after = server.overlay_token();
         assert_ne!(
             after, before,
             "the confirmed regenerate never rotated the token"
@@ -1269,7 +1262,7 @@ mod tests {
         let (backend, _writes) = test_backend();
         backend.seed_raw(&SERVER_OVERLAY_ROOT, &not_a_directory.to_string_lossy());
         let server = stopped_handle(&rt, &backend);
-        let before = live_overlay_token(&rt, &server);
+        let before = server.overlay_token();
         cx.update(|cx| cx.set_global(forge_components::Toasts::new()));
         let view = settings_view_with_server(cx, &rt, backend, Some(server.clone()));
         settle(cx, &rt);
@@ -1282,7 +1275,7 @@ mod tests {
             view.read_with(cx, |this, _| !this.overlay_token_regenerating)
         });
 
-        let live = live_overlay_token(&rt, &server);
+        let live = server.overlay_token();
         assert_ne!(live, before);
         assert_eq!(
             view.read_with(cx, |this, _| this.overlay_token.clone()),

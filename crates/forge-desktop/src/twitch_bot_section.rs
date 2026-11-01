@@ -877,7 +877,9 @@ mod tests {
             user_code: "ABCD-EFGH".to_owned(),
             verification_uri: "https://www.twitch.tv/activate".to_owned(),
             expires_at: SystemTime::UNIX_EPOCH,
-            poll_interval: std::time::Duration::from_secs(5),
+            poll_cadence: forge_platform_twitch::PollCadence::fixed(
+                std::time::Duration::from_secs(5),
+            ),
         }
     }
 

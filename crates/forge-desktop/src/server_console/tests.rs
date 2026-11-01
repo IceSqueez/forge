@@ -11,6 +11,7 @@ use forge_overlay::RESERVED_DIRECTORY;
 use forge_server::BandwidthSnapshot;
 use forge_server::{ConnectedClientSnapshot, EventFilterSnapshot, ServerSnapshot};
 use gpui::{Entity, TestAppContext};
+use std::net::SocketAddr;
 use std::sync::atomic::{AtomicU64, Ordering};
 
 use crate::i18n::install_language;
@@ -19,7 +20,8 @@ use crate::test_support::{
 };
 use forge_storage::Language;
 
-const WILDCARD_BIND: &str = "0.0.0.0:9515";
+const WILDCARD_BIND: SocketAddr =
+    SocketAddr::new(std::net::IpAddr::V4(std::net::Ipv4Addr::UNSPECIFIED), 9515);
 const ROUTABLE_HOST: &str = "192.168.1.5";
 const OVERLAY_DIR: &str = "alerts";
 const PLAIN_DIR: &str = "assets";
@@ -66,7 +68,7 @@ fn file_entry(name: &str) -> OwnedOverlayEntry {
 
 fn serve(view: &mut ServerConsoleView, entries: Vec<OwnedOverlayEntry>) {
     view.lifecycle.running = true;
-    view.lifecycle.bind_address = Some(WILDCARD_BIND.to_owned());
+    view.lifecycle.bind_address = Some(WILDCARD_BIND);
     view.lifecycle.routable_host = Some(ROUTABLE_HOST.to_owned());
     view.overlay.entries = entries;
 }
@@ -86,7 +88,7 @@ fn listing_poll(entries: Vec<OwnedOverlayEntry>) -> ServerPoll {
             events_out_total: 0,
             dropped_events_total: 0,
         },
-        bind_address: Some(WILDCARD_BIND.to_owned()),
+        bind_address: Some(WILDCARD_BIND),
         overlay: Some(OverlayListing {
             root: "/overlays".to_owned(),
             entries,
@@ -353,8 +355,8 @@ fn snapshot_client(
 
 fn filter(source: &str, kind: &str) -> EventFilterSnapshot {
     EventFilterSnapshot {
-        source: source.to_owned(),
-        kind: kind.to_owned(),
+        source: (source != "*").then(|| source.parse().unwrap()),
+        kind: (kind != "*").then(|| kind.to_owned()),
     }
 }
 
@@ -403,7 +405,7 @@ fn the_bind_field_shows_an_address_only_while_the_server_runs(cx: &mut TestAppCo
         (
             true,
             Some(WILDCARD_BIND),
-            BindState::Bound(WILDCARD_BIND.to_owned()),
+            BindState::Bound(WILDCARD_BIND.to_string()),
             "running with its address known",
         ),
         (
@@ -422,7 +424,7 @@ fn the_bind_field_shows_an_address_only_while_the_server_runs(cx: &mut TestAppCo
     ] {
         view.update(cx, |this, _| {
             this.lifecycle.running = running;
-            this.lifecycle.bind_address = bind_address.map(str::to_owned);
+            this.lifecycle.bind_address = bind_address;
             assert_eq!(this.bind_state(), expected, "{case}");
         });
     }
@@ -589,12 +591,6 @@ fn subscription_chip_labels_each_source_and_kind_combination() {
             "*",
             "chat.message",
             "chat.message",
-            SubscriptionChipKind::Unknown,
-        ),
-        (
-            "peacock",
-            "chat.message",
-            "peacock.chat.message",
             SubscriptionChipKind::Unknown,
         ),
     ] {
@@ -794,15 +790,12 @@ fn a_poll_that_skipped_the_serving_facts_keeps_the_known_address_and_listing(
         let resolve = this.apply_poll(poll);
         (
             resolve,
-            this.lifecycle.bind_address.clone(),
+            this.lifecycle.bind_address,
             this.overlay.entries.len(),
         )
     });
 
-    assert_eq!(
-        (resolve, address, entries),
-        (None, Some(WILDCARD_BIND.to_owned()), 1)
-    );
+    assert_eq!((resolve, address, entries), (None, Some(WILDCARD_BIND), 1));
 }
 
 #[gpui::test]
@@ -856,5 +849,5 @@ fn a_new_bind_address_asks_for_a_host_resolve_once(cx: &mut TestAppContext) {
         (first, this.apply_poll(listing_poll(Vec::new())))
     });
 
-    assert_eq!((first, repeat), (Some(WILDCARD_BIND.to_owned()), None));
+    assert_eq!((first, repeat), (Some(WILDCARD_BIND), None));
 }

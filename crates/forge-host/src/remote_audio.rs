@@ -38,7 +38,7 @@ impl Drop for PendingEntryGuard<'_> {
         };
         if let Ok(runtime) = tokio::runtime::Handle::try_current() {
             let server = self.destination.server.clone();
-            runtime.spawn(async move { server.revoke_audio_clip(&capability).await });
+            runtime.spawn(async move { server.revoke_audio_clip(&capability) });
         }
     }
 }
@@ -127,14 +127,12 @@ impl RemoteAudioDestination for OverlayAudioDestination {
                     duration_ms,
                 },
             )
-            .await
             .map_err(|error| {
                 tracing::warn!(%error, "remote audio: the server did not take the clip");
                 AudioError::RemoteDestination(RemoteFailure::ClipNotOffered)
             })?;
         self.server
-            .admit_audio_players(ticket.capability(), expected_players)
-            .await;
+            .admit_audio_players(ticket.capability(), expected_players);
 
         let clip_id = Ulid::generate().to_string();
         let content = announcement_content(&AudioAnnouncement {
@@ -154,8 +152,7 @@ impl RemoteAudioDestination for OverlayAudioDestination {
             Ok(delivery) => {
                 let live_players = live_players(delivery);
                 self.server
-                    .admit_audio_players(ticket.capability(), live_players)
-                    .await;
+                    .admit_audio_players(ticket.capability(), live_players);
                 Ok(RemoteDelivery {
                     clip_id: RemoteClipId::new(clip_id),
                     live_players,
@@ -163,7 +160,7 @@ impl RemoteAudioDestination for OverlayAudioDestination {
             }
             Err(error) => {
                 if let Some(capability) = self.forget(&clip_id) {
-                    self.server.revoke_audio_clip(&capability).await;
+                    self.server.revoke_audio_clip(&capability);
                 }
                 tracing::warn!(%error, "remote audio: the clip did not reach the overlay");
                 Err(AudioError::RemoteDestination(RemoteFailure::NotDelivered))
@@ -183,10 +180,10 @@ impl RemoteAudioDestination for OverlayAudioDestination {
 
         match command {
             RemoteCommand::Pause => {
-                self.server.hold_audio_clip(&capability).await;
+                self.server.hold_audio_clip(&capability);
             }
             RemoteCommand::Resume => {
-                self.server.release_audio_clip(&capability).await;
+                self.server.release_audio_clip(&capability);
             }
             RemoteCommand::Stop => {}
         }
@@ -197,7 +194,7 @@ impl RemoteAudioDestination for OverlayAudioDestination {
 
         if matches!(command, RemoteCommand::Stop) {
             self.forget(clip_id.expose());
-            self.server.revoke_audio_clip(&capability).await;
+            self.server.revoke_audio_clip(&capability);
         }
 
         pushed.map(|_| ()).map_err(|error| {
@@ -636,7 +633,7 @@ mod tests {
             AudioCommand::Stop.as_str()
         );
         assert!(
-            !destination.server.hold_audio_clip(&capability).await,
+            !destination.server.hold_audio_clip(&capability),
             "the stop must withdraw the clip from the server"
         );
     }
@@ -660,7 +657,7 @@ mod tests {
         );
 
         tokio::time::timeout(HANG_GUARD, async {
-            while destination.server.hold_audio_clip(&capability).await {
+            while destination.server.hold_audio_clip(&capability) {
                 tokio::task::yield_now().await;
             }
         })
@@ -802,8 +799,8 @@ mod tests {
             .capability_of(delivered.clip_id.expose())
             .expect("the announced clip is pending");
 
-        let first = destination.server.revoke_audio_clip(&capability).await;
-        let second = destination.server.revoke_audio_clip(&capability).await;
+        let first = destination.server.revoke_audio_clip(&capability);
+        let second = destination.server.revoke_audio_clip(&capability);
         let verdict = settled(&destination, &delivered.clip_id).await;
 
         assert_eq!(
@@ -829,7 +826,7 @@ mod tests {
             .capability_of(delivered.clip_id.expose())
             .expect("the announced clip is pending");
         abandon_verdict_wait(&destination, &delivered.clip_id).await;
-        destination.server.revoke_audio_clip(&capability).await;
+        destination.server.revoke_audio_clip(&capability);
 
         let stopped = destination
             .control(&destination_id(), &delivered.clip_id, RemoteCommand::Stop)

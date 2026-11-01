@@ -41,8 +41,8 @@ pub mod vocabulary;
 pub use account::identity::BroadcasterTier;
 pub use assembly::TwitchAssembly;
 pub use auth::{
-    DeviceCodeInfo, TWITCH_BROADCASTER_SCOPES, TWITCH_CLIENT_ID_ENV, TwitchAuthFlow, TwitchSignIn,
-    UserInfo, client_id, twitch_auth_flow,
+    DeviceCodeInfo, PollCadence, TWITCH_BROADCASTER_SCOPES, TWITCH_CLIENT_ID_ENV, TwitchAuthFlow,
+    TwitchSignIn, UserInfo, client_id, twitch_auth_flow,
 };
 pub use bot_account::{BotModerator, BotStatus, BotUnavailable, TwitchBotAccount};
 pub use builtin::TwitchIntegrationBundle;

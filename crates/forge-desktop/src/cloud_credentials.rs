@@ -1407,4 +1407,40 @@ mod tests {
             (false, 1, 0)
         );
     }
+
+    fn repo_answering(stored: Result<Option<&'static str>, ()>) -> MockCredentialsRepo {
+        let mut repo = MockCredentialsRepo::new();
+        repo.expect_load().returning(move |_| {
+            stored
+                .map(|json| json.map(str::to_owned))
+                .map_err(|()| StorageError::Connection {
+                    reason: "database is locked".to_owned(),
+                })
+        });
+        repo
+    }
+
+    #[tokio::test]
+    async fn stored_region_reads_the_region_and_treats_its_absence_as_none() {
+        for (stored, expected) in [
+            (None, None),
+            (Some(r#"{"api_key":"k"}"#), None),
+            (Some(r#"{"region":null}"#), None),
+            (Some(r#"{"region":"eu-west-1"}"#), Some("eu-west-1")),
+        ] {
+            let repo = repo_answering(Ok(stored));
+            let region = stored_region(&repo, CloudEngineKind::Polly).await;
+            assert_eq!(region.ok().flatten().as_deref(), expected, "{stored:?}");
+        }
+    }
+
+    #[tokio::test]
+    async fn stored_region_reports_corrupt_json_and_a_storage_failure() {
+        for repo in [
+            repo_answering(Ok(Some("not json"))),
+            repo_answering(Err(())),
+        ] {
+            assert!(stored_region(&repo, CloudEngineKind::Azure).await.is_err());
+        }
+    }
 }

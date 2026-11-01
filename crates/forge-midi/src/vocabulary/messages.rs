@@ -23,7 +23,11 @@ const SEND_FAILED: MessageCode = MessageCode::from_static(INTEGRATION_ID, "send_
 const SUPERVISOR_UNAVAILABLE: MessageCode =
     MessageCode::from_static(INTEGRATION_ID, "supervisor_unavailable");
 
+const POLL_INTERVAL_VALUE: MessageCode =
+    MessageCode::from_static(INTEGRATION_ID, "label_poll_interval_value");
+
 const PORT_ARG: &str = "port";
+const SECONDS_ARG: &str = "seconds";
 const BYTE_ARG: &str = "byte";
 const TIME_ARG: &str = "time";
 const VALUE_ARG: &str = "value";
@@ -111,7 +115,7 @@ pub const MIDI_MESSAGES: MessageCatalog = MessageCatalog {
         labels::OPEN_FAILED,
         labels::OUTPUT_PORTS,
         labels::POLL_INTERVAL,
-        labels::POLL_INTERVAL_VALUE,
+        POLL_INTERVAL_VALUE,
         labels::SEND_CC,
         labels::SEND_NOTE_OFF,
         labels::SEND_NOTE_ON,
@@ -133,6 +137,11 @@ pub(crate) fn health_disabled() -> MessageRef {
 
 pub(crate) fn health_output_available() -> MessageRef {
     MessageRef::new(HEALTH_OUTPUT_AVAILABLE)
+}
+
+pub(crate) fn poll_interval_value(seconds: u64) -> MessageRef {
+    MessageRef::new(POLL_INTERVAL_VALUE)
+        .with_arg(SECONDS_ARG, i64::try_from(seconds).unwrap_or(i64::MAX))
 }
 
 pub(crate) fn health_note_time(at: OffsetDateTime) -> MessageRef {

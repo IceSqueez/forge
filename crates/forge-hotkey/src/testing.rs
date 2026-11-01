@@ -8,7 +8,7 @@ use async_trait::async_trait;
 use forge_events::EventPublisher;
 use tokio::sync::mpsc;
 
-use crate::backend::{HotkeyBackend, HotkeyFiredEvent, HotkeyId};
+use crate::backend::{BackendTier, HotkeyBackend, HotkeyFiredEvent, HotkeyId};
 use crate::binding::HotkeyEdge;
 use crate::client::HotkeyClient;
 use crate::combo::HotkeyCombo;
@@ -120,6 +120,6 @@ pub fn test_client(
 ) -> (Arc<HotkeyClient>, Arc<RecordingBackend>) {
     let backend = RecordingBackend::new();
     let backend_for_client: Arc<dyn HotkeyBackend> = backend.clone();
-    let client = HotkeyClient::start(config, publisher, backend_for_client, Some(true));
+    let client = HotkeyClient::start(config, publisher, backend_for_client, BackendTier::Native);
     (client, backend)
 }

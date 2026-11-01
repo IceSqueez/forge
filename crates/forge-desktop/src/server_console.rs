@@ -23,6 +23,7 @@ use gpui::{
     Context, EventEmitter, Pixels, SharedString, Subscription, UniformListScrollHandle, Window,
     div, prelude::*, px,
 };
+use std::net::SocketAddr;
 use std::sync::Arc;
 
 const RECENT_CLIENT_WINDOW_SECONDS: i64 = 600;
@@ -124,9 +125,9 @@ struct ServerLifecycleState {
     running: bool,
     enabled: bool,
     restarting: bool,
-    bind_address: Option<String>,
+    bind_address: Option<SocketAddr>,
     routable_host: Option<String>,
-    routable_host_resolved_for: Option<String>,
+    routable_host_resolved_for: Option<SocketAddr>,
 }
 
 struct ServerSecretsState {

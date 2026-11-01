@@ -46,6 +46,8 @@ const DATA_DIR_UNAVAILABLE: MessageCode =
 const STARTUP_STOPPED: MessageCode = MessageCode::from_static(NAMESPACE, "startup_stopped");
 const FILE_FAILED: MessageCode = MessageCode::from_static(NAMESPACE, "file_failed");
 const SERVER_ADDRESS_BUSY: MessageCode = MessageCode::from_static(NAMESPACE, "server_address_busy");
+const SERVER_ADDRESS_INVALID: MessageCode =
+    MessageCode::from_static(NAMESPACE, "server_address_invalid");
 const SERVER_LAN_DISABLED: MessageCode = MessageCode::from_static(NAMESPACE, "server_lan_disabled");
 const SERVER_SWITCHED_OFF: MessageCode = MessageCode::from_static(NAMESPACE, "server_switched_off");
 const SCRIPT_REJECTED: MessageCode = MessageCode::from_static(NAMESPACE, "script_rejected");
@@ -70,6 +72,7 @@ pub(crate) const REPO_MESSAGES: MessageCatalog = MessageCatalog {
         STARTUP_STOPPED,
         FILE_FAILED,
         SERVER_ADDRESS_BUSY,
+        SERVER_ADDRESS_INVALID,
         SERVER_LAN_DISABLED,
         SERVER_SWITCHED_OFF,
         SCRIPT_REJECTED,
@@ -290,6 +293,8 @@ impl From<ServerError> for RepoFailure {
         let message = match &error {
             ServerError::Storage(storage) => return Self::from_storage_ref(storage),
             ServerError::Bind { addr, .. } => MessageRef::new(SERVER_ADDRESS_BUSY)
+                .with_arg(ADDRESS_ARG, VerbatimText::new(addr.as_str())),
+            ServerError::InvalidBindAddress { addr } => MessageRef::new(SERVER_ADDRESS_INVALID)
                 .with_arg(ADDRESS_ARG, VerbatimText::new(addr.as_str())),
             ServerError::LanBindNotEnabled { .. } => MessageRef::new(SERVER_LAN_DISABLED),
             ServerError::Disabled => MessageRef::new(SERVER_SWITCHED_OFF),
@@ -719,9 +724,15 @@ mod tests {
             converted(
                 ServerError::Bind {
                     addr: "127.0.0.1:7474".to_owned(),
-                    reason: "os error 98".to_owned(),
+                    source: std::io::ErrorKind::AddrInUse.into(),
                 },
                 "The server could not listen on 127.0.0.1:7474. Another program may be using that port.",
+            ),
+            converted(
+                ServerError::InvalidBindAddress {
+                    addr: "not-an-ip".to_owned(),
+                },
+                "not-an-ip is not a valid server address.",
             ),
             converted(
                 ServerError::LanBindNotEnabled {

@@ -1,7 +1,7 @@
 use forge_events::{Event, EventSource};
 use forge_registry::{
-    ActorDeclaration, ActorIdentity, ActorRole, ActorSlot, CanonicalVariable, EventFilter,
-    KindPlatformContract, TriggerCategory, TriggerKindDescriptor, TriggerVariables,
+    ActorDeclaration, ActorRole, ActorSlot, CanonicalVariable, EventFilter, KindPlatformContract,
+    TriggerCategory, TriggerKindDescriptor, TriggerVariables,
 };
 use forge_types::{
     DeclaredVariable, PlatformId, SynthesisHint, TriggerConfig, Variant, VariantKind,
@@ -56,7 +56,10 @@ impl TriggerKindDescriptor for SupportSuperChatDescriptor {
     fn variables(&self) -> Option<TriggerVariables> {
         Some(
             TriggerVariables::new()
-                .actor(youtube_actor(ActorRole::Principal), author_identity)
+                .actor(
+                    youtube_actor(ActorRole::Principal),
+                    payload_read::author_identity,
+                )
                 .message_text(|event| payload_read::text(event, chat_fields::MESSAGE_TEXT))
                 .event_specific(
                     DeclaredVariable {
@@ -95,10 +98,6 @@ impl TriggerKindDescriptor for SupportSuperChatDescriptor {
     fn actors(&self) -> ActorDeclaration {
         ActorDeclaration::principal()
     }
-}
-
-fn author_identity(event: &Event) -> ActorIdentity {
-    payload_read::identity(event.payload.get(chat_fields::AUTHOR))
 }
 
 #[cfg(test)]

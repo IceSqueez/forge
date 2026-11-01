@@ -92,7 +92,7 @@ mod tests {
 
     #[tokio::test]
     async fn registered_hotkey_appears_in_left_list() {
-        let c = HotkeyClient::new_for_test(Some(true));
+        let c = HotkeyClient::new_for_test(crate::backend::BackendTier::Native);
         let combo = HotkeyCombo::parse("Ctrl+H").unwrap();
         c.register(combo).await.unwrap();
         let content: &dyn BuiltinContent = &*c;
@@ -114,7 +114,7 @@ mod tests {
         use crate::vocabulary::messages::HOTKEY_MESSAGES;
         use forge_platform_core::QuickActions;
 
-        let client = HotkeyClient::new_for_test(None);
+        let client = HotkeyClient::new_for_test(crate::backend::BackendTier::Unavailable);
         let emitted = emitted_codes(&serde_json::json!((client.actions(), client.sections())));
 
         assert!(!emitted.is_empty());

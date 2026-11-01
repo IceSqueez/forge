@@ -1,9 +1,9 @@
 use forge_events::{Event, EventSource};
 use forge_registry::{
-    ActorDeclaration, ActorIdentity, ActorRole, ActorSlot, COMMAND_CASE_SENSITIVE_KEY,
-    COMMAND_PHRASE_KEY, CanonicalVariable, ChatTriggerFamily, EventFilter, FormField,
-    KindPlatformContract, SubActionConfigExt, TriggerCategory, TriggerKindDescriptor,
-    TriggerVariables, command_phrase_matches,
+    ActorDeclaration, ActorRole, ActorSlot, COMMAND_CASE_SENSITIVE_KEY, COMMAND_PHRASE_KEY,
+    CanonicalVariable, ChatTriggerFamily, EventFilter, FormField, KindPlatformContract,
+    SubActionConfigExt, TriggerCategory, TriggerKindDescriptor, TriggerVariables,
+    command_phrase_matches,
 };
 use forge_types::{PlatformId, TriggerConfig, UserText, Variant};
 
@@ -98,7 +98,10 @@ impl TriggerKindDescriptor for ChatCommandDescriptor {
     fn variables(&self) -> Option<TriggerVariables> {
         Some(
             TriggerVariables::new()
-                .actor(youtube_actor(ActorRole::Principal), author_identity)
+                .actor(
+                    youtube_actor(ActorRole::Principal),
+                    payload_read::author_identity,
+                )
                 .message_text(|event| payload_read::text(event, fields::MESSAGE_TEXT))
                 .first_chat_message()
                 .chat_message_id(|event| payload_read::text(event, fields::MESSAGE_ID))
@@ -123,10 +126,6 @@ impl TriggerKindDescriptor for ChatCommandDescriptor {
     fn chat_trigger_family(&self) -> Option<ChatTriggerFamily> {
         Some(ChatTriggerFamily::Command)
     }
-}
-
-fn author_identity(event: &Event) -> ActorIdentity {
-    payload_read::identity(event.payload.get(fields::AUTHOR))
 }
 
 #[cfg(test)]

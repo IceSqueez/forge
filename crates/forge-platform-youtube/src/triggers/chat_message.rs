@@ -1,9 +1,8 @@
 use forge_events::{DeliveryLane, Event, EventSource};
 use forge_registry::{
-    ActorDeclaration, ActorIdentity, ActorRole, ActorSlot, CanonicalVariable, ChatTriggerFamily,
-    EventFilter, FIRST_CHATTERS_ONLY, FormField, KindPlatformContract, TriggerCategory,
-    TriggerKindDescriptor, TriggerVariables, admits_chatter, chat_message_condition,
-    first_chatters_only_field,
+    ActorDeclaration, ActorRole, ActorSlot, CanonicalVariable, ChatTriggerFamily, EventFilter,
+    FIRST_CHATTERS_ONLY, FormField, KindPlatformContract, TriggerCategory, TriggerKindDescriptor,
+    TriggerVariables, admits_chatter, chat_message_condition, first_chatters_only_field,
 };
 use forge_types::{PlatformId, TriggerConfig, UserText, Variant};
 
@@ -68,7 +67,10 @@ impl TriggerKindDescriptor for ChatMessageDescriptor {
     fn variables(&self) -> Option<TriggerVariables> {
         Some(
             TriggerVariables::new()
-                .actor(youtube_actor(ActorRole::Principal), author_identity)
+                .actor(
+                    youtube_actor(ActorRole::Principal),
+                    payload_read::author_identity,
+                )
                 .message_text(|event| payload_read::text(event, fields::MESSAGE_TEXT))
                 .first_chat_message()
                 .chat_message_id(|event| payload_read::text(event, fields::MESSAGE_ID))
@@ -96,10 +98,6 @@ impl TriggerKindDescriptor for ChatMessageDescriptor {
     fn delivery_lane(&self) -> DeliveryLane {
         DeliveryLane::Bulk
     }
-}
-
-fn author_identity(event: &Event) -> ActorIdentity {
-    payload_read::identity(event.payload.get(fields::AUTHOR))
 }
 
 #[cfg(test)]

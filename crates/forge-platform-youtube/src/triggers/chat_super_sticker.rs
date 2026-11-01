@@ -1,14 +1,14 @@
 use forge_events::{Event, EventSource};
 use forge_registry::{
-    ActorDeclaration, ActorIdentity, ActorRole, ActorSlot, CanonicalVariable, EventFilter,
-    KindPlatformContract, TriggerCategory, TriggerKindDescriptor, TriggerVariables,
+    ActorDeclaration, ActorRole, ActorSlot, CanonicalVariable, EventFilter, KindPlatformContract,
+    TriggerCategory, TriggerKindDescriptor, TriggerVariables,
 };
 use forge_types::{
     DeclaredVariable, PlatformId, SynthesisHint, TriggerConfig, Variant, VariantKind,
 };
 
 use super::payload_read::{self, youtube_actor};
-use crate::vocabulary::fields::{chat as chat_fields, support as fields};
+use crate::vocabulary::fields::support as fields;
 use crate::vocabulary::{event_kinds, trigger_ids, variables};
 
 pub(crate) struct SupportSuperStickerDescriptor;
@@ -56,7 +56,10 @@ impl TriggerKindDescriptor for SupportSuperStickerDescriptor {
     fn variables(&self) -> Option<TriggerVariables> {
         Some(
             TriggerVariables::new()
-                .actor(youtube_actor(ActorRole::Principal), author_identity)
+                .actor(
+                    youtube_actor(ActorRole::Principal),
+                    payload_read::author_identity,
+                )
                 .event_specific(
                     DeclaredVariable {
                         name: variables::support::STICKER_ID.to_owned(),
@@ -103,10 +106,6 @@ impl TriggerKindDescriptor for SupportSuperStickerDescriptor {
     fn actors(&self) -> ActorDeclaration {
         ActorDeclaration::principal()
     }
-}
-
-fn author_identity(event: &Event) -> ActorIdentity {
-    payload_read::identity(event.payload.get(chat_fields::AUTHOR))
 }
 
 #[cfg(test)]

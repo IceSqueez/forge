@@ -168,14 +168,12 @@ pub(crate) fn mask_with_prefix(prefix: &str, token: &str) -> String {
     if token.is_empty() {
         return EMPTY_TOKEN_PLACEHOLDER.to_owned();
     }
-    let tail: String = token
-        .chars()
+    let tail_start = token
+        .char_indices()
         .rev()
-        .take(MASKED_TAIL_LEN)
-        .collect::<Vec<_>>()
-        .into_iter()
-        .rev()
-        .collect();
+        .nth(MASKED_TAIL_LEN - 1)
+        .map_or(0, |(index, _)| index);
+    let tail = &token[tail_start..];
     format!("{prefix}{MASKED_BODY}{tail}")
 }
 
@@ -389,7 +387,10 @@ mod tests {
 
         let masked = masked_token(&token);
 
-        assert!(masked.starts_with("fg_•••••"), "masked = {masked}");
+        assert!(
+            masked.starts_with(&format!("{TOKEN_PREFIX}{}", super::MASKED_BODY)),
+            "masked = {masked}"
+        );
         assert!(
             masked.ends_with(&token[token.len() - 4..]),
             "masked = {masked}"

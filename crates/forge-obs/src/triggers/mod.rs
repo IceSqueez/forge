@@ -10,6 +10,7 @@ mod filter_created;
 mod filter_enabled_changed;
 mod filter_removed;
 mod lifecycle;
+mod output_lifecycle;
 mod profile_current_changed;
 mod profile_list_changed;
 mod record_file_changed;

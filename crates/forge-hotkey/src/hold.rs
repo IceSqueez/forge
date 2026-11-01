@@ -4,7 +4,7 @@ use std::time::Instant;
 
 use forge_events::{Event, EventSource, TypedEvent};
 
-use crate::backend::HotkeyId;
+use crate::backend::{HotkeyId, wall_clock_us};
 use crate::client::HotkeyClient;
 use crate::vocabulary::fields;
 use crate::vocabulary::{HotkeyPressed, event_kinds};
@@ -59,7 +59,7 @@ pub(crate) fn close_synthesized(client: &HotkeyClient, id: HotkeyId) {
         holds.remove(&id)
     };
     if let Some(hold) = held {
-        publish_release(client, id, hold, now_us(), true);
+        publish_release(client, id, hold, wall_clock_us(), true);
     }
 }
 
@@ -68,7 +68,7 @@ pub(crate) fn close_all_synthesized(client: &HotkeyClient) {
         let mut holds = client.holds.lock_recover();
         holds.drain().collect()
     };
-    let timestamp_us = now_us();
+    let timestamp_us = wall_clock_us();
     for (id, hold) in held {
         publish_release(client, id, hold, timestamp_us, true);
     }
@@ -92,7 +92,7 @@ pub(crate) fn close_expired(client: &HotkeyClient) {
             .collect()
     };
 
-    let timestamp_us = now_us();
+    let timestamp_us = wall_clock_us();
     for (id, hold) in expired {
         publish_release(client, id, hold, timestamp_us, true);
     }
@@ -129,16 +129,6 @@ fn publish_release(
         let mut snap = client.health_state.lock_recover();
         snap.record_synthesized_release();
     }
-}
-
-fn now_us() -> u64 {
-    u64::try_from(
-        std::time::SystemTime::now()
-            .duration_since(std::time::UNIX_EPOCH)
-            .unwrap_or_default()
-            .as_micros(),
-    )
-    .unwrap_or(u64::MAX)
 }
 
 #[cfg(test)]
@@ -186,12 +176,12 @@ mod tests {
 
             let case = format!("{age_secs}s held against a {ceiling_secs:?}s ceiling");
             assert_eq!(
-                publisher.has_kind("hotkey.global.released"),
+                publisher.has_kind(event_kinds::GLOBAL_RELEASED),
                 should_close,
                 "wrong verdict for {case}"
             );
             if should_close {
-                let ev = publisher.find_kind("hotkey.global.released").unwrap();
+                let ev = publisher.find_kind(event_kinds::GLOBAL_RELEASED).unwrap();
                 assert_eq!(ev.payload["synthesized"], true, "flag for {case}");
                 assert!(
                     ev.payload["hold_ms"].as_u64().unwrap() >= age_secs * 1000,

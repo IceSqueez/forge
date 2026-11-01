@@ -5,11 +5,10 @@ use std::sync::atomic::Ordering;
 use std::time::Duration;
 
 use axum::Extension;
-use axum::Json;
 use axum::extract::ws::{CloseFrame, Message, WebSocket, close_code};
 use axum::extract::{ConnectInfo, State, WebSocketUpgrade};
 use axum::http::{HeaderMap, StatusCode, header};
-use axum::response::{IntoResponse, Response};
+use axum::response::Response;
 use tokio::sync::broadcast::error::RecvError;
 use tokio::sync::watch;
 
@@ -20,12 +19,13 @@ use crate::origin::{accepts_origin, is_well_formed_origin};
 use crate::protocol::{
     DispatchContext, WsEnvelope, WsRequest, WsResponse, dispatch, serialize_response_frame,
 };
+use crate::routes::refusal::{RefusalCode, refusal_response};
 use crate::server::AppState;
 use crate::ws_client::{WsClient, detect_from_user_agent};
 
 const HEADER_LOG_PLACEHOLDER: &str = "<absent-or-invalid>";
-const MAX_MESSAGE_BYTES: usize = 256 * 1024;
-const PRE_AUTH_MAX_MESSAGE_BYTES: usize = 16 * 1024;
+pub(crate) const MAX_MESSAGE_BYTES: usize = 256 * 1024;
+pub(crate) const PRE_AUTH_MAX_MESSAGE_BYTES: usize = 16 * 1024;
 pub(crate) const PRE_AUTH_WINDOW: Duration = Duration::from_secs(10);
 
 pub(crate) async fn ws_handler(
@@ -72,16 +72,11 @@ fn origin_log_value(origin: Option<&str>) -> &str {
 }
 
 fn origin_rejected_response() -> Response {
-    (
+    refusal_response(
         StatusCode::FORBIDDEN,
-        Json(serde_json::json!({
-            "error": {
-                "code": "ORIGIN_NOT_ALLOWED",
-                "message": "Origin not allowed"
-            }
-        })),
+        RefusalCode::OriginNotAllowed,
+        "Origin not allowed",
     )
-        .into_response()
 }
 
 #[expect(
@@ -294,19 +289,5 @@ fn message_limit(client: &WsClient, auth: &AuthState) -> usize {
         MAX_MESSAGE_BYTES
     } else {
         PRE_AUTH_MAX_MESSAGE_BYTES
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::dropped_notification;
-
-    #[test]
-    fn dropped_notification_serializes_count() {
-        for n in [0_u64, 42] {
-            let frame = dropped_notification(n);
-            let parsed: serde_json::Value = serde_json::from_str(&frame).expect("valid json");
-            assert_eq!(parsed["dropped"], n);
-        }
     }
 }

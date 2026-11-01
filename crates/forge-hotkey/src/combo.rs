@@ -57,6 +57,18 @@ impl HotkeyCombo {
         key.map(|key| Self::new(modifiers, key)).ok_or_else(invalid)
     }
 
+    pub fn canonical_or_raw(raw: &str) -> Option<String> {
+        let trimmed = raw.trim();
+        if trimmed.is_empty() {
+            return None;
+        }
+        Some(
+            Self::parse(trimmed)
+                .map(|parsed| parsed.canonical)
+                .unwrap_or_else(|_| trimmed.to_owned()),
+        )
+    }
+
     pub fn as_str(&self) -> &str {
         &self.canonical
     }
@@ -133,6 +145,22 @@ mod tests {
                 HotkeyCombo::parse(input).unwrap().as_str(),
                 canonical,
                 "wrong canonical form for {input:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn canonical_or_raw_trims_drops_blanks_and_keeps_unparsable_text() {
+        for (raw, expected) in [
+            ("", None),
+            ("   ", None),
+            (" ctrl+f1 ", Some("Ctrl+F1")),
+            (" not a combo ", Some("not a combo")),
+        ] {
+            assert_eq!(
+                HotkeyCombo::canonical_or_raw(raw).as_deref(),
+                expected,
+                "raw {raw:?}"
             );
         }
     }

@@ -225,6 +225,25 @@ pub(crate) fn dropped_notification(n: u64) -> String {
     serde_json::json!({ "dropped": n }).to_string()
 }
 
+fn tally(reached: &mut OverlayReceivers, class: OverlayClientClass) {
+    match class {
+        OverlayClientClass::BrowserSource => reached.sources += 1,
+        OverlayClientClass::PreviewTab => reached.preview_tabs += 1,
+    }
+}
+
+fn overlay_clients<'a>(
+    registry: &'a [ConnectedClient],
+    identity: Option<&'a OverlayId>,
+) -> impl Iterator<Item = (&'a ConnectedClient, OverlayClientClass)> {
+    registry.iter().filter_map(move |client| {
+        let overlay = client.overlay.as_ref()?;
+        identity
+            .is_none_or(|target| &overlay.identity == target)
+            .then_some((client, overlay.class))
+    })
+}
+
 async fn send_to_overlay(
     registry: &RwLock<Vec<ConnectedClient>>,
     identity: Option<&OverlayId>,
@@ -232,19 +251,9 @@ async fn send_to_overlay(
 ) -> OverlayReceivers {
     let reg = registry.read().await;
     let mut reached = OverlayReceivers::default();
-    for client in reg.iter() {
-        let Some(overlay) = &client.overlay else {
-            continue;
-        };
-        if identity.is_some_and(|target| &overlay.identity != target) {
-            continue;
-        }
-        if client.sender.send(frame.clone()).is_err() {
-            continue;
-        }
-        match overlay.class {
-            OverlayClientClass::BrowserSource => reached.sources += 1,
-            OverlayClientClass::PreviewTab => reached.preview_tabs += 1,
+    for (client, class) in overlay_clients(&reg, identity) {
+        if client.sender.send(frame.clone()).is_ok() {
+            tally(&mut reached, class);
         }
     }
     reached
@@ -256,17 +265,8 @@ async fn count_overlay(
 ) -> OverlayReceivers {
     let reg = registry.read().await;
     let mut reached = OverlayReceivers::default();
-    for client in reg.iter() {
-        let Some(overlay) = &client.overlay else {
-            continue;
-        };
-        if &overlay.identity != identity {
-            continue;
-        }
-        match overlay.class {
-            OverlayClientClass::BrowserSource => reached.sources += 1,
-            OverlayClientClass::PreviewTab => reached.preview_tabs += 1,
-        }
+    for (_, class) in overlay_clients(&reg, Some(identity)) {
+        tally(&mut reached, class);
     }
     reached
 }
@@ -477,6 +477,15 @@ mod tests {
 
     fn make_bus() -> Arc<EventBus> {
         EventBus::new(Arc::new(NullEventLogRepo))
+    }
+
+    #[test]
+    fn dropped_notification_serializes_count() {
+        for n in [0_u64, 42] {
+            let frame = dropped_notification(n);
+            let parsed: serde_json::Value = serde_json::from_str(&frame).expect("valid json");
+            assert_eq!(parsed["dropped"], n);
+        }
     }
 
     struct ChannelObserver(EventChannel);

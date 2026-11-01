@@ -2,7 +2,9 @@ use forge_events::Event;
 use forge_registry::{ActorBlock, ActorIdentity, ActorRole, LoginSlot};
 use forge_types::PlatformId;
 
+use crate::vocabulary::fields::chat as chat_fields;
 use crate::vocabulary::fields::entity as entity_fields;
+use crate::vocabulary::fields::gift as gift_fields;
 
 pub(super) const fn youtube_actor(role: ActorRole) -> ActorBlock {
     ActorBlock {
@@ -18,6 +20,14 @@ pub(super) fn identity(entity: Option<&serde_json::Value>) -> ActorIdentity {
         display_name: entity_text(entity, entity_fields::DISPLAY_NAME),
         login: None,
     }
+}
+
+pub(super) fn author_identity(event: &Event) -> ActorIdentity {
+    identity(event.payload.get(chat_fields::AUTHOR))
+}
+
+pub(super) fn gifter_identity(event: &Event) -> ActorIdentity {
+    identity(event.payload.get(gift_fields::GIFTER))
 }
 
 pub(super) fn text(event: &Event, key: &str) -> String {

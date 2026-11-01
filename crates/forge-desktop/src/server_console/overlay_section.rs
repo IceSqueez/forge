@@ -118,7 +118,7 @@ impl ServerConsoleView {
             return None;
         }
         let origin = overlay_origin(
-            self.lifecycle.bind_address.as_deref()?,
+            self.lifecycle.bind_address?,
             self.lifecycle.routable_host.as_deref(),
         );
         let entry = self.browser_source_entry()?;

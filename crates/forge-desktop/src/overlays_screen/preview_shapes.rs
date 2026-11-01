@@ -588,11 +588,11 @@ mod tests {
     const CANVAS_FACTOR: f32 = 0.5;
     const TEXT_FACTOR: f32 = 2.0;
 
-    const ALERT_KIND: &str = "overlay.alert";
-    const CHAT_KIND: &str = "overlay.chat";
-    const FRAME_KIND: &str = "overlay.frame";
-    const GOAL_KIND: &str = "overlay.goal";
-    const TICKER_KIND: &str = "overlay.ticker";
+    const ALERT_KIND: &str = forge_overlay::kinds::alert::KIND_ID;
+    const CHAT_KIND: &str = forge_overlay::kinds::chat::KIND_ID;
+    const FRAME_KIND: &str = forge_overlay::kinds::frame::KIND_ID;
+    const GOAL_KIND: &str = forge_overlay::kinds::goal::KIND_ID;
+    const TICKER_KIND: &str = forge_overlay::kinds::ticker::KIND_ID;
     const AUDIO_KIND: &str = "overlay.audio";
 
     fn element(text_size: Option<u32>) -> PreviewElement {

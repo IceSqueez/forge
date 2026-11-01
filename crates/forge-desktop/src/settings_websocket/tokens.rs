@@ -66,7 +66,7 @@ impl SettingsWebSocketView {
                     .await
                     .map_err(RepoFailure::from)?;
                 if let Some(handle) = server {
-                    handle.set_http_overlay_token_required(value).await;
+                    handle.set_http_overlay_token_required(value);
                 }
                 Ok(())
             },

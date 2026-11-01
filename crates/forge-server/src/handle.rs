@@ -11,7 +11,7 @@ use forge_types::{ClipCapability, Secret};
 use tokio::net::TcpListener;
 use tokio::sync::{Mutex, watch};
 
-use crate::audio_clips::{ClipOffer, ClipOutcomeHandle, ClipTicket};
+use crate::audio_clips::{AudioClipStore, ClipOffer, ClipOutcomeHandle, ClipTicket};
 use crate::auth::AuthState;
 use crate::bus_adapter::ClientId;
 use crate::config::ServerSettings;
@@ -34,6 +34,8 @@ pub struct ServerHandle {
     inner: Arc<Mutex<HandleInner>>,
     lifecycle: Arc<Mutex<()>>,
     run_state: RunState,
+    pub(crate) auth: Arc<AuthState>,
+    audio_clips: Arc<AudioClipStore>,
 }
 
 impl ServerHandle {
@@ -46,6 +48,8 @@ impl ServerHandle {
     ) -> Self {
         Self {
             lifecycle: Arc::new(Mutex::new(())),
+            auth: Arc::clone(&state.auth),
+            audio_clips: Arc::clone(&state.audio_clips),
             inner: Arc::new(Mutex::new(HandleInner {
                 join: Some(join),
                 shutdown_tx: Some(shutdown_tx),
@@ -60,6 +64,8 @@ impl ServerHandle {
         let (run_state_tx, _run_state_rx) = watch::channel(false);
         Self {
             lifecycle: Arc::new(Mutex::new(())),
+            auth: Arc::clone(&state.auth),
+            audio_clips: Arc::clone(&state.audio_clips),
             inner: Arc::new(Mutex::new(HandleInner {
                 join: None,
                 shutdown_tx: None,
@@ -153,13 +159,13 @@ impl ServerHandle {
             return Err(ServerError::Disabled);
         }
 
-        let ip: IpAddr = settings
-            .bind_address
-            .parse()
-            .map_err(|_| ServerError::Bind {
-                addr: settings.bind_address.clone(),
-                reason: "invalid bind address".to_owned(),
-            })?;
+        let ip: IpAddr =
+            settings
+                .bind_address
+                .parse()
+                .map_err(|_| ServerError::InvalidBindAddress {
+                    addr: settings.bind_address.clone(),
+                })?;
         let bind_addr = SocketAddr::new(ip, settings.port);
         let overlay_root = settings
             .overlay_root
@@ -183,9 +189,9 @@ impl ServerHandle {
 
         let listener = TcpListener::bind(bind_addr)
             .await
-            .map_err(|e| ServerError::Bind {
+            .map_err(|source| ServerError::Bind {
                 addr: bind_addr.to_string(),
-                reason: e.to_string(),
+                source,
             })?;
         let bind_addr = listener.local_addr().unwrap_or(bind_addr);
         let allowed_origins = Arc::new(build_allowed_origins(
@@ -230,12 +236,8 @@ impl ServerHandle {
         Ok(())
     }
 
-    pub(crate) async fn auth_state(&self) -> Arc<AuthState> {
-        Arc::clone(&self.inner.lock().await.state.auth)
-    }
-
     pub async fn bearer_token(&self) -> Secret {
-        self.auth_state().await.current_token().await
+        self.auth.current_token().await
     }
 
     pub async fn regenerate_bearer_token(&self) -> Result<Secret, ServerError> {
@@ -243,8 +245,8 @@ impl ServerHandle {
         state.auth.regenerate(state.credentials.as_ref()).await
     }
 
-    pub async fn reads_require_auth(&self) -> bool {
-        self.auth_state().await.reads_required()
+    pub fn reads_require_auth(&self) -> bool {
+        self.auth.reads_required()
     }
 
     pub async fn set_reads_require_auth(&self, required: bool) -> Result<(), ServerError> {
@@ -254,15 +256,12 @@ impl ServerHandle {
         Ok(())
     }
 
-    pub async fn overlay_token(&self) -> Secret {
-        self.auth_state().await.overlay_token().current()
+    pub fn overlay_token(&self) -> Secret {
+        self.auth.overlay_token().current()
     }
 
-    pub async fn set_http_overlay_token_required(&self, required: bool) {
-        self.auth_state()
-            .await
-            .overlay_token()
-            .set_required(required);
+    pub fn set_http_overlay_token_required(&self, required: bool) {
+        self.auth.overlay_token().set_required(required);
     }
 
     pub async fn regenerate_overlay_token(
@@ -318,33 +317,28 @@ impl ServerHandle {
         Arc::clone(&self.inner.lock().await.state.overlay_root)
     }
 
-    pub async fn offer_audio_clip(
+    pub fn offer_audio_clip(
         &self,
         owner: &OverlayId,
         offer: ClipOffer,
     ) -> Result<(ClipTicket, ClipOutcomeHandle), ServerError> {
-        let store = Arc::clone(&self.inner.lock().await.state.audio_clips);
-        store.offer(owner, offer)
+        self.audio_clips.offer(owner, offer)
     }
 
-    pub async fn revoke_audio_clip(&self, capability: &ClipCapability) -> bool {
-        let store = Arc::clone(&self.inner.lock().await.state.audio_clips);
-        store.revoke(capability.expose())
+    pub fn revoke_audio_clip(&self, capability: &ClipCapability) -> bool {
+        self.audio_clips.revoke(capability.expose())
     }
 
-    pub async fn admit_audio_players(&self, capability: &ClipCapability, players: usize) -> bool {
-        let store = Arc::clone(&self.inner.lock().await.state.audio_clips);
-        store.admit_players(capability.expose(), players)
+    pub fn admit_audio_players(&self, capability: &ClipCapability, players: usize) -> bool {
+        self.audio_clips.admit_players(capability.expose(), players)
     }
 
-    pub async fn hold_audio_clip(&self, capability: &ClipCapability) -> bool {
-        let store = Arc::clone(&self.inner.lock().await.state.audio_clips);
-        store.hold(capability.expose())
+    pub fn hold_audio_clip(&self, capability: &ClipCapability) -> bool {
+        self.audio_clips.hold(capability.expose())
     }
 
-    pub async fn release_audio_clip(&self, capability: &ClipCapability) -> bool {
-        let store = Arc::clone(&self.inner.lock().await.state.audio_clips);
-        store.release_hold(capability.expose())
+    pub fn release_audio_clip(&self, capability: &ClipCapability) -> bool {
+        self.audio_clips.release_hold(capability.expose())
     }
 
     pub async fn snapshot(&self) -> crate::snapshot::ServerSnapshot {
@@ -483,7 +477,7 @@ mod tests {
     async fn regenerating_the_overlay_token_refuses_the_old_token_and_persists_the_new_one() {
         let root = tempfile::tempdir().expect("tempdir");
         let (handle, slots) = rotation_handle(Ok(Vec::new())).await;
-        let gate_before = handle.auth_state().await;
+        let gate_before = Arc::clone(&handle.auth);
         let old = gate_before.overlay_token().current();
 
         let fresh = handle
@@ -491,7 +485,7 @@ mod tests {
             .await
             .expect("regenerate");
 
-        let gate = handle.auth_state().await;
+        let gate = Arc::clone(&handle.auth);
         assert!(
             !gate.overlay_token().verify(old.expose()),
             "the old token still opens overlay files"
@@ -530,7 +524,7 @@ mod tests {
             reason: "database is locked".into(),
         }))
         .await;
-        let old = handle.auth_state().await.overlay_token().current();
+        let old = handle.auth.overlay_token().current();
         let mut page = live_overlay_page(&handle, &alerts).await;
 
         let result = handle
@@ -541,13 +535,7 @@ mod tests {
             matches!(&result, Err(ServerError::Storage(reason)) if reason.to_string().contains("database is locked")),
             "a restored rotation must report the reissue failure itself: {result:?}"
         );
-        assert!(
-            handle
-                .auth_state()
-                .await
-                .overlay_token()
-                .verify(old.expose())
-        );
+        assert!(handle.auth.overlay_token().verify(old.expose()));
         assert_eq!(
             stored_overlay_token(&slots).as_deref(),
             Some(old.expose()),
@@ -564,7 +552,7 @@ mod tests {
             .await
             .expect("write file");
         let (handle, slots) = rotation_handle(Ok(Vec::new())).await;
-        let old = handle.auth_state().await.overlay_token().current();
+        let old = handle.auth.overlay_token().current();
 
         let result = handle
             .regenerate_overlay_token(
@@ -577,7 +565,7 @@ mod tests {
         let ServerError::OverlayRotationIncomplete { token, .. } = &error else {
             panic!("expected an incomplete rotation, got {error:?}");
         };
-        let gate = handle.auth_state().await;
+        let gate = Arc::clone(&handle.auth);
         assert!(
             gate.overlay_token().verify(token.expose()),
             "the reported token is not the live one"
@@ -620,7 +608,7 @@ mod tests {
         let ServerError::OverlayTokenRestoreFailed { token, .. } = &error else {
             panic!("expected a failed restore, got {error:?}");
         };
-        let gate = handle.auth_state().await;
+        let gate = Arc::clone(&handle.auth);
         assert!(
             gate.overlay_token().verify(token.expose()),
             "the reported token is not the live one"
@@ -641,11 +629,7 @@ mod tests {
 
         assert!(result.is_err());
         assert!(
-            !handle
-                .auth_state()
-                .await
-                .overlay_token()
-                .verify(PREVIOUS_OVERLAY_TOKEN),
+            !handle.auth.overlay_token().verify(PREVIOUS_OVERLAY_TOKEN),
             "the live gate still admits a token the store no longer holds"
         );
     }
@@ -694,7 +678,7 @@ mod tests {
             Some(fresh.expose()),
             "a restart would bring the old token back"
         );
-        let gate = handle.auth_state().await;
+        let gate = Arc::clone(&handle.auth);
         assert!(
             !gate.verify(old.expose()).await,
             "the old bearer still authenticates"
@@ -717,7 +701,7 @@ mod tests {
             "{result:?}"
         );
         assert_eq!(handle.bearer_token().await, old);
-        assert!(handle.auth_state().await.verify(old.expose()).await);
+        assert!(handle.auth.verify(old.expose()).await);
         assert_eq!(
             slots
                 .stored(forge_storage::SERVER_BEARER_CREDENTIAL_ID)
@@ -741,7 +725,7 @@ mod tests {
                 .await
                 .expect("set reads switch");
 
-            assert_eq!(handle.reads_require_auth().await, required);
+            assert_eq!(handle.reads_require_auth(), required);
             let stored = ServerSettings::load(settings.as_ref())
                 .await
                 .expect("load settings");
@@ -757,7 +741,7 @@ mod tests {
         let settings = mem_settings();
         settings.fail_writes(true);
         let handle = stopped_handle_over(settings as Arc<dyn SettingsRepo>, MemCreds::new()).await;
-        let before = handle.reads_require_auth().await;
+        let before = handle.reads_require_auth();
 
         let result = handle.set_reads_require_auth(!before).await;
 
@@ -765,28 +749,22 @@ mod tests {
             matches!(&result, Err(ServerError::Storage(reason)) if reason.to_string().contains(INJECTED_FAILURE_REASON)),
             "{result:?}"
         );
-        assert_eq!(handle.reads_require_auth().await, before);
+        assert_eq!(handle.reads_require_auth(), before);
     }
 
     #[tokio::test]
     async fn the_handed_out_overlay_token_is_the_one_the_gate_admits_across_a_rotation() {
         let root = tempfile::tempdir().expect("tempdir");
         let (handle, _slots) = rotation_handle(Ok(Vec::new())).await;
-        let before = handle.overlay_token().await;
-        assert!(
-            handle
-                .auth_state()
-                .await
-                .overlay_token()
-                .verify(before.expose())
-        );
+        let before = handle.overlay_token();
+        assert!(handle.auth.overlay_token().verify(before.expose()));
 
         let fresh = handle
             .regenerate_overlay_token(&empty_overlay_service(root.path()).await, &NeutralSamples)
             .await
             .expect("regenerate");
 
-        assert_eq!(handle.overlay_token().await, fresh);
+        assert_eq!(handle.overlay_token(), fresh);
     }
 
     #[tokio::test]
@@ -797,7 +775,7 @@ mod tests {
         for token in [
             handle.bearer_token().await,
             regenerated,
-            handle.overlay_token().await,
+            handle.overlay_token(),
         ] {
             let debug = format!("{token:?}");
             assert!(!debug.contains(token.expose()), "token leaked: {debug}");

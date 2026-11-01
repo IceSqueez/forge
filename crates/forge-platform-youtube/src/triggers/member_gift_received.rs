@@ -57,7 +57,10 @@ impl TriggerKindDescriptor for ChannelMemberGiftReceivedDescriptor {
             TriggerVariables::new()
                 .actor(youtube_actor(ActorRole::Principal), recipient_identity)
                 .actor(youtube_actor(ActorRole::Recipient), recipient_identity)
-                .actor(youtube_actor(ActorRole::Gifter), gifter_identity)
+                .actor(
+                    youtube_actor(ActorRole::Gifter),
+                    payload_read::gifter_identity,
+                )
                 .sub_tier(|event| payload_read::text(event, fields::LEVEL_NAME))
                 .legacy(
                     variables::gift::LEVEL_NAME,
@@ -90,10 +93,6 @@ impl TriggerKindDescriptor for ChannelMemberGiftReceivedDescriptor {
     fn actors(&self) -> ActorDeclaration {
         ActorDeclaration::Actors(&[ActorRole::Gifter, ActorRole::Recipient])
     }
-}
-
-fn gifter_identity(event: &Event) -> ActorIdentity {
-    payload_read::identity(event.payload.get(fields::GIFTER))
 }
 
 fn recipient_identity(event: &Event) -> ActorIdentity {

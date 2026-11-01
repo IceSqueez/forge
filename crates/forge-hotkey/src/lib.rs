@@ -45,7 +45,7 @@ mod portal_trigger;
 #[cfg(any(target_os = "windows", target_os = "macos"))]
 pub(crate) mod backend_global;
 
-pub use backend::HotkeyId;
+pub use backend::{BackendTier, HotkeyId};
 pub use binding::{
     BindingHalf, BindingRow, COMBO_FIELD, HotkeyEdge, combo_keys, conflict_count, registered_combos,
 };

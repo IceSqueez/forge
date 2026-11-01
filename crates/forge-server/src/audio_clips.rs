@@ -12,7 +12,7 @@ use tokio::sync::{Notify, oneshot};
 use tokio::time::Instant;
 
 use crate::ServerError;
-use crate::routes::audio::{clip_path, report_path};
+use crate::clip_paths::{clip_path, report_path};
 
 const CAPABILITY_BYTE_LEN: usize = 32;
 const WAVE_MEDIA_TYPE: &str = "audio/wav";

@@ -12,7 +12,9 @@ use forge_components::{
     body_family, icon, mono_family, pulse_dot, radius, scaled, spacing, spinner, tr, with_alpha,
 };
 use forge_platform_core::{DeviceAuthEnd, PlatformError};
-use forge_platform_twitch::{DeviceCodeInfo, TWITCH_BROADCASTER_SCOPES, TwitchAuthFlow, UserInfo};
+use forge_platform_twitch::{
+    DeviceCodeInfo, PollCadence, TWITCH_BROADCASTER_SCOPES, TwitchAuthFlow, UserInfo,
+};
 use forge_storage::CredentialsRepo;
 use forge_types::PlatformId;
 use gpui::{
@@ -255,9 +257,10 @@ impl ConnectFlow {
                 user_code: info.user_code,
                 verification_uri: info.verification_uri,
                 expires_at: info.expires_at,
-                poll_interval: info.poll_interval,
+                poll_interval: info.poll_cadence.current(),
             });
         }
+        self.follow_poll_cadence(info.poll_cadence, cancel.clone(), cx);
         let credentials = Arc::clone(&self.credentials);
         async_bridge::run_async(
             &self.rt_handle,
@@ -266,6 +269,44 @@ impl ConnectFlow {
             cx,
         );
         cx.notify();
+    }
+
+    fn follow_poll_cadence(
+        &self,
+        mut cadence: PollCadence,
+        cancel: CancellationToken,
+        cx: &mut Context<Self>,
+    ) {
+        cx.spawn(async move |this, cx| {
+            while let Some(interval) = cadence.changed().await {
+                let updated = this.update(cx, |this, cx| {
+                    this.apply_poll_interval(&cancel, interval, cx);
+                });
+                if updated.is_err() {
+                    break;
+                }
+            }
+        })
+        .detach();
+    }
+
+    fn apply_poll_interval(
+        &mut self,
+        cancel: &CancellationToken,
+        interval: Duration,
+        cx: &mut Context<Self>,
+    ) {
+        if cancel.is_cancelled() {
+            return;
+        }
+        if let Some(code) = self
+            .twitch_device
+            .as_mut()
+            .and_then(|device| device.code.as_mut())
+        {
+            code.poll_interval = interval;
+            cx.notify();
+        }
     }
 
     fn on_twitch_wait(
@@ -1151,7 +1192,7 @@ mod tests {
             user_code: "ABCD-EFGH".to_owned(),
             verification_uri: "https://example.invalid/activate".to_owned(),
             expires_at: std::time::SystemTime::UNIX_EPOCH,
-            poll_interval: Duration::from_secs(5),
+            poll_cadence: PollCadence::fixed(Duration::from_secs(5)),
         }
     }
 
@@ -1257,6 +1298,41 @@ mod tests {
                 (TwitchDevicePhase::Starting, None, false)
             );
         }
+    }
+
+    #[gpui::test]
+    fn a_raised_poll_interval_reaches_the_live_attempt_only(cx: &mut gpui::TestAppContext) {
+        const GRANTED: Duration = Duration::from_secs(5);
+        const RAISED: Duration = Duration::from_secs(10);
+        let mounted = mounted_flow(cx);
+        let stale = CancellationToken::new();
+        stale.cancel();
+
+        let (ignored, shown) = mounted.flow.update(cx, |this, cx| {
+            let mut device = TwitchDeviceState::starting();
+            device.code = Some(DeviceCodeData {
+                user_code: "ABCD-EFGH".to_owned(),
+                verification_uri: "https://example.invalid/activate".to_owned(),
+                expires_at: std::time::SystemTime::UNIX_EPOCH,
+                poll_interval: GRANTED,
+            });
+            let live = device.cancel.clone();
+            this.twitch_device = Some(device);
+            let interval = |this: &ConnectFlow| {
+                this.twitch_device
+                    .as_ref()
+                    .and_then(|device| device.code.as_ref())
+                    .map(|code| code.poll_interval)
+            };
+
+            this.apply_poll_interval(&stale, RAISED, cx);
+            let ignored = interval(this);
+            this.apply_poll_interval(&live, RAISED, cx);
+            (ignored, interval(this))
+        });
+
+        assert_eq!(ignored, Some(GRANTED));
+        assert_eq!(shown, Some(RAISED));
     }
 
     #[gpui::test]

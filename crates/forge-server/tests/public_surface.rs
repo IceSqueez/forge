@@ -37,7 +37,7 @@ async fn running() -> Running {
 
 impl Running {
     async fn overlay_url(&self, file_name: &str) -> String {
-        let token = self.handle.overlay_token().await;
+        let token = self.handle.overlay_token();
         overlay_file_url(&format!("http://{}", self.addr), token.expose(), file_name)
     }
 

@@ -9,6 +9,20 @@ use crate::binding::HotkeyEdge;
 use crate::combo::HotkeyCombo;
 use crate::error::HotkeyError;
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum BackendTier {
+    Native,
+    Fallback,
+    Unavailable,
+}
+
+pub(crate) fn wall_clock_us() -> u64 {
+    std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|elapsed| u64::try_from(elapsed.as_micros()).unwrap_or(u64::MAX))
+        .unwrap_or_default()
+}
+
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub struct HotkeyId(pub u32);
 

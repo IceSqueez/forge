@@ -10,7 +10,7 @@ use global_hotkey::hotkey::{Code, HotKey, Modifiers};
 use global_hotkey::{GlobalHotKeyEvent, GlobalHotKeyManager, HotKeyState};
 use tokio::sync::mpsc;
 
-use crate::backend::{HotkeyBackend, HotkeyFiredEvent, HotkeyId};
+use crate::backend::{HotkeyBackend, HotkeyFiredEvent, HotkeyId, wall_clock_us};
 use crate::binding::HotkeyEdge;
 use crate::combo::HotkeyCombo;
 use crate::error::HotkeyError;
@@ -156,12 +156,7 @@ fn forward_global_hotkey_event(
     let fired = HotkeyFiredEvent {
         id: caller_id,
         combo,
-        timestamp_us: std::time::SystemTime::now()
-            .duration_since(std::time::UNIX_EPOCH)
-            .unwrap_or_default()
-            .as_micros()
-            .try_into()
-            .unwrap_or(u64::MAX),
+        timestamp_us: wall_clock_us(),
         edge: if pressed {
             HotkeyEdge::Press
         } else {

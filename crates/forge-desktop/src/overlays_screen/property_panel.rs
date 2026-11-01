@@ -837,7 +837,7 @@ pub(crate) mod tests {
     use forge_components::Presentation;
 
     const OVERLAY: &str = "alert-one";
-    const KIND: &str = "overlay.alert";
+    const KIND: &str = forge_overlay::kinds::alert::KIND_ID;
     const TOKEN: &str = "token";
     const DEFAULT_HEADLINE: &str = "hello";
     const EDITED_HEADLINE: &str = "goodbye";

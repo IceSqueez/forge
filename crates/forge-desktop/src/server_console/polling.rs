@@ -9,13 +9,13 @@ use crate::repo_failure::RepoFailure;
 use crate::server_bearer;
 use crate::window_presence::PresenceGate;
 use forge_components::fmt_uptime_short;
-use forge_events::EventSource;
 use forge_server::{
     ConnectedClientSnapshot, EventFilterSnapshot, ServerSettings, ServerSnapshot,
     resolve_routable_host,
 };
 use forge_types::Secret;
 use gpui::Context;
+use std::net::SocketAddr;
 use std::sync::Arc;
 use std::time::Duration;
 
@@ -24,7 +24,7 @@ const MAX_THROUGHPUT_SAMPLES: usize = 60;
 
 pub(super) struct ServerPoll {
     pub(super) snapshot: ServerSnapshot,
-    pub(super) bind_address: Option<String>,
+    pub(super) bind_address: Option<SocketAddr>,
     pub(super) overlay: Option<OverlayListing>,
 }
 
@@ -54,38 +54,18 @@ pub(super) fn client_row_from_snapshot(client: &ConnectedClientSnapshot) -> Owne
 }
 
 pub(super) fn subscription_chip(filter: &EventFilterSnapshot) -> OwnedSubscriptionChip {
-    let source_wildcard = filter.source == "*";
-    let kind_wildcard = filter.kind == "*";
-
-    if source_wildcard && kind_wildcard {
-        return OwnedSubscriptionChip {
+    match (filter.source, filter.kind.as_deref()) {
+        (None, None) => OwnedSubscriptionChip {
             label: SUBSCRIBE_ALL_LABEL.to_owned(),
             kind: SubscriptionChipKind::All,
-        };
-    }
-
-    if source_wildcard {
-        return OwnedSubscriptionChip {
-            label: filter.kind.clone(),
+        },
+        (None, Some(kind)) => OwnedSubscriptionChip {
+            label: kind.to_owned(),
             kind: SubscriptionChipKind::Unknown,
-        };
-    }
-
-    let source = filter.source.parse::<EventSource>().ok();
-    let source_label = match source {
-        Some(source) => source.as_str(),
-        None => filter.source.as_str(),
-    };
-    let label = if kind_wildcard {
-        format!("{source_label}.*")
-    } else {
-        format!("{source_label}.{}", filter.kind)
-    };
-    OwnedSubscriptionChip {
-        label,
-        kind: match source {
-            Some(source) => SubscriptionChipKind::Source(source),
-            None => SubscriptionChipKind::Unknown,
+        },
+        (Some(source), kind) => OwnedSubscriptionChip {
+            label: format!("{}.{}", source.as_str(), kind.unwrap_or("*")),
+            kind: SubscriptionChipKind::Source(source),
         },
     }
 }
@@ -131,14 +111,13 @@ impl ServerConsoleView {
         );
     }
 
-    fn resolve_routable_host_for(&mut self, bind_address: String, cx: &mut Context<Self>) {
-        self.lifecycle.routable_host_resolved_for = Some(bind_address.clone());
-        let target = bind_address.clone();
+    fn resolve_routable_host_for(&mut self, bind_address: SocketAddr, cx: &mut Context<Self>) {
+        self.lifecycle.routable_host_resolved_for = Some(bind_address);
         async_bridge::run_async(
             &self.services.rt_handle,
-            async move { resolve_routable_host(&bind_address) },
+            async move { resolve_routable_host(bind_address) },
             move |this, routable_host: Option<String>, cx| {
-                if this.lifecycle.routable_host_resolved_for.as_deref() == Some(target.as_str()) {
+                if this.lifecycle.routable_host_resolved_for == Some(bind_address) {
                     this.lifecycle.routable_host = routable_host;
                     cx.notify();
                 }
@@ -167,7 +146,7 @@ impl ServerConsoleView {
                     let (bind_address, overlay) = if want_serving_facts {
                         let root = handle.overlay_root().await;
                         (
-                            Some(handle.bind_addr().await.to_string()),
+                            Some(handle.bind_addr().await),
                             Some(scan_overlay_root(root.as_ref()).await),
                         )
                     } else {
@@ -197,13 +176,13 @@ impl ServerConsoleView {
         .detach();
     }
 
-    pub(super) fn apply_poll(&mut self, poll: ServerPoll) -> Option<String> {
-        let polled_address = poll.bind_address.clone();
+    pub(super) fn apply_poll(&mut self, poll: ServerPoll) -> Option<SocketAddr> {
+        let polled_address = poll.bind_address;
         if polled_address.is_some() {
-            self.lifecycle.bind_address.clone_from(&polled_address);
+            self.lifecycle.bind_address = polled_address;
         }
-        let needs_resolve = polled_address.as_deref().is_some()
-            && self.lifecycle.routable_host_resolved_for.as_deref() != polled_address.as_deref();
+        let needs_resolve =
+            polled_address.is_some() && self.lifecycle.routable_host_resolved_for != polled_address;
 
         if self.lifecycle.running {
             let snapshot = &poll.snapshot;

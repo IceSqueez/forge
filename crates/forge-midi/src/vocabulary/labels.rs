@@ -15,8 +15,6 @@ pub(crate) const OUTPUT_PORTS: MessageCode =
     MessageCode::from_static(INTEGRATION_ID, "label_output_ports");
 pub(crate) const POLL_INTERVAL: MessageCode =
     MessageCode::from_static(INTEGRATION_ID, "label_poll_interval");
-pub(crate) const POLL_INTERVAL_VALUE: MessageCode =
-    MessageCode::from_static(INTEGRATION_ID, "label_poll_interval_value");
 pub(crate) const SEND_CC: MessageCode = MessageCode::from_static(INTEGRATION_ID, "label_send_cc");
 pub(crate) const SEND_NOTE_OFF: MessageCode =
     MessageCode::from_static(INTEGRATION_ID, "label_send_note_off");

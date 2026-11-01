@@ -235,4 +235,20 @@ mod tests {
             vec!["save failed error=disk full attempt=3 retried=true".to_owned()]
         );
     }
+
+    #[test]
+    fn the_revision_moves_on_every_change_even_at_capacity_and_on_every_clone() {
+        let tail = LogTail::new();
+        let clone = tail.clone();
+        for i in 0..CAPACITY {
+            tail.push(line(&format!("line {i}")));
+        }
+        assert_eq!(clone.revision(), CAPACITY as u64);
+
+        tail.push(line("evicts the oldest"));
+        assert_eq!(clone.revision(), CAPACITY as u64 + 1);
+
+        tail.clear();
+        assert_eq!(clone.revision(), CAPACITY as u64 + 2);
+    }
 }

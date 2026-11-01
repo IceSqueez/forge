@@ -9,13 +9,15 @@ use crate::events::{MidiEvent, MidiMonitorEvent};
 use crate::vocabulary::MidiSignalKind;
 use crate::vocabulary::fields::input as fields;
 
+const MONITOR_CAPACITY: usize = 256;
+
 pub(crate) type MidiMonitorStream =
     Pin<Box<dyn tokio_stream::Stream<Item = MidiMonitorEvent> + Send + 'static>>;
 
 pub(crate) type MonitorTx = broadcast::Sender<MidiMonitorEvent>;
 
 pub(crate) fn make_monitor_state() -> MonitorTx {
-    let (tx, _) = broadcast::channel(256);
+    let (tx, _) = broadcast::channel(MONITOR_CAPACITY);
     tx
 }
 

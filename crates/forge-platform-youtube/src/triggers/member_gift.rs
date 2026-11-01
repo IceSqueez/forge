@@ -1,7 +1,7 @@
 use forge_events::{Event, EventSource};
 use forge_registry::{
-    ActorDeclaration, ActorIdentity, ActorRole, ActorSlot, CanonicalCount, CanonicalVariable,
-    EventFilter, KindPlatformContract, TriggerCategory, TriggerKindDescriptor, TriggerVariables,
+    ActorDeclaration, ActorRole, ActorSlot, CanonicalCount, CanonicalVariable, EventFilter,
+    KindPlatformContract, TriggerCategory, TriggerKindDescriptor, TriggerVariables,
 };
 use forge_types::PlatformId;
 use forge_types::TriggerConfig;
@@ -55,8 +55,14 @@ impl TriggerKindDescriptor for ChannelMemberGiftDescriptor {
     fn variables(&self) -> Option<TriggerVariables> {
         Some(
             TriggerVariables::new()
-                .actor(youtube_actor(ActorRole::Principal), gifter_identity)
-                .actor(youtube_actor(ActorRole::Gifter), gifter_identity)
+                .actor(
+                    youtube_actor(ActorRole::Principal),
+                    payload_read::gifter_identity,
+                )
+                .actor(
+                    youtube_actor(ActorRole::Gifter),
+                    payload_read::gifter_identity,
+                )
                 .count(CanonicalCount::GiftCount, |event| {
                     payload_read::number(event, fields::COUNT)
                 })
@@ -87,10 +93,6 @@ impl TriggerKindDescriptor for ChannelMemberGiftDescriptor {
     fn actors(&self) -> ActorDeclaration {
         ActorDeclaration::Actors(&[ActorRole::Gifter])
     }
-}
-
-fn gifter_identity(event: &Event) -> ActorIdentity {
-    payload_read::identity(event.payload.get(fields::GIFTER))
 }
 
 #[cfg(test)]

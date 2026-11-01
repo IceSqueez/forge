@@ -4,11 +4,13 @@ mod audio_clips;
 mod auth;
 mod bandwidth;
 mod bus_adapter;
+mod clip_paths;
 mod config;
 mod delivery_hub;
 mod error;
 mod handle;
 mod listener;
+mod media_type;
 mod origin;
 mod overlay_token;
 mod overlay_url;
@@ -45,8 +47,7 @@ pub use snapshot::{
 pub use audio_clips::ClipTicket;
 pub use config::ServerTiming;
 pub use overlay_url::{
-    OVERLAY_ROUTE, extract_port, overlay_file_url, overlay_origin, overlay_page_url,
-    resolve_routable_host,
+    OVERLAY_ROUTE, overlay_file_url, overlay_origin, overlay_page_url, resolve_routable_host,
 };
 pub use protocol::WireEventFilter;
 pub use protocol::{WsEnvelope, WsRequest};

@@ -4,17 +4,19 @@ use gpui::{Context, Subscription};
 
 use super::OverlaysView;
 use crate::overlay_link_token;
+use std::net::SocketAddr;
+
 use forge_server::{overlay_origin, overlay_page_url, resolve_routable_host};
 
 struct ServedEndpoint {
-    bind_address: String,
+    bind_address: SocketAddr,
     routable_host: Option<String>,
 }
 
 #[derive(Default)]
 pub(super) struct ServerStatus {
     pub(super) running: bool,
-    pub(super) bind_address: Option<String>,
+    pub(super) bind_address: Option<SocketAddr>,
     routable_host: Option<String>,
     token: Option<Secret>,
     token_watch: Option<Subscription>,
@@ -43,7 +45,7 @@ impl ServerStatus {
         if !self.running {
             return None;
         }
-        let origin = overlay_origin(self.bind_address.as_deref()?, self.routable_host.as_deref());
+        let origin = overlay_origin(self.bind_address?, self.routable_host.as_deref());
         Some(overlay_page_url(&origin, token, id.as_str()))
     }
 
@@ -51,7 +53,7 @@ impl ServerStatus {
         let mut changed = self.running != running;
         self.running = running;
         if let Some(endpoint) = endpoint
-            && (self.bind_address.as_deref() != Some(endpoint.bind_address.as_str())
+            && (self.bind_address != Some(endpoint.bind_address)
                 || self.routable_host != endpoint.routable_host)
         {
             self.bind_address = Some(endpoint.bind_address);
@@ -99,8 +101,8 @@ impl OverlaysView {
                 let running = run_state.latest();
                 let probe = handle.clone();
                 let reply = crate::async_bridge::on_runtime(&rt_handle, async move {
-                    let bind_address = probe.bind_addr().await.to_string();
-                    let routable_host = resolve_routable_host(&bind_address);
+                    let bind_address = probe.bind_addr().await;
+                    let routable_host = resolve_routable_host(bind_address);
                     ServedEndpoint {
                         bind_address,
                         routable_host,
@@ -142,7 +144,7 @@ mod tests {
     fn serving(token: Option<&str>) -> ServerStatus {
         ServerStatus {
             running: true,
-            bind_address: Some("127.0.0.1:9515".to_owned()),
+            bind_address: Some(SocketAddr::from(([127, 0, 0, 1], 9515))),
             token: token.map(forge_types::Secret::new),
             ..ServerStatus::default()
         }

@@ -641,4 +641,74 @@ mod tests {
             Some(1.0)
         );
     }
+
+    fn notable(name: &str) -> Event {
+        Event::new(EventSource::Twitch, name, serde_json::json!({}))
+    }
+
+    fn names(stats: &HomeStats, limit: usize) -> Vec<String> {
+        stats
+            .recent(limit)
+            .into_iter()
+            .map(|event| event.name.to_string())
+            .collect()
+    }
+
+    fn dashboard(actions_count: usize) -> DashboardStats {
+        DashboardStats {
+            actions_count,
+            commands_count: 2,
+            triggers_fired: 3,
+            globals_count: 4,
+        }
+    }
+
+    #[test]
+    fn run_bookkeeping_never_reaches_the_feed() {
+        let mut stats = HomeStats::new();
+
+        assert!(!stats.record_event(&notable("hidden"), Some(&RuntimeEvent::GlobalChanged)));
+        assert!(stats.record_event(&notable("shown"), None));
+
+        assert_eq!(names(&stats, RECENT_CAP), ["shown"]);
+    }
+
+    #[test]
+    fn the_feed_is_newest_first_and_the_event_past_the_cap_evicts_the_oldest() {
+        let mut stats = HomeStats::new();
+        for i in 0..=RECENT_CAP {
+            stats.record_event(&notable(&format!("event-{i}")), None);
+        }
+
+        let feed = names(&stats, RECENT_CAP + 1);
+
+        assert_eq!(feed.len(), RECENT_CAP);
+        assert_eq!(feed.first().unwrap(), &format!("event-{RECENT_CAP}"));
+        assert_eq!(feed.last().unwrap(), "event-1");
+        assert_eq!(names(&stats, 1), [format!("event-{RECENT_CAP}")]);
+    }
+
+    #[test]
+    fn set_stats_reports_a_change_only_when_a_value_differs() {
+        let mut stats = HomeStats::new();
+
+        assert!(stats.set_stats(dashboard(1)), "first reading");
+        assert!(!stats.set_stats(dashboard(1)), "same reading");
+        assert!(stats.set_stats(dashboard(2)), "new reading");
+    }
+
+    #[test]
+    fn set_live_viewers_reports_a_change_only_when_the_count_differs() {
+        let mut stats = HomeStats::new();
+
+        for (count, changed, case) in [
+            (LiveViewerCount::Empty, false, "still unknown"),
+            (LiveViewerCount::Reporting(5), true, "first count"),
+            (LiveViewerCount::Reporting(5), false, "same count"),
+            (LiveViewerCount::Reporting(6), true, "new count"),
+            (LiveViewerCount::Empty, true, "reporting ended"),
+        ] {
+            assert_eq!(stats.set_live_viewers(count), changed, "{case}");
+        }
+    }
 }

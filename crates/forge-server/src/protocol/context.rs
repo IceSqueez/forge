@@ -75,7 +75,11 @@ async fn authenticate_overlay(
     preview_connection: bool,
     ctx: &DispatchContext,
 ) -> WsResponse {
-    let lookup = ctx.overlays.get_by_credential(&credential).await;
+    let lookup = ctx
+        .overlays
+        .get_by_credential(&credential)
+        .await
+        .inspect_err(|error| tracing::warn!(%error, "overlay credential lookup failed"));
     let Ok(Some(definition)) = lookup else {
         ctx.close_after_auth_failure.store(true, Ordering::SeqCst);
         return auth_failed("invalid credential");

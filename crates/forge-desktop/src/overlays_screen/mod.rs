@@ -218,19 +218,14 @@ impl OverlaysView {
     }
 
     fn render_header_right(&self, palette: &ForgePalette, density: Density) -> AnyElement {
-        let (dot, summary) = match self
-            .served
-            .bind_address
-            .as_deref()
-            .filter(|_| self.served.running)
-        {
+        let (dot, summary) = match self.served.bind_address.filter(|_| self.served.running) {
             Some(address) => (
                 palette.success,
                 tr!(
                     "overlays_header_summary",
                     enabled = i64::try_from(self.enabled_count()).unwrap_or(i64::MAX),
                     total = i64::try_from(self.registry.overlays.len()).unwrap_or(i64::MAX),
-                    port = forge_server::extract_port(address)
+                    port = address.port()
                 ),
             ),
             None => (

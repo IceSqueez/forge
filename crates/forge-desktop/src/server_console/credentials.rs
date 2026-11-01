@@ -35,8 +35,8 @@ impl ServerConsoleView {
     }
 
     fn copy_bind_address(&mut self, cx: &mut Context<Self>) {
-        if let Some(address) = self.lifecycle.bind_address.clone() {
-            crate::clipboard::copy_to_clipboard(address, cx);
+        if let Some(address) = self.lifecycle.bind_address {
+            crate::clipboard::copy_to_clipboard(address.to_string(), cx);
         }
     }
 
@@ -115,8 +115,8 @@ impl ServerConsoleView {
     }
 
     pub(super) fn bind_state(&self) -> BindState {
-        match (self.lifecycle.running, self.lifecycle.bind_address.clone()) {
-            (true, Some(address)) => BindState::Bound(address),
+        match (self.lifecycle.running, self.lifecycle.bind_address) {
+            (true, Some(address)) => BindState::Bound(address.to_string()),
             (true, None) => BindState::AwaitingAddress,
             (false, _) => BindState::Stopped,
         }

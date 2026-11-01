@@ -13,7 +13,7 @@ use forge_net::{TaskOwner, TaskShutdown};
 use tokio::io::unix::AsyncFd;
 use tokio::sync::mpsc;
 
-use crate::backend::{HotkeyBackend, HotkeyFiredEvent, HotkeyId};
+use crate::backend::{HotkeyBackend, HotkeyFiredEvent, HotkeyId, wall_clock_us};
 use crate::binding::HotkeyEdge;
 use crate::combo::HotkeyCombo;
 use crate::error::HotkeyError;
@@ -296,7 +296,7 @@ async fn release_all_held(held_keys: &HeldKeys, fired_tx: &mpsc::Sender<HotkeyFi
             .send(HotkeyFiredEvent {
                 id,
                 combo,
-                timestamp_us: current_timestamp_us(),
+                timestamp_us: wall_clock_us(),
                 edge: HotkeyEdge::Release,
             })
             .await
@@ -372,7 +372,7 @@ async fn press_key(
         .send(HotkeyFiredEvent {
             id,
             combo,
-            timestamp_us: current_timestamp_us(),
+            timestamp_us: wall_clock_us(),
             edge: HotkeyEdge::Press,
         })
         .await
@@ -395,7 +395,7 @@ async fn release_key(code: u16, held_keys: &HeldKeys, fired_tx: &mpsc::Sender<Ho
         .send(HotkeyFiredEvent {
             id,
             combo,
-            timestamp_us: current_timestamp_us(),
+            timestamp_us: wall_clock_us(),
             edge: HotkeyEdge::Release,
         })
         .await
@@ -403,16 +403,6 @@ async fn release_key(code: u16, held_keys: &HeldKeys, fired_tx: &mpsc::Sender<Ho
     {
         tracing::debug!("hotkey supervisor stopped; release edge dropped");
     }
-}
-
-fn current_timestamp_us() -> u64 {
-    u64::try_from(
-        std::time::SystemTime::now()
-            .duration_since(std::time::UNIX_EPOCH)
-            .unwrap_or_default()
-            .as_micros(),
-    )
-    .unwrap_or(u64::MAX)
 }
 
 fn held_modifiers(codes: &HashSet<u16>) -> Modifiers {

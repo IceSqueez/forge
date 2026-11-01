@@ -21,6 +21,9 @@ use crate::supervisor::{SupervisorCommand, run_supervisor};
 const COMMAND_TIMEOUT: Duration = Duration::from_secs(2);
 const SUPERVISOR_STOP_GRACE: Duration = Duration::from_millis(20);
 
+const CONTROL_CAPACITY: usize = 8;
+const MERGED_INPUT_CAPACITY: usize = 256;
+
 pub struct MidiClient {
     id: IntegrationId,
     config: MidiConfig,
@@ -79,7 +82,7 @@ impl MidiClient {
     ) -> Arc<Self> {
         let (health_tx, health_state) = make_health_state();
         let content_state = make_content_state();
-        let (control_tx, control_rx) = mpsc::channel::<SupervisorCommand>(8);
+        let (control_tx, control_rx) = mpsc::channel::<SupervisorCommand>(CONTROL_CAPACITY);
 
         let client = Arc::new(Self {
             id: crate::MIDI_INTEGRATION.id,
@@ -95,7 +98,8 @@ impl MidiClient {
             tasks: TaskOwner::new(),
         });
 
-        let (merged_tx, merged_rx) = mpsc::channel::<crate::supervisor::RawEvent>(256);
+        let (merged_tx, merged_rx) =
+            mpsc::channel::<crate::supervisor::RawEvent>(MERGED_INPUT_CAPACITY);
         let client_ref = Arc::downgrade(&client);
         client.tasks.spawn(async move {
             run_supervisor(client_ref, merged_tx, merged_rx, control_rx).await;
@@ -184,7 +188,7 @@ impl MidiClient {
 
     #[cfg(test)]
     pub(crate) fn new_for_test() -> Arc<Self> {
-        let (control_tx, _control_rx) = mpsc::channel::<SupervisorCommand>(8);
+        let (control_tx, _control_rx) = mpsc::channel::<SupervisorCommand>(CONTROL_CAPACITY);
         Self::with_control_for_test(control_tx)
     }
 
@@ -216,7 +220,7 @@ mod tests {
     use crate::testing::{input_port, output_port};
 
     fn client_holding_control_rx() -> (Arc<MidiClient>, mpsc::Receiver<SupervisorCommand>) {
-        let (control_tx, control_rx) = mpsc::channel::<SupervisorCommand>(8);
+        let (control_tx, control_rx) = mpsc::channel::<SupervisorCommand>(CONTROL_CAPACITY);
         (MidiClient::with_control_for_test(control_tx), control_rx)
     }
 

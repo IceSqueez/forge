@@ -5,9 +5,9 @@ use std::sync::Arc;
 use axum::extract::{Request, State};
 use axum::http::{Method, StatusCode, header};
 use axum::middleware::Next;
-use axum::response::{IntoResponse, Response};
+use axum::response::Response;
 use axum::routing::get;
-use axum::{Extension, Json, Router, middleware};
+use axum::{Extension, Router, middleware};
 use tokio::net::TcpListener;
 
 use forge_events::EventObserver;
@@ -23,6 +23,7 @@ use crate::bus_adapter::BusAdapter;
 use crate::delivery_hub::DeliveryHub;
 use crate::listener::{GuardedListener, PeerInfo};
 use crate::origin::{accepts_host, build_allowed_origins};
+use crate::routes::refusal::{RefusalCode, refusal_response};
 use crate::routes::{api_v1, audio, overlays, ws};
 use crate::server_info::ServerInfo;
 use crate::settings;
@@ -94,9 +95,9 @@ pub async fn start_server(config: ServerConfig) -> Result<ServerHandle, ServerEr
     validate_lan_bind(&addr, config.lan_bind_enabled)?;
     let listener = TcpListener::bind(addr)
         .await
-        .map_err(|e| ServerError::Bind {
+        .map_err(|source| ServerError::Bind {
             addr: addr.to_string(),
-            reason: e.to_string(),
+            source,
         })?;
     let bind_addr = listener.local_addr().unwrap_or(addr);
     let state = build_state(config, bind_addr).await?;
@@ -162,16 +163,11 @@ async fn auth_middleware(State(state): State<AppState>, request: Request, next: 
 }
 
 fn unauthenticated_response() -> Response {
-    (
+    refusal_response(
         StatusCode::UNAUTHORIZED,
-        Json(serde_json::json!({
-            "error": {
-                "code": "UNAUTHENTICATED",
-                "message": "Bearer token required"
-            }
-        })),
+        RefusalCode::Unauthenticated,
+        "Bearer token required",
     )
-        .into_response()
 }
 
 async fn host_middleware(State(state): State<AppState>, request: Request, next: Next) -> Response {
@@ -190,16 +186,11 @@ async fn host_middleware(State(state): State<AppState>, request: Request, next: 
 }
 
 fn misdirected_response() -> Response {
-    (
+    refusal_response(
         StatusCode::MISDIRECTED_REQUEST,
-        Json(serde_json::json!({
-            "error": {
-                "code": "HOST_NOT_ALLOWED",
-                "message": "Host not allowed; open the server by IP address or add the origin in Settings"
-            }
-        })),
+        RefusalCode::HostNotAllowed,
+        "Host not allowed; open the server by IP address or add the origin in Settings",
     )
-        .into_response()
 }
 
 fn build_router(state: AppState, shutdown: tokio::sync::watch::Receiver<bool>) -> Router {
@@ -1582,7 +1573,7 @@ pub(crate) mod tests {
 
             let handle = start_server(config).await.expect("start on all interfaces");
             let port = handle.bind_addr().await.port();
-            let overlay_token = handle.overlay_token().await.expose().to_owned();
+            let overlay_token = handle.overlay_token().expose().to_owned();
             Self {
                 handle,
                 port,
@@ -1871,8 +1862,8 @@ pub(crate) mod tests {
     const AUDIO_CLIP_BYTES: &[u8] = b"RIFF\0\0\0\0WAVEfmt ";
     const AUDIO_CLIP_DURATION_MS: u64 = 1_200;
     const ADDED_ORIGIN_HOST: &str = "dash.test";
-    const PRE_AUTH_LIMIT: usize = 16 * 1024;
-    const PROTOCOL_LIMIT: usize = 256 * 1024;
+    const PRE_AUTH_LIMIT: usize = crate::routes::ws::PRE_AUTH_MAX_MESSAGE_BYTES;
+    const PROTOCOL_LIMIT: usize = crate::routes::ws::MAX_MESSAGE_BYTES;
     const PAST_PRE_AUTH_PAYLOAD: usize = 100 * 1024;
     const ROUND_TRIPS: usize = 8;
     const PRE_AUTH_WINDOW: std::time::Duration = std::time::Duration::from_secs(4);
@@ -2064,7 +2055,7 @@ pub(crate) mod tests {
         let mut sentinel = open_ws(addr).await;
         assert_eq!(ask(&mut sentinel, get_info_request()).await["status"], "ok");
 
-        handle.auth_state().await.set_reads_required(true);
+        handle.auth.set_reads_required(true);
         assert_eq!(
             close_code_of(next_message(&mut sentinel).await),
             Some(close_code::POLICY),
@@ -2206,7 +2197,6 @@ pub(crate) mod tests {
                 &forge_storage::OverlayId::new(AUDIO_OWNER),
                 audio_clip_offer(),
             )
-            .await
             .expect("offer");
 
         let (clip_status, clip_body) =
@@ -2239,7 +2229,6 @@ pub(crate) mod tests {
                 &forge_storage::OverlayId::new(AUDIO_OWNER),
                 audio_clip_offer(),
             )
-            .await
             .expect("offer");
 
         let (api, _) = raw_request_naming(dial, "/api/v1/info", Some(&page_host)).await;
@@ -2260,7 +2249,6 @@ pub(crate) mod tests {
                 &forge_storage::OverlayId::new(AUDIO_OWNER),
                 audio_clip_offer(),
             )
-            .await
             .expect("offer");
 
         let (refused_clip, refused_body) =

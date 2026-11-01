@@ -8,7 +8,7 @@ use forge_events::EventPublisher;
 use forge_net::{TaskOwner, TaskShutdown};
 use tokio::sync::{mpsc, oneshot};
 
-use crate::backend::{HotkeyBackend, HotkeyId, NullBackend};
+use crate::backend::{BackendTier, HotkeyBackend, HotkeyId, NullBackend};
 use crate::combo::HotkeyCombo;
 use crate::config::HotkeyConfig;
 use crate::error::HotkeyError;
@@ -37,7 +37,7 @@ pub struct HotkeyClient {
     pub(crate) publisher: Arc<dyn EventPublisher>,
     pub(crate) health_state: Arc<Mutex<HotkeyHealthSnapshot>>,
     pub(crate) health_tx: HealthTx,
-    pub(crate) portal_available: Option<bool>,
+    pub(crate) backend_tier: BackendTier,
     pub(crate) enabled: Arc<AtomicBool>,
     pub(crate) holds: Mutex<HoldMap>,
     pub(crate) unreleased: Mutex<HashSet<HotkeyId>>,
@@ -52,7 +52,7 @@ impl HotkeyClient {
         config: HotkeyConfig,
         publisher: Arc<dyn EventPublisher>,
         backend: Arc<dyn HotkeyBackend>,
-        portal_available: Option<bool>,
+        backend_tier: BackendTier,
     ) -> Arc<Self> {
         let (health_tx, health_state) = make_health_state();
         let (control_tx, control_rx) = mpsc::channel::<SupervisorCommand>(8);
@@ -68,7 +68,7 @@ impl HotkeyClient {
             publisher,
             health_state,
             health_tx,
-            portal_available,
+            backend_tier,
             enabled: Arc::new(AtomicBool::new(true)),
             holds: Mutex::new(HoldMap::new()),
             unreleased: Mutex::new(HashSet::new()),
@@ -262,8 +262,8 @@ impl HotkeyClient {
         snap.conflict_count = snap.conflict_count.saturating_add(1);
     }
 
-    pub fn portal_available(&self) -> Option<bool> {
-        self.portal_available
+    pub fn backend_tier(&self) -> BackendTier {
+        self.backend_tier
     }
 
     pub fn last_synthesized_release(&self) -> Option<time::OffsetDateTime> {
@@ -271,7 +271,7 @@ impl HotkeyClient {
     }
 
     #[cfg(test)]
-    pub(crate) fn new_for_test(portal_available: Option<bool>) -> Arc<Self> {
+    pub(crate) fn new_for_test(backend_tier: BackendTier) -> Arc<Self> {
         use crate::backend::tests::MockPortalBackend;
         use forge_events::test_support::NullPublisher;
 
@@ -280,7 +280,7 @@ impl HotkeyClient {
         let (control_tx, _control_rx) = mpsc::channel::<SupervisorCommand>(8);
 
         Arc::new(Self {
-            id: IntegrationId::new("hotkey"),
+            id: crate::HOTKEY_INTEGRATION.id,
             config: HotkeyConfig::default(),
             backend: Arc::new(backend),
             registrations: RwLock::new(Registrations::default()),
@@ -289,7 +289,7 @@ impl HotkeyClient {
             publisher: Arc::new(NullPublisher),
             health_state,
             health_tx,
-            portal_available,
+            backend_tier,
             enabled: Arc::new(AtomicBool::new(true)),
             holds: Mutex::new(HoldMap::new()),
             unreleased: Mutex::new(HashSet::new()),
@@ -310,7 +310,12 @@ async fn select_and_start(
 ) -> Arc<HotkeyClient> {
     #[cfg(feature = "testing")]
     if main_thread.is_offline() {
-        return HotkeyClient::start(config, publisher, Arc::new(NullBackend::new()), None);
+        return HotkeyClient::start(
+            config,
+            publisher,
+            Arc::new(NullBackend::new()),
+            BackendTier::Unavailable,
+        );
     }
 
     #[cfg(target_os = "linux")]
@@ -321,7 +326,12 @@ async fn select_and_start(
 
         let portal_reason = match PortalBackend::try_new(&config.app_name).await {
             Ok(portal) => {
-                return HotkeyClient::start(config, publisher, Arc::new(portal), Some(true));
+                return HotkeyClient::start(
+                    config,
+                    publisher,
+                    Arc::new(portal),
+                    BackendTier::Native,
+                );
             }
             Err(e) => e.to_string(),
         };
@@ -329,7 +339,7 @@ async fn select_and_start(
         match EvdevBackend::try_new().await {
             Ok(evdev) => {
                 tracing::info!(portal = %portal_reason, "global shortcuts: using evdev backend");
-                HotkeyClient::start(config, publisher, Arc::new(evdev), Some(false))
+                HotkeyClient::start(config, publisher, Arc::new(evdev), BackendTier::Fallback)
             }
             Err(e) => {
                 tracing::warn!(
@@ -340,7 +350,12 @@ async fn select_and_start(
                 let detail = format!("portal: {portal_reason}; evdev: {e}");
                 let client = {
                     let backend = Arc::new(NullBackend::new());
-                    HotkeyClient::start(config, Arc::clone(&publisher), backend, None)
+                    HotkeyClient::start(
+                        config,
+                        Arc::clone(&publisher),
+                        backend,
+                        BackendTier::Unavailable,
+                    )
                 };
                 supervisor::emit_portal_unavailable(&client, &detail);
                 client
@@ -353,14 +368,16 @@ async fn select_and_start(
         use crate::backend_global::GlobalHotkeyBackend;
 
         match GlobalHotkeyBackend::new(main_thread).await {
-            Ok(backend) => HotkeyClient::start(config, publisher, Arc::new(backend), Some(true)),
+            Ok(backend) => {
+                HotkeyClient::start(config, publisher, Arc::new(backend), BackendTier::Native)
+            }
             Err(e) => {
                 tracing::error!(error = %e, "GlobalHotkeyBackend unavailable");
                 let client = HotkeyClient::start(
                     config,
                     Arc::clone(&publisher),
                     Arc::new(NullBackend::new()),
-                    None,
+                    BackendTier::Unavailable,
                 );
                 supervisor::emit_portal_unavailable(&client, &e.to_string());
                 client
@@ -372,7 +389,7 @@ async fn select_and_start(
     {
         drop(main_thread);
         let backend = Arc::new(NullBackend::new());
-        HotkeyClient::start(config, publisher, backend, None)
+        HotkeyClient::start(config, publisher, backend, BackendTier::Unavailable)
     }
 }
 
@@ -385,6 +402,7 @@ pub(crate) mod tests {
     use super::*;
 
     use crate::backend::tests::{MockFailAllBackend, MockPortalBackend};
+    use crate::vocabulary::event_kinds;
     pub(crate) use forge_events::test_support::CapturingPublisher;
 
     #[cfg(target_os = "linux")]
@@ -402,7 +420,7 @@ pub(crate) mod tests {
             HotkeyConfig::default(),
             publisher,
             Arc::new(backend),
-            Some(true),
+            BackendTier::Native,
         )
     }
 
@@ -454,12 +472,12 @@ pub(crate) mod tests {
     }
 
     fn released_event(publisher: &CapturingPublisher) -> forge_events::Event {
-        publisher.find_kind("hotkey.global.released").unwrap()
+        publisher.find_kind(event_kinds::GLOBAL_RELEASED).unwrap()
     }
 
     #[tokio::test]
     async fn register_returns_id_and_stores_combo() {
-        let client = HotkeyClient::new_for_test(Some(true));
+        let client = HotkeyClient::new_for_test(BackendTier::Native);
         let c = combo("Ctrl+F1");
         let id = client.register(c.clone()).await.unwrap();
         let combos = client.registered_combos();
@@ -468,7 +486,7 @@ pub(crate) mod tests {
 
     #[tokio::test]
     async fn register_same_combo_twice_returns_already_registered() {
-        let client = HotkeyClient::new_for_test(Some(true));
+        let client = HotkeyClient::new_for_test(BackendTier::Native);
         let c = combo("Ctrl+A");
         client.register(c.clone()).await.unwrap();
         let err = client.register(c).await.unwrap_err();
@@ -481,7 +499,7 @@ pub(crate) mod tests {
         let (backend, _tx) = MockPortalBackend::new();
         let client = start_supervised(backend, Arc::clone(&publisher) as Arc<dyn EventPublisher>);
         client.register(combo("Ctrl+B")).await.unwrap();
-        assert!(publisher.has_kind("hotkey.registered"));
+        assert!(publisher.has_kind(event_kinds::REGISTERED));
     }
 
     #[tokio::test]
@@ -492,7 +510,7 @@ pub(crate) mod tests {
         let id = client.register(combo("Ctrl+C")).await.unwrap();
         client.unregister(id).await.unwrap();
         assert!(client.registered_combos().is_empty());
-        assert!(publisher.has_kind("hotkey.unregistered"));
+        assert!(publisher.has_kind(event_kinds::UNREGISTERED));
     }
 
     #[tokio::test]
@@ -533,7 +551,7 @@ pub(crate) mod tests {
             HotkeyConfig::default(),
             noop_publisher(),
             Arc::new(MockFailAllBackend::new()),
-            None,
+            BackendTier::Unavailable,
         );
         let err = client.register(combo("Ctrl+D")).await.unwrap_err();
         assert!(matches!(err, HotkeyError::PermissionDenied));
@@ -545,7 +563,7 @@ pub(crate) mod tests {
             HotkeyConfig::default(),
             noop_publisher(),
             Arc::new(NullBackend::new()),
-            None,
+            BackendTier::Unavailable,
         );
 
         let err = client.register(combo("Ctrl+D")).await.unwrap_err();
@@ -559,7 +577,7 @@ pub(crate) mod tests {
             HotkeyConfig::default(),
             noop_publisher(),
             Arc::new(NullBackend::new()),
-            None,
+            BackendTier::Unavailable,
         );
 
         client.disable().await.unwrap();
@@ -593,7 +611,7 @@ pub(crate) mod tests {
             HotkeyConfig::default(),
             noop_publisher(),
             Arc::new(SuspendingBackend),
-            None,
+            BackendTier::Unavailable,
         );
         let c = combo("Ctrl+F1");
 
@@ -616,7 +634,9 @@ pub(crate) mod tests {
 
         crate::supervisor::emit_portal_unavailable(&client, "portal: no session; evdev: denied");
 
-        let ev = publisher.find_kind("hotkey.portal.unavailable").unwrap();
+        let ev = publisher
+            .find_kind(event_kinds::PORTAL_UNAVAILABLE)
+            .unwrap();
         assert_eq!(ev.payload["reason"], "no_hotkey_backend_available");
         assert_eq!(ev.payload["detail"], "portal: no session; evdev: denied");
     }
@@ -711,7 +731,7 @@ pub(crate) mod tests {
             vec![(free, combo("Ctrl+F1"))],
             "a combo the OS refused must not read as registered"
         );
-        assert!(publisher.has_kind("hotkey.unregistered"));
+        assert!(publisher.has_kind(event_kinds::UNREGISTERED));
 
         refuse.lock().unwrap().clear();
         client.register(combo("Alt+X")).await.unwrap();
@@ -784,11 +804,11 @@ pub(crate) mod tests {
         let client = start_supervised(backend, Arc::clone(&publisher) as Arc<dyn EventPublisher>);
 
         client.disable().await.unwrap();
-        assert!(publisher.has_kind("hotkey.engine.disabled"));
-        assert!(!publisher.has_kind("hotkey.engine.enabled"));
+        assert!(publisher.has_kind(event_kinds::ENGINE_DISABLED));
+        assert!(!publisher.has_kind(event_kinds::ENGINE_ENABLED));
 
         client.enable().await.unwrap();
-        assert!(publisher.has_kind("hotkey.engine.enabled"));
+        assert!(publisher.has_kind(event_kinds::ENGINE_ENABLED));
     }
 
     #[tokio::test]
@@ -823,7 +843,7 @@ pub(crate) mod tests {
             "{refused:?}"
         );
         assert!(!client.is_enabled());
-        assert_eq!(publisher.count_kind("hotkey.engine.disabled"), 0);
+        assert_eq!(publisher.count_kind(event_kinds::ENGINE_DISABLED), 0);
     }
 
     #[tokio::test]
@@ -841,7 +861,7 @@ pub(crate) mod tests {
         client.disable().await.unwrap();
 
         assert!(os_registered.lock().unwrap().is_empty());
-        assert_eq!(publisher.count_kind("hotkey.engine.disabled"), 1);
+        assert_eq!(publisher.count_kind(event_kinds::ENGINE_DISABLED), 1);
     }
 
     #[tokio::test]
@@ -913,7 +933,7 @@ pub(crate) mod tests {
         client.disable().await.unwrap();
 
         assert!(os_registered.lock().unwrap().is_empty());
-        assert_eq!(publisher.count_kind("hotkey.engine.disabled"), 1);
+        assert_eq!(publisher.count_kind(event_kinds::ENGINE_DISABLED), 1);
     }
 
     #[tokio::test]
@@ -932,7 +952,7 @@ pub(crate) mod tests {
         client.disable().await.unwrap();
 
         assert!(os_registered.lock().unwrap().is_empty());
-        assert_eq!(publisher.count_kind("hotkey.engine.disabled"), 1);
+        assert_eq!(publisher.count_kind(event_kinds::ENGINE_DISABLED), 1);
     }
 
     #[tokio::test]
@@ -959,8 +979,8 @@ pub(crate) mod tests {
         client.enable().await.unwrap();
         client.enable().await.unwrap();
 
-        assert_eq!(publisher.count_kind("hotkey.engine.disabled"), 1);
-        assert_eq!(publisher.count_kind("hotkey.engine.enabled"), 1);
+        assert_eq!(publisher.count_kind(event_kinds::ENGINE_DISABLED), 1);
+        assert_eq!(publisher.count_kind(event_kinds::ENGINE_ENABLED), 1);
     }
 
     #[tokio::test]
@@ -989,7 +1009,9 @@ pub(crate) mod tests {
         refuse.lock().unwrap().insert("Alt+X".to_owned());
         client.enable().await.unwrap();
 
-        let ev = publisher.find_kind("hotkey.engine.enable_failed").unwrap();
+        let ev = publisher
+            .find_kind(event_kinds::ENGINE_ENABLE_FAILED)
+            .unwrap();
         assert_eq!(ev.payload, serde_json::json!({ "combos": ["Alt+X"] }));
     }
 
@@ -1003,7 +1025,7 @@ pub(crate) mod tests {
         client.disable().await.unwrap();
         client.enable().await.unwrap();
 
-        assert!(!publisher.has_kind("hotkey.engine.enable_failed"));
+        assert!(!publisher.has_kind(event_kinds::ENGINE_ENABLE_FAILED));
     }
 
     #[tokio::test]
@@ -1032,7 +1054,7 @@ pub(crate) mod tests {
         }
         client.disable().await.unwrap();
 
-        assert_eq!(publisher.count_kind("hotkey.global.pressed"), 5);
+        assert_eq!(publisher.count_kind(event_kinds::GLOBAL_PRESSED), 5);
     }
 
     #[tokio::test]
@@ -1059,7 +1081,7 @@ pub(crate) mod tests {
         let id = client.register(c.clone()).await.unwrap();
 
         press(&inject_tx, id, &c).await;
-        let press_id = publisher.find_kind("hotkey.global.pressed").unwrap().id;
+        let press_id = publisher.find_kind(event_kinds::GLOBAL_PRESSED).unwrap().id;
         release(&inject_tx, id, &c).await;
 
         let ev = released_event(&publisher);
@@ -1079,7 +1101,7 @@ pub(crate) mod tests {
 
         release(&inject_tx, id, &c).await;
 
-        assert!(!publisher.has_kind("hotkey.global.released"));
+        assert!(!publisher.has_kind(event_kinds::GLOBAL_RELEASED));
     }
 
     #[tokio::test]
@@ -1094,7 +1116,7 @@ pub(crate) mod tests {
         release(&inject_tx, id, &c).await;
         press(&inject_tx, id, &c).await;
 
-        assert_eq!(publisher.count_kind("hotkey.global.pressed"), 2);
+        assert_eq!(publisher.count_kind(event_kinds::GLOBAL_PRESSED), 2);
     }
 
     #[tokio::test]
@@ -1137,7 +1159,7 @@ pub(crate) mod tests {
         client.unregister(id).await.unwrap();
         release(&inject_tx, id, &c).await;
 
-        assert_eq!(publisher.count_kind("hotkey.global.released"), 1);
+        assert_eq!(publisher.count_kind(event_kinds::GLOBAL_RELEASED), 1);
     }
 
     #[tokio::test]
@@ -1151,7 +1173,7 @@ pub(crate) mod tests {
         press(&inject_tx, id, &c).await;
 
         restart_tx.send(()).await.unwrap();
-        wait_for_kind(&publisher, "hotkey.global.released").await;
+        wait_for_kind(&publisher, event_kinds::GLOBAL_RELEASED).await;
 
         assert_eq!(released_event(&publisher).payload["synthesized"], true);
     }
@@ -1201,9 +1223,11 @@ pub(crate) mod tests {
             ))
             .await
             .unwrap();
-        wait_for_kind(&publisher, "hotkey.portal.unavailable").await;
+        wait_for_kind(&publisher, event_kinds::PORTAL_UNAVAILABLE).await;
 
-        let ev = publisher.find_kind("hotkey.portal.unavailable").unwrap();
+        let ev = publisher
+            .find_kind(event_kinds::PORTAL_UNAVAILABLE)
+            .unwrap();
         assert_eq!(
             (&ev.payload["reason"], &ev.payload["detail"]),
             (
@@ -1284,7 +1308,7 @@ pub(crate) mod tests {
         press(&inject_tx, id, &c).await;
 
         drop(inject_tx);
-        wait_for_kind(&publisher, "hotkey.global.released").await;
+        wait_for_kind(&publisher, event_kinds::GLOBAL_RELEASED).await;
 
         assert_eq!(released_event(&publisher).payload["synthesized"], true);
     }
@@ -1321,7 +1345,7 @@ pub(crate) mod tests {
 
     #[tokio::test]
     async fn a_zero_second_hold_ceiling_means_disabled_rather_than_instant_expiry() {
-        let client = HotkeyClient::new_for_test(Some(true));
+        let client = HotkeyClient::new_for_test(BackendTier::Native);
 
         for (secs, expected) in [
             (Some(0), None),
@@ -1336,7 +1360,7 @@ pub(crate) mod tests {
 
     #[tokio::test]
     async fn commands_report_supervisor_unavailable_when_no_supervisor_runs() {
-        let client = HotkeyClient::new_for_test(Some(true));
+        let client = HotkeyClient::new_for_test(BackendTier::Native);
 
         assert!(matches!(
             client.disable().await,

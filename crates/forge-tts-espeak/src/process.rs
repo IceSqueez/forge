@@ -478,4 +478,24 @@ mod tests {
         .await
         .expect("the timed-out espeak-ng process is still alive");
     }
+
+    #[cfg(unix)]
+    #[test]
+    fn the_version_probe_separates_a_missing_binary_from_one_that_cannot_answer() {
+        let not_executable = tempfile::NamedTempFile::new().unwrap();
+
+        assert!(check_espeak_version(Path::new("true")).is_ok());
+        assert!(matches!(
+            check_espeak_version(Path::new("forge-no-such-binary")),
+            Err(EspeakError::BinaryNotFound)
+        ));
+        assert!(matches!(
+            check_espeak_version(Path::new("false")),
+            Err(EspeakError::VersionProbeFailed(detail)) if detail.contains("--version exited")
+        ));
+        assert!(matches!(
+            check_espeak_version(not_executable.path()),
+            Err(EspeakError::VersionProbeFailed(_))
+        ));
+    }
 }

@@ -145,7 +145,7 @@ pub(crate) fn assemble(input: &BundleInput) -> Result<Bundle, RepoFailure> {
     let command_lines = corpus
         .text
         .lines()
-        .filter(|line| target_of(line) == Some(COMMAND_LINE_TARGET))
+        .filter(|line| log_archive::line_target(line) == Some(COMMAND_LINE_TARGET))
         .count();
     let (script, rest) = split_script_lines(&corpus.text);
     let script_lines = script.lines().count();
@@ -162,18 +162,11 @@ pub(crate) fn assemble(input: &BundleInput) -> Result<Bundle, RepoFailure> {
     })
 }
 
-fn target_of(line: &str) -> Option<&str> {
-    let mut fields = line.split_whitespace();
-    fields.next()?;
-    fields.next()?;
-    fields.next()?.strip_suffix(':')
-}
-
 fn split_script_lines(corpus: &str) -> (String, String) {
     let mut script = String::new();
     let mut rest = String::new();
     for line in corpus.lines() {
-        let sink = if target_of(line) == Some(SCRIPT_LOG_TARGET) {
+        let sink = if log_archive::line_target(line) == Some(SCRIPT_LOG_TARGET) {
             &mut script
         } else {
             &mut rest
@@ -498,7 +491,7 @@ mod tests {
             ("two fields".to_owned(), None),
             (String::new(), None),
         ] {
-            assert_eq!(target_of(&input), expected, "line {input:?}");
+            assert_eq!(log_archive::line_target(&input), expected, "line {input:?}");
         }
     }
 
@@ -518,7 +511,7 @@ mod tests {
         assert!(
             script
                 .lines()
-                .all(|l| target_of(l) == Some(SCRIPT_LOG_TARGET))
+                .all(|l| log_archive::line_target(l) == Some(SCRIPT_LOG_TARGET))
         );
         assert_eq!(rest.lines().count(), 2);
         assert!(

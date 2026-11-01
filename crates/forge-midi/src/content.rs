@@ -9,7 +9,9 @@ use forge_platform_core::{
 
 use crate::client::MidiClient;
 use crate::events::MidiPortInfo;
+use crate::supervisor::DEVICE_POLL_INTERVAL;
 use crate::vocabulary::labels;
+use crate::vocabulary::messages;
 
 #[derive(Default)]
 pub(crate) struct MidiContentSnapshot {
@@ -118,7 +120,9 @@ impl BuiltinContent for MidiClient {
                     KeyValueRow {
                         icon: SectionIcon::new("clock"),
                         name: labels::POLL_INTERVAL.into(),
-                        tag: Some(labels::POLL_INTERVAL_VALUE.into()),
+                        tag: Some(
+                            messages::poll_interval_value(DEVICE_POLL_INTERVAL.as_secs()).into(),
+                        ),
                         action: None,
                     },
                     KeyValueRow {

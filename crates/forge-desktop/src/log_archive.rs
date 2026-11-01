@@ -3,10 +3,32 @@ use std::io::ErrorKind;
 use std::path::{Path, PathBuf};
 
 use time::OffsetDateTime;
+use tracing::Subscriber;
+use tracing_subscriber::Layer;
+use tracing_subscriber::fmt::{self, MakeWriter};
+use tracing_subscriber::registry::LookupSpan;
 
 use crate::repo_failure::RepoFailure;
 
 pub(crate) const LOG_PREFIX: &str = "forge.log";
+
+pub(crate) fn file_layer<S, W>(writer: W) -> impl Layer<S>
+where
+    S: Subscriber + for<'span> LookupSpan<'span>,
+    W: for<'writer> MakeWriter<'writer> + Send + Sync + 'static,
+{
+    fmt::layer()
+        .with_writer(writer)
+        .with_ansi(false)
+        .with_target(true)
+}
+
+pub(crate) fn line_target(line: &str) -> Option<&str> {
+    let mut fields = line.split_whitespace();
+    fields.next()?;
+    fields.next()?;
+    fields.next()?.strip_suffix(':')
+}
 
 pub(crate) fn files(dir: &Path) -> Result<Vec<PathBuf>, RepoFailure> {
     let entries = match fs::read_dir(dir) {
@@ -115,6 +137,9 @@ fn active_file_name() -> String {
 #[cfg(test)]
 mod tests {
     use std::sync::atomic::{AtomicU64, Ordering};
+    use std::sync::{Arc, Mutex};
+
+    use tracing_subscriber::layer::SubscriberExt;
 
     use super::*;
 
@@ -403,5 +428,38 @@ mod tests {
         let dir = ScratchDir::new("clear_missing");
 
         assert!(clear(&dir.absent_child()).is_ok());
+    }
+
+    #[derive(Clone, Default)]
+    struct CapturedLines(Arc<Mutex<Vec<u8>>>);
+
+    impl std::io::Write for CapturedLines {
+        fn write(&mut self, bytes: &[u8]) -> std::io::Result<usize> {
+            self.0.lock().unwrap().extend_from_slice(bytes);
+            Ok(bytes.len())
+        }
+
+        fn flush(&mut self) -> std::io::Result<()> {
+            Ok(())
+        }
+    }
+
+    #[test]
+    fn line_target_reads_what_the_production_file_layer_writes() {
+        const TARGET: &str = "forge::probe";
+        crate::test_support::install_tracing_interest_floor();
+        let captured = CapturedLines::default();
+        let writer = captured.clone();
+        let subscriber = tracing_subscriber::registry().with(file_layer(move || writer.clone()));
+
+        tracing::subscriber::with_default(subscriber, || {
+            tracing::callsite::rebuild_interest_cache();
+            tracing::info!(target: TARGET, message = "from a script");
+        });
+
+        let bytes = captured.0.lock().unwrap().clone();
+        let text = String::from_utf8(bytes).unwrap();
+        let line = text.lines().next().expect("the layer wrote one line");
+        assert_eq!(line_target(line), Some(TARGET), "line {line:?}");
     }
 }

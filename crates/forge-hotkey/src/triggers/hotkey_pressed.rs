@@ -134,7 +134,7 @@ mod tests {
     fn triggered_event(combo: &str) -> Event {
         Event::new(
             EventSource::Hotkey,
-            "hotkey.global.pressed",
+            event_kinds::GLOBAL_PRESSED,
             json!({ "combo": combo, "id": 1u32, "timestamp_us": 0u64 }),
         )
     }
@@ -175,7 +175,7 @@ mod tests {
                 BTreeMap::new(),
                 Event::new(
                     EventSource::Hotkey,
-                    "hotkey.registered",
+                    event_kinds::REGISTERED,
                     json!({ "combo": "Ctrl+A", "id": 1u32 }),
                 ),
                 false,
@@ -185,7 +185,7 @@ mod tests {
                 BTreeMap::new(),
                 Event::new(
                     EventSource::Hotkey,
-                    "hotkey.global.released",
+                    event_kinds::GLOBAL_RELEASED,
                     json!({ "combo": "Ctrl+F1", "id": 1u32, "hold_ms": 10u64 }),
                 ),
                 false,
@@ -195,7 +195,7 @@ mod tests {
                 BTreeMap::new(),
                 Event::new(
                     EventSource::Midi,
-                    "hotkey.global.pressed",
+                    event_kinds::GLOBAL_PRESSED,
                     json!({ "combo": "Ctrl+A" }),
                 ),
                 false,

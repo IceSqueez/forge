@@ -1,10 +1,11 @@
 use std::collections::HashSet;
+use std::str::FromStr;
 
 use forge_types::{ArgStack, Variant};
 
 use crate::bus_adapter::EventFilter;
 
-use super::envelope::WireEventFilter;
+use super::envelope::{WireEventFilter, WsResponse};
 
 #[derive(Debug, thiserror::Error)]
 #[error("unknown event source: {0}")]
@@ -62,11 +63,28 @@ pub(crate) fn valid_code_event_name(name: &str) -> bool {
 pub(crate) fn build_arg_stack(args: serde_json::Value) -> ArgStack {
     let obj = match args {
         serde_json::Value::Object(m) => m,
-        _ => return ArgStack::new(),
+        serde_json::Value::Null => return ArgStack::new(),
+        other => {
+            tracing::warn!(shape = %other, "action args ignored: not a JSON object");
+            return ArgStack::new();
+        }
     };
     obj.into_iter()
-        .filter_map(|(k, v)| Variant::from_json(v).ok().map(|vv| (k, vv)))
+        .filter_map(|(key, value)| match Variant::from_plain_json(value) {
+            Ok(variant) => Some((key, variant)),
+            Err(error) => {
+                tracing::warn!(%error, arg = %key, "action arg dropped");
+                None
+            }
+        })
         .fold(ArgStack::new(), |stack, (k, v)| stack.set(k, v))
+}
+
+pub(super) fn parse_id<T: FromStr>(raw: &str, refusal: &str) -> Result<T, WsResponse> {
+    raw.parse().map_err(|_| WsResponse::Error {
+        code: Some("INVALID_PAYLOAD".to_owned()),
+        message: refusal.to_owned(),
+    })
 }
 
 #[cfg(test)]

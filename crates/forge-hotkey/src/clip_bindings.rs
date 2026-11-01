@@ -42,15 +42,9 @@ pub fn clip_bindings_of(clips: &[StoredClip]) -> ClipBindings {
 }
 
 pub fn stored_combo(clip: &StoredClip) -> Option<String> {
-    let raw = clip.hotkey.as_deref().map(str::trim)?;
-    if raw.is_empty() {
-        return None;
-    }
-    Some(
-        HotkeyCombo::parse(raw)
-            .map(|parsed| parsed.as_str().to_owned())
-            .unwrap_or_else(|_| raw.to_owned()),
-    )
+    clip.hotkey
+        .as_deref()
+        .and_then(HotkeyCombo::canonical_or_raw)
 }
 
 pub async fn clear_clip_combo(

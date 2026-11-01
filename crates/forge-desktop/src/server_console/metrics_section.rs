@@ -4,7 +4,6 @@ use forge_components::{
     card, fmt_bytes, fmt_number, header_status, icon, metric_card, mono_family, scaled, spacing,
     sparkline, status_dot, tr,
 };
-use forge_server::extract_port;
 use gpui::{AnyElement, FontWeight, Pixels, Rgba, SharedString, div, prelude::*, px};
 
 const EVENT_RATE_WINDOW_SECONDS: i64 = 10;
@@ -184,12 +183,9 @@ impl ServerConsoleView {
             .child(footer_cell("·", palette.text_faint))
             .child(footer_cell(health_label, health_color));
 
-        let (endpoint_label, dot_color) = match self.lifecycle.bind_address.as_deref() {
+        let (endpoint_label, dot_color) = match self.lifecycle.bind_address {
             Some(address) if self.is_running() => (
-                tr!(
-                    "server_footer_endpoint_accepting",
-                    port = extract_port(address)
-                ),
+                tr!("server_footer_endpoint_accepting", port = address.port()),
                 palette.success,
             ),
             _ => (tr!("server_footer_endpoint_stopped"), palette.text_faint),

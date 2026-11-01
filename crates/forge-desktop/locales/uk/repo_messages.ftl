@@ -14,6 +14,7 @@ msg-repo-operation_failed = Операцію не виконано. Подроб
 msg-repo-data_dir_unavailable = forge не зміг створити теку даних { $path }.
 msg-repo-startup_stopped = Застосунок не зміг завершити запуск. Спробуйте ще раз.
 msg-repo-file_failed = Не вдалося прочитати або записати файл. Подробиці в журналі.
+msg-repo-server_address_invalid = { $address } не є коректною адресою сервера.
 msg-repo-server_address_busy = Сервер не зміг слухати { $address }. Можливо, цей порт зайнятий іншою програмою.
 msg-repo-server_lan_disabled = Ця адреса потребує доступу з локальної мережі, який вимкнено в налаштуваннях сервера.
 msg-repo-server_switched_off = Сервер вимкнено в налаштуваннях.

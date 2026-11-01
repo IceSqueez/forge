@@ -1,17 +1,19 @@
 use std::collections::HashSet;
 use std::sync::atomic::Ordering;
 
+use forge_events::EventSource;
+
 use crate::bus_adapter::{BusAdapter, ClientId, EventFilter};
 use crate::server_info::ServerInfo;
 use crate::ws_client::WsClient;
 
-const WILDCARD: &str = "*";
-
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct EventFilterSnapshot {
-    pub source: String,
-    pub kind: String,
+    pub source: Option<EventSource>,
+    pub kind: Option<String>,
 }
 
+#[derive(Debug, Clone, PartialEq)]
 pub struct ConnectedClientSnapshot {
     pub id: ClientId,
     pub identification: String,
@@ -22,12 +24,14 @@ pub struct ConnectedClientSnapshot {
     pub uptime_seconds: i64,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct BandwidthSnapshot {
     pub outbound_bytes_per_second: u64,
     pub outbound_bytes_total: u64,
     pub peak_outbound_bytes_per_second: u64,
 }
 
+#[derive(Debug, Clone, PartialEq)]
 pub struct ServerSnapshot {
     pub uptime_seconds: i64,
     pub connected_clients: Vec<ConnectedClientSnapshot>,
@@ -91,12 +95,8 @@ impl ClientRow {
             subscriptions: filters
                 .iter()
                 .map(|f| EventFilterSnapshot {
-                    source: f
-                        .source
-                        .and_then(|s| serde_json::to_value(s).ok())
-                        .and_then(|v| v.as_str().map(str::to_owned))
-                        .unwrap_or_else(|| WILDCARD.to_owned()),
-                    kind: f.kind.clone().unwrap_or_else(|| WILDCARD.to_owned()),
+                    source: f.source,
+                    kind: f.kind.clone(),
                 })
                 .collect(),
             events_per_second: session.events_per_second(),

@@ -4,6 +4,7 @@ use forge_types::{
     ArgStack, DeclaredVariable, TriggerConfig, UserText, VariableSchema, Variant, VariantKind,
 };
 
+use super::output_lifecycle::output_arg_stack;
 use crate::vocabulary::fields::recording as fields;
 use crate::vocabulary::messages;
 use crate::vocabulary::{event_kinds, trigger_ids, variables};
@@ -89,20 +90,12 @@ pub(crate) fn record_variables() -> Vec<DeclaredVariable> {
 }
 
 pub(crate) fn build_record_arg_stack(event: &Event) -> ArgStack {
-    let mut stack = ArgStack::new();
-    if let Some(s) = event.kind.rsplit('.').next() {
-        stack = stack.set(
-            variables::recording::OUTPUT_STATE.to_owned(),
-            Variant::String(s.to_owned()),
-        );
-    }
-    if let Some(b) = event
-        .payload
-        .get(fields::IS_ACTIVE)
-        .and_then(|v| v.as_bool())
-    {
-        stack = stack.set(variables::recording::IS_ACTIVE.to_owned(), Variant::Bool(b));
-    }
+    let mut stack = output_arg_stack(
+        event,
+        fields::IS_ACTIVE,
+        variables::recording::OUTPUT_STATE,
+        variables::recording::IS_ACTIVE,
+    );
     if let Some(p) = event
         .payload
         .get(fields::OUTPUT_PATH)

@@ -346,10 +346,7 @@ fn init_tracing() -> (Option<tracing_appender::non_blocking::WorkerGuard>, LogTa
     let (file_layer, guard) = match appender {
         Some(appender) => {
             let (writer, guard) = tracing_appender::non_blocking(appender);
-            let layer = fmt::layer()
-                .with_writer(crate::log_scrub::scrubbed(writer))
-                .with_ansi(false)
-                .with_target(true);
+            let layer = log_archive::file_layer(crate::log_scrub::scrubbed(writer));
             (Some(layer), Some(guard))
         }
         None => (None, None),

@@ -73,7 +73,8 @@ mod tests {
 
     #[tokio::test]
     async fn control_calls_report_transport_when_no_supervisor_runs() {
-        let client = crate::client::HotkeyClient::new_for_test(None);
+        let client =
+            crate::client::HotkeyClient::new_for_test(crate::backend::BackendTier::Unavailable);
         let control: &dyn BuiltinControl = &*client;
 
         assert_eq!(control.disconnect().await, Err(ControlFailure::Transport));

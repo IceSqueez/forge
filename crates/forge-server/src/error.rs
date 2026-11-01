@@ -2,8 +2,15 @@ use forge_types::Secret;
 
 #[derive(Debug, thiserror::Error)]
 pub enum ServerError {
-    #[error("could not bind to {addr}: {reason}")]
-    Bind { addr: String, reason: String },
+    #[error("could not bind to {addr}: {source}")]
+    Bind {
+        addr: String,
+        #[source]
+        source: std::io::Error,
+    },
+
+    #[error("{addr} is not a valid bind address")]
+    InvalidBindAddress { addr: String },
 
     #[error("storage error: {0}")]
     Storage(#[from] forge_storage::StorageError),
@@ -11,7 +18,7 @@ pub enum ServerError {
     #[error("io error: {0}")]
     Io(#[from] std::io::Error),
 
-    #[error("refusing to bind to {addr}: server.lan_bind_enabled is false")]
+    #[error("refusing to bind to {addr}: LAN access is turned off in the server settings")]
     LanBindNotEnabled { addr: String },
 
     #[error("overlay pages could not be rewritten with the new credentials: {reason}")]

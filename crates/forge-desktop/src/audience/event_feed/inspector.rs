@@ -42,7 +42,7 @@ impl EventFeedView {
         let replay = self.inspector_replay_button(palette, density, cx);
 
         div()
-            .w_full()
+            .size_full()
             .flex()
             .flex_col()
             .overflow_hidden()
@@ -276,10 +276,13 @@ impl EventFeedView {
         lines.push(json_line(0, vec![json_span("}".to_owned(), brace)]));
 
         div()
+            .id("event-inspector-payload")
             .w_full()
+            .flex_1()
+            .min_h_0()
             .flex()
             .flex_col()
-            .overflow_hidden()
+            .overflow_y_scroll()
             .font_family(cx.mono_family())
             .text_size(FONT_XXS)
             .p(spacing(Spacing::Sm, density))

@@ -3577,6 +3577,18 @@ opt_label_side__center = Center
 opt_label_side__right = Right
 overlays_accent_add = Add color
 overlays_accent_remove = Remove this color from the list
+overlays_accent_remove_title = Remove this color?
+overlays_accent_remove_body = This color is used in { $overlays ->
+    [one] { $overlays } overlay
+   *[other] { $overlays } overlays
+}. Removing it switches them to the default color.
+overlays_accent_remove_fields = { $fields ->
+    [one] { $fields } color field holds it.
+   *[other] { $fields } color fields hold it.
+}
+overlays_accent_remove_confirm = Remove color
+overlays_accent_remove_failed = Could not remove the color, nothing changed: { $reason }
+overlays_accent_remove_stranded = Could not remove the color, and some overlays may have lost it: { $reason }
 overlays_accent_malformed = Use six hex digits after #, such as #ff8800.
 overlays_accent_save_failed = Could not save the color list: { $reason }
 overlays_panel_override_notice = You own these files now, so they are never regenerated: { $files }. Design changes that need generated markup or styling no longer reach them.

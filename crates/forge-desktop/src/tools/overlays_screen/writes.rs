@@ -10,7 +10,7 @@ use super::{OverlayProblem, OverlaysView};
 use crate::app::async_bridge;
 use crate::shared::repo_failure::RepoFailure;
 
-#[derive(Default)]
+#[derive(Clone, Default)]
 pub(super) struct Regenerated {
     failure: Option<RepoFailure>,
     missing: Vec<String>,
@@ -50,6 +50,18 @@ impl OverlaysView {
         self.editor
             .code
             .update(cx, |code, cx| code.invalidate_source(cx));
+        if let Some(failure) = regenerated.failure {
+            self.report(failure.into(), cx);
+        }
+    }
+
+    pub(super) fn apply_regenerated_unopened(
+        &mut self,
+        id: &OverlayId,
+        regenerated: Regenerated,
+        cx: &mut Context<Self>,
+    ) {
+        self.set_media_issues(id, regenerated.media_issues, cx);
         if let Some(failure) = regenerated.failure {
             self.report(failure.into(), cx);
         }

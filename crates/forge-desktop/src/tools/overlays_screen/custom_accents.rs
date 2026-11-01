@@ -96,6 +96,13 @@ impl CustomAccents {
         self.replace(without_accent(self.colors(), color), cx);
     }
 
+    pub(super) fn adopt(&mut self, stored: Vec<String>, cx: &mut Context<Self>) {
+        if let Some(colors) = self.colors.loaded_mut() {
+            *colors = stored;
+            cx.notify();
+        }
+    }
+
     fn replace(&mut self, next: Vec<String>, cx: &mut Context<Self>) {
         let Some(colors) = self.colors.loaded_mut() else {
             return;

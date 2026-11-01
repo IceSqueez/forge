@@ -431,6 +431,8 @@ impl OverlayPropertyPanel {
                 selected.clone_from(&choice);
             }
         }
+        let palette = cx.palette();
+        self.refresh_color_options(&palette);
         self.emit_save(cx);
         cx.notify();
     }

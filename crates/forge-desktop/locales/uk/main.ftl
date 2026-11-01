@@ -3671,6 +3671,22 @@ opt_label_side__center = По центру
 opt_label_side__right = Праворуч
 overlays_accent_add = Додати колір
 overlays_accent_remove = Прибрати цей колір зі списку
+overlays_accent_remove_title = Прибрати цей колір?
+overlays_accent_remove_body = Цей колір використовується в { $overlays ->
+    [one] { $overlays } оверлеї
+    [few] { $overlays } оверлеях
+    [many] { $overlays } оверлеях
+   *[other] { $overlays } оверлеях
+}. Якщо його прибрати, вони перейдуть на типовий колір.
+overlays_accent_remove_fields = { $fields ->
+    [one] Він вибраний в { $fields } полі кольору.
+    [few] Він вибраний у { $fields } полях кольору.
+    [many] Він вибраний у { $fields } полях кольору.
+   *[other] Він вибраний у { $fields } полях кольору.
+}
+overlays_accent_remove_confirm = Прибрати колір
+overlays_accent_remove_failed = Не вдалося прибрати колір, нічого не змінено: { $reason }
+overlays_accent_remove_stranded = Не вдалося прибрати колір, і деякі оверлеї могли його втратити: { $reason }
 overlays_accent_malformed = Потрібно шість шістнадцяткових цифр після #, наприклад #ff8800.
 overlays_accent_save_failed = Не вдалося зберегти список кольорів: { $reason }
 overlays_panel_override_notice = Ці файли тепер ваші, тож вони ніколи не перегенеровуються: { $files }. Зміни дизайну, яким потрібна згенерована розмітка чи стилі, більше до них не доходять.

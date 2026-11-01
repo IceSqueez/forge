@@ -3,6 +3,7 @@ mod bindings_panel;
 mod catalog;
 mod code_pane;
 mod color_choice;
+mod color_removal;
 mod custom_accents;
 mod delete_prompt;
 mod editor_pane;
@@ -34,6 +35,7 @@ mod writes;
 
 use std::sync::Arc;
 
+use self::color_removal::{ColorRemoval, ColorRemovalLaunch};
 use self::custom_accents::CustomAccents;
 
 use forge_components::{
@@ -145,13 +147,14 @@ pub(crate) struct OverlaysView {
     catalog: MediaCatalog,
     icon_host: Entity<IconPickerHost>,
     custom_accents: Entity<CustomAccents>,
+    color_removal: Entity<ColorRemoval>,
     stage: StageState,
     form: Option<OpenForm>,
     pending_delete: Confirm<PendingDelete>,
     wiring: WiringLink,
     receiver: Option<OverlayId>,
     latest: LatestSource,
-    _child_subscriptions: [Subscription; 5],
+    _child_subscriptions: [Subscription; 7],
 }
 
 pub(crate) struct OverlaysLaunch {
@@ -222,10 +225,23 @@ impl OverlaysView {
                 cx,
             )
         });
+        let color_removal = cx.new(|_| {
+            ColorRemoval::new(ColorRemovalLaunch {
+                repo: Arc::clone(&launch.repo),
+                settings: Arc::clone(&launch.settings_repo),
+                service: launch.service.clone(),
+                samples: Arc::clone(&launch.samples),
+                kinds: Arc::clone(&launch.kinds),
+                rt_handle: launch.rt_handle.clone(),
+                accents: custom_accents.clone(),
+            })
+        });
         let icon_host = cx.new(|cx| {
             IconPickerHost::new(launch.media, launch.rt_handle.clone(), icon_favorites, cx)
         });
         let child_subscriptions = [
+            cx.subscribe(&color_removal, Self::on_color_removal),
+            cx.observe(&color_removal, |_, _: Entity<ColorRemoval>, cx| cx.notify()),
             cx.subscribe(&editor.code, Self::on_code_event),
             cx.observe(&editor.code, |_, _: Entity<OverlayCodeEditor>, cx| {
                 cx.notify();
@@ -260,6 +276,7 @@ impl OverlaysView {
             catalog: MediaCatalog::default(),
             icon_host,
             custom_accents,
+            color_removal,
             stage: StageState::default(),
             form: None,
             pending_delete: Confirm::default(),
@@ -378,6 +395,10 @@ impl Render for OverlaysView {
                     .update(cx, |host, cx| host.render_overlay(&palette, cx)),
             )
             .children(self.render_code_confirms(&palette, cx))
+            .children(
+                self.color_removal
+                    .update(cx, |removal, cx| removal.render_confirm(&palette, cx)),
+            )
     }
 }
 

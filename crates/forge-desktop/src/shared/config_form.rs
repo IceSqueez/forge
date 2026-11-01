@@ -29,7 +29,7 @@ pub(crate) use collect::{
     CollectedValues, GateStates, collect_field_values, field_entries, gated_field_values,
 };
 use fold::settle_integer_input;
-pub(crate) use fold::{flag_integer_input, flag_variable_input, fold_config_field};
+pub(crate) use fold::{flag_integer_input, flag_variable_input, fold_config_field, read_text};
 pub(crate) use render::{config_label_cell, render_config_control, render_config_row};
 
 const FILL_KEY_W: Pixels = px(110.0);

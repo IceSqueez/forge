@@ -10,6 +10,7 @@ use gpui::{AppContext, Context, Entity, Subscription};
 use super::OverlaysView;
 use super::base_sections::BaseEvent;
 use super::code_pane::{CodeServices, LeaveIntent, OverlayCodeEditor};
+use super::color_removal::{ColorRemoval, ColorRemovalEvent, OpenConfig};
 use super::custom_accents::CustomAccents;
 use super::look_change;
 use super::property_panel::{
@@ -183,14 +184,54 @@ impl OverlaysView {
 
     fn on_accent_list_edit(
         &mut self,
-        _view: Entity<OverlayPropertyPanel>,
+        view: Entity<OverlayPropertyPanel>,
         event: &AccentListEdit,
         cx: &mut Context<Self>,
     ) {
-        self.custom_accents.update(cx, |store, cx| match event {
-            AccentListEdit::Add(color) => store.add(color, cx),
-            AccentListEdit::Remove(color) => store.remove(color, cx),
-        });
+        match event {
+            AccentListEdit::Add(color) => {
+                self.custom_accents
+                    .update(cx, |store, cx| store.add(color, cx));
+            }
+            AccentListEdit::Remove(color) => {
+                let panel = view.read(cx);
+                let open = OpenConfig {
+                    id: panel.overlay_id().clone(),
+                    config: panel.pending_config(cx),
+                };
+                self.color_removal.update(cx, |removal, cx| {
+                    removal.request(color.clone(), Some(open), cx);
+                });
+            }
+        }
+    }
+
+    pub(super) fn on_color_removal(
+        &mut self,
+        _removal: Entity<ColorRemoval>,
+        event: &ColorRemovalEvent,
+        cx: &mut Context<Self>,
+    ) {
+        if let ColorRemovalEvent::Committed { color, resets } = event {
+            let opened = self.panel_view();
+            for reset in resets {
+                let shown = opened
+                    .as_ref()
+                    .filter(|panel| panel.read(cx).overlay_id() == &reset.id);
+                match shown {
+                    Some(panel) => {
+                        panel.update(cx, |panel, cx| {
+                            panel.adopt_color_reset(reset.config.clone(), color, cx);
+                        });
+                        self.apply_regenerated(&reset.id, reset.regenerated.clone(), cx);
+                    }
+                    None => {
+                        self.apply_regenerated_unopened(&reset.id, reset.regenerated.clone(), cx);
+                    }
+                }
+            }
+        }
+        self.load(cx);
     }
 
     pub(super) fn on_custom_accents_changed(

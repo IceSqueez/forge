@@ -7,7 +7,7 @@ use crate::shared::unsaved_work::UnsavedWork;
 
 impl ScreenShortcuts for OverlaysView {
     fn save_shortcut(&mut self, cx: &mut Context<Self>) {
-        if self.pending_delete.get().is_some() {
+        if self.pending_delete.get().is_some() || self.color_removal.read(cx).prompting() {
             return;
         }
         if let Some(form) = self.form.as_ref().map(|open| open.view.clone()) {

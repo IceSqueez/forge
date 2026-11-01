@@ -12,8 +12,11 @@ use forge_net::{
 use crate::policy::{RetryConfig, SynthesisRateLimiter};
 
 const NO_HINT_THROTTLE_WAIT: Duration = Duration::from_secs(1);
+#[cfg(any(test, feature = "azure", feature = "polly"))]
 const MAX_DNS_LABEL_LEN: usize = 63;
+#[cfg(any(test, feature = "providers"))]
 const LABEL_HYPHEN: char = '-';
+#[cfg(any(test, feature = "elevenlabs"))]
 const SEGMENT_UNDERSCORE: char = '_';
 
 pub(crate) const CLOUD_TTS_PROFILE: GatewayProfile = GatewayProfile::platform_api(
@@ -142,6 +145,7 @@ impl ProviderLink {
     }
 }
 
+#[cfg(any(test, feature = "elevenlabs"))]
 pub(crate) fn is_plain_path_segment(value: &str) -> bool {
     !value.is_empty()
         && value
@@ -149,6 +153,7 @@ pub(crate) fn is_plain_path_segment(value: &str) -> bool {
             .all(|c| c.is_ascii_alphanumeric() || c == LABEL_HYPHEN || c == SEGMENT_UNDERSCORE)
 }
 
+#[cfg(any(test, feature = "azure", feature = "polly"))]
 pub(crate) fn is_dns_label(value: &str) -> bool {
     value.len() <= MAX_DNS_LABEL_LEN
         && !value.starts_with(LABEL_HYPHEN)

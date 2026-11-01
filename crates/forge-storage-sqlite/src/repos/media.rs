@@ -303,10 +303,6 @@ impl SqliteMediaRepo {
         Self { db, root }
     }
 
-    pub fn root(&self) -> &Path {
-        &self.root
-    }
-
     pub async fn sweep_stale_incoming(&self) -> Result<usize, StorageError> {
         let root = self.root.clone();
         tokio::task::spawn_blocking(move || remove_entries(&root, is_stale_incoming))

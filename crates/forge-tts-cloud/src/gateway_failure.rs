@@ -5,14 +5,19 @@ use crate::network::ProviderLink;
 
 const PAYMENT_REQUIRED: u16 = 402;
 const REQUEST_TIMEOUT: u16 = 408;
+#[cfg(any(feature = "azure", feature = "polly"))]
 const BAD_REQUEST: u16 = 400;
 const TOO_MANY_REQUESTS: u16 = 429;
+#[cfg(any(feature = "azure", feature = "polly"))]
 const VOICE_REJECTION_MARKER: &str = "voice";
 
 #[derive(Clone, Copy)]
 pub(crate) enum VoiceSignal {
+    #[cfg(feature = "openai")]
     Unreported,
+    #[cfg(feature = "elevenlabs")]
     NotFoundStatus,
+    #[cfg(any(feature = "azure", feature = "polly"))]
     BadRequestNamingVoice,
 }
 
@@ -70,8 +75,11 @@ pub(crate) fn classify(
 
 fn names_missing_voice(failure: &GatewayFailure, signal: VoiceSignal) -> bool {
     match signal {
+        #[cfg(feature = "openai")]
         VoiceSignal::Unreported => false,
+        #[cfg(feature = "elevenlabs")]
         VoiceSignal::NotFoundStatus => matches!(failure, GatewayFailure::NotFound { .. }),
+        #[cfg(any(feature = "azure", feature = "polly"))]
         VoiceSignal::BadRequestNamingVoice => rejected_excerpt(failure, BAD_REQUEST)
             .is_some_and(|excerpt| contains_any_ignoring_case(excerpt, &[VOICE_REJECTION_MARKER])),
     }

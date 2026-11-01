@@ -1,19 +1,29 @@
 use std::fmt;
+#[cfg(any(test, feature = "providers"))]
 use std::future::Future;
 use std::sync::Arc;
 use std::time::Duration;
 
+#[cfg(any(test, feature = "providers"))]
 use tokio::time::Instant;
 
+#[cfg(any(test, feature = "providers"))]
 use forge_speech_types::EngineId;
+#[cfg(any(test, feature = "providers"))]
 use forge_speech_types::PcmBuffer;
-use forge_tts_core::{ENGINE_SYNTHESIS_BUDGET, TtsError};
+use forge_tts_core::ENGINE_SYNTHESIS_BUDGET;
+#[cfg(any(test, feature = "providers"))]
+use forge_tts_core::TtsError;
 
+#[cfg(any(test, feature = "providers"))]
 use crate::network::ceil_secs;
-use crate::policy::rate_limit::{EXHAUSTED_THRESHOLD, SynthesisRateLimiter};
+#[cfg(any(test, feature = "providers"))]
+use crate::policy::rate_limit::EXHAUSTED_THRESHOLD;
+use crate::policy::rate_limit::SynthesisRateLimiter;
 
 const DEFAULT_REQUEST_TIMEOUT: Duration = Duration::from_secs(10);
 const DEFAULT_MAX_RETRIES: u32 = 3;
+#[cfg(any(test, feature = "providers"))]
 const BACKOFF: [Duration; 3] = [
     Duration::from_millis(250),
     Duration::from_secs(1),
@@ -59,10 +69,12 @@ impl fmt::Debug for RetryConfig {
     }
 }
 
+#[cfg(any(test, feature = "providers"))]
 fn is_retryable(err: &TtsError) -> bool {
     matches!(err, TtsError::NetworkFailed(_) | TtsError::Io(_))
 }
 
+#[cfg(any(test, feature = "providers"))]
 async fn sit_out_cooldown(cfg: &RetryConfig, deadline: Instant) -> Result<(), TtsError> {
     let Some(limiter) = &cfg.cooldown else {
         return Ok(());
@@ -80,6 +92,7 @@ async fn sit_out_cooldown(cfg: &RetryConfig, deadline: Instant) -> Result<(), Tt
     Ok(())
 }
 
+#[cfg(any(test, feature = "providers"))]
 pub(crate) async fn retry_synthesize<F, Fut>(
     engine_id: EngineId,
     cfg: RetryConfig,
@@ -160,12 +173,14 @@ where
     }
 }
 
+#[cfg(any(test, feature = "providers"))]
 fn budget_exhausted(spent: Duration) -> TtsError {
     TtsError::Timeout {
         ms: u64::try_from(spent.as_millis()).unwrap_or(u64::MAX),
     }
 }
 
+#[cfg(any(test, feature = "providers"))]
 fn backoff_index(retry_count: u32) -> usize {
     (retry_count as usize)
         .saturating_sub(1)

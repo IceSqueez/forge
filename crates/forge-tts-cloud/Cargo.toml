@@ -12,10 +12,11 @@ workspace = true
 
 [features]
 default = []
-azure = ["dep:serde_json"]
-elevenlabs = ["dep:serde_json"]
-openai = ["dep:serde_json"]
-polly = ["dep:serde_json", "dep:hmac", "dep:sha2", "dep:time"]
+providers = []
+azure = ["providers", "dep:serde_json"]
+elevenlabs = ["providers", "dep:serde_json"]
+openai = ["providers", "dep:serde_json"]
+polly = ["providers", "dep:serde_json", "dep:hmac", "dep:sha2", "dep:time"]
 
 [dependencies]
 forge-speech-types = { path = "../forge-speech-types" }

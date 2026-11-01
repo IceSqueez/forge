@@ -2,26 +2,11 @@ pub mod credentials;
 mod network;
 mod policy;
 
-#[cfg(any(
-    feature = "azure",
-    feature = "elevenlabs",
-    feature = "openai",
-    feature = "polly"
-))]
+#[cfg(feature = "providers")]
 mod error;
-#[cfg(any(
-    feature = "azure",
-    feature = "elevenlabs",
-    feature = "openai",
-    feature = "polly"
-))]
+#[cfg(feature = "providers")]
 mod factory;
-#[cfg(any(
-    feature = "azure",
-    feature = "elevenlabs",
-    feature = "openai",
-    feature = "polly"
-))]
+#[cfg(feature = "providers")]
 mod gateway_failure;
 
 #[cfg(feature = "azure")]
@@ -36,12 +21,7 @@ pub mod openai;
 #[cfg(feature = "polly")]
 pub mod polly;
 
-#[cfg(any(
-    feature = "azure",
-    feature = "elevenlabs",
-    feature = "openai",
-    feature = "polly"
-))]
+#[cfg(feature = "providers")]
 pub use factory::{CloudEngine, CloudEngineFactory};
 pub use network::CloudGateways;
 pub use network::ProviderGateway;

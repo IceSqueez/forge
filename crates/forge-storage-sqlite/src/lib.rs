@@ -1,3 +1,11 @@
+#![cfg_attr(
+    not(any(test, feature = "test-support")),
+    expect(
+        unreachable_pub,
+        reason = "these modules are public only behind test-support"
+    )
+)]
+
 mod batch;
 mod codec;
 mod credential_reseal_v063;

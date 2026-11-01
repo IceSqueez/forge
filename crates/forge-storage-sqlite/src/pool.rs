@@ -11,6 +11,7 @@ pub(crate) const DEFAULT_BUSY_TIMEOUT: Duration = Duration::from_secs(5);
 const JOURNAL_SIZE_LIMIT_BYTES: &str = "67108864";
 const SHUTDOWN_CHECKPOINT_WAIT: Duration = Duration::from_millis(8);
 const WRITER_CONNECTIONS: u32 = 1;
+#[cfg(feature = "test-support")]
 const SHARED_POOL_CONNECTIONS: u32 = 4;
 const MIN_READER_CONNECTIONS: u32 = 2;
 const MAX_READER_CONNECTIONS: u32 = 8;
@@ -111,6 +112,7 @@ fn options(url: &str, busy_timeout: Duration) -> Result<SqliteConnectOptions, Sq
         .create_if_missing(true))
 }
 
+#[cfg(feature = "test-support")]
 pub async fn connect(url: &str) -> Result<SqlitePool, SqliteStorageError> {
     SqlitePoolOptions::new()
         .max_connections(SHARED_POOL_CONNECTIONS)

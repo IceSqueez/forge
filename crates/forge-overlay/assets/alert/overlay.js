@@ -8,7 +8,10 @@ var TINTED_CLASS = "tinted";
 var STAGE_SELECTOR = "#stage";
 var IMAGE_ABOVE_CLASS = "image-above";
 var IMAGE_HEIGHT_PROPERTY = "--image-height";
+var IMAGE_BELOW_CLASS = "image-below";
+var IMAGE_POSITION_BELOW = "below";
 var IMAGE_POSITION_LEFT = "left";
+var IMAGE_POSITION_RIGHT = "right";
 var IMAGE_PLAY_PARAMETER = "?play=";
 var FALLBACK_SURFACE = "#14141c";
 var HEX_COLOR = /^#([0-9a-f]{2})([0-9a-f]{2})([0-9a-f]{2})$/i;
@@ -78,10 +81,16 @@ function placeImage(config) {
   image.alt = "";
   image.src = encodeURI(config.image);
   stage.style.setProperty(IMAGE_HEIGHT_PROPERTY, config.image_height + "px");
-  if (config.image_position !== IMAGE_POSITION_LEFT) {
-    stage.classList.add(IMAGE_ABOVE_CLASS);
+  var position = config.image_position;
+  var beside = position === IMAGE_POSITION_LEFT || position === IMAGE_POSITION_RIGHT;
+  if (!beside) {
+    stage.classList.add(position === IMAGE_POSITION_BELOW ? IMAGE_BELOW_CLASS : IMAGE_ABOVE_CLASS);
   }
-  stage.insertBefore(image, stage.firstChild);
+  if (position === IMAGE_POSITION_BELOW || position === IMAGE_POSITION_RIGHT) {
+    stage.appendChild(image);
+  } else {
+    stage.insertBefore(image, stage.firstChild);
+  }
   return image;
 }
 

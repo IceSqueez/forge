@@ -8,16 +8,11 @@ use std::time::Duration;
 
 use forge_components::OverflowRevealingFocus;
 use forge_components::{
-    ActivePresentation, BORDER_THIN, FONT_XXS, ForgePalette, InputEvent, KeyActivated, Picker,
-    PickerEvent, PickerItem, PickerLabels, Spacing, TextInput, accent_swatch, field_label,
-    ghost_button, scaled, secondary_button, section_label, spacing, tr,
+    ActivePresentation, BORDER_THIN, FONT_XXS, ForgePalette, KeyActivated, Picker, PickerEvent,
+    PickerItem, PickerLabels, accent_swatch, field_label, scaled, section_label, tr,
 };
-use forge_overlay::config::{
-    ACCENT, ACCENT_OPTIONS, BACKGROUND_COLOR, SOUND_OPTIONS_KEY, SPEECH_VOICE,
-};
-use forge_overlay::{
-    ConfigSection, MediaIssue, MediaSlot, SectionedField, hex_color_channels, media_slot,
-};
+use forge_overlay::config::{ACCENT, SOUND_OPTIONS_KEY, SPEECH_VOICE};
+use forge_overlay::{ConfigSection, MediaIssue, MediaSlot, SectionedField, media_slot};
 use forge_registry::FormField;
 use forge_runtime::{OverlaySampleSource, OverlayServiceHandle};
 use forge_speech_types::ENGINE_VOICE_OPTIONS_KEY;
@@ -25,13 +20,13 @@ use forge_storage::{OverlayConfig, OverlayId};
 use forge_types::ClipId;
 use gpui::{
     AnyElement, App, Context, Entity, EventEmitter, Pixels, Rgba, SharedString, Subscription,
-    Window, div, prelude::*, px, rgb,
+    Window, div, prelude::*, px,
 };
 
 use super::base_sections::{
     BaseEvent, BaseState, FIELD_SECTIONS, PanelSection, base_hint, base_label, hinted,
 };
-use super::custom_accents::normalized_accent;
+use super::color_choice::{ColorChoices, settle_background_choice};
 use super::icon_choice::{IconImage, icon_field_row};
 use super::latest_section::LatestState;
 use super::motion_notices::MotionNotices;
@@ -56,10 +51,6 @@ pub(super) const FIELD_GAP: Pixels = px(12.0);
 pub(super) const NOTICE_PAD: Pixels = px(9.0);
 pub(super) const NOTICE_RADIUS: Pixels = radius(Radius::Sm);
 pub(super) const NOTICE_LINE_H: Pixels = px(15.0);
-
-const ACCENT_INPUT_PLACEHOLDER: &str = "#ff8800";
-const COLOR_TILE: Pixels = px(22.0);
-const COLOR_TILE_GAP: Pixels = px(6.0);
 
 const SLIDE_SETTLE: Duration = Duration::from_millis(400);
 
@@ -126,8 +117,7 @@ pub(super) struct OverlayPropertyPanel {
     pub(super) fields: Vec<ConfigField>,
     choices: HashMap<String, Vec<ChoiceOption>>,
     icon_images: Vec<IconImage>,
-    custom_accents: Vec<String>,
-    accent_input: Entity<TextInput>,
+    pub(super) colors: ColorChoices,
     overridden_files: Vec<String>,
     picker: Option<ChoicePicker>,
     media_issues: Vec<MediaIssue>,
@@ -135,14 +125,12 @@ pub(super) struct OverlayPropertyPanel {
     pending_pick: Option<PendingPick>,
     pick_refusal: Option<(String, String)>,
     settle_epoch: u64,
-    accent_rejected: bool,
     pub(super) service: OverlayServiceHandle,
     pub(super) samples: Arc<dyn OverlaySampleSource>,
     pub(super) rt_handle: tokio::runtime::Handle,
     pub(super) base: BaseState,
     pub(super) latest: LatestState,
     _release: Subscription,
-    _accent_sub: Subscription,
 }
 
 impl EventEmitter<PropertyPanelEvent> for OverlayPropertyPanel {}
@@ -170,10 +158,10 @@ impl OverlayPropertyPanel {
         for spec in &launch.specs {
             fold_config_field(&spec.field, None, &fold, &mut fields, cx);
         }
+        settle_background_choice(&mut fields);
         let index = index_fields(&launch.specs);
         let release = cx.on_release(|this, cx| this.persist_on_release(cx));
-        let accent_input = cx.new(|cx| TextInput::new(ACCENT_INPUT_PLACEHOLDER, cx));
-        let accent_sub = cx.subscribe(&accent_input, Self::on_accent_input_event);
+        let colors = ColorChoices::new(launch.custom_accents, &fields, cx);
 
         let mut panel = Self {
             overlay_id: launch.overlay_id,
@@ -184,8 +172,7 @@ impl OverlayPropertyPanel {
             fields,
             choices: launch.choices,
             icon_images: launch.icon_images,
-            custom_accents: launch.custom_accents,
-            accent_input,
+            colors,
             overridden_files: launch.overridden_files,
             picker: None,
             media_issues: Vec::new(),
@@ -193,16 +180,14 @@ impl OverlayPropertyPanel {
             pending_pick: None,
             pick_refusal: None,
             settle_epoch: 0,
-            accent_rejected: false,
             service: launch.service,
             samples: launch.samples,
             rt_handle: launch.rt_handle,
             base: BaseState::unset(),
             latest: LatestState::default(),
             _release: release,
-            _accent_sub: accent_sub,
         };
-        panel.refresh_accent_options(&palette);
+        panel.refresh_color_options(&palette);
         panel.refresh_media_choices();
         panel.refresh_voice_choices();
         panel
@@ -222,78 +207,6 @@ impl OverlayPropertyPanel {
     pub(super) fn set_icon_images(&mut self, images: Vec<IconImage>, cx: &mut Context<Self>) {
         self.icon_images = images;
         cx.notify();
-    }
-
-    pub(super) fn set_custom_accents(&mut self, colors: Vec<String>, cx: &mut Context<Self>) {
-        self.custom_accents = colors;
-        let palette = cx.palette();
-        self.refresh_accent_options(&palette);
-        cx.notify();
-    }
-
-    fn selected_accent(&self) -> Option<&str> {
-        self.fields.iter().find_map(|field| match field {
-            ConfigField::Swatch { key, selected, .. } if key == ACCENT => Some(selected.as_str()),
-            _ => None,
-        })
-    }
-
-    fn refresh_accent_options(&mut self, palette: &ForgePalette) {
-        let chosen = self
-            .selected_accent()
-            .and_then(normalized_accent)
-            .filter(|color| !self.custom_accents.contains(color));
-        let saved = self.custom_accents.iter().cloned().chain(chosen);
-        let offered: Vec<(String, Rgba)> = ACCENT_OPTIONS
-            .iter()
-            .map(|name| {
-                let tint = accent_swatch(name, palette).unwrap_or(palette.text_faint);
-                ((*name).to_owned(), tint)
-            })
-            .chain(saved.filter_map(|color| Some((color.clone(), hex_tint(&color)?))))
-            .collect();
-        for field in &mut self.fields {
-            if let ConfigField::Swatch { key, options, .. } = field
-                && key == ACCENT
-            {
-                options.clone_from(&offered);
-            }
-        }
-    }
-
-    fn on_accent_input_event(
-        &mut self,
-        _input: Entity<TextInput>,
-        event: &InputEvent,
-        cx: &mut Context<Self>,
-    ) {
-        match event {
-            InputEvent::Submitted(_) => self.add_typed_accent(cx),
-            _ => {
-                self.accent_rejected = false;
-                cx.notify();
-            }
-        }
-    }
-
-    fn add_typed_accent(&mut self, cx: &mut Context<Self>) {
-        let Some(color) = normalized_accent(self.accent_input.read(cx).content()) else {
-            self.accent_rejected = true;
-            cx.notify();
-            return;
-        };
-        self.accent_rejected = false;
-        self.accent_input
-            .update(cx, |input, cx| input.set_content("", cx));
-        self.pick_swatch(ACCENT.to_owned(), color.clone(), cx);
-        cx.emit(AccentListEdit::Add(color));
-    }
-
-    fn remove_selected_accent(&mut self, cx: &mut Context<Self>) {
-        let Some(color) = self.selected_accent().map(str::to_owned) else {
-            return;
-        };
-        cx.emit(AccentListEdit::Remove(color));
     }
 
     pub(super) fn begin_icon_import(&mut self, key: String, cx: &mut Context<Self>) {
@@ -479,9 +392,7 @@ impl OverlayPropertyPanel {
             forge_components::InputEvent::Submitted(_) | forge_components::InputEvent::Blurred(_)
         ) {
             self.bound_design_inputs(cx);
-            if !self.has_malformed_color(cx) {
-                self.emit_save(cx);
-            }
+            self.emit_save(cx);
             cx.notify();
         }
     }
@@ -510,7 +421,7 @@ impl OverlayPropertyPanel {
         cx.notify();
     }
 
-    fn pick_swatch(&mut self, key: String, choice: String, cx: &mut Context<Self>) {
+    pub(super) fn pick_swatch(&mut self, key: String, choice: String, cx: &mut Context<Self>) {
         for field in &mut self.fields {
             if let ConfigField::Swatch {
                 key: k, selected, ..
@@ -655,20 +566,6 @@ impl OverlayPropertyPanel {
             .unwrap_or(PanelSection::Content)
     }
 
-    fn background_text<'a>(&self, cx: &'a App) -> Option<&'a str> {
-        self.fields.iter().find_map(|field| match field {
-            ConfigField::Input { key, input, .. } if key == BACKGROUND_COLOR => {
-                Some(input.read(cx).content().trim())
-            }
-            _ => None,
-        })
-    }
-
-    fn has_malformed_color(&self, cx: &App) -> bool {
-        self.background_text(cx)
-            .is_some_and(|text| !text.is_empty() && hex_color_channels(text).is_none())
-    }
-
     fn notes_for(&self, key: &str) -> Vec<String> {
         let adopting = self
             .pending_pick
@@ -740,105 +637,6 @@ impl OverlayPropertyPanel {
         )
     }
 
-    fn accent_control(
-        &self,
-        field: &ConfigField,
-        palette: &ForgePalette,
-        view: &Entity<Self>,
-        handlers: &ConfigFieldHandlers<Self>,
-        density: Density,
-        cx: &App,
-    ) -> Option<AnyElement> {
-        if field.key() != ACCENT {
-            return None;
-        }
-        let swatches = render_config_control(
-            field,
-            palette,
-            "overlays-panel",
-            view,
-            handlers,
-            density,
-            cx,
-        );
-        let add_view = view.clone();
-        let add = secondary_button(tr!("overlays_accent_add"), palette).on_click(
-            "overlays-accent-add",
-            move |_: &gpui::ClickEvent, _window: &mut Window, cx: &mut App| {
-                add_view.update(cx, |this, cx| this.add_typed_accent(cx));
-            },
-        );
-        let add_row = div()
-            .mt(spacing(Spacing::Xs, density))
-            .flex()
-            .items_center()
-            .gap(spacing(Spacing::Xs, density))
-            .child(
-                div()
-                    .flex_1()
-                    .min_w(px(0.0))
-                    .child(self.accent_input.clone()),
-            )
-            .child(add);
-        let removable = self
-            .selected_accent()
-            .is_some_and(|selected| self.custom_accents.iter().any(|color| color == selected));
-        let remove_view = view.clone();
-        let remove = removable.then(|| {
-            div().mt(spacing(Spacing::Xs, density)).child(
-                ghost_button(tr!("overlays_accent_remove"), palette).on_click(
-                    "overlays-accent-remove",
-                    move |_: &gpui::ClickEvent, _window: &mut Window, cx: &mut App| {
-                        remove_view.update(cx, |this, cx| this.remove_selected_accent(cx));
-                    },
-                ),
-            )
-        });
-        Some(
-            div()
-                .flex()
-                .flex_col()
-                .child(swatches)
-                .child(add_row)
-                .children(remove)
-                .into_any_element(),
-        )
-    }
-
-    fn color_control(
-        &self,
-        field: &ConfigField,
-        palette: &ForgePalette,
-        density: Density,
-        cx: &App,
-    ) -> Option<AnyElement> {
-        let ConfigField::Input { key, input, .. } = field else {
-            return None;
-        };
-        if key != BACKGROUND_COLOR {
-            return None;
-        }
-        let tile = div()
-            .flex_none()
-            .size(scaled(COLOR_TILE, density))
-            .rounded(radius(Radius::Sm))
-            .border(BORDER_THIN)
-            .border_color(palette.border_input);
-        let tile = match self.background_text(cx).and_then(hex_color_channels) {
-            Some(channels) => tile.bg(channel_tint(channels)),
-            None => tile.bg(palette.surface_overlay),
-        };
-        Some(
-            div()
-                .flex()
-                .items_center()
-                .gap(scaled(COLOR_TILE_GAP, density))
-                .child(tile)
-                .child(div().flex_1().min_w(px(0.0)).child(input.clone()))
-                .into_any_element(),
-        )
-    }
-
     fn render_section(
         &self,
         section: PanelSection,
@@ -868,8 +666,7 @@ impl OverlayPropertyPanel {
         for field in members {
             let control = self
                 .icon_control(field, palette, &view, density, cx)
-                .or_else(|| self.color_control(field, palette, density, cx))
-                .or_else(|| self.accent_control(field, palette, &view, &handlers, density, cx))
+                .or_else(|| self.color_control(field, palette, &view, &handlers, density, cx))
                 .unwrap_or_else(|| {
                     render_config_control(
                         field,
@@ -882,10 +679,7 @@ impl OverlayPropertyPanel {
                     )
                 });
             let mut notes = self.notes_for(field.key());
-            if field.key() == BACKGROUND_COLOR && self.has_malformed_color(cx) {
-                notes.push(tr!("overlays_alert_background_color_malformed"));
-            }
-            if field.key() == ACCENT && self.accent_rejected {
+            if self.colors.rejected(field.key()) {
                 notes.push(tr!("overlays_accent_malformed"));
             }
             let body = match notes_block(notes, palette, density, cx) {
@@ -944,14 +738,6 @@ pub(super) fn override_notice(
             ))
             .into_any_element(),
     )
-}
-
-fn channel_tint([red, green, blue]: [u8; 3]) -> Rgba {
-    rgb(u32::from_be_bytes([0, red, green, blue]))
-}
-
-fn hex_tint(color: &str) -> Option<Rgba> {
-    hex_color_channels(color).map(channel_tint)
 }
 
 struct FieldIndex {

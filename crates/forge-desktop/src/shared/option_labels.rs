@@ -51,7 +51,8 @@ mod tests {
 
     const LANGUAGES: [Language; 2] = [Language::En, Language::Uk];
     const DASHES: [char; 4] = ['\u{2014}', '\u{2013}', '\u{2012}', '\u{2015}'];
-    const SELECT_KEYS_WITH_UNTRANSLATED_OPTIONS: &[&str] = &["content_type", "font", "accent"];
+    const SELECT_KEYS_WITH_UNTRANSLATED_OPTIONS: &[&str] =
+        &["content_type", "font", "accent", "background_color"];
 
     type Scoped = (String, &'static str, &'static str);
     type Shared = (&'static str, &'static str);

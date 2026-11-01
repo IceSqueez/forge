@@ -2,6 +2,7 @@ mod base_sections;
 mod bindings_panel;
 mod catalog;
 mod code_pane;
+mod color_choice;
 mod custom_accents;
 mod delete_prompt;
 mod editor_pane;

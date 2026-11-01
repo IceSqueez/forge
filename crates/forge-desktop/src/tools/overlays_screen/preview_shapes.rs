@@ -212,7 +212,15 @@ fn badge_banner(
         .image
         .zip(glyphs.image.as_ref())
         .map(|(placed, path)| (placed.side, banner_picture(path, placed.height, scale)));
-    let stacked = matches!(picture, Some((PreviewImageSide::Above, _)));
+    let stacked = matches!(
+        picture,
+        Some((PreviewImageSide::Above | PreviewImageSide::Below, _))
+    );
+    let (leading, trailing) = match picture {
+        Some((PreviewImageSide::Below | PreviewImageSide::Right, picture)) => (None, Some(picture)),
+        Some((_, picture)) => (Some(picture), None),
+        None => (None, None),
+    };
     let card = div()
         .flex_none()
         .flex()
@@ -228,8 +236,9 @@ fn badge_banner(
             || surface(ALERT.surface_alpha),
             |chosen| surface_color(chosen.rgb, chosen.alpha),
         ))
-        .children(picture.map(|(_, picture)| picture))
-        .child(message);
+        .children(leading)
+        .child(message)
+        .children(trailing);
 
     sized(card, plan).into_any_element()
 }

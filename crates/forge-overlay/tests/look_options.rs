@@ -6,8 +6,9 @@ use forge_overlay::config::{
     ACCENT, BACKGROUND_COLOR, BACKGROUND_OPACITY, DEFAULT_BACKGROUND_COLOR,
     DEFAULT_BACKGROUND_OPACITY_PERCENT, DEFAULT_IMAGE_HEIGHT_PX, IMAGE, IMAGE_HEIGHT,
     IMAGE_HEIGHT_MAX_PX, IMAGE_HEIGHT_MIN_PX, IMAGE_POSITION, IMAGE_POSITION_ABOVE,
-    IMAGE_POSITION_LEFT, LABEL_OFFSET_MAX_PX, LABEL_OFFSET_MIN_PX, LABEL_OFFSET_X, LABEL_OFFSET_Y,
-    LABEL_SIDE, LABEL_SIDE_CENTER, LABEL_SIDE_LEFT, LABEL_SIDE_RIGHT,
+    IMAGE_POSITION_BELOW, IMAGE_POSITION_LEFT, IMAGE_POSITION_OPTIONS, IMAGE_POSITION_RIGHT,
+    LABEL_OFFSET_MAX_PX, LABEL_OFFSET_MIN_PX, LABEL_OFFSET_X, LABEL_OFFSET_Y, LABEL_SIDE,
+    LABEL_SIDE_CENTER, LABEL_SIDE_LEFT, LABEL_SIDE_RIGHT,
 };
 use forge_overlay::metrics::{ALERT, SURFACE_RGB};
 use forge_overlay::{
@@ -242,7 +243,10 @@ fn the_numeric_controls_stop_at_their_bounds() {
         assert_eq!(accepts(FRAME_KIND, &config), accepted, "{config:?}");
     }
     assert!(!accepts(FRAME_KIND, &text(LABEL_SIDE, "diagonal")));
-    assert!(!accepts(ALERT_KIND, &text(IMAGE_POSITION, "right")));
+    for position in IMAGE_POSITION_OPTIONS {
+        assert!(accepts(ALERT_KIND, &text(IMAGE_POSITION, position)));
+    }
+    assert!(!accepts(ALERT_KIND, &text(IMAGE_POSITION, "diagonal")));
 }
 
 #[test]
@@ -339,7 +343,7 @@ fn the_editor_preview_stays_in_range_on_a_stored_value_validation_would_refuse()
     }
 
     let mut unknown_position = text(IMAGE, &image_reference(BLOB_IDENTITY));
-    unknown_position.extend(text(IMAGE_POSITION, "right"));
+    unknown_position.extend(text(IMAGE_POSITION, "diagonal"));
     assert_eq!(
         composition(ALERT_KIND, unknown_position)
             .image
@@ -372,16 +376,21 @@ fn the_editor_preview_places_a_chosen_image_and_reserves_nothing_without_one() {
         })
     );
 
-    let mut left = text(IMAGE, &reference);
-    left.extend(text(IMAGE_POSITION, IMAGE_POSITION_LEFT));
-    left.extend(number(IMAGE_HEIGHT, 90));
-    assert_eq!(
-        composition(ALERT_KIND, left).image,
-        Some(PreviewImage {
-            side: PreviewImageSide::Left,
-            height: 90,
-        })
-    );
+    for (position, side) in [
+        (IMAGE_POSITION_ABOVE, PreviewImageSide::Above),
+        (IMAGE_POSITION_BELOW, PreviewImageSide::Below),
+        (IMAGE_POSITION_LEFT, PreviewImageSide::Left),
+        (IMAGE_POSITION_RIGHT, PreviewImageSide::Right),
+    ] {
+        let mut placed = text(IMAGE, &reference);
+        placed.extend(text(IMAGE_POSITION, position));
+        placed.extend(number(IMAGE_HEIGHT, 90));
+        assert_eq!(
+            composition(ALERT_KIND, placed).image,
+            Some(PreviewImage { side, height: 90 }),
+            "{position}"
+        );
+    }
 }
 
 #[test]

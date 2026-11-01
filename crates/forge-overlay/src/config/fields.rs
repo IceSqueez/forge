@@ -286,10 +286,10 @@ pub(crate) fn background_fields() -> [SectionedField; 2] {
     [
         in_section(
             ConfigSection::Style,
-            FormField::Text {
+            FormField::Swatch {
                 key: BACKGROUND_COLOR,
                 label: "Background color",
-                placeholder: DEFAULT_BACKGROUND_COLOR,
+                options: BACKGROUND_COLOR_OPTIONS,
             },
         ),
         in_section(

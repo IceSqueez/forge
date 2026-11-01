@@ -57,6 +57,12 @@ pub const ACCENT_GREEN: &str = "green";
 pub const ACCENT_PEACH: &str = "peach";
 pub const ACCENT_YELLOW: &str = "yellow";
 pub const ACCENT_RED: &str = "red";
+pub const ACCENT_MAUVE_HEX: &str = "#cba6f7";
+pub const ACCENT_SKY_HEX: &str = "#89dceb";
+pub const ACCENT_GREEN_HEX: &str = "#a6e3a1";
+pub const ACCENT_PEACH_HEX: &str = "#fab387";
+pub const ACCENT_YELLOW_HEX: &str = "#f9e2af";
+pub const ACCENT_RED_HEX: &str = "#f38ba8";
 pub const ACCENT_OPTIONS: &[&str] = &[
     ACCENT_MAUVE,
     ACCENT_SKY,
@@ -77,8 +83,15 @@ pub const POSITION_BOTTOM: &str = "bottom";
 pub const POSITION_OPTIONS: &[&str] = &[POSITION_TOP, POSITION_BOTTOM];
 
 pub const IMAGE_POSITION_ABOVE: &str = "above";
+pub const IMAGE_POSITION_BELOW: &str = "below";
 pub const IMAGE_POSITION_LEFT: &str = "left";
-pub const IMAGE_POSITION_OPTIONS: &[&str] = &[IMAGE_POSITION_ABOVE, IMAGE_POSITION_LEFT];
+pub const IMAGE_POSITION_RIGHT: &str = "right";
+pub const IMAGE_POSITION_OPTIONS: &[&str] = &[
+    IMAGE_POSITION_ABOVE,
+    IMAGE_POSITION_BELOW,
+    IMAGE_POSITION_LEFT,
+    IMAGE_POSITION_RIGHT,
+];
 
 pub const LABEL_SIDE_LEFT: &str = "left";
 pub const LABEL_SIDE_CENTER: &str = "center";
@@ -89,6 +102,15 @@ pub const LABEL_OFFSET_MIN_PX: i64 = -4000;
 pub const LABEL_OFFSET_MAX_PX: i64 = 4000;
 
 pub const DEFAULT_BACKGROUND_COLOR: &str = "#14141c";
+pub const BACKGROUND_COLOR_OPTIONS: &[&str] = &[
+    DEFAULT_BACKGROUND_COLOR,
+    ACCENT_MAUVE_HEX,
+    ACCENT_SKY_HEX,
+    ACCENT_GREEN_HEX,
+    ACCENT_PEACH_HEX,
+    ACCENT_YELLOW_HEX,
+    ACCENT_RED_HEX,
+];
 pub const BACKGROUND_OPACITY_MIN_PERCENT: i64 = 0;
 pub const BACKGROUND_OPACITY_MAX_PERCENT: i64 = 100;
 pub const DEFAULT_BACKGROUND_OPACITY_PERCENT: i64 = 86;

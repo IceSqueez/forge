@@ -60,8 +60,7 @@ pub(super) fn check_field(field: &FormField, config: &OverlayConfig) -> Result<(
             let Some(value) = expect_string(config, key)? else {
                 return Ok(());
             };
-            let custom_accent = *key == ACCENT && hex_color_channels(value).is_some();
-            if options.contains(&value) || custom_accent {
+            if options.contains(&value) || is_custom_color(key, value) {
                 return Ok(());
             }
             Err(OverlayError::UnknownChoice {
@@ -102,9 +101,16 @@ pub(super) fn check_field(field: &FormField, config: &OverlayConfig) -> Result<(
     }
 }
 
+fn is_custom_color(key: &str, value: &str) -> bool {
+    match key {
+        ACCENT => hex_color_channels(value).is_some(),
+        BACKGROUND_COLOR => value.is_empty() || hex_color_channels(value).is_some(),
+        _ => false,
+    }
+}
+
 fn is_well_formed(key: &str, value: &str) -> bool {
     match key {
-        BACKGROUND_COLOR => value.is_empty() || hex_color_channels(value).is_some(),
         IMAGE => value.is_empty() || names_a_library_image(value),
         _ => true,
     }

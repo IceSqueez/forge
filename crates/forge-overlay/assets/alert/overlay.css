@@ -36,7 +36,8 @@ body {
   font-family: var(--font);
 }
 
-#stage.image-above {
+#stage.image-above,
+#stage.image-below {
   flex-direction: column;
 }
 
@@ -44,7 +45,8 @@ body {
   display: contents;
 }
 
-#stage.image-above .message {
+#stage.image-above .message,
+#stage.image-below .message {
   display: flex;
   gap: inherit;
   align-items: center;

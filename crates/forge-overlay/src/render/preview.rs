@@ -78,7 +78,9 @@ pub struct PreviewSurface {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum PreviewImageSide {
     Above,
+    Below,
     Left,
+    Right,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -220,7 +222,9 @@ fn image_of(shape: PreviewShape, config: &OverlayConfig) -> Option<PreviewImage>
         return None;
     }
     let side = match config::read_str(config, config::IMAGE_POSITION) {
+        config::IMAGE_POSITION_BELOW => PreviewImageSide::Below,
         config::IMAGE_POSITION_LEFT => PreviewImageSide::Left,
+        config::IMAGE_POSITION_RIGHT => PreviewImageSide::Right,
         _ => PreviewImageSide::Above,
     };
     Some(PreviewImage {

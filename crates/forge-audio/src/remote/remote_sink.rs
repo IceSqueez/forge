@@ -807,16 +807,75 @@ mod tests {
 
     #[tokio::test(start_paused = true)]
     async fn dropping_a_fan_out_playback_stops_its_remote_leg_exactly_once() {
-        let (page, mut rx) = FakePage::new(1, Report::Never);
-        let fan_out = crate::sink::fan_out::FanOutSink::new(vec![
-            Arc::new(sink(&page)) as Arc<dyn AudioSink>,
-            Arc::new(crate::sink::NullSink),
-        ]);
-        let playback = fan_out.start(clip_of(4_000)).await.unwrap();
+        for (case, stop_first, stop_lands_before_drop) in [
+            ("dropped untouched", false, false),
+            ("stopped and dropped in the same step", true, false),
+            ("dropped after the stop reached the page", true, true),
+        ] {
+            let (page, mut rx) = FakePage::new(1, Report::Never);
+            let fan_out = crate::sink::fan_out::FanOutSink::new(vec![
+                Arc::new(sink(&page)) as Arc<dyn AudioSink>,
+                Arc::new(crate::sink::NullSink),
+            ]);
+            let playback = fan_out.start(clip_of(4_000)).await.unwrap();
+            if stop_first {
+                playback.stop();
+            }
+            let mut pushed = Vec::new();
+            if stop_lands_before_drop {
+                pushed.extend(next_pushed(&mut rx).await);
+            }
 
-        drop(playback);
+            drop(playback);
 
-        assert_one_stop_then_quiet("fan-out leg", &mut rx).await;
+            while let Some(command) = next_pushed(&mut rx).await {
+                pushed.push(command);
+            }
+            assert_eq!(pushed, [RemoteCommand::Stop], "{case}");
+        }
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn play_answers_with_the_verdict_of_the_page_not_with_the_delivery() {
+        type Verdict = Result<(), AudioError>;
+        type Check = fn(&Verdict) -> bool;
+        let cases: [(&str, usize, Report, Check); 5] = [
+            ("played", 1, Report::Now(RemoteVerdict::Played), |outcome| {
+                outcome.is_ok()
+            }),
+            (
+                "the page could not tell",
+                1,
+                Report::Now(RemoteVerdict::Unknown {
+                    reason: RemoteFailure::NoVerdict,
+                }),
+                |outcome| outcome.is_ok(),
+            ),
+            (
+                "refused",
+                1,
+                Report::Now(RemoteVerdict::Refused {
+                    reason: RemoteFailure::PageRefused(PAGE_REFUSAL.to_owned()),
+                }),
+                |outcome| matches!(outcome, Err(AudioError::RemoteDestination(RemoteFailure::PageRefused(reason))) if reason == PAGE_REFUSAL),
+            ),
+            (
+                "the verdict could not be fetched",
+                1,
+                Report::Fails(TRANSPORT_FAULT.to_owned()),
+                |outcome| matches!(outcome, Err(AudioError::RemoteDestination(RemoteFailure::PageRefused(reason))) if reason == TRANSPORT_FAULT),
+            ),
+            ("nobody is listening", 0, Report::Never, |outcome| {
+                matches!(outcome, Err(AudioError::NoRemoteListener { .. }))
+            }),
+        ];
+        for (case, live_players, report, expected) in cases {
+            let (page, _rx) = FakePage::new(live_players, report);
+
+            let outcome = sink(&page).play(clip_of(20)).await;
+
+            assert!(expected(&outcome), "{case}: got {outcome:?}");
+        }
     }
 
     #[tokio::test(start_paused = true)]

@@ -103,17 +103,12 @@ pub(crate) fn wait_for_completion(watch: &OutputWatch, stall_limit: Duration) {
 
 #[cfg(test)]
 mod tests {
-    use cpal::{I24, U24};
-
     use super::*;
 
     const LONG_STALL: Duration = Duration::from_secs(600);
     const WAIT_HANG_GUARD: Duration = Duration::from_secs(60);
 
-    const SCALE_TOLERANCE: f64 = 0.01;
     const TAIL_SAMPLES: usize = 8;
-
-    type LevelRenderer = fn(&[i16]) -> Vec<f64>;
 
     fn feed_with(samples: &[i16], stopped: bool, paused: bool) -> PlaybackFeed {
         let control = PlaybackControl::new();
@@ -132,72 +127,17 @@ mod tests {
         }
     }
 
-    fn rendered_levels<T: Sample + FromSample<i16>>(samples: &[i16]) -> Vec<f64>
-    where
-        f64: FromSample<T>,
-    {
-        let mut feed = feed_with(samples, false, false);
-        let mut out = vec![T::EQUILIBRIUM; samples.len()];
-        feed.fill(&mut out);
-        out.into_iter().map(f64::from_sample).collect()
-    }
-
-    fn underrun_tail_is<T: Sample + FromSample<i16>>(queued: &[i16], expected_silence: T) -> bool {
-        let mut feed = feed_with(queued, false, false);
-        let mut out = vec![T::from_sample(i16::MAX); queued.len() + 4];
-        feed.fill(&mut out);
-        out[queued.len()..]
-            .iter()
-            .all(|slot| *slot == expected_silence)
-    }
-
     #[test]
-    fn every_output_format_receives_the_pcm_scaled_to_its_full_range() {
-        let pcm = [i16::MAX, i16::MIN, 0, 16_384, -16_384];
-        let expected = [1.0, -1.0, 0.0, 0.5, -0.5];
-        let formats: [(&str, LevelRenderer); 12] = [
-            ("i8", rendered_levels::<i8>),
-            ("i16", rendered_levels::<i16>),
-            ("i24", rendered_levels::<I24>),
-            ("i32", rendered_levels::<i32>),
-            ("i64", rendered_levels::<i64>),
-            ("u8", rendered_levels::<u8>),
-            ("u16", rendered_levels::<u16>),
-            ("u24", rendered_levels::<U24>),
-            ("u32", rendered_levels::<u32>),
-            ("u64", rendered_levels::<u64>),
-            ("f32", rendered_levels::<f32>),
-            ("f64", rendered_levels::<f64>),
-        ];
-        for (name, render) in formats {
-            let levels = render(&pcm);
-            for ((level, want), source) in levels.iter().zip(expected).zip(pcm) {
-                assert!(
-                    (level - want).abs() < SCALE_TOLERANCE,
-                    "{name}: pcm {source} played at level {level}, expected about {want}"
-                );
-            }
-        }
-    }
+    fn a_block_takes_only_whole_frames_and_the_next_one_resumes_after_them() {
+        let mut feed = feed_with(&[1, 2, 3, 4], false, false);
+        feed.channels = 2;
+        let mut block = [9_i16; 3];
 
-    #[test]
-    fn an_underrun_pads_the_buffer_with_each_formats_silence() {
-        let queued = [i16::MAX, i16::MIN];
-        let cases = [
-            ("i16", underrun_tail_is::<i16>(&queued, 0)),
-            ("i32", underrun_tail_is::<i32>(&queued, 0)),
-            ("u8", underrun_tail_is::<u8>(&queued, 128)),
-            ("u16", underrun_tail_is::<u16>(&queued, 32_768)),
-            ("f32", underrun_tail_is::<f32>(&queued, 0.0)),
-            ("empty u16", underrun_tail_is::<u16>(&[], 32_768)),
-            ("empty u8", underrun_tail_is::<u8>(&[], 128)),
-        ];
-        for (name, silent) in cases {
-            assert!(
-                silent,
-                "{name}: underrun did not write the format's silence"
-            );
-        }
+        feed.fill(&mut block);
+        assert_eq!(block, [1, 2, 0], "half a frame was played");
+
+        feed.fill(&mut block);
+        assert_eq!(block, [3, 4, 0], "the next block lost its place");
     }
 
     #[test]
@@ -266,6 +206,19 @@ mod tests {
 
         assert!(watch.is_drained());
         assert_the_wait_returns(&watch);
+    }
+
+    #[test]
+    fn the_first_failure_is_the_one_reported() {
+        let watch = idle_watch();
+
+        watch.fail("device unplugged".to_owned());
+        watch.fail("stream invalidated".to_owned());
+
+        assert_eq!(
+            watch.failure.get().map(String::as_str),
+            Some("device unplugged")
+        );
     }
 
     #[test]

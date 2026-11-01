@@ -361,7 +361,27 @@ mod tests {
                 ends,
                 "wrong verdict for {kind:?}"
             );
+            assert_eq!(
+                watch.hiccups(),
+                u64::from(!ends),
+                "wrong hiccup count for {kind:?}"
+            );
         }
+    }
+
+    #[test]
+    fn hiccups_add_up_and_stay_counted_when_a_fatal_error_follows() {
+        let watch = OutputWatch::new(PlaybackControl::new());
+        let mut on_error = stream_error_callback(Arc::clone(&watch));
+
+        on_error(cpal::Error::new(cpal::ErrorKind::Xrun));
+        on_error(cpal::Error::new(cpal::ErrorKind::Xrun));
+        on_error(cpal::Error::new(cpal::ErrorKind::DeviceChanged));
+        assert!(watch.failure.get().is_none(), "a hiccup ended the clip");
+
+        on_error(cpal::Error::new(cpal::ErrorKind::DeviceNotAvailable));
+
+        assert_eq!(watch.hiccups(), 3);
     }
 
     #[test]

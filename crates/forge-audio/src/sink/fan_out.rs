@@ -283,7 +283,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn play_succeeds_while_any_route_starts_and_carries_every_reason_when_none_do() {
+    async fn start_succeeds_while_any_route_starts_and_carries_every_reason_when_none_do() {
         for (case, refusals) in [
             ("the only route plays", vec![None]),
             ("the only route refuses", vec![Some(START_REFUSAL_A)]),
@@ -340,22 +340,6 @@ mod tests {
                     "{case}: stop must reach every route that started and none that did not"
                 );
             }
-        }
-    }
-
-    #[tokio::test]
-    async fn a_controlled_fan_out_fails_with_every_reason_when_no_route_starts() {
-        let probes = [route(Some(START_REFUSAL_A)), route(Some(START_REFUSAL_B))];
-        let err = fan(&probes).start(clip()).await.map(|_| ()).unwrap_err();
-        assert!(
-            matches!(&err, AudioError::AllRoutesFailed(_)),
-            "no route started yet the fan-out reported {err:?}"
-        );
-        for reason in [START_REFUSAL_A, START_REFUSAL_B] {
-            assert!(
-                reported_reasons(&err).contains(reason),
-                "{err} drops {reason:?}"
-            );
         }
     }
 
@@ -579,19 +563,30 @@ mod tests {
         }
     }
 
-    #[tokio::test(start_paused = true)]
-    async fn an_abandoned_start_stops_the_routes_that_already_started() {
-        let probe = route(None);
-        let started: Arc<dyn AudioSink> = probe.sink();
-        let fan_out = FanOutSink::new(vec![started, Arc::new(NeverStarts)]);
+    #[tokio::test]
+    async fn an_abandoned_start_stops_every_route_that_already_started() {
+        for hung_position in 0..3 {
+            let probes = [route(None), route(None)];
+            let mut sinks: Vec<Arc<dyn AudioSink>> = probes.iter().map(Probe::sink).collect();
+            sinks.insert(hung_position, Arc::new(NeverStarts));
+            let fan_out = FanOutSink::new(sinks);
+            let mut start = fan_out.start(clip());
 
-        let abandoned =
-            tokio::time::timeout(std::time::Duration::from_secs(5), fan_out.start(clip())).await;
+            assert!(
+                poll!(start.as_mut()).is_pending(),
+                "the hung route at {hung_position} must hold the start open"
+            );
+            assert!(
+                probes.iter().all(|probe| !probe.stopped()),
+                "a pending start must leave its routes playing"
+            );
 
-        assert!(
-            abandoned.is_err(),
-            "the hung route must hold the start open"
-        );
-        assert!(probe.stopped());
+            drop(start);
+
+            assert!(
+                probes.iter().all(Probe::stopped),
+                "the hung route at {hung_position}: a started route kept playing"
+            );
+        }
     }
 }

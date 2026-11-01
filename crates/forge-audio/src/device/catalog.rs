@@ -169,16 +169,6 @@ mod tests {
     }
 
     #[test]
-    fn sysdefault_ids_are_classified_as_noise() {
-        for id in ["sysdefault", "sysdefault:CARD=PCH"] {
-            assert!(
-                is_noise_device_id(id),
-                "expected noise classification: {id}"
-            );
-        }
-    }
-
-    #[test]
     fn canonical_chain_ids_survive_noise_filtering() {
         for id in CANONICAL_OUTPUT_CHAIN.iter().chain(CANONICAL_INPUT_CHAIN) {
             assert!(
@@ -240,47 +230,77 @@ mod tests {
     }
 
     #[test]
-    fn selectable_devices_drop_noise_and_keep_the_first_of_each_name() {
-        let listed = vec![
-            named("hw:CARD=Mic", "Mic", false),
-            named("pipewire", "Speakers", false),
-            named("speakers-copy", "Speakers", false),
-            named("headset", "Headset", false),
-        ];
-
-        let kept = selectable_devices(listed);
-
-        assert_eq!(ids(&kept), ["pipewire", "headset"]);
-    }
-
-    #[test]
-    fn a_default_hidden_as_a_duplicate_name_is_listed_again() {
-        let listed = vec![
-            named("speakers-a", "Speakers", false),
-            named("speakers-b", "Speakers", true),
-        ];
-
-        let kept = selectable_devices(listed);
-
-        assert_eq!(ids(&kept), ["speakers-a", "speakers-b"]);
-    }
-
-    #[test]
-    fn a_noise_default_is_never_listed_again() {
-        let listed = vec![
-            named("hw:CARD=Mic", "Mic", true),
-            named("pipewire", "Speakers", false),
-        ];
-
-        let kept = selectable_devices(listed);
-
-        assert_eq!(ids(&kept), ["pipewire"]);
-    }
-
-    #[test]
-    fn a_kept_default_is_not_listed_twice() {
-        let kept = selectable_devices(vec![named("pipewire", "Speakers", true)]);
-
-        assert_eq!(ids(&kept), ["pipewire"]);
+    fn selectable_devices_hide_noise_and_duplicates_but_keep_a_real_default() {
+        for (case, listed, expected) in [
+            ("nothing to list", vec![], vec![]),
+            (
+                "every alsa plugin family and the null device are hidden",
+                vec![
+                    named("null", "Discard all samples", false),
+                    named("sysdefault:CARD=PCH", "HDA Intel", false),
+                    named("dmix:CARD=PCH,DEV=0", "Direct mix", false),
+                    named("surround51:CARD=PCH", "Surround", false),
+                    named("hdmi:CARD=NVidia,DEV=0", "HDMI", false),
+                    named("plughw:CARD=PCH,DEV=0", "Plug", false),
+                    named("hw:CARD=PCH,DEV=0", "Raw", false),
+                    named("pipewire", "PipeWire", false),
+                ],
+                vec!["pipewire"],
+            ),
+            (
+                "a host of nothing but noise offers nothing",
+                vec![named("hw:0,0", "Raw", true), named("null", "Null", false)],
+                vec![],
+            ),
+            (
+                "noise is hidden and the first of each name is kept",
+                vec![
+                    named("hw:CARD=Mic", "Mic", false),
+                    named("pipewire", "Speakers", false),
+                    named("speakers-copy", "Speakers", false),
+                    named("headset", "Headset", false),
+                ],
+                vec!["pipewire", "headset"],
+            ),
+            (
+                "a noise entry does not claim its name from a real device",
+                vec![
+                    named("hw:CARD=Mic", "Mic", false),
+                    named("usb-mic", "Mic", false),
+                ],
+                vec!["usb-mic"],
+            ),
+            (
+                "a default hidden as a duplicate name is listed again",
+                vec![
+                    named("speakers-a", "Speakers", false),
+                    named("speakers-b", "Speakers", true),
+                ],
+                vec!["speakers-a", "speakers-b"],
+            ),
+            (
+                "a noise default is never listed again",
+                vec![
+                    named("hw:CARD=Mic", "Mic", true),
+                    named("pipewire", "Speakers", false),
+                ],
+                vec!["pipewire"],
+            ),
+            (
+                "a kept default is not listed twice",
+                vec![named("pipewire", "Speakers", true)],
+                vec!["pipewire"],
+            ),
+            (
+                "the host's order survives",
+                vec![
+                    named("zebra", "Zebra", false),
+                    named("alpha", "Alpha", false),
+                ],
+                vec!["zebra", "alpha"],
+            ),
+        ] {
+            assert_eq!(ids(&selectable_devices(listed)), expected, "{case}");
+        }
     }
 }

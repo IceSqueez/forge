@@ -433,6 +433,25 @@ mod tests {
     const THRESHOLD: f32 = 0.5;
     const NEVER_RELEASES: u64 = u64::MAX;
     const RELEASES_AT_ONCE: u64 = 0;
+    const LOUD: f32 = 1.0;
+    const SILENT: f32 = 0.0;
+    const STREAM_LOST: &str = "the microphone was unplugged";
+    const REOPEN_REFUSED: &str = "no input device";
+    const MIC: &str = "builtin-mic";
+    const USB_MIC: &str = "usb-mic";
+    const PATIENCE_SPENT: Option<Duration> = Some(Duration::ZERO);
+    const HANG_GUARD: Duration = Duration::from_secs(60);
+    const WAKE_ROUNDS: usize = 500;
+
+    fn shared_holding_for(hold_nanos: u64) -> Arc<GateShared> {
+        Arc::new(GateShared {
+            level_bits: AtomicU32::new(0.0f32.to_bits()),
+            threshold_bits: AtomicU32::new(THRESHOLD.to_bits()),
+            hold_nanos: AtomicU64::new(hold_nanos),
+            gate_open: AtomicBool::new(false),
+            hiccups: AtomicU64::new(0),
+        })
+    }
 
     struct Gate {
         callback: GateCallback,
@@ -443,13 +462,7 @@ mod tests {
     impl Gate {
         fn holding_for(hold_nanos: u64) -> Self {
             let (state_tx, state_rx) = watch::channel(VoiceGateState::Inactive);
-            let shared = Arc::new(GateShared {
-                level_bits: AtomicU32::new(0.0f32.to_bits()),
-                threshold_bits: AtomicU32::new(THRESHOLD.to_bits()),
-                hold_nanos: AtomicU64::new(hold_nanos),
-                gate_open: AtomicBool::new(false),
-                hiccups: AtomicU64::new(0),
-            });
+            let shared = shared_holding_for(hold_nanos);
             Self {
                 callback: GateCallback {
                     epoch: Instant::now(),
@@ -541,5 +554,308 @@ mod tests {
             f32::from_bits(gate.callback.shared.level_bits.load(Ordering::Relaxed)),
             0.25
         );
+    }
+
+    struct Parked {
+        monitor: MonitorLoop,
+        shared: Arc<GateShared>,
+        state_rx: watch::Receiver<VoiceGateState>,
+    }
+
+    impl Parked {
+        fn new() -> Self {
+            let (control_tx, controls) = crossbeam_channel::unbounded();
+            let (state_tx, state_rx) = watch::channel(VoiceGateState::Inactive);
+            let shared = shared_holding_for(NEVER_RELEASES);
+            Self {
+                monitor: MonitorLoop {
+                    controls,
+                    mailbox: MonitorMailbox {
+                        controls: control_tx,
+                        monitor: std::thread::current(),
+                    },
+                    publisher: GatePublisher::new(state_tx, Arc::clone(&shared)),
+                },
+                shared,
+                state_rx,
+            }
+        }
+
+        fn set_gate(&self, open: bool) {
+            self.shared.gate_open.store(open, Ordering::Release);
+        }
+
+        fn publish_gate(&mut self, open: bool) {
+            self.set_gate(open);
+            self.monitor.publisher.forward_gate();
+        }
+
+        fn state(&self) -> VoiceGateState {
+            self.state_rx.borrow().clone()
+        }
+    }
+
+    #[test]
+    fn a_failed_reopen_stays_unavailable_through_the_wait_for_the_next_attempt() {
+        for (case, gate_was_open, open_was_published) in [
+            ("the gate was closed", false, false),
+            ("the gate was open and published", true, true),
+            ("the gate opened in the last block", true, false),
+        ] {
+            let mut parked = Parked::new();
+            parked.set_gate(gate_was_open);
+            if open_was_published {
+                parked.monitor.publisher.forward_gate();
+            }
+
+            parked
+                .monitor
+                .publisher
+                .unavailable(REOPEN_REFUSED.to_owned());
+            let control = parked.monitor.next_control(PATIENCE_SPENT);
+
+            assert!(control.is_none(), "{case}: nothing was posted");
+            assert_eq!(
+                parked.state(),
+                VoiceGateState::Unavailable(REOPEN_REFUSED.to_owned()),
+                "{case}"
+            );
+        }
+    }
+
+    #[test]
+    fn a_reopened_stream_starts_inactive_and_publishes_the_next_opening() {
+        let lost = VoiceGateState::Unavailable(STREAM_LOST.to_owned());
+        for (case, previous, new_stream_already_open) in [
+            ("after an open gate", VoiceGateState::Active, false),
+            ("after a lost stream", lost.clone(), false),
+            (
+                "after an open gate, opening again at once",
+                VoiceGateState::Active,
+                true,
+            ),
+            ("after a lost stream, opening at once", lost, true),
+        ] {
+            let mut parked = Parked::new();
+            parked.publish_gate(true);
+            if previous != VoiceGateState::Active {
+                parked.monitor.publisher.unavailable(STREAM_LOST.to_owned());
+            }
+            assert_eq!(parked.state(), previous, "{case}: wrong setup");
+            parked.set_gate(new_stream_already_open);
+
+            parked.monitor.publisher.restart();
+            assert_eq!(parked.state(), VoiceGateState::Inactive, "{case}: reopened");
+
+            parked.publish_gate(true);
+            assert_eq!(
+                parked.state(),
+                VoiceGateState::Active,
+                "{case}: next opening"
+            );
+        }
+    }
+
+    #[test]
+    fn following_a_stream_ends_on_stop_on_a_new_device_and_on_a_lost_stream() {
+        let mic = Some(DeviceId::new(MIC));
+        let usb_mic = Some(DeviceId::new(USB_MIC));
+        let lost = VoiceGateState::Unavailable(STREAM_LOST.to_owned());
+        for (case, controls, reopens, device_after, state_after) in [
+            (
+                "stop ends the monitor",
+                vec![GateControl::Stop],
+                false,
+                mic.clone(),
+                VoiceGateState::Inactive,
+            ),
+            (
+                "the device already open is no change",
+                vec![GateControl::SetDevice(mic.clone()), GateControl::Stop],
+                false,
+                mic.clone(),
+                VoiceGateState::Inactive,
+            ),
+            (
+                "another device reopens",
+                vec![GateControl::SetDevice(usb_mic.clone())],
+                true,
+                usb_mic,
+                VoiceGateState::Inactive,
+            ),
+            (
+                "the system default is a device of its own",
+                vec![GateControl::SetDevice(None)],
+                true,
+                None,
+                VoiceGateState::Inactive,
+            ),
+            (
+                "a lost stream says why and reopens",
+                vec![GateControl::StreamFailed(STREAM_LOST.to_owned())],
+                true,
+                mic.clone(),
+                lost,
+            ),
+        ] {
+            let mut parked = Parked::new();
+            for control in controls {
+                assert!(parked.monitor.mailbox.post(control), "{case}");
+            }
+            let mut device = mic.clone();
+
+            let keeps_running = parked.monitor.follow_stream(&mut device);
+
+            assert_eq!(keeps_running, reopens, "{case}");
+            assert_eq!(device, device_after, "{case}");
+            assert_eq!(parked.state(), state_after, "{case}");
+        }
+    }
+
+    #[test]
+    fn a_queued_control_is_taken_even_when_the_patience_is_already_spent() {
+        let mut parked = Parked::new();
+        assert!(parked.monitor.mailbox.post(GateControl::Stop));
+
+        let control = parked.monitor.next_control(PATIENCE_SPENT);
+
+        assert!(matches!(control, Some(GateControl::Stop)));
+    }
+
+    #[test]
+    fn an_input_stream_error_ends_the_stream_only_when_the_device_can_no_longer_record() {
+        for (kind, ends) in [
+            (cpal::ErrorKind::Xrun, false),
+            (cpal::ErrorKind::DeviceChanged, false),
+            (cpal::ErrorKind::RealtimeDenied, false),
+            (cpal::ErrorKind::DeviceNotAvailable, true),
+            (cpal::ErrorKind::StreamInvalidated, true),
+        ] {
+            let parked = Parked::new();
+
+            input_stream_error_fn(
+                cpal::Error::new(kind),
+                &parked.shared,
+                &parked.monitor.mailbox,
+            );
+
+            assert_eq!(
+                matches!(
+                    parked.monitor.controls.try_recv(),
+                    Ok(GateControl::StreamFailed(_))
+                ),
+                ends,
+                "wrong verdict for {kind:?}"
+            );
+            assert_eq!(
+                parked.shared.hiccups.load(Ordering::Relaxed),
+                u64::from(!ends),
+                "wrong hiccup count for {kind:?}"
+            );
+        }
+    }
+
+    struct LiveMonitor {
+        mailbox: MonitorMailbox,
+        callback: GateCallback,
+        state_rx: watch::Receiver<VoiceGateState>,
+        reopened: tokio::sync::mpsc::UnboundedReceiver<Option<DeviceId>>,
+        thread: std::thread::JoinHandle<()>,
+    }
+
+    impl LiveMonitor {
+        fn spawn() -> Self {
+            let (control_tx, controls) = crossbeam_channel::unbounded();
+            let (state_tx, state_rx) = watch::channel(VoiceGateState::Inactive);
+            let (reopened_tx, reopened) = tokio::sync::mpsc::unbounded_channel();
+            let shared = shared_holding_for(RELEASES_AT_ONCE);
+            let publisher = GatePublisher::new(state_tx, Arc::clone(&shared));
+            let own_mailbox = control_tx.clone();
+            let thread = std::thread::spawn(move || {
+                let mut monitor = MonitorLoop {
+                    controls,
+                    mailbox: MonitorMailbox {
+                        controls: own_mailbox,
+                        monitor: std::thread::current(),
+                    },
+                    publisher,
+                };
+                let mut device = None;
+                while monitor.follow_stream(&mut device) {
+                    reopened_tx.send(device.clone()).unwrap();
+                }
+            });
+            let monitor = thread.thread().clone();
+            Self {
+                mailbox: MonitorMailbox {
+                    controls: control_tx,
+                    monitor: monitor.clone(),
+                },
+                callback: GateCallback {
+                    epoch: Instant::now(),
+                    machine: GateMachine::default(),
+                    shared,
+                    monitor,
+                },
+                state_rx,
+                reopened,
+                thread,
+            }
+        }
+
+        async fn sees(&mut self, wanted: VoiceGateState) {
+            let seen =
+                tokio::time::timeout(HANG_GUARD, self.state_rx.wait_for(|state| *state == wanted))
+                    .await;
+            assert!(
+                matches!(seen, Ok(Ok(_))),
+                "the monitor slept through a wake and never published {wanted:?}"
+            );
+        }
+
+        async fn reopens_on(&mut self, device: Option<DeviceId>) {
+            let reopened = tokio::time::timeout(HANG_GUARD, self.reopened.recv()).await;
+            assert_eq!(
+                reopened.ok().flatten(),
+                Some(device),
+                "the monitor slept through a posted control"
+            );
+        }
+
+        fn stop(self) {
+            assert!(self.mailbox.post(GateControl::Stop));
+            self.thread.join().unwrap();
+        }
+    }
+
+    #[tokio::test]
+    async fn a_gate_edge_landing_right_after_a_publish_wakes_the_monitor() {
+        let mut live = LiveMonitor::spawn();
+
+        for _ in 0..WAKE_ROUNDS {
+            live.callback.on_block(LOUD);
+            live.sees(VoiceGateState::Active).await;
+            live.callback.on_block(SILENT);
+            live.sees(VoiceGateState::Inactive).await;
+        }
+
+        live.stop();
+    }
+
+    #[tokio::test]
+    async fn a_control_posted_right_after_a_publish_wakes_the_monitor() {
+        let mut live = LiveMonitor::spawn();
+
+        for round in 0..WAKE_ROUNDS {
+            let device = Some(DeviceId::new(format!("mic-{round}")));
+            live.callback.on_block(LOUD);
+            live.sees(VoiceGateState::Active).await;
+            assert!(live.mailbox.post(GateControl::SetDevice(device.clone())));
+            live.reopens_on(device).await;
+            live.callback.on_block(SILENT);
+            live.sees(VoiceGateState::Inactive).await;
+        }
+
+        live.stop();
     }
 }

@@ -211,6 +211,8 @@ impl Drop for ControlledPlayback {
 
 #[cfg(test)]
 mod tests {
+    use futures::poll;
+
     use super::*;
 
     const DEVICE_REFUSAL: &str = "no output device accepted the stream";
@@ -235,5 +237,62 @@ mod tests {
             matches!(&outcome, Err(AudioError::Host(reason)) if reason == DEVICE_REFUSAL),
             "a device that never opened must reach the caller, got {outcome:?}"
         );
+    }
+
+    #[tokio::test]
+    async fn a_device_task_that_died_reports_a_join_failure_instead_of_success() {
+        let task = tokio::spawn(std::future::pending::<Result<(), AudioError>>());
+        task.abort();
+
+        let outcome = ControlledPlayback::from_task(PlaybackControl::new(), task).await;
+
+        assert!(
+            matches!(&outcome, Err(AudioError::JoinFailed(_))),
+            "a task that never reported must not count as played, got {outcome:?}"
+        );
+    }
+
+    fn playback_ending(
+        verdict: Option<Result<(), AudioError>>,
+    ) -> (Arc<PlaybackControl>, ControlledPlayback) {
+        let control = PlaybackControl::new();
+        let playback = ControlledPlayback::new(Arc::clone(&control), async move {
+            match verdict {
+                Some(verdict) => verdict,
+                None => std::future::pending().await,
+            }
+        });
+        (control, playback)
+    }
+
+    #[tokio::test]
+    async fn dropping_a_playback_stops_it_unless_it_already_settled() {
+        for (case, verdict, polled, stop_expected) in [
+            ("never awaited and still playing", None, false, true),
+            ("awaited and still playing", None, true, true),
+            (
+                "never awaited though it would finish",
+                Some(Ok(())),
+                false,
+                true,
+            ),
+            ("settled as played", Some(Ok(())), true, false),
+            (
+                "settled as failed",
+                Some(Err(AudioError::Host(DEVICE_REFUSAL.to_owned()))),
+                true,
+                false,
+            ),
+        ] {
+            let (control, mut playback) = playback_ending(verdict);
+            if polled {
+                let settled = poll!(&mut playback).is_ready();
+                assert_eq!(settled, !stop_expected, "{case}: wrong poll outcome");
+            }
+
+            drop(playback);
+
+            assert_eq!(control.is_stopped(), stop_expected, "{case}");
+        }
     }
 }

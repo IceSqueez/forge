@@ -823,6 +823,14 @@ impl MediaRepo for EmptyMediaLibrary {
     async fn blob_of(&self, _: &MediaReferrer) -> Result<Option<MediaBlobId>, StorageError> {
         Ok(None)
     }
+
+    async fn blobs_by_referrer_id(
+        &self,
+        _: forge_storage::MediaReferrerKind,
+        _: &str,
+    ) -> Result<HashMap<String, MediaBlobId>, StorageError> {
+        Ok(HashMap::new())
+    }
 }
 
 pub struct StubEventLog;

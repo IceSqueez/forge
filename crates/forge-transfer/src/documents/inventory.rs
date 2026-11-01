@@ -1,8 +1,8 @@
 use std::collections::BTreeMap;
 
 use forge_storage::{
-    DataProvider, GlobalEntry, MediaBlob, MediaBlobId, OVERLAY_ALERT_QUEUE_NAME, OverlayDefinition,
-    OverlayId, QueueRole, ScriptRecord, StoredClip, clip_source_referrer,
+    CLIP_SOURCE_SLOT, DataProvider, GlobalEntry, MediaBlob, MediaBlobId, MediaReferrerKind,
+    OVERLAY_ALERT_QUEUE_NAME, OverlayDefinition, OverlayId, QueueRole, ScriptRecord, StoredClip,
 };
 use forge_types::{
     Action, ActionId, ClipId, Queue, QueueId, ScriptId, TriggerInstance, TriggerInstanceId,
@@ -84,12 +84,16 @@ pub async fn load_pack_inventory(
         .collect();
     let media_repo = provider.media_repo();
     let clips = provider.soundboard_clips_repo().list().await?;
-    let mut clip_media = BTreeMap::new();
-    for clip in &clips {
-        if let Some(blob) = media_repo.blob_of(&clip_source_referrer(clip.id)).await? {
-            clip_media.insert(clip.id, blob);
-        }
-    }
+    let mut clip_blobs = media_repo
+        .blobs_by_referrer_id(MediaReferrerKind::SoundboardClip, CLIP_SOURCE_SLOT)
+        .await?;
+    let clip_media = clips
+        .iter()
+        .filter_map(|clip| {
+            let blob = clip_blobs.remove(&clip.id.to_string())?;
+            Some((clip.id, blob))
+        })
+        .collect();
     Ok(PackInventory {
         actions: actions
             .into_iter()

@@ -125,7 +125,7 @@ impl CoreTestFireTriggerRunner {
                 initial_args: synthetic_args.clone(),
                 admission: QueueAdmission::from(&action),
             };
-            if let Err(e) = self.scheduler.dispatch(req).await {
+            if let Err(e) = self.scheduler.dispatch(req) {
                 return SubActionOutcome::Failed(core_messages::scheduler_failed(e).into());
             }
         }

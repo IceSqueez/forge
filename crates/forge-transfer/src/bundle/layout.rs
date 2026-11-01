@@ -14,7 +14,7 @@ use crate::error::TransferError;
 
 pub const ARCHIVE_ROOT: &str = "forge";
 
-pub const INCLUDED_DIRS: [&str; 4] = [
+pub(crate) const INCLUDED_DIRS: [&str; 4] = [
     MEDIA_DIR_NAME,
     OVERLAYS_DIR_NAME,
     TTS_DIR_NAME,

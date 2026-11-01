@@ -15,35 +15,54 @@ pub mod test_support;
 mod unit_of_work;
 
 pub use error::SqliteStorageError;
-pub use pool::{SqlitePools, connect, connect_pools, connect_pools_with_busy_timeout};
 pub use provider::SqliteBackend;
+pub use schema::schema_probe::SqliteDatabaseFileSchema;
+
+#[cfg(feature = "test-support")]
+pub use pool::{SqlitePools, connect, connect_pools, connect_pools_with_busy_timeout};
+#[cfg(feature = "test-support")]
 pub use repos::action::SqliteActionRepo;
+#[cfg(feature = "test-support")]
 pub use repos::ban_ledger::SqliteBanLedgerRepo;
+#[cfg(feature = "test-support")]
 pub use repos::chat_history::SqliteChatHistoryRepo;
+#[cfg(feature = "test-support")]
 pub use repos::credentials::SqliteCredentialsRepo;
-pub(crate) use repos::donation::SqliteDonationRepo;
+#[cfg(feature = "test-support")]
 pub use repos::event_log::SqliteEventLogRepo;
+#[cfg(feature = "test-support")]
 pub use repos::globals::SqliteGlobalsRepo;
+#[cfg(feature = "test-support")]
 pub use repos::history::SqliteHistoryRepo;
-pub(crate) use repos::latest_value::SqliteLatestValueRepo;
+#[cfg(feature = "test-support")]
 pub use repos::media::SqliteMediaRepo;
+#[cfg(feature = "test-support")]
 pub use repos::overlay::SqliteOverlayRepo;
+#[cfg(feature = "test-support")]
 pub use repos::queue::SqliteQueueRepo;
+#[cfg(feature = "test-support")]
 pub use repos::scheduled_run::SqliteScheduledRunRepo;
+#[cfg(feature = "test-support")]
 pub use repos::script::SqliteScriptRepo;
+#[cfg(feature = "test-support")]
 pub use repos::settings::SqliteSettingsRepo;
-pub(crate) use repos::trigger_instance::SqliteTriggerInstanceRepo;
+#[cfg(feature = "test-support")]
+pub use repos::soundboard::SqliteSoundboardClipsRepo;
+#[cfg(feature = "test-support")]
 pub use repos::tts_filters::SqliteTtsFiltersRepo;
+#[cfg(feature = "test-support")]
 pub use repos::user_globals::SqliteUserGlobalsRepo;
+#[cfg(feature = "test-support")]
 pub use repos::viewer::SqliteViewerRepo;
+#[cfg(feature = "test-support")]
 pub use repos::voice_alias::SqliteVoiceAliasRepo;
+#[cfg(feature = "test-support")]
+pub use schema::migrations::classify as classify_journal;
+#[cfg(feature = "test-support")]
 pub use schema::migrations::{
     BASELINE_VERSION, JournalState, MIGRATIONS, apply as apply_migrations,
 };
-pub use schema::schema_probe::{
-    SqliteDatabaseFileSchema, inspect_database_file, read_applied_schema_version,
-};
-
-pub use repos::soundboard::SqliteSoundboardClipsRepo;
-pub use schema::migrations::classify as classify_journal;
+#[cfg(feature = "test-support")]
 pub use schema::registry_migration::migrate_registry_format;
+#[cfg(feature = "test-support")]
+pub use schema::schema_probe::{inspect_database_file, read_applied_schema_version};

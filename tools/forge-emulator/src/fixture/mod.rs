@@ -7,15 +7,14 @@ mod spawn;
 mod spec;
 
 pub use data_dir::{DATA_DIR_VARIABLE, ForgeDataDir, KEY_FILE_VARIABLE};
-pub use port::free_loopback_port;
 pub use redactions::Redactions;
-pub use report::{
-    SeedReport, SeededCommand, SeededEventTrigger, SeededOverlay, SeededServer, SeededTwitch,
-};
+#[cfg(test)]
+pub(crate) use report::SeededOverlay;
+pub use report::{SeedReport, SeededCommand, SeededServer};
 pub use seeder::seed_forge_environment;
 pub use spawn::seed;
+pub(crate) use spec::DEFAULT_QUEUE_NAME;
 pub use spec::{
-    ChatCommand, DEFAULT_QUEUE_NAME, DiscordWebhook, DonatelloAccount, EventTrigger, Fixture,
-    FixtureAction, KickAccount, MonobankAccount, ObsConnection, OverlayFixture, QueueFixture,
-    TwitchAccount, VTubeConnection, YouTubeAccount, overlay_targets,
+    ChatCommand, DiscordWebhook, EventTrigger, Fixture, KickAccount, ObsConnection, OverlayFixture,
+    QueueFixture, TwitchAccount, VTubeConnection, YouTubeAccount,
 };

@@ -106,7 +106,9 @@ mod tests {
     use forge_types::Variant;
     use tempfile::TempDir;
 
-    use crate::{SqliteGlobalsRepo, SqlitePools, apply_migrations, connect_pools};
+    use crate::pool::{SqlitePools, connect_pools};
+    use crate::repos::SqliteGlobalsRepo;
+    use crate::schema::migrations::apply as apply_migrations;
 
     struct Rig {
         repo: SqliteGlobalsRepo,

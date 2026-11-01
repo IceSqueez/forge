@@ -7,9 +7,10 @@ mod process;
 mod signals;
 mod spec;
 
-pub use game_guard::{GameGuard, HyprlandProbe, assess_hyprland_clients};
+pub use game_guard::{GameGuard, HyprlandProbe};
 pub use launcher::{LaunchOptions, LaunchedForge, launch_forge};
 pub use live_paths::LivePaths;
-pub use output::{CapturedOutput, OutputLine, OutputStream};
+pub(crate) use output::CapturedOutput;
+pub use output::OutputStream;
 pub use process::{ForgeExit, ForgeProcess};
-pub use spec::{DEFAULT_LOG_DIRECTIVES, ForgeCommand, INHERITED_VARIABLES, KickClient, LaunchSpec};
+pub use spec::{DEFAULT_LOG_DIRECTIVES, ForgeCommand, INHERITED_VARIABLES, LaunchSpec};

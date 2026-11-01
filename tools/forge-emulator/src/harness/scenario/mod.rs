@@ -7,21 +7,24 @@ mod model;
 mod step;
 mod validate;
 
-pub use crowd::{Crowd, CrowdLine, CrowdMessage};
-pub use donation::{
-    DonatelloGift, FakeDonatelloSetup, FakeMonobankSetup, MonobankGift, OfflineGift,
+pub use crowd::{Crowd, CrowdLine};
+pub use donation::DonatelloGift;
+pub(crate) use donation::{MonobankGift, OfflineGift};
+pub(crate) use expectation::{
+    AbsentEvent, DiscordPost, Expectation, HttpRequestSeen, LogLine, ObsAuthOutcome,
+    ObsRequestSeen, ObservedCount, RequestCount, TwitchSubscription, VTubeAuthOutcome,
+    VTubeRequestSeen,
 };
-pub use expectation::{
-    AbsentEvent, Causation, DiscordPost, Expectation, HttpRequestSeen, LogLine, ObsAuthOutcome,
-    ObsRequestSeen, ObservedCount, ObservedEvent, OverlayContent, RequestCount, TwitchSubscription,
-    VTubeAuthOutcome, VTubeRequestSeen,
-};
+pub use expectation::{Causation, ObservedEvent, OverlayContent};
 pub(crate) use load::without_position;
 pub use load::{load_scenario, parse_scenario};
-pub use matcher::{EventPattern, PayloadMatchers, UniqueMap, ValueMatcher};
-pub use model::{FakeDiscordSetup, FakeTwitchSetup, Fakes, Scenario};
-pub use step::{ChatMessage, ChatViewer, KickChatMessage, Step, StepAction, YouTubeChatMessage};
+pub(crate) use matcher::ValueMatcher;
+pub use matcher::{EventPattern, PayloadMatchers};
+pub(crate) use model::FakeTwitchSetup;
+pub use model::Scenario;
+pub use step::ChatViewer;
+pub(crate) use step::{ChatMessage, KickChatMessage, Step, StepAction, YouTubeChatMessage};
 pub use validate::{
-    MAX_CHATTER_PER_VIEWER, MAX_CROWD_MESSAGES, MAX_CROWD_SPACING_MS, MAX_CROWD_VIEWERS,
-    MAX_KEEPALIVE_MS, MAX_PAUSE_MS, MAX_READY_MS, MAX_WAIT_MS,
+    MAX_CHATTER_PER_VIEWER, MAX_CROWD_MESSAGES, MAX_CROWD_VIEWERS, MAX_KEEPALIVE_MS, MAX_PAUSE_MS,
+    MAX_READY_MS, MAX_WAIT_MS,
 };

@@ -205,7 +205,6 @@ async fn paused_queue_skip_payload_matches_the_golden() {
             initial_args: ArgStack::new(),
             admission: QueueAdmission::default(),
         })
-        .await
         .unwrap();
 
     assert_matches_golden(

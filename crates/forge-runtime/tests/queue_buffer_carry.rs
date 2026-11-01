@@ -332,7 +332,7 @@ async fn a_concurrency_change_carries_the_held_buffer_and_replays_it_in_order() 
 
     q.sched.set_mode(q.q_id, QueueMode::HOLDING).await.unwrap();
     for id in [a, b, c] {
-        q.sched.dispatch(req(q.q_id, id)).await.unwrap();
+        q.sched.dispatch(req(q.q_id, id)).unwrap();
     }
     settle(&q.sched, q.q_id, "three held tasks", |s| s.pending == 3).await;
 
@@ -370,11 +370,11 @@ async fn a_concurrency_change_keeps_tasks_queued_behind_busy_slots_in_order() {
     let mut sub = q.bus.subscribe();
 
     for id in [g1, g2] {
-        q.sched.dispatch(req(q.q_id, id)).await.unwrap();
+        q.sched.dispatch(req(q.q_id, id)).unwrap();
     }
     settle(&q.sched, q.q_id, "both permits taken", |s| s.in_flight == 2).await;
     for id in [b, c] {
-        q.sched.dispatch(req(q.q_id, id)).await.unwrap();
+        q.sched.dispatch(req(q.q_id, id)).unwrap();
     }
     settle(&q.sched, q.q_id, "two tasks behind the busy slots", |s| {
         s.pending == 2
@@ -404,13 +404,13 @@ async fn a_concurrency_value_equal_to_the_current_one_leaves_the_slot_alone() {
     let q = gated_queue(1, &[running, filler]).await;
     let mut sub = q.bus.subscribe();
 
-    q.sched.dispatch(req(q.q_id, running)).await.unwrap();
+    q.sched.dispatch(req(q.q_id, running)).unwrap();
     events_until(&mut sub, start_of(running)).await;
     q.sched.set_mode(q.q_id, QueueMode::HOLDING).await.unwrap();
     for _ in 0..MAX_PENDING_PER_QUEUE {
-        q.sched.dispatch(req(q.q_id, filler)).await.unwrap();
+        q.sched.dispatch(req(q.q_id, filler)).unwrap();
     }
-    q.sched.dispatch(req(q.q_id, filler)).await.unwrap();
+    q.sched.dispatch(req(q.q_id, filler)).unwrap();
 
     q.sched.reconfigure(queue_with(q.q_id, 1)).await.unwrap();
 
@@ -444,12 +444,12 @@ async fn a_task_dispatched_after_a_concurrency_change_runs_behind_the_buffered_o
 
     q.sched.set_mode(q.q_id, QueueMode::HOLDING).await.unwrap();
     for id in [a, b] {
-        q.sched.dispatch(req(q.q_id, id)).await.unwrap();
+        q.sched.dispatch(req(q.q_id, id)).unwrap();
     }
     settle(&q.sched, q.q_id, "two held tasks", |s| s.pending == 2).await;
 
     q.sched.reconfigure(queue_with(q.q_id, 1)).await.unwrap();
-    q.sched.dispatch(req(q.q_id, d)).await.unwrap();
+    q.sched.dispatch(req(q.q_id, d)).unwrap();
 
     q.sched.set_mode(q.q_id, QueueMode::RUNNING).await.unwrap();
     let seen = events_until(&mut sub, done_of(d)).await;
@@ -467,7 +467,7 @@ async fn clearing_with_keep_current_leaves_the_running_execution_cancellable() {
     let q = gated_queue(1, &[a, d]).await;
     let mut sub = q.bus.subscribe();
 
-    q.sched.dispatch(req(q.q_id, a)).await.unwrap();
+    q.sched.dispatch(req(q.q_id, a)).unwrap();
     events_until(&mut sub, start_of(a)).await;
 
     q.sched
@@ -487,7 +487,7 @@ async fn clearing_with_keep_current_leaves_the_running_execution_cancellable() {
     q.gate.open();
     settle(&q.sched, q.q_id, "an idle queue", |s| s.in_flight == 0).await;
 
-    q.sched.dispatch(req(q.q_id, d)).await.unwrap();
+    q.sched.dispatch(req(q.q_id, d)).unwrap();
     let seen = events_until(&mut sub, done_of(d)).await;
     assert!(
         !ids_of(&seen, "action.done").contains(&a.to_string()),
@@ -505,7 +505,7 @@ async fn a_bypass_dispatch_jumps_a_held_buffer_without_disturbing_its_order() {
 
     q.sched.set_mode(q.q_id, QueueMode::HOLDING).await.unwrap();
     for id in [a, b] {
-        q.sched.dispatch(req(q.q_id, id)).await.unwrap();
+        q.sched.dispatch(req(q.q_id, id)).unwrap();
     }
     settle(&q.sched, q.q_id, "two held tasks", |s| s.pending == 2).await;
 
@@ -517,7 +517,6 @@ async fn a_bypass_dispatch_jumps_a_held_buffer_without_disturbing_its_order() {
             },
             ..req(q.q_id, z)
         })
-        .await
         .unwrap();
 
     let jumped = events_until(&mut sub, done_of(z)).await;
@@ -543,10 +542,10 @@ async fn the_dispatch_that_fills_the_last_free_slot_is_still_buffered() {
     let q = gated_queue(1, &[a]).await;
     q.sched.set_mode(q.q_id, QueueMode::HOLDING).await.unwrap();
     for _ in 0..MAX_PENDING_PER_QUEUE - 1 {
-        q.sched.dispatch(req(q.q_id, a)).await.unwrap();
+        q.sched.dispatch(req(q.q_id, a)).unwrap();
     }
 
-    q.sched.dispatch(req(q.q_id, a)).await.unwrap();
+    q.sched.dispatch(req(q.q_id, a)).unwrap();
 
     let at_cap = state_of(&q.sched, q.q_id).await;
     assert_eq!(
@@ -565,7 +564,7 @@ async fn three_running_on_a_queue_of_four(extra: &[ActionId]) -> (GatedQueue, [A
     let actions: Vec<ActionId> = running.iter().chain(extra).copied().collect();
     let q = gated_queue(4, &actions).await;
     for id in running {
-        q.sched.dispatch(req(q.q_id, id)).await.unwrap();
+        q.sched.dispatch(req(q.q_id, id)).unwrap();
     }
     settle(&q.sched, q.q_id, "three running executions", |s| {
         s.in_flight == 3
@@ -604,7 +603,7 @@ async fn clearing_after_lowering_concurrency_cancels_executions_started_under_th
         .await
         .unwrap();
     q.gate.open();
-    q.sched.dispatch(req(q.q_id, d)).await.unwrap();
+    q.sched.dispatch(req(q.q_id, d)).unwrap();
 
     let seen = events_until(&mut sub, done_of(d)).await;
     let done = ids_of(&seen, "action.done");
@@ -623,7 +622,7 @@ async fn a_lowered_limit_starts_nothing_new_while_the_running_count_is_at_or_abo
     let (q, _) = three_running_on_a_queue_of_four(&[d]).await;
 
     q.sched.reconfigure(queue_with(q.q_id, 1)).await.unwrap();
-    q.sched.dispatch(req(q.q_id, d)).await.unwrap();
+    q.sched.dispatch(req(q.q_id, d)).unwrap();
     quiesce().await;
 
     let state = state_of(&q.sched, q.q_id).await;
@@ -645,7 +644,7 @@ async fn widening_concurrency_fills_the_new_slots_from_the_buffer() {
     ];
     let q = gated_queue(1, &actions).await;
     for id in actions {
-        q.sched.dispatch(req(q.q_id, id)).await.unwrap();
+        q.sched.dispatch(req(q.q_id, id)).unwrap();
     }
     settle(&q.sched, q.q_id, "one running, three buffered", |s| {
         s.in_flight == 1 && s.pending == 3

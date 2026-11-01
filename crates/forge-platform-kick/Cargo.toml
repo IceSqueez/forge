@@ -30,6 +30,7 @@ async-trait = { workspace = true }
 tracing = { workspace = true }
 
 [dev-dependencies]
+forge-registry = { path = "../forge-registry", features = ["test-support"] }
 forge-test-support = { path = "../forge-test-support" }
 forge-net = { path = "../forge-net", features = ["test-support"] }
 forge-events = { path = "../forge-events", features = ["test-support"] }

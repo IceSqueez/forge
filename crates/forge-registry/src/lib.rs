@@ -22,6 +22,8 @@ mod flow_kinds;
 mod form;
 mod integration_references;
 mod kind_platform_contract;
+#[cfg(any(test, feature = "test-support"))]
+mod leaf_context;
 mod merge;
 mod message_emotes;
 mod references;

@@ -17,8 +17,10 @@ pub use stage::{
     RESTORE_STAGING_DIR_NAME, StageRequest, StagedRestore, discard_staged_restore,
     restore_staging_root, stage_full_restore,
 };
+#[cfg(feature = "test-support")]
+pub(crate) use writer::write_scheduled_backup_cancellable;
 pub use writer::{
-    BackupDestination, FullBackupRequest, ScheduledBackupRequest, ScheduledWrite,
-    write_full_backup, write_scheduled_backup, write_scheduled_backup_cancellable,
-    write_scheduled_backup_unless_unchanged,
+    BackupDestination, FullBackupRequest, ScheduledBackupRequest, ScheduledWrite, write_full_backup,
 };
+#[cfg(feature = "test-support")]
+pub use writer::{write_scheduled_backup, write_scheduled_backup_unless_unchanged};

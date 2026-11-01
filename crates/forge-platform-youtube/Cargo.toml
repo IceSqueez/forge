@@ -28,13 +28,14 @@ time = { workspace = true }
 jiff = { workspace = true }
 
 [dev-dependencies]
+forge-registry = { path = "../forge-registry", features = ["test-support"] }
 forge-test-support = { path = "../forge-test-support" }
 forge-events = { path = "../forge-events", features = ["test-support"] }
 futures = { workspace = true }
 reqwest = { workspace = true }
 wiremock = { workspace = true }
 forge-storage = { path = "../forge-storage", features = ["test-mocks", "settings-test-support"] }
-forge-storage-sqlite = { path = "../forge-storage-sqlite" }
+forge-storage-sqlite = { path = "../forge-storage-sqlite", features = ["test-support"] }
 tempfile = { workspace = true }
 tokio = { workspace = true, features = ["test-util"] }
 tracing-subscriber = { workspace = true }

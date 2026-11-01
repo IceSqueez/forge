@@ -15,6 +15,6 @@ pub use config::{FakeGoal, FakeTwitchConfig};
 pub use fake::FakeTwitch;
 pub use ledger::{
     CredentialCheck, Ledger, RecordedRequest, RecordedSession, RecordedSubscription,
-    TAP_SENTINEL_PATH, TappedRequest,
+    TAP_SENTINEL_PATH,
 };
-pub use rewards::{FakeReward, MAX_CUSTOM_REWARDS};
+pub use rewards::MAX_CUSTOM_REWARDS;

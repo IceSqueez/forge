@@ -492,7 +492,7 @@ impl QueueTask {
 }
 
 impl QueueSchedulerHandle {
-    pub async fn dispatch(&self, req: SchedulerRequest) -> Result<(), RuntimeError> {
+    pub fn dispatch(&self, req: SchedulerRequest) -> Result<(), RuntimeError> {
         self.sender
             .send(SchedulerCommand::Enqueue(req))
             .map_err(|_| RuntimeError::SchedulerChannelClosed)
@@ -1450,7 +1450,7 @@ mod tests {
         let sched = spawn_sched(&dp, &bus, Arc::new(SubActionRegistry::new()), vec![queue]);
         let mut sub = bus.subscribe();
 
-        sched.dispatch(req(q_id, a_id)).await.unwrap();
+        sched.dispatch(req(q_id, a_id)).unwrap();
 
         assert!(
             collect_events(&mut sub, "action.done").await,
@@ -1479,7 +1479,7 @@ mod tests {
         let mut sub = bus.subscribe();
 
         for a_id in &action_ids {
-            sched.dispatch(req(q_id, *a_id)).await.unwrap();
+            sched.dispatch(req(q_id, *a_id)).unwrap();
         }
 
         let dones = |seen: &[Event]| seen.iter().filter(|ev| ev.kind == "action.done").count();
@@ -1510,7 +1510,6 @@ mod tests {
                 trigger_event_id: trigger,
                 ..req(q_id, a_id)
             })
-            .await
             .unwrap();
 
         let skipped = collect_event(&mut sub, "action.skipped")
@@ -1529,7 +1528,7 @@ mod tests {
             .await
             .unwrap();
         sched.set_mode(q_id, QueueMode::RUNNING).await.unwrap();
-        sched.dispatch(req(q_id, fence)).await.unwrap();
+        sched.dispatch(req(q_id, fence)).unwrap();
         let first_done = collect_event(&mut sub, "action.done")
             .await
             .expect("the fence run must finish on the resumed queue");
@@ -1561,7 +1560,6 @@ mod tests {
                 admission: BYPASS_PAUSE,
                 ..req(q_id, a_id)
             })
-            .await
             .unwrap();
 
         assert!(
@@ -1587,7 +1585,7 @@ mod tests {
         sched.set_mode(q_id, QueueMode::PAUSED).await.unwrap();
         sched.set_mode(q_id, QueueMode::RUNNING).await.unwrap();
 
-        sched.dispatch(req(q_id, a_id)).await.unwrap();
+        sched.dispatch(req(q_id, a_id)).unwrap();
 
         assert!(
             collect_events(&mut sub, "action.done").await,
@@ -1675,7 +1673,6 @@ mod tests {
                 trigger_event_id: trigger,
                 ..req(unknown_q, a_id)
             })
-            .await
             .unwrap();
 
         let skipped = collect_event(&mut sub, "action.skipped")
@@ -1706,7 +1703,7 @@ mod tests {
         let outcome = sched.register(queue).await.unwrap();
         assert_eq!(outcome, MembershipOutcome::Applied);
 
-        sched.dispatch(req(q_id, a_id)).await.unwrap();
+        sched.dispatch(req(q_id, a_id)).unwrap();
 
         assert!(
             collect_events(&mut sub, "action.done").await,
@@ -1737,7 +1734,7 @@ mod tests {
         let outcome = sched.register(nonblocking(q_id)).await.unwrap();
         assert_eq!(outcome, MembershipOutcome::AlreadyRegistered);
 
-        sched.dispatch(req(q_id, a_id)).await.unwrap();
+        sched.dispatch(req(q_id, a_id)).unwrap();
 
         let state = sched.queue_states().await.unwrap().remove(&q_id).unwrap();
         assert_eq!(
@@ -1768,7 +1765,7 @@ mod tests {
         let outcome = sched.deregister(q_id).await.unwrap();
         assert_eq!(outcome, MembershipOutcome::Applied);
 
-        sched.dispatch(req(q_id, a_id)).await.unwrap();
+        sched.dispatch(req(q_id, a_id)).unwrap();
 
         assert!(
             collect_events(&mut sub, "action.skipped").await,
@@ -1786,9 +1783,9 @@ mod tests {
             let (_dp, bus, sched, held) =
                 serial_queue_with_held(&[(running, true), (waiting, false)], q_id).await;
             let mut sub = bus.subscribe();
-            sched.dispatch(req(q_id, running)).await.unwrap();
+            sched.dispatch(req(q_id, running)).unwrap();
             assert!(await_action_start(&mut sub, running).await, "{mode:?}");
-            sched.dispatch(req(q_id, waiting)).await.unwrap();
+            sched.dispatch(req(q_id, waiting)).unwrap();
             sched.set_mode(q_id, mode).await.unwrap();
 
             assert_eq!(
@@ -1850,8 +1847,8 @@ mod tests {
         let (_dp, _bus, sched, _held) = serial_queue_with_held(&[(a, true), (b, true)], q_id).await;
 
         let outcome = sched.ensure_live(nonblocking(q_id)).await.unwrap();
-        sched.dispatch(req(q_id, a)).await.unwrap();
-        sched.dispatch(req(q_id, b)).await.unwrap();
+        sched.dispatch(req(q_id, a)).unwrap();
+        sched.dispatch(req(q_id, b)).unwrap();
 
         assert_eq!(outcome, MembershipOutcome::Applied);
         assert_eq!(
@@ -1883,7 +1880,7 @@ mod tests {
         let outcome = sched.reconfigure(flipped).await.unwrap();
         assert_eq!(outcome, MembershipOutcome::Applied);
 
-        sched.dispatch(req(q_id, a_id)).await.unwrap();
+        sched.dispatch(req(q_id, a_id)).unwrap();
 
         assert!(
             collect_events(&mut sub, "action.done").await,
@@ -1914,7 +1911,7 @@ mod tests {
         let outcome = sched.reconfigure(blocking_q(q_id)).await.unwrap();
         assert_eq!(outcome, MembershipOutcome::Applied);
 
-        sched.dispatch(req(q_id, a_id)).await.unwrap();
+        sched.dispatch(req(q_id, a_id)).unwrap();
 
         let state = sched.queue_states().await.unwrap().remove(&q_id).unwrap();
         assert_eq!(
@@ -2016,16 +2013,16 @@ mod tests {
         let sched = spawn_sched(&dp, &bus, registry, vec![queue]);
         let mut sub = bus.subscribe();
 
-        sched.dispatch(req(q_id, a)).await.unwrap();
+        sched.dispatch(req(q_id, a)).unwrap();
         assert!(
             await_action_start(&mut sub, a).await,
             "A must occupy the blocking slot before clearing"
         );
-        sched.dispatch(req(q_id, b)).await.unwrap();
-        sched.dispatch(req(q_id, c)).await.unwrap();
+        sched.dispatch(req(q_id, b)).unwrap();
+        sched.dispatch(req(q_id, c)).unwrap();
 
         sched.clear(q_id, ClearMode::KeepCurrent).await.unwrap();
-        sched.dispatch(req(q_id, d)).await.unwrap();
+        sched.dispatch(req(q_id, d)).unwrap();
         held.release_one();
 
         let seen = events_until_done(&mut sub, d)
@@ -2065,14 +2062,14 @@ mod tests {
         let sched = spawn_sched(&dp, &bus, registry, vec![queue]);
         let mut sub = bus.subscribe();
 
-        sched.dispatch(req(q_id, a)).await.unwrap();
+        sched.dispatch(req(q_id, a)).unwrap();
         assert!(
             await_action_start(&mut sub, a).await,
             "A must be in-flight before clearing"
         );
 
         sched.clear(q_id, ClearMode::CancelCurrent).await.unwrap();
-        sched.dispatch(req(q_id, d)).await.unwrap();
+        sched.dispatch(req(q_id, d)).unwrap();
 
         let seen = events_until_done(&mut sub, d).await;
         assert!(
@@ -2180,12 +2177,12 @@ mod tests {
         let (_dp, bus, sched, held) = serial_queue_with_held(&[(a, true), (b, false)], q_id).await;
         let mut sub = bus.subscribe();
 
-        sched.dispatch(req(q_id, a)).await.unwrap();
+        sched.dispatch(req(q_id, a)).unwrap();
         assert!(
             await_action_start(&mut sub, a).await,
             "A must occupy the single slot before the freeze"
         );
-        sched.dispatch(req(q_id, b)).await.unwrap();
+        sched.dispatch(req(q_id, b)).unwrap();
         sched.set_mode(q_id, QueueMode::HOLDING).await.unwrap();
         held.release_one();
 
@@ -2212,7 +2209,7 @@ mod tests {
 
         sched.set_mode(q_id, QueueMode::HOLDING).await.unwrap();
         for id in [a, b, c] {
-            sched.dispatch(req(q_id, id)).await.unwrap();
+            sched.dispatch(req(q_id, id)).unwrap();
         }
 
         let settled = settles_at(&sched, q_id, depth(3, 0, 0)).await;
@@ -2241,14 +2238,14 @@ mod tests {
             serial_queue_with_held(&[(a, true), (b, false), (c, false)], q_id).await;
         let mut sub = bus.subscribe();
 
-        sched.dispatch(req(q_id, a)).await.unwrap();
+        sched.dispatch(req(q_id, a)).unwrap();
         assert!(
             await_action_start(&mut sub, a).await,
             "A must occupy the single slot before draining starts"
         );
-        sched.dispatch(req(q_id, b)).await.unwrap();
+        sched.dispatch(req(q_id, b)).unwrap();
         sched.set_mode(q_id, QueueMode::DRAINING).await.unwrap();
-        sched.dispatch(req(q_id, c)).await.unwrap();
+        sched.dispatch(req(q_id, c)).unwrap();
         held.release_one();
 
         let seen = events_until(&mut sub, |seen| {
@@ -2279,12 +2276,12 @@ mod tests {
         let (_dp, bus, sched, held) = serial_queue_with_held(&[(a, true), (b, false)], q_id).await;
         let mut sub = bus.subscribe();
 
-        sched.dispatch(req(q_id, a)).await.unwrap();
+        sched.dispatch(req(q_id, a)).unwrap();
         assert!(
             await_action_start(&mut sub, a).await,
             "A must occupy the single slot before the pause"
         );
-        sched.dispatch(req(q_id, b)).await.unwrap();
+        sched.dispatch(req(q_id, b)).unwrap();
         sched.set_mode(q_id, QueueMode::PAUSED).await.unwrap();
         held.release_one();
 
@@ -2313,13 +2310,13 @@ mod tests {
             serial_queue_with_held(&[(a, true), (b, false), (c, false)], q_id).await;
         let mut sub = bus.subscribe();
 
-        sched.dispatch(req(q_id, a)).await.unwrap();
+        sched.dispatch(req(q_id, a)).unwrap();
         assert!(
             await_action_start(&mut sub, a).await,
             "A must be executing before the counts are read"
         );
-        sched.dispatch(req(q_id, b)).await.unwrap();
-        sched.dispatch(req(q_id, c)).await.unwrap();
+        sched.dispatch(req(q_id, b)).unwrap();
+        sched.dispatch(req(q_id, c)).unwrap();
 
         let state = sched.queue_states().await.unwrap().remove(&q_id).unwrap();
         assert_eq!(state.in_flight, 1, "only A occupies the serial slot");
@@ -2346,7 +2343,7 @@ mod tests {
         );
         sched.set_mode(q_id, QueueMode::HOLDING).await.unwrap();
         for _ in 0..MAX_PENDING_PER_QUEUE {
-            sched.dispatch(req(q_id, a_id)).await.unwrap();
+            sched.dispatch(req(q_id, a_id)).unwrap();
         }
         (q_id, bus, sched)
     }
@@ -2356,7 +2353,7 @@ mod tests {
         let (q_id, bus, sched) = frozen_queue_filled_to_the_cap().await;
         let mut sub = bus.subscribe();
 
-        sched.dispatch(req(q_id, ActionId::new())).await.unwrap();
+        sched.dispatch(req(q_id, ActionId::new())).unwrap();
 
         let state = sched.queue_states().await.unwrap().remove(&q_id).unwrap();
         assert_eq!(
@@ -2382,7 +2379,7 @@ mod tests {
     #[tokio::test]
     async fn overflow_counter_survives_a_no_op_mode_set_and_resets_on_a_real_change() {
         let (q_id, _bus, sched) = frozen_queue_filled_to_the_cap().await;
-        sched.dispatch(req(q_id, ActionId::new())).await.unwrap();
+        sched.dispatch(req(q_id, ActionId::new())).unwrap();
 
         sched.set_mode(q_id, QueueMode::HOLDING).await.unwrap();
         let unchanged = sched.queue_states().await.unwrap().remove(&q_id).unwrap();
@@ -2532,7 +2529,7 @@ mod tests {
         let mut watch = sched.watch_depths();
 
         for _ in 0..3 {
-            sched.dispatch(req(q_id, a_id)).await.unwrap();
+            sched.dispatch(req(q_id, a_id)).unwrap();
         }
         assert_eq!(
             settled_depth(&mut watch, q_id, depth(3, 0, 0)).await,
@@ -2554,8 +2551,8 @@ mod tests {
         let (_dp, _bus, sched, held) = serial_queue_with_held(&[(a, true), (b, false)], q_id).await;
         let mut watch = sched.watch_depths();
 
-        sched.dispatch(req(q_id, a)).await.unwrap();
-        sched.dispatch(req(q_id, b)).await.unwrap();
+        sched.dispatch(req(q_id, a)).unwrap();
+        sched.dispatch(req(q_id, b)).unwrap();
         assert_eq!(
             settled_depth(&mut watch, q_id, depth(1, 1, 0)).await,
             Some(depth(1, 1, 0))
@@ -2574,7 +2571,7 @@ mod tests {
         let (q_id, _bus, sched) = frozen_queue_filled_to_the_cap().await;
         let mut watch = sched.watch_depths();
 
-        sched.dispatch(req(q_id, ActionId::new())).await.unwrap();
+        sched.dispatch(req(q_id, ActionId::new())).unwrap();
         assert_eq!(
             settled_depth(&mut watch, q_id, depth(MAX_PENDING_PER_QUEUE, 0, 1)).await,
             Some(depth(MAX_PENDING_PER_QUEUE, 0, 1))
@@ -2595,7 +2592,7 @@ mod tests {
         let (_dp, sched) = held_log_queues(&[q_id], a_id).await;
         let mut watch = sched.watch_depths();
         for _ in 0..2 {
-            sched.dispatch(req(q_id, a_id)).await.unwrap();
+            sched.dispatch(req(q_id, a_id)).unwrap();
         }
         assert_eq!(
             settled_depth(&mut watch, q_id, depth(2, 0, 0)).await,
@@ -2616,9 +2613,9 @@ mod tests {
         let mut watch = sched.watch_depths();
 
         for _ in 0..2 {
-            sched.dispatch(req(first, a_id)).await.unwrap();
+            sched.dispatch(req(first, a_id)).unwrap();
         }
-        sched.dispatch(req(second, a_id)).await.unwrap();
+        sched.dispatch(req(second, a_id)).unwrap();
 
         let depths = await_depths(&mut watch, |depths| {
             depths.values().map(|depth| depth.pending).sum::<usize>() == 3

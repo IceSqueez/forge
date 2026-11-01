@@ -25,7 +25,7 @@ forge-platform-youtube = { path = "../forge-platform-youtube" }
 forge-registry = { path = "../forge-registry" }
 forge-runtime = { path = "../forge-runtime" }
 forge-storage = { path = "../forge-storage", features = ["test-mocks", "settings-test-support"] }
-forge-storage-sqlite = { path = "../forge-storage-sqlite" }
+forge-storage-sqlite = { path = "../forge-storage-sqlite", features = ["test-support"] }
 forge-transfer = { path = "../forge-transfer" }
 forge-types = { path = "../forge-types" }
 forge-vtube = { path = "../forge-vtube" }

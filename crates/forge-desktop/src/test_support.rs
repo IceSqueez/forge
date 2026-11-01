@@ -463,16 +463,17 @@ pub(crate) fn hold_one_dispatch(
     scheduler: &forge_runtime::QueueSchedulerHandle,
     queue_id: forge_types::QueueId,
 ) {
-    rt.block_on(scheduler.dispatch(forge_runtime::SchedulerRequest {
-        queue_id,
-        action_id: ActionId::new(),
-        trigger_event_id: EventId::new(),
-        trigger_kind: None,
-        manual_test: false,
-        initial_args: forge_types::ArgStack::new(),
-        admission: forge_runtime::QueueAdmission::default(),
-    }))
-    .expect("the scheduler is running");
+    scheduler
+        .dispatch(forge_runtime::SchedulerRequest {
+            queue_id,
+            action_id: ActionId::new(),
+            trigger_event_id: EventId::new(),
+            trigger_kind: None,
+            manual_test: false,
+            initial_args: forge_types::ArgStack::new(),
+            admission: forge_runtime::QueueAdmission::default(),
+        })
+        .expect("the scheduler is running");
     pump(rt);
 }
 

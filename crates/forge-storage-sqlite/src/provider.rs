@@ -20,18 +20,20 @@ use tokio::task::AbortHandle;
 
 use crate::error::SqliteStorageError;
 use crate::pool::SqlitePools;
-use crate::tasks::checkpoint_task::spawn_checkpoint_task;
-use crate::tasks::global_read_tally::spawn_read_flush_task;
-use crate::tasks::retention_task::{
-    RetentionAwareSettings, RetentionSignals, RetentionTargets, spawn_retention_task,
-};
-use crate::{
+use crate::pool::connect_pools;
+use crate::repos::{
     SqliteActionRepo, SqliteBanLedgerRepo, SqliteChatHistoryRepo, SqliteCredentialsRepo,
     SqliteDonationRepo, SqliteEventLogRepo, SqliteGlobalsRepo, SqliteHistoryRepo,
     SqliteLatestValueRepo, SqliteMediaRepo, SqliteOverlayRepo, SqliteQueueRepo,
     SqliteScheduledRunRepo, SqliteScriptRepo, SqliteSettingsRepo, SqliteSoundboardClipsRepo,
     SqliteTriggerInstanceRepo, SqliteTtsFiltersRepo, SqliteUserGlobalsRepo, SqliteViewerRepo,
-    SqliteVoiceAliasRepo, apply_migrations, connect_pools,
+    SqliteVoiceAliasRepo,
+};
+use crate::schema::migrations::apply as apply_migrations;
+use crate::tasks::checkpoint_task::spawn_checkpoint_task;
+use crate::tasks::global_read_tally::spawn_read_flush_task;
+use crate::tasks::retention_task::{
+    RetentionAwareSettings, RetentionSignals, RetentionTargets, spawn_retention_task,
 };
 
 const PRUNE_INTERVAL_PRODUCTION: Duration = Duration::from_secs(3600);
@@ -128,7 +130,7 @@ impl SqliteBackend {
         ))
     }
 
-    #[doc(hidden)]
+    #[cfg(any(test, feature = "test-support"))]
     pub async fn open_for_test(
         url: &str,
         key: [u8; 32],
@@ -260,7 +262,7 @@ impl SqliteBackend {
         }
     }
 
-    #[doc(hidden)]
+    #[cfg(any(test, feature = "test-support"))]
     pub async fn action_telemetry_at_for_test(
         &self,
         id: ActionId,
@@ -277,7 +279,7 @@ impl SqliteBackend {
         async move { while running.changed().await.is_ok() {} }
     }
 
-    #[doc(hidden)]
+    #[cfg(any(test, feature = "test-support"))]
     pub async fn insert_trigger_instance_without_scope_for_test(
         &self,
         id: &str,
@@ -297,10 +299,12 @@ impl SqliteBackend {
         Ok(())
     }
 
+    #[cfg(any(test, feature = "test-support"))]
     pub fn soundboard_clips_repo_impl(&self) -> &SqliteSoundboardClipsRepo {
         &self.soundboard
     }
 
+    #[cfg(any(test, feature = "test-support"))]
     pub fn viewer_repo_impl(&self) -> &SqliteViewerRepo {
         &self.viewer
     }
@@ -480,7 +484,7 @@ mod tests {
         open_write.rollback().await.unwrap();
         backend.shutdown().await;
 
-        let exported = crate::connect(&format!("sqlite://{}", export_path.display()))
+        let exported = crate::pool::connect(&format!("sqlite://{}", export_path.display()))
             .await
             .unwrap();
         let keys: Vec<String> = sqlx::query_scalar(
@@ -517,7 +521,7 @@ mod tests {
     }
 
     async fn setting_keys(database: &std::path::Path) -> Vec<String> {
-        let pool = crate::connect(&format!("sqlite://{}", database.display()))
+        let pool = crate::pool::connect(&format!("sqlite://{}", database.display()))
             .await
             .unwrap();
         let keys = sqlx::query_scalar("SELECT key FROM settings WHERE key = 'kept' OR key LIKE 'backup_schedule.%' ORDER BY key")

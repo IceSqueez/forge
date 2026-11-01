@@ -1,4 +1,5 @@
 mod fake;
 mod multipart;
 
-pub use fake::{FakeDiscord, RecordedPost, UNKNOWN_WEBHOOK_CODE};
+pub(crate) use fake::RecordedPost;
+pub use fake::{FakeDiscord, UNKNOWN_WEBHOOK_CODE};

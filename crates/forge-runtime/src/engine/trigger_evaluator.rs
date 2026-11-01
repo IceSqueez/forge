@@ -1939,7 +1939,6 @@ mod tests {
                         initial_args: ArgStack::new(),
                         admission: QueueAdmission::default(),
                     })
-                    .await
                     .unwrap();
             }
         }

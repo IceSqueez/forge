@@ -9,7 +9,8 @@ use forge_events::{
 };
 use forge_net::{TaskOwner, TaskShutdown};
 use forge_registry::{
-    CancelSignal, ChainSignal, RunContext, RunningAction, StopMark, SubActionRegistry,
+    CancelSignal, ChainSignal, ControlCell, RunContext, RunningAction, StopMark, SubActionRegistry,
+    TelemetrySink,
 };
 use forge_storage::{ActionExecution, ActionRepo, ExecutionStatus, HistoryRepo, RunRefusal};
 use forge_types::{
@@ -604,12 +605,16 @@ async fn run_quick_action(
     let _step_lineage = bus.publish_held(run_event);
 
     let stack = ArgStack::new().with_names_language(language);
-    let leaf_ctx = RunContext::leaf(&stack, 0, run_event_id, publisher.as_ref());
     let executor = GatedLeafExecutor::new(integrations.clone(), cancel.clone());
     let run_ctx = RunContext {
+        arg_stack: &stack,
+        index: 0,
+        parent_event_id: run_event_id,
+        publisher: publisher.as_ref(),
         executor: &executor,
         cancel,
-        ..leaf_ctx
+        control: ControlCell::new(),
+        telemetry: TelemetrySink::new(),
     };
 
     let started_at = OffsetDateTime::now_utc();

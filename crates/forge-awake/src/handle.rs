@@ -1,8 +1,9 @@
 use std::fmt;
 
 use tokio::sync::{mpsc, watch};
+use tokio::task::JoinHandle;
 
-use crate::backend::LazyBackend;
+use crate::backend::{AwakeBackend, DisruptionSender, LazyBackend};
 use crate::supervisor::{Command, Supervisor, SupervisorChannels};
 use crate::{AwakeError, AwakeStatus};
 
@@ -20,15 +21,23 @@ pub struct StayAwake {
 
 impl StayAwake {
     pub fn spawn(config: StayAwakeConfig) -> Self {
-        let (status_tx, status_rx) = watch::channel(AwakeStatus::initial(config.enabled));
+        let StayAwakeConfig { enabled, reason } = config;
+        let (handle, _supervisor) = Self::start(enabled, move |disruptions| {
+            Box::new(LazyBackend::platform(reason, disruptions))
+        });
+        handle
+    }
+
+    pub(crate) fn start(
+        enabled: bool,
+        backend: impl FnOnce(DisruptionSender) -> Box<dyn AwakeBackend> + Send + 'static,
+    ) -> (Self, JoinHandle<()>) {
+        let (status_tx, status_rx) = watch::channel(AwakeStatus::initial(enabled));
         let (command_tx, command_rx) = mpsc::unbounded_channel();
-        let reason = config.reason;
-        let enabled = config.enabled;
-        tokio::spawn(async move {
+        let supervisor = tokio::spawn(async move {
             let (disruption_tx, disruption_rx) = mpsc::unbounded_channel();
-            let backend = Box::new(LazyBackend::platform(reason, disruption_tx));
             Supervisor::new(
-                backend,
+                backend(disruption_tx),
                 enabled,
                 SupervisorChannels {
                     status: status_tx,
@@ -39,10 +48,11 @@ impl StayAwake {
             .run()
             .await;
         });
-        Self {
+        let handle = Self {
             commands: command_tx,
             status: status_rx,
-        }
+        };
+        (handle, supervisor)
     }
 
     pub fn set_enabled(&self, enabled: bool) -> Result<(), AwakeError> {
@@ -94,18 +104,14 @@ mod tests {
     use tokio::task::JoinHandle;
 
     use super::{StatusWatch, StayAwake};
-    use crate::fake_backend::{Call, FakeBackend, spawn_supervisor};
+    use crate::fake_backend::{Call, FakeBackend};
     use crate::{Aspect, AwakeError, AwakeStatus};
 
     const WAIT: Duration = Duration::from_secs(30);
 
     fn stay_awake(backend: &FakeBackend, enabled: bool) -> (StayAwake, JoinHandle<()>) {
-        let (harness, task) = spawn_supervisor(backend, enabled);
-        let handle = StayAwake {
-            commands: harness.commands,
-            status: harness.status,
-        };
-        (handle, task)
+        let fake = backend.clone();
+        StayAwake::start(enabled, move |_disruptions| Box::new(fake))
     }
 
     async fn wait_until(watch: &mut StatusWatch, mut done: impl FnMut(&AwakeStatus) -> bool) {

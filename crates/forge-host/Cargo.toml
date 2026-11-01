@@ -77,6 +77,7 @@ tracing-subscriber = { workspace = true, optional = true }
 ulid = { workspace = true }
 
 [dev-dependencies]
+forge-registry = { path = "../forge-registry", features = ["test-support"] }
 forge-speak-queue = { path = "../forge-speak-queue", features = ["test-support"] }
 forge-host = { path = ".", features = ["test-support"] }
 forge-hotkey = { path = "../forge-hotkey", features = ["testing"] }

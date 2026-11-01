@@ -3138,6 +3138,7 @@ version = "0.6.3"
 dependencies = [
  "async-trait",
  "forge-events",
+ "forge-registry",
  "forge-types",
  "rand 0.10.3",
  "serde_json",
@@ -3369,6 +3370,7 @@ dependencies = [
  "forge-speech-types",
  "forge-storage",
  "forge-storage-sqlite",
+ "forge-transfer",
  "forge-types",
  "forge-update",
  "jiff",

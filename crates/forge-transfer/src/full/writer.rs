@@ -94,6 +94,7 @@ pub async fn write_full_backup(request: FullBackupRequest) -> Result<PathBuf, Tr
     Ok(destination)
 }
 
+#[cfg(feature = "test-support")]
 pub async fn write_scheduled_backup(
     request: ScheduledBackupRequest,
 ) -> Result<PathBuf, TransferError> {
@@ -106,6 +107,7 @@ pub async fn write_scheduled_backup(
     Ok(destination)
 }
 
+#[cfg(feature = "test-support")]
 pub async fn write_scheduled_backup_unless_unchanged(
     request: ScheduledBackupRequest,
     unchanged_since: Option<String>,
@@ -113,7 +115,7 @@ pub async fn write_scheduled_backup_unless_unchanged(
     write_scheduled_backup_cancellable(request, unchanged_since, CancelFlag::new()).await
 }
 
-pub async fn write_scheduled_backup_cancellable(
+pub(crate) async fn write_scheduled_backup_cancellable(
     request: ScheduledBackupRequest,
     unchanged_since: Option<String>,
     cancel: CancelFlag,

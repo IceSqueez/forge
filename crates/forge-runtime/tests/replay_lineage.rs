@@ -138,7 +138,6 @@ impl Harness {
                 initial_args: ArgStack::new(),
                 admission: QueueAdmission::default(),
             })
-            .await
             .unwrap();
     }
 }

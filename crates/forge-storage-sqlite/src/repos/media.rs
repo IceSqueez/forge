@@ -1,4 +1,4 @@
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 use std::io::Read as _;
 use std::io::Write as _;
 use std::path::{Path, PathBuf};
@@ -546,5 +546,25 @@ impl MediaRepo for SqliteMediaRepo {
 
         row.map(|(blob_id,)| MediaBlobId::from_stored(blob_id))
             .transpose()
+    }
+
+    async fn blobs_by_referrer_id(
+        &self,
+        kind: MediaReferrerKind,
+        slot: &str,
+    ) -> Result<HashMap<String, MediaBlobId>, StorageError> {
+        let rows: Vec<(String, String)> = sqlx::query_as(
+            "SELECT referrer_id, blob_id FROM media_references
+             WHERE referrer_kind = ? AND slot = ?",
+        )
+        .bind(kind.as_str())
+        .bind(slot)
+        .fetch_all(self.db.reader())
+        .await
+        .map_err(SqliteStorageError::Sqlx)?;
+
+        rows.into_iter()
+            .map(|(referrer_id, blob_id)| Ok((referrer_id, MediaBlobId::from_stored(blob_id)?)))
+            .collect()
     }
 }

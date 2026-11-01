@@ -42,6 +42,7 @@ ulid = { workspace = true }
 test-support = []
 
 [dev-dependencies]
+forge-registry = { path = "../forge-registry", features = ["test-support"] }
 forge-test-support = { path = "../forge-test-support" }
 reqwest = { workspace = true }
 forge-runtime = { path = ".", features = ["test-support"] }

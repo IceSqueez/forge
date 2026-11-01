@@ -126,7 +126,6 @@ async fn dispatch(rig: &Rig, action: &Action, manual_test: bool) {
             initial_args: ArgStack::new(),
             admission: QueueAdmission::default(),
         })
-        .await
         .unwrap();
 }
 

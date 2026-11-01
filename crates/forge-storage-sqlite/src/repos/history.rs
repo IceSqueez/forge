@@ -256,7 +256,8 @@ mod tests {
     use forge_types::{EventId, ExecutionOutcome};
 
     use super::*;
-    use crate::{apply_migrations, connect};
+    use crate::pool::connect;
+    use crate::schema::migrations::apply as apply_migrations;
 
     const CUTOFF_UNIX_SECS: i64 = 1_700_000_000;
 

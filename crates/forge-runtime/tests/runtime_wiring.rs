@@ -273,7 +273,6 @@ async fn a_queue_pause_step_in_a_run_pauses_its_target_on_a_frozen_runtime() {
             initial_args: ArgStack::new(),
             admission: QueueAdmission::default(),
         })
-        .await
         .unwrap();
     timeout(HANG_GUARD, async {
         while done.recv().await.unwrap().kind != "action.done" {}

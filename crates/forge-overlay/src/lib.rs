@@ -37,12 +37,12 @@ pub use files::media::{
     CLIP_REFERENCE_PREFIX, ClipReference, EmittedIcon, GENERATED_MEDIA_DIRECTORY,
     IMAGE_REFERENCE_PREFIX, IconValue, ImageReference, MEDIA_KEYS, MediaIssue, MediaSlot,
     MediaValue, OverlayMedia, ResolvedMedia, clip_reference, clip_references, emitted_icon,
-    emitted_image, emitted_media_value, glyph_media, image_reference, image_references, media_slot,
+    emitted_media_value, glyph_media, image_reference, image_references, media_slot,
     read_icon_value, read_media_value,
 };
 pub use kinds::register_builtin_kinds;
 pub use messages::OVERLAY_MESSAGES;
-pub use metrics::{AxisBound, ElementSizing, StyleGuard};
+pub use metrics::{AxisBound, ElementSizing};
 pub use render::base::{
     DEFAULT_DISPLAY_SECS, ShowTiming, SpeechProgram, display_window, exit_tail, show_timing,
     take_speech,
@@ -62,6 +62,7 @@ pub use render::motion_scan::{MotionIssue, OverriddenSources, motion_issues};
 pub use render::page_contract::{
     LookConfigKey, LookContract, PAGE_CONTRACT, PageContract, PageFunction, look_contract,
 };
+pub use render::preview::PreviewLine;
 pub use render::preview::{
     PreviewAccent, PreviewCanvas, PreviewComposition, PreviewElement, PreviewFont, PreviewImage,
     PreviewImageSide, PreviewLabel, PreviewLabelSide, PreviewLineRole, PreviewMark,
@@ -76,4 +77,3 @@ pub use render::page_contract::{CLEAR_FRAME, CONTENT_FRAME, RELOAD_FRAME};
 pub use render::page_contract::{
     CONTENT_FUNCTION, READY_FUNCTION, SET_FUNCTION, SHOW_FUNCTION, SOUND_FUNCTION,
 };
-pub use render::preview::PreviewLine;

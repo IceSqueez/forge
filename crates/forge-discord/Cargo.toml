@@ -28,6 +28,7 @@ tokio-stream = { workspace = true }
 tracing = { workspace = true }
 
 [dev-dependencies]
+forge-registry = { path = "../forge-registry", features = ["test-support"] }
 reqwest = { workspace = true }
 forge-storage = { path = "../forge-storage", features = ["settings-test-support"] }
 forge-events = { path = "../forge-events", features = ["test-support"] }

@@ -24,8 +24,7 @@ pub use cancel::CancelFlag;
 pub use category::BackupCategory;
 pub use exclusivity::TransferHeldWatch;
 pub use exclusivity::{TransferExclusivity, TransferGuard};
-pub use layout::{ARCHIVE_ROOT, INCLUDED_DIRS};
-pub use limits::MAX_DECRYPT_SCRYPT_WORK_FACTOR;
+pub use layout::ARCHIVE_ROOT;
 pub use manifest::{
     BUNDLE_FORMAT_VERSION, BundleKind, BundleOrigin, ContentEntry, ENCRYPTED_PAYLOAD_ENTRY_NAME,
     EncryptionScheme, FullManifest, MANIFEST_ENTRY_NAME, PublicManifest,

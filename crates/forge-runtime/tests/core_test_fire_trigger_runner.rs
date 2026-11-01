@@ -286,7 +286,6 @@ async fn invalid_override_outputs_fail_naming_the_field_and_dispatch_nothing() {
                 initial_args: ArgStack::new(),
                 admission: QueueAdmission::default(),
             })
-            .await
             .unwrap();
         assert!(
             await_action_done(&mut fired.sub, barrier).await,
@@ -409,7 +408,6 @@ async fn instance_with_no_bound_actions_succeeds_and_dispatches_nothing() {
             initial_args: ArgStack::new(),
             admission: QueueAdmission::default(),
         })
-        .await
         .unwrap();
     assert!(
         await_action_done(&mut sub, barrier).await,
@@ -478,7 +476,6 @@ async fn fired_trigger_dispatches_disabled_action_but_engine_skips_it() {
             initial_args: ArgStack::new(),
             admission: QueueAdmission::default(),
         })
-        .await
         .unwrap();
     assert!(
         await_action_done(&mut sub, barrier).await,

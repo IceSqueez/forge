@@ -11,16 +11,17 @@ mod setup;
 mod staging_sweep;
 #[cfg(test)]
 mod test_support;
+#[cfg(feature = "test-support")]
+mod test_surface;
 
 pub use bundle::TransferHeldWatch;
 pub use bundle::{
     ARCHIVE_ROOT, BUNDLE_EXTENSION, BUNDLE_FORMAT_VERSION, BackupCategory, BundleKind,
     BundleOrigin, BundleSummary, CancelFlag, ContentEntry, ENCRYPTED_PAYLOAD_ENTRY_NAME,
-    EncryptionScheme, FullManifest, INCLUDED_DIRS, MANIFEST_ENTRY_NAME,
-    MAX_DECRYPT_SCRYPT_WORK_FACTOR, MIN_PASSPHRASE_CHARS, PRE_UPDATE_SNAPSHOT_EXTENSION,
-    Passphrase, PublicManifest, ScheduleKey, TransferExclusivity, TransferGuard, backup_file_stem,
-    backups_dir, change_schedule_passphrase, create_schedule_key, read_bundle_kind,
-    read_bundle_summary, unique_suffix,
+    EncryptionScheme, FullManifest, MANIFEST_ENTRY_NAME, MIN_PASSPHRASE_CHARS,
+    PRE_UPDATE_SNAPSHOT_EXTENSION, Passphrase, PublicManifest, ScheduleKey, TransferExclusivity,
+    TransferGuard, backup_file_stem, backups_dir, change_schedule_passphrase, create_schedule_key,
+    read_bundle_kind, read_bundle_summary, unique_suffix,
 };
 pub use documents::GlobalDocument;
 pub use documents::ScriptDocument;
@@ -38,9 +39,10 @@ pub use full::{
     ScheduledBackupRequest, ScheduledWrite, StageRequest, StagedRestore, UpdateActivity,
     apply_pending_restore, cancel_pending_restore, discard_staged_restore, record_pending_restore,
     restore_in_flight, restore_pending, restore_staging_root, stage_full_restore,
-    write_full_backup, write_scheduled_backup, write_scheduled_backup_cancellable,
-    write_scheduled_backup_unless_unchanged,
+    write_full_backup,
 };
+#[cfg(feature = "test-support")]
+pub use full::{write_scheduled_backup, write_scheduled_backup_unless_unchanged};
 pub use messages::TRANSFER_MESSAGES;
 pub use overlay_import_sweep::{
     SetAsideSweep, sweep_abandoned_overlay_imports, sweep_set_aside_overlay_files,
@@ -68,3 +70,7 @@ pub use setup::{
     setup_staging_root, stage_setup, write_setup,
 };
 pub use staging_sweep::sweep_import_staging;
+#[cfg(feature = "test-support")]
+pub use test_surface::{
+    INCLUDED_DIRS, MAX_DECRYPT_SCRYPT_WORK_FACTOR, write_scheduled_backup_cancellable,
+};

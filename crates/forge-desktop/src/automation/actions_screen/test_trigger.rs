@@ -42,7 +42,6 @@ pub(super) async fn dispatch_test_run(
             initial_args,
             admission,
         })
-        .await
         .map_err(RepoFailure::from)
 }
 

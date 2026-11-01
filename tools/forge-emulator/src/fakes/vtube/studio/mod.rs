@@ -19,7 +19,8 @@ use super::protocol::{
     MODEL_CONFIG_CHANGED_EVENT, MODEL_LOADED_EVENT, TRACKING_STATUS_CHANGED_EVENT,
 };
 
-pub const SUPPORTED_REQUESTS: [&str; 22] = [
+#[cfg(test)]
+const SUPPORTED_REQUESTS: [&str; 22] = [
     "APIStateRequest",
     "AuthenticationTokenRequest",
     "AuthenticationRequest",

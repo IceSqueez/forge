@@ -244,7 +244,6 @@ impl Harness {
                     initial_args: ArgStack::new(),
                     admission: QueueAdmission::default(),
                 })
-                .await
                 .unwrap();
         }
     }
@@ -669,7 +668,6 @@ async fn a_triggered_run_still_records_trigger_metadata() {
             initial_args: ArgStack::new(),
             admission: QueueAdmission::default(),
         })
-        .await
         .unwrap();
 
     let context = harness.next_run().await;

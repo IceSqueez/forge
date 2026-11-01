@@ -16,7 +16,6 @@ pub(crate) const PUBLIC_API_PREFIX: &str = "/public/v1";
 pub(crate) const CHANNEL_API_PREFIX: &str = "/api/v2";
 pub(crate) const OAUTH_PREFIX: &str = "/oauth";
 
-pub const SEND_CHAT_PATH: &str = "/public/v1/chat";
 pub const CHANNELS_PATH: &str = "/public/v1/channels";
 pub const TOKEN_PATH: &str = "/oauth/token";
 

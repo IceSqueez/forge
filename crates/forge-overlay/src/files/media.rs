@@ -307,7 +307,7 @@ pub fn emitted_media_value(
     }
 }
 
-pub fn emitted_image(resolved: Option<&ResolvedMedia>) -> String {
+pub(crate) fn emitted_image(resolved: Option<&ResolvedMedia>) -> String {
     resolved.map(ResolvedMedia::page_path).unwrap_or_default()
 }
 

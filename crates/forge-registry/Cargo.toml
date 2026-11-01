@@ -20,6 +20,10 @@ thiserror = { workspace = true }
 time = { workspace = true }
 tokio = { workspace = true }
 
+[features]
+test-support = []
+
 [dev-dependencies]
 forge-events = { path = "../forge-events", features = ["test-support"] }
+forge-registry = { path = ".", features = ["test-support"] }
 time = { workspace = true }

@@ -111,7 +111,7 @@ pub use settings::{
     set_voice_gate_threshold, stored_display_formats, synthesis_defaults,
     take_credentials_key_loss, voice_gate_settings,
 };
-pub use soundboard::{SoundboardClipsRepo, StoredClip, clip_source_referrer};
+pub use soundboard::{CLIP_SOURCE_SLOT, SoundboardClipsRepo, StoredClip, clip_source_referrer};
 pub use transit::{GlobalTransit, GlobalsExport};
 pub use trigger_instance::{TriggerChanges, TriggerInstanceRepo, TriggerWiring};
 pub use tts_filters::{

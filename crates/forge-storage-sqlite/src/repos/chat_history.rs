@@ -471,7 +471,8 @@ mod tests {
     };
 
     use super::SqliteChatHistoryRepo;
-    use crate::{apply_migrations, connect};
+    use crate::pool::connect;
+    use crate::schema::migrations::apply as apply_migrations;
 
     async fn make_repo() -> SqliteChatHistoryRepo {
         let pool = connect(":memory:").await.unwrap();

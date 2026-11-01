@@ -1,3 +1,4 @@
+use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 
 use async_trait::async_trait;
@@ -494,6 +495,12 @@ pub trait MediaRepo: Send + Sync {
     async fn referrers(&self, id: &MediaBlobId) -> Result<Vec<MediaReferrer>, StorageError>;
 
     async fn blob_of(&self, referrer: &MediaReferrer) -> Result<Option<MediaBlobId>, StorageError>;
+
+    async fn blobs_by_referrer_id(
+        &self,
+        kind: MediaReferrerKind,
+        slot: &str,
+    ) -> Result<HashMap<String, MediaBlobId>, StorageError>;
 }
 
 #[cfg(test)]

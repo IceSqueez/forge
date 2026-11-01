@@ -1,8 +1,7 @@
 mod config;
 mod fake;
 
-pub use config::{DonatesOrder, FakeDonatelloConfig, FakeDonation, donatello_wall_clock};
-pub use fake::{
-    DEFAULT_PAGE_SIZE, DONATES_PATH, DonatesFault, FakeDonatello, MAX_PAGE_SIZE,
-    PROFILE_INCOMPLETE_MESSAGE, RecordedDonatelloRequest, UNAUTHORIZED_MESSAGE,
-};
+pub(crate) use config::donatello_wall_clock;
+pub use config::{DonatesOrder, FakeDonatelloConfig, FakeDonation};
+pub(crate) use fake::DONATES_PATH;
+pub use fake::{DonatesFault, FakeDonatello, PROFILE_INCOMPLETE_MESSAGE, UNAUTHORIZED_MESSAGE};

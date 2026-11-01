@@ -457,9 +457,9 @@ async fn a_long_execution_in_one_queue_does_not_delay_an_action_in_another() {
     let rig = rig(vec![queue(qa, 1), queue(qb, 1)], &[&slow, &quick]).await;
     let mut sub = rig.bus.subscribe();
 
-    rig.sched.dispatch(req(&slow)).await.unwrap();
+    rig.sched.dispatch(req(&slow)).unwrap();
     events_until(&mut sub, start_of(&slow)).await;
-    rig.sched.dispatch(req(&quick)).await.unwrap();
+    rig.sched.dispatch(req(&quick)).unwrap();
 
     let seen = events_until(&mut sub, done_of(&quick)).await;
     assert!(
@@ -484,7 +484,7 @@ async fn two_of_three_started_on_a_queue_of_two() -> (Rig, EventSubscription, Qu
     .await;
     let mut sub = rig.bus.subscribe();
     for action in &actions {
-        rig.sched.dispatch(req(action)).await.unwrap();
+        rig.sched.dispatch(req(action)).unwrap();
     }
     let seen = events_until(&mut sub, nth_start(2)).await;
     assert_eq!(
@@ -528,7 +528,7 @@ async fn a_queue_slot_stays_taken_until_its_execution_ends() {
     let rig = rig(vec![queue(queue_id, 1)], &[&slow]).await;
     let mut sub = rig.bus.subscribe();
 
-    rig.sched.dispatch(req(&slow)).await.unwrap();
+    rig.sched.dispatch(req(&slow)).unwrap();
     events_until(&mut sub, start_of(&slow)).await;
     quiesce().await;
     assert_eq!(
@@ -555,7 +555,7 @@ async fn shutdown_during_a_long_wait_records_the_run_as_cancelled_without_the_ne
     let mut rig = rig(vec![queue(queue_id, 1)], &[&waiting]).await;
     let mut sub = rig.bus.subscribe();
 
-    rig.sched.dispatch(req(&waiting)).await.unwrap();
+    rig.sched.dispatch(req(&waiting)).unwrap();
     events_until(&mut sub, start_of(&waiting)).await;
     let stopped_at = tokio::time::Instant::now();
     rig.engine.clone().shutdown();
@@ -582,7 +582,7 @@ async fn shutdown_releases_the_queue_slot_of_the_cancelled_execution() {
     let mut rig = rig(vec![queue(queue_id, 1)], &[&waiting]).await;
     let mut sub = rig.bus.subscribe();
 
-    rig.sched.dispatch(req(&waiting)).await.unwrap();
+    rig.sched.dispatch(req(&waiting)).unwrap();
     events_until(&mut sub, start_of(&waiting)).await;
     rig.engine.clone().shutdown();
     rig.next_saved().await;
@@ -605,8 +605,8 @@ async fn a_panicking_runner_releases_its_slot_and_the_next_job_still_runs() {
     let rig = rig(vec![queue(queue_id, 1)], &[&panics, &next]).await;
     let mut sub = rig.bus.subscribe();
 
-    rig.sched.dispatch(req(&panics)).await.unwrap();
-    rig.sched.dispatch(req(&next)).await.unwrap();
+    rig.sched.dispatch(req(&panics)).unwrap();
+    rig.sched.dispatch(req(&next)).unwrap();
 
     let seen = events_until(&mut sub, done_of(&next)).await;
     assert!(
@@ -659,9 +659,9 @@ async fn a_run_that_finishes_last_keeps_the_earlier_start_time() {
     let mut rig = rig(vec![queue(queue_id, 2)], &[&first, &second]).await;
     let mut sub = rig.bus.subscribe();
 
-    rig.sched.dispatch(req(&first)).await.unwrap();
+    rig.sched.dispatch(req(&first)).unwrap();
     events_until(&mut sub, start_of(&first)).await;
-    rig.sched.dispatch(req(&second)).await.unwrap();
+    rig.sched.dispatch(req(&second)).unwrap();
     let finished_first = rig.next_saved().await;
     rig.open_slow_gate();
     let finished_last = rig.next_saved().await;
@@ -802,7 +802,7 @@ async fn refused_run(
     action: &Action,
     sub: &mut EventSubscription,
 ) -> (Event, ExecutionContext) {
-    rig.sched.dispatch(req(action)).await.unwrap();
+    rig.sched.dispatch(req(action)).unwrap();
     let skipped = events_until(sub, |ev| ev.kind == "action.skipped")
         .await
         .pop()
@@ -915,7 +915,7 @@ async fn a_queued_run_that_cannot_reach_a_stopped_engine_is_skipped_and_frees_it
         tokio::task::yield_now().await;
     }
 
-    rig.sched.dispatch(req(&action)).await.unwrap();
+    rig.sched.dispatch(req(&action)).unwrap();
 
     let skipped = events_until(&mut sub, |ev| ev.kind == "action.skipped")
         .await
@@ -962,9 +962,9 @@ async fn an_alongside_run_starts_while_the_only_slot_is_busy() {
     let rig = rig(vec![queue(queue_id, 1)], &[&slow, &beside]).await;
     let mut sub = rig.bus.subscribe();
 
-    rig.sched.dispatch(req(&slow)).await.unwrap();
+    rig.sched.dispatch(req(&slow)).unwrap();
     events_until(&mut sub, start_of(&slow)).await;
-    rig.sched.dispatch(admitted(&beside)).await.unwrap();
+    rig.sched.dispatch(admitted(&beside)).unwrap();
 
     let seen = events_until(&mut sub, done_of(&beside)).await;
     assert!(
@@ -981,8 +981,8 @@ async fn alongside_runs_count_as_in_flight_beyond_the_queue_limit() {
     let beside = concurrent(single(queue_id, SLOW_KIND_ID));
     let rig = rig(vec![queue(queue_id, 1)], &[&slow, &beside]).await;
 
-    rig.sched.dispatch(req(&slow)).await.unwrap();
-    rig.sched.dispatch(admitted(&beside)).await.unwrap();
+    rig.sched.dispatch(req(&slow)).unwrap();
+    rig.sched.dispatch(admitted(&beside)).unwrap();
 
     settle(
         &rig.sched,
@@ -1002,9 +1002,9 @@ async fn a_running_alongside_run_leaves_the_slot_to_a_gated_run() {
     let rig = rig(vec![queue(queue_id, 1)], &[&beside, &gated]).await;
     let mut sub = rig.bus.subscribe();
 
-    rig.sched.dispatch(admitted(&beside)).await.unwrap();
+    rig.sched.dispatch(admitted(&beside)).unwrap();
     events_until(&mut sub, start_of(&beside)).await;
-    rig.sched.dispatch(req(&gated)).await.unwrap();
+    rig.sched.dispatch(req(&gated)).unwrap();
 
     let seen = events_until(&mut sub, done_of(&gated)).await;
     assert!(
@@ -1027,7 +1027,7 @@ async fn a_concurrent_action_runs_its_steps_one_after_another() {
     let rig = rig(vec![queue(queue_id, 1)], &[&both]).await;
     let mut sub = rig.bus.subscribe();
 
-    rig.sched.dispatch(admitted(&both)).await.unwrap();
+    rig.sched.dispatch(admitted(&both)).unwrap();
     let mut seen = events_until(&mut sub, start_of(&both)).await;
     quiesce().await;
     seen.extend(drain(&mut sub));
@@ -1057,7 +1057,7 @@ async fn holding_withholds_an_alongside_run_until_the_queue_resumes() {
         .set_mode(queue_id, QueueMode::HOLDING)
         .await
         .unwrap();
-    rig.sched.dispatch(admitted(&beside)).await.unwrap();
+    rig.sched.dispatch(admitted(&beside)).unwrap();
     settle(&rig.sched, queue_id, "the run held", |s| s.pending == 1).await;
     quiesce().await;
     let while_held = drain(&mut sub);
@@ -1092,8 +1092,8 @@ async fn a_bypass_pause_alongside_run_passes_a_held_queue_while_a_plain_one_wait
         .set_mode(queue_id, QueueMode::HOLDING)
         .await
         .unwrap();
-    rig.sched.dispatch(admitted(&plain)).await.unwrap();
-    rig.sched.dispatch(admitted(&bypass)).await.unwrap();
+    rig.sched.dispatch(admitted(&plain)).unwrap();
+    rig.sched.dispatch(admitted(&bypass)).unwrap();
     let seen = events_until(&mut sub, done_of(&bypass)).await;
 
     assert_eq!(
@@ -1118,7 +1118,7 @@ async fn paused_and_draining_queues_refuse_an_alongside_run() {
         (QueueMode::DRAINING, RunRefusal::QueueDraining.code()),
     ] {
         rig.sched.set_mode(queue_id, mode).await.unwrap();
-        rig.sched.dispatch(admitted(&beside)).await.unwrap();
+        rig.sched.dispatch(admitted(&beside)).unwrap();
         let seen = events_until(&mut sub, |ev| ev.kind == "action.skipped").await;
         assert_eq!(
             seen.last()
@@ -1143,9 +1143,9 @@ async fn an_alongside_run_past_the_pending_cap_is_refused_as_overflow() {
         .await
         .unwrap();
     for _ in 0..MAX_PENDING_PER_QUEUE {
-        rig.sched.dispatch(req(&plain)).await.unwrap();
+        rig.sched.dispatch(req(&plain)).unwrap();
     }
-    rig.sched.dispatch(admitted(&beside)).await.unwrap();
+    rig.sched.dispatch(admitted(&beside)).unwrap();
 
     settle(
         &rig.sched,
@@ -1169,7 +1169,7 @@ async fn clearing_discards_withheld_alongside_runs() {
         .await
         .unwrap();
     for _ in 0..2 {
-        rig.sched.dispatch(admitted(&beside)).await.unwrap();
+        rig.sched.dispatch(admitted(&beside)).unwrap();
     }
     settle(&rig.sched, queue_id, "two runs held", |s| s.pending == 2).await;
     rig.sched
@@ -1196,7 +1196,7 @@ async fn clearing_without_keeping_current_cancels_a_running_alongside_run() {
     let mut rig = rig(vec![queue(queue_id, 1)], &[&waiting]).await;
     let mut sub = rig.bus.subscribe();
 
-    rig.sched.dispatch(admitted(&waiting)).await.unwrap();
+    rig.sched.dispatch(admitted(&waiting)).unwrap();
     events_until(&mut sub, start_of(&waiting)).await;
     rig.sched
         .clear(queue_id, forge_runtime::ClearMode::CancelCurrent)
@@ -1215,7 +1215,7 @@ async fn stop_returns_only_after_the_running_action_and_its_queue_tasks_have_end
     let waiting = long_wait_then_instant(queue_id);
     let mut rig = rig(vec![queue(queue_id, 1)], &[&waiting]).await;
     let mut sub = rig.bus.subscribe();
-    rig.sched.dispatch(req(&waiting)).await.unwrap();
+    rig.sched.dispatch(req(&waiting)).unwrap();
     events_until(&mut sub, start_of(&waiting)).await;
 
     rig.sched.shutdown();
@@ -1266,7 +1266,7 @@ async fn a_run_that_ignores_the_cancel_is_dropped_when_the_grace_runs_out() {
     let stuck = single(queue_id, SLOW_KIND_ID);
     let rig = rig(vec![queue(queue_id, 1)], &[&stuck]).await;
     let mut sub = rig.bus.subscribe();
-    rig.sched.dispatch(req(&stuck)).await.unwrap();
+    rig.sched.dispatch(req(&stuck)).unwrap();
     events_until(&mut sub, start_of(&stuck)).await;
     let asked = tokio::time::Instant::now();
 

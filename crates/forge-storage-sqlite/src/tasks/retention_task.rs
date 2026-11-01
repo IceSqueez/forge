@@ -12,7 +12,7 @@ use forge_storage::{
 use time::OffsetDateTime;
 use tokio::sync::{Notify, watch};
 
-use crate::{SqliteEventLogRepo, SqliteHistoryRepo, SqliteSettingsRepo};
+use crate::repos::{SqliteEventLogRepo, SqliteHistoryRepo, SqliteSettingsRepo};
 
 const FIRST_SWEEP_DELAY: Duration = Duration::from_secs(30);
 const PRUNE_CHUNK_ROWS: u32 = 1_000;
@@ -250,7 +250,8 @@ mod tests {
 
     use super::*;
     use crate::error::SqliteStorageError;
-    use crate::{apply_migrations, connect};
+    use crate::pool::connect;
+    use crate::schema::migrations::apply as apply_migrations;
 
     const FULL: u64 = PRUNE_CHUNK_ROWS as u64;
 

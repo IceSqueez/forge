@@ -266,6 +266,14 @@ impl MediaRepo for FakeMedia {
             .get(&slot_key(referrer))
             .cloned())
     }
+
+    async fn blobs_by_referrer_id(
+        &self,
+        _kind: forge_storage::MediaReferrerKind,
+        _slot: &str,
+    ) -> Result<HashMap<String, MediaBlobId>, StorageError> {
+        Ok(HashMap::new())
+    }
 }
 
 #[derive(Default)]

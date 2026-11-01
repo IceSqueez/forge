@@ -255,7 +255,8 @@ impl EventLogRepo for SqliteEventLogRepo {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::{apply_migrations, connect};
+    use crate::pool::connect;
+    use crate::schema::migrations::apply as apply_migrations;
     use forge_events::{Event, EventSource};
     use forge_storage::EventLogRepo;
 

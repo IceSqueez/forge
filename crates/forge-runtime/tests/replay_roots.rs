@@ -140,7 +140,6 @@ async fn spawn_pipeline() -> PipelineFixture {
                 };
                 sched_clone
                     .dispatch(req)
-                    .await
                     .expect("dispatch of the replayed chat event");
             }
         }

@@ -13,4 +13,4 @@ pub(crate) const MAX_SHARED_ENTRY_BYTES: u64 = GIB;
 pub(crate) const MAX_SHARED_UNPACKED_BYTES: u64 = 4 * GIB;
 pub(crate) const MAX_SHARED_ARCHIVE_ENTRIES: usize = 100_000;
 pub(crate) const ENCRYPT_SCRYPT_WORK_FACTOR: u8 = 18;
-pub const MAX_DECRYPT_SCRYPT_WORK_FACTOR: u8 = 20;
+pub(crate) const MAX_DECRYPT_SCRYPT_WORK_FACTOR: u8 = 20;

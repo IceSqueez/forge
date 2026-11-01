@@ -1,39 +1,27 @@
+use crate::account::broadcaster::{BroadcasterIdentity, BroadcasterSlot};
 use crate::error::TwitchError;
 use crate::vocabulary::labels;
 use forge_net::status::NOT_FOUND;
 use forge_types::MessageCode;
 use std::sync::Arc;
 
-use forge_storage::CredentialsRepo;
-
-use crate::credentials;
 use crate::helix::{HelixMethod, HelixRequest, HelixTransport};
 
 pub(crate) struct SelfIdentity {
-    creds: Arc<dyn CredentialsRepo>,
+    slot: Arc<BroadcasterSlot>,
 }
 
 impl SelfIdentity {
-    pub(crate) fn new(creds: Arc<dyn CredentialsRepo>) -> Self {
-        Self { creds }
+    pub(crate) fn new(slot: Arc<BroadcasterSlot>) -> Self {
+        Self { slot }
     }
 
     pub(crate) async fn user_id(&self) -> Result<String, TwitchError> {
-        Ok(self.stored().await?.user_id)
+        Ok(self.slot.current()?.user_id().to_owned())
     }
 
-    pub(crate) async fn stored(&self) -> Result<credentials::StoredCredential, TwitchError> {
-        self.stored_if_signed_in()
-            .await?
-            .ok_or_else(|| TwitchError::Credentials("no twitch credentials stored".to_owned()))
-    }
-
-    pub(crate) async fn stored_if_signed_in(
-        &self,
-    ) -> Result<Option<credentials::StoredCredential>, TwitchError> {
-        credentials::load(self.creds.as_ref())
-            .await
-            .map_err(|e| TwitchError::Credentials(e.to_string()))
+    pub(crate) fn broadcaster(&self) -> Result<BroadcasterIdentity, TwitchError> {
+        self.slot.current()
     }
 }
 

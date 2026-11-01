@@ -117,10 +117,10 @@ pub struct TwitchIntegrationBundle {
 }
 
 impl TwitchIntegrationBundle {
-    pub fn new(login: Option<String>, platform: Arc<TwitchPlatform>) -> Arc<Self> {
+    pub fn new(login: Option<String>, platform: Arc<TwitchPlatform>) -> Option<Arc<Self>> {
+        let config = platform.session_config().ok()?;
         let (health_tx, _) = broadcast::channel(forge_platform_core::HEALTH_CHANNEL_CAPACITY);
         let (viewer_report_tx, _) = watch::channel(ViewerReport::Absent);
-        let config = platform.config().clone();
         let reported_connection =
             std::sync::RwLock::new(platform.session_states().borrow().to_connection_state());
         let bus = platform.publisher();
@@ -155,7 +155,7 @@ impl TwitchIntegrationBundle {
         Self::spawn_token_expiry_bridge(&bundle);
         Self::spawn_viewer_poll(&bundle, transport);
         Self::spawn_stored_expiry_read(&bundle);
-        bundle
+        Some(bundle)
     }
 
     fn build_helix_transport(
@@ -320,11 +320,17 @@ impl TwitchIntegrationBundle {
         Self::spawn_until_retired(bundle, |bundle| async move {
             bundle
                 .lifecycle
-                .seed_from_helix(bundle.transport.as_ref(), &bundle.config.broadcaster_id)
+                .seed_from_helix(
+                    bundle.transport.as_ref(),
+                    bundle.config.broadcaster.user_id(),
+                )
                 .await;
             bundle
                 .lifecycle
-                .seed_shield_from_helix(bundle.transport.as_ref(), &bundle.config.broadcaster_id)
+                .seed_shield_from_helix(
+                    bundle.transport.as_ref(),
+                    bundle.config.broadcaster.user_id(),
+                )
                 .await;
         });
     }
@@ -334,7 +340,7 @@ impl TwitchIntegrationBundle {
             match creator_goals::publish_current_goals(
                 bundle.transport.as_ref(),
                 bundle.bus.as_ref(),
-                &bundle.config.broadcaster_id,
+                bundle.config.broadcaster.user_id(),
             )
             .await
             {
@@ -357,10 +363,12 @@ impl TwitchIntegrationBundle {
     }
 
     pub(crate) async fn refresh_identity(&self) {
-        let Some(stored) = self.read_stored_expiry().await else {
+        if self.read_stored_expiry().await.is_none() {
             return;
-        };
-        match resolve_broadcaster_tier(self.transport.as_ref(), &stored.user_id).await {
+        }
+        match resolve_broadcaster_tier(self.transport.as_ref(), self.config.broadcaster.user_id())
+            .await
+        {
             Ok(tier) => self.record_tier(tier),
             Err(error) => tracing::debug!(%error, "broadcaster tier unavailable"),
         }
@@ -380,7 +388,7 @@ impl TwitchIntegrationBundle {
 
     fn spawn_viewer_poll(bundle: &Arc<Self>, transport: Arc<dyn HelixTransport>) {
         let bundle = Arc::clone(bundle);
-        let broadcaster_id = bundle.config.broadcaster_id.clone();
+        let broadcaster_id = bundle.config.broadcaster.user_id().to_owned();
         tokio::spawn(async move {
             let mut ticker = tokio::time::interval(VIEWER_POLL_INTERVAL);
             ticker.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);
@@ -438,7 +446,7 @@ impl TwitchIntegrationBundle {
     }
 
     pub(crate) fn broadcaster_id(&self) -> &str {
-        &self.config.broadcaster_id
+        self.config.broadcaster.user_id()
     }
 
     pub(crate) fn lifecycle(&self) -> &TwitchLifecycle {
@@ -549,16 +557,19 @@ impl TwitchIntegrationBundle {
     ) -> Arc<Self> {
         let (health_tx, _) = broadcast::channel(16);
         let (viewer_report_tx, _) = watch::channel(ViewerReport::Absent);
-        let config = ChatSessionConfig {
+        let client = crate::config::ClientSettings {
             client_id: "test-client".to_owned(),
-            broadcaster_id: broadcaster_id.to_owned(),
-            user_id: broadcaster_id.to_owned(),
             endpoints: crate::test_support::unreachable_twitch_endpoints(),
         };
+        let broadcaster =
+            crate::account::broadcaster::BroadcasterIdentity::new(broadcaster_id, "streamer")
+                .unwrap();
+        let config = client.session_for(broadcaster.clone());
         let helix = crate::test_support::unreachable_helix_gateway();
         let lifecycle = TwitchLifecycle::new();
         let platform = Arc::new(TwitchPlatform::new(
-            config.clone(),
+            client,
+            crate::test_support::identity_holding(Some(broadcaster)).1,
             Arc::clone(&creds),
             Arc::clone(&credentials_manager),
             tracker.clone(),
@@ -751,7 +762,7 @@ impl BuiltinStatus for TwitchIntegrationBundle {
 
     fn name_badges(&self) -> Vec<HeroBadge> {
         let mut badges = vec![HeroBadge {
-            label: messages::user_id_badge(&self.config.user_id).into(),
+            label: messages::user_id_badge(self.config.broadcaster.user_id()).into(),
             tone: HeroBadgeTone::Neutral,
             is_identifier: true,
         }];
@@ -1825,14 +1836,14 @@ mod tests {
     #[test]
     fn every_quick_action_field_key_is_consumed_by_its_runner() {
         use crate::sub_actions::register_twitch_sub_actions;
-        use crate::test_support::{MockCreds, MockTransport};
+        use crate::test_support::MockTransport;
         use forge_registry::SubActionRegistry;
 
         let mut reg = SubActionRegistry::new();
         register_twitch_sub_actions(
             &mut reg,
             Arc::new(MockTransport::returning(Ok(serde_json::Value::Null))),
-            Arc::new(MockCreds::empty()),
+            Arc::new(crate::account::broadcaster::BroadcasterSlot::default()),
             TwitchLifecycle::new(),
             None,
         )
@@ -1867,14 +1878,14 @@ mod tests {
     #[test]
     fn every_quick_action_template_filled_in_by_its_fields_passes_its_runner_validation() {
         use crate::sub_actions::register_twitch_sub_actions;
-        use crate::test_support::{MockCreds, MockTransport};
+        use crate::test_support::MockTransport;
         use forge_registry::SubActionRegistry;
 
         let mut reg = SubActionRegistry::new();
         register_twitch_sub_actions(
             &mut reg,
             Arc::new(MockTransport::returning(Ok(serde_json::Value::Null))),
-            Arc::new(MockCreds::empty()),
+            Arc::new(crate::account::broadcaster::BroadcasterSlot::default()),
             TwitchLifecycle::new(),
             None,
         )
@@ -1989,12 +2000,14 @@ mod tests {
     async fn shutting_down_twice_stops_the_chat_session_and_every_task_holding_the_bundle() {
         let creds: Arc<dyn CredentialsRepo> = Arc::new(MemoryCredentials::default());
         let platform = Arc::new(TwitchPlatform::new(
-            ChatSessionConfig {
+            crate::config::ClientSettings {
                 client_id: "test-client".to_owned(),
-                broadcaster_id: "1".to_owned(),
-                user_id: "1".to_owned(),
                 endpoints: crate::test_support::unreachable_twitch_endpoints(),
             },
+            crate::test_support::identity_holding(
+                crate::account::broadcaster::BroadcasterIdentity::new("1", "streamer"),
+            )
+            .1,
             Arc::clone(&creds),
             Arc::new(TwitchCredentialsManager::new(
                 crate::test_support::unreachable_oauth_client("test-client"),
@@ -2004,7 +2017,7 @@ mod tests {
             crate::test_support::unreachable_helix_gateway(),
             TwitchLifecycle::new(),
         ));
-        let bundle = TwitchIntegrationBundle::new(Some("streamer".to_owned()), platform);
+        let bundle = TwitchIntegrationBundle::new(Some("streamer".to_owned()), platform).unwrap();
 
         bundle.shutdown().await;
         bundle.shutdown().await;

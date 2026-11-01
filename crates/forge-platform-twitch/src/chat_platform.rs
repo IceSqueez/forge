@@ -16,7 +16,7 @@ use crate::account::identity::SelfIdentity;
 use crate::bot_account::TwitchBotAccount;
 use crate::chat::{ChatSessionState, TwitchChat, TwitchChatHandle};
 use crate::chat_sender::{ChatDelivery, ChatSenders};
-use crate::config::ChatSessionConfig;
+use crate::config::{ChatSessionConfig, ClientSettings};
 use crate::credentials::load;
 use crate::credentials_manager::TwitchCredentialsManager;
 use crate::helix::{HelixHttpTransport, HelixTokenRefresher, HelixTokenSource, HelixTransport};
@@ -27,7 +27,8 @@ use crate::vocabulary::PLATFORM_ID;
 pub(crate) const EVENT_CHANNEL_CAPACITY: usize = forge_events::PLATFORM_EVENT_CHANNEL_CAPACITY;
 
 pub struct TwitchPlatform {
-    config: ChatSessionConfig,
+    client: ClientSettings,
+    identity: Arc<SelfIdentity>,
     events: Arc<EventChannel>,
     creds: Arc<dyn CredentialsRepo>,
     credentials_manager: Arc<TwitchCredentialsManager>,
@@ -41,8 +42,9 @@ pub struct TwitchPlatform {
 }
 
 impl TwitchPlatform {
-    pub fn new(
-        config: ChatSessionConfig,
+    pub(crate) fn new(
+        client: ClientSettings,
+        identity: Arc<SelfIdentity>,
         creds: Arc<dyn CredentialsRepo>,
         credentials_manager: Arc<TwitchCredentialsManager>,
         tracker: SubscriptionTracker,
@@ -50,7 +52,8 @@ impl TwitchPlatform {
         lifecycle: TwitchLifecycle,
     ) -> Self {
         Self {
-            config,
+            client,
+            identity,
             events: Arc::new(EventChannel::new(EVENT_CHANNEL_CAPACITY)),
             creds,
             credentials_manager,
@@ -81,8 +84,8 @@ impl TwitchPlatform {
         self.state_tx.subscribe()
     }
 
-    pub(crate) fn config(&self) -> &ChatSessionConfig {
-        &self.config
+    pub(crate) fn session_config(&self) -> Result<ChatSessionConfig, TwitchError> {
+        Ok(self.client.session_for(self.identity.broadcaster()?))
     }
 
     pub(crate) fn credentials(&self) -> &Arc<dyn CredentialsRepo> {
@@ -111,7 +114,7 @@ impl TwitchPlatform {
                 let transport: Arc<dyn HelixTransport> = Arc::new(
                     HelixHttpTransport::new(
                         self.helix.clone(),
-                        self.config.client_id.clone(),
+                        self.client.client_id.clone(),
                         Arc::clone(&self.credentials_manager) as Arc<dyn HelixTokenSource>,
                     )
                     .with_refresher(
@@ -125,11 +128,10 @@ impl TwitchPlatform {
     }
 
     async fn senders(&self) -> Result<ChatSenders, PlatformError> {
-        Ok(ChatSenders::new(
-            self.helix_transport().await?,
-            Arc::new(SelfIdentity::new(Arc::clone(&self.creds))),
+        Ok(
+            ChatSenders::new(self.helix_transport().await?, Arc::clone(&self.identity))
+                .with_bot(self.bot.clone()),
         )
-        .with_bot(self.bot.clone()))
     }
 
     async fn deliver(
@@ -159,6 +161,7 @@ impl ChatPlatform for TwitchPlatform {
                 platform: PLATFORM_ID.to_owned(),
             })?;
 
+        let config = self.session_config().map_err(map_send_failure)?;
         let mut session = self.session.lock().await;
         if let Some(previous) = session.take() {
             previous.shutdown().await;
@@ -167,7 +170,7 @@ impl ChatPlatform for TwitchPlatform {
             TwitchChat::new(
                 Arc::clone(&self.credentials_manager),
                 self.helix.clone(),
-                self.config.clone(),
+                config,
                 self.publisher(),
                 self.tracker.clone(),
                 self.lifecycle.clone(),
@@ -318,12 +321,11 @@ mod tests {
     fn platform_over(transport: &Arc<MockTransport>) -> TwitchPlatform {
         let creds: Arc<dyn CredentialsRepo> = Arc::new(MockCreds::with_identity());
         let platform = TwitchPlatform::new(
-            ChatSessionConfig {
+            ClientSettings {
                 client_id: "test-client".to_owned(),
-                broadcaster_id: String::new(),
-                user_id: String::new(),
                 endpoints: unreachable_twitch_endpoints(),
             },
+            crate::test_support::self_identity(),
             Arc::clone(&creds),
             Arc::new(TwitchCredentialsManager::new(
                 crate::test_support::unreachable_oauth_client("test-client"),

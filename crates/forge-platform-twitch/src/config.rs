@@ -1,5 +1,6 @@
 use std::time::Duration;
 
+use crate::account::broadcaster::BroadcasterIdentity;
 use forge_net::{DEFAULT_BACKOFF_BASE, DEFAULT_BACKOFF_CAP};
 use forge_platform_core::PlatformEndpoints;
 
@@ -7,10 +8,25 @@ pub const HELIX_BUDGET_CAPACITY: u32 = 800;
 pub const HELIX_BUDGET_WINDOW: Duration = Duration::from_secs(60);
 
 #[derive(Clone)]
+pub(crate) struct ClientSettings {
+    pub(crate) client_id: String,
+    pub(crate) endpoints: PlatformEndpoints,
+}
+
+impl ClientSettings {
+    pub(crate) fn session_for(&self, broadcaster: BroadcasterIdentity) -> ChatSessionConfig {
+        ChatSessionConfig {
+            client_id: self.client_id.clone(),
+            broadcaster,
+            endpoints: self.endpoints.clone(),
+        }
+    }
+}
+
+#[derive(Clone)]
 pub struct ChatSessionConfig {
     pub client_id: String,
-    pub broadcaster_id: String,
-    pub user_id: String,
+    pub broadcaster: BroadcasterIdentity,
     pub endpoints: PlatformEndpoints,
 }
 

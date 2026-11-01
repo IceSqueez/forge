@@ -131,7 +131,6 @@ struct SessionConfig {
     helix: Gateway,
     client_id: String,
     broadcaster_id: String,
-    user_id: String,
     endpoints: PlatformEndpoints,
     bus: Arc<dyn EventPublisher>,
     tracker: SubscriptionTracker,
@@ -177,17 +176,16 @@ impl ChatSession {
         let (shutdown_tx, shutdown_rx) = oneshot::channel();
         let ChatSessionConfig {
             client_id,
-            broadcaster_id,
-            user_id,
+            broadcaster,
             endpoints,
         } = config;
+        let broadcaster_id = broadcaster.user_id().to_owned();
         let session = Self {
             config: SessionConfig {
                 manager,
                 helix,
                 client_id,
                 broadcaster_id,
-                user_id,
                 endpoints,
                 bus,
                 tracker,
@@ -534,7 +532,6 @@ impl ChatSession {
             client_id: self.config.client_id.clone(),
             session_id: id,
             broadcaster_id: self.config.broadcaster_id.clone(),
-            user_id: self.config.user_id.clone(),
             bus: Arc::clone(&self.config.bus),
             tracker: self.config.tracker.clone(),
             retries_tx,

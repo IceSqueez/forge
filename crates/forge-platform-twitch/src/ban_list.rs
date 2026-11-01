@@ -126,9 +126,6 @@ fn unavailability_of(error: &TwitchError) -> BanListUnavailable {
 impl BanListSource for TwitchIntegrationBundle {
     async fn list_bans(&self, after: Option<&BanPageToken>) -> BanListOutcome {
         let broadcaster_id = self.broadcaster_id();
-        if broadcaster_id.is_empty() {
-            return BanListOutcome::Unavailable(BanListUnavailable::NotConnected);
-        }
         match self
             .helix()
             .execute(banned_users_request(broadcaster_id, after))
@@ -516,25 +513,6 @@ mod tests {
                 "{label}"
             );
         }
-    }
-
-    #[tokio::test]
-    async fn list_bans_without_a_broadcaster_is_not_connected_and_sends_nothing() {
-        let transport = Arc::new(MockTransport::returning(Ok(page_of(
-            vec![row()],
-            json!({}),
-        ))));
-        let bundle = bundle(Arc::clone(&transport) as Arc<dyn HelixTransport>, "");
-
-        let outcome = bundle.list_bans(None).await;
-
-        assert_eq!(
-            (outcome, transport.call_count()),
-            (
-                BanListOutcome::Unavailable(BanListUnavailable::NotConnected),
-                0
-            )
-        );
     }
 
     #[tokio::test]

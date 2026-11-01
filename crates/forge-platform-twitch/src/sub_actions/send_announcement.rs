@@ -188,23 +188,22 @@ mod tests {
     use crate::error::TwitchError;
     use crate::helix::HelixMethod;
     use crate::test_support::{
-        MockCreds, MockTransport, SELF_USER_ID, TOKEN_SENTINEL, assert_failed_with_code,
-        assert_failed_with_detail, make_ctx,
+        MockTransport, SELF_USER_ID, TOKEN_SENTINEL, assert_failed_with_code,
+        assert_failed_with_detail, make_ctx, self_identity, signed_out_identity,
     };
     use forge_platform_core::SENDER_FIELD;
-    use forge_storage::test_support::MemoryCredentials;
     use forge_types::SubActionOutcome;
     use forge_types::Variant;
     use std::collections::BTreeMap;
 
     fn runner_with(
         response: Result<serde_json::Value, TwitchError>,
-        creds: MemoryCredentials,
+        identity: Arc<SelfIdentity>,
     ) -> (Arc<MockTransport>, SendAnnouncementRunner) {
         let transport = Arc::new(MockTransport::returning(response));
         let runner = SendAnnouncementRunner::new(
             Arc::clone(&transport) as Arc<dyn HelixTransport>,
-            Arc::new(SelfIdentity::new(Arc::new(creds))),
+            identity,
         );
         (transport, runner)
     }
@@ -219,8 +218,7 @@ mod tests {
 
     #[tokio::test]
     async fn execute_posts_announcement_with_self_as_broadcaster_and_moderator() {
-        let (transport, runner) =
-            runner_with(Ok(serde_json::Value::Null), MockCreds::with_identity());
+        let (transport, runner) = runner_with(Ok(serde_json::Value::Null), self_identity());
         let stack = ArgStack::new();
 
         let (telemetry, _) = runner
@@ -248,8 +246,7 @@ mod tests {
 
     #[tokio::test]
     async fn execute_interpolates_message_template_before_send() {
-        let (transport, runner) =
-            runner_with(Ok(serde_json::Value::Null), MockCreds::with_identity());
+        let (transport, runner) = runner_with(Ok(serde_json::Value::Null), self_identity());
         let stack = ArgStack::new().set("user".to_owned(), Variant::String("viewer42".to_owned()));
 
         let (telemetry, _) = runner
@@ -270,7 +267,7 @@ mod tests {
                 status: 403,
                 body: "moderator scope missing".to_owned(),
             }),
-            MockCreds::with_identity(),
+            self_identity(),
         );
         let stack = ArgStack::new();
 
@@ -283,8 +280,7 @@ mod tests {
 
     #[tokio::test]
     async fn empty_message_after_interpolation_fails_without_transport_call() {
-        let (transport, runner) =
-            runner_with(Ok(serde_json::Value::Null), MockCreds::with_identity());
+        let (transport, runner) = runner_with(Ok(serde_json::Value::Null), self_identity());
         let stack = ArgStack::new().set("greeting".to_owned(), Variant::String(String::new()));
 
         let (telemetry, _) = runner
@@ -302,8 +298,7 @@ mod tests {
     #[tokio::test]
     async fn message_limit_enforced_by_character_count_not_byte_count() {
         for (char_count, should_send) in [(500, true), (501, false)] {
-            let (transport, runner) =
-                runner_with(Ok(serde_json::Value::Null), MockCreds::with_identity());
+            let (transport, runner) = runner_with(Ok(serde_json::Value::Null), self_identity());
             let stack =
                 ArgStack::new().set("msg".to_owned(), Variant::String("я".repeat(char_count)));
 
@@ -334,7 +329,7 @@ mod tests {
 
     #[tokio::test]
     async fn missing_credentials_fail_without_transport_call() {
-        let (transport, runner) = runner_with(Ok(serde_json::Value::Null), MockCreds::empty());
+        let (transport, runner) = runner_with(Ok(serde_json::Value::Null), signed_out_identity());
         let stack = ArgStack::new();
 
         let (telemetry, _) = runner
@@ -347,8 +342,7 @@ mod tests {
 
     #[tokio::test]
     async fn execute_fails_an_unrecognized_stored_color_without_calling_helix() {
-        let (transport, runner) =
-            runner_with(Ok(serde_json::Value::Null), MockCreds::with_identity());
+        let (transport, runner) = runner_with(Ok(serde_json::Value::Null), self_identity());
         let stack = ArgStack::new();
 
         let (telemetry, _) = runner
@@ -385,8 +379,7 @@ mod tests {
                 false,
             ),
         ];
-        let (_transport, runner) =
-            runner_with(Ok(serde_json::Value::Null), MockCreds::with_identity());
+        let (_transport, runner) = runner_with(Ok(serde_json::Value::Null), self_identity());
 
         for (label, cfg, expect_ok) in cases {
             assert_eq!(
@@ -414,7 +407,7 @@ mod tests {
         ];
 
         for (response, expected) in cases {
-            let (_transport, runner) = runner_with(response, MockCreds::with_identity());
+            let (_transport, runner) = runner_with(response, self_identity());
 
             let (telemetry, _) = runner
                 .execute(&config("hello", None), &make_ctx(&ArgStack::new()))
@@ -430,8 +423,7 @@ mod tests {
 
     #[tokio::test]
     async fn unknown_sender_is_rejected_by_validate_and_by_execute_without_a_helix_call() {
-        let (transport, runner) =
-            runner_with(Ok(serde_json::Value::Null), MockCreds::with_identity());
+        let (transport, runner) = runner_with(Ok(serde_json::Value::Null), self_identity());
         let mut config = config("hello", None);
         config.insert(SENDER_FIELD.to_owned(), Variant::String("mod".to_owned()));
 

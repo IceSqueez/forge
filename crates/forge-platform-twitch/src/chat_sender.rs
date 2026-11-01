@@ -1,4 +1,3 @@
-use crate::chat::chat_failure;
 use crate::error::TwitchError;
 use std::collections::BTreeMap;
 use std::sync::Arc;
@@ -135,20 +134,12 @@ impl ChatSenders {
         preference: SenderPreference,
         events: &dyn EventPublisher,
     ) -> Result<ActingSender, TwitchError> {
-        let stored = self
-            .identity
-            .stored_if_signed_in()
-            .await
-            .map_err(|e| match e {
-                TwitchError::Credentials(reason) => TwitchError::SendCredentials(reason),
-                other => chat_failure(other),
-            })?
-            .ok_or(TwitchError::NotSignedIn)?;
-        let broadcaster_id = stored.user_id.clone();
+        let broadcaster = self.identity.broadcaster()?;
+        let broadcaster_id = broadcaster.user_id().to_owned();
         let streamer = Actor {
             role: SenderRole::Streamer,
-            user_id: stored.user_id,
-            login: stored.login,
+            user_id: broadcaster_id.clone(),
+            login: broadcaster.login().to_owned(),
             transport: Arc::clone(&self.transport),
         };
         match preference {
@@ -373,7 +364,7 @@ mod tests {
             let streamer = Arc::new(MockTransport::returning_sequence(streamer_responses));
             let senders = ChatSenders::new(
                 Arc::clone(&streamer) as Arc<dyn HelixTransport>,
-                Arc::new(SelfIdentity::new(Arc::clone(&harness.repo) as _)),
+                crate::test_support::self_identity(),
             )
             .with_bot(Some(Arc::clone(&harness.bot)));
             Self {
@@ -439,16 +430,7 @@ mod tests {
     };
 
     fn streamer_senders(transport: Arc<dyn HelixTransport>) -> ChatSenders {
-        use crate::credentials::TWITCH_CREDENTIAL_ID;
-        use crate::test_support::TOKEN_SENTINEL;
-        use crate::test_support::bot_account::{KeyedRepo, credential_json};
-
-        let repo = Arc::new(KeyedRepo::default());
-        repo.put(
-            TWITCH_CREDENTIAL_ID,
-            credential_json(TOKEN_SENTINEL, "streamer_refresh", SELF_USER_ID, "streamer"),
-        );
-        ChatSenders::new(transport, Arc::new(SelfIdentity::new(repo as _)))
+        ChatSenders::new(transport, crate::test_support::self_identity())
     }
 
     struct StreamerRig {

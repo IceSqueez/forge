@@ -39,6 +39,7 @@ mod triggers;
 mod viewer_step;
 pub mod vocabulary;
 
+pub use account::broadcaster::{BroadcasterIdentity, BroadcasterSlot};
 pub use account::identity::BroadcasterTier;
 pub use assembly::TwitchAssembly;
 pub use auth::{

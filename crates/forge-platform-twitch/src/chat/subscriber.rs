@@ -67,7 +67,6 @@ struct SubscribeCtx {
     helix: Arc<dyn HelixTransport>,
     session_id: String,
     broadcaster_id: String,
-    user_id: String,
     bus: Arc<dyn EventPublisher>,
 }
 
@@ -80,7 +79,7 @@ impl SubscribeCtx {
     }
 
     fn condition(&self, topic: &TopicSpec) -> serde_json::Value {
-        (topic.condition_fn)(&self.broadcaster_id, &self.user_id)
+        (topic.condition_fn)(&self.broadcaster_id, &self.broadcaster_id)
     }
 
     async fn create(&self, topic: &TopicSpec) -> Result<serde_json::Value, TwitchError> {
@@ -104,7 +103,6 @@ pub(crate) async fn subscribe_all(
     helix: &Arc<dyn HelixTransport>,
     session_id: &str,
     broadcaster_id: &str,
-    user_id: &str,
     bus: &Arc<dyn EventPublisher>,
     tracker: &SubscriptionTracker,
 ) -> Result<SubscribePass, TwitchError> {
@@ -125,7 +123,6 @@ pub(crate) async fn subscribe_all(
         helix: Arc::clone(helix),
         session_id: session_id.to_owned(),
         broadcaster_id: broadcaster_id.to_owned(),
-        user_id: user_id.to_owned(),
         bus: Arc::clone(bus),
     };
 
@@ -460,15 +457,8 @@ mod tests {
             Arc::new(FixedTokenSource::new(OAuthToken::new(TOKEN_SENTINEL))),
         ));
         let tracker = SubscriptionTracker::default();
-        let result = subscribe_all(
-            &helix,
-            "session_id",
-            "broadcaster_id",
-            "user_id",
-            &publisher,
-            &tracker,
-        )
-        .await;
+        let result =
+            subscribe_all(&helix, "session_id", "broadcaster_id", &publisher, &tracker).await;
         PassRun {
             result,
             tracker,

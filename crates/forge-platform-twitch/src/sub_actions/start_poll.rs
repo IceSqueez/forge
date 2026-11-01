@@ -216,7 +216,7 @@ mod tests {
     use crate::error::TwitchError;
     use crate::test_support::TOKEN_SENTINEL;
     use crate::test_support::{
-        MockCreds, MockTransport, SELF_USER_ID, assert_request_refused, make_ctx,
+        MockTransport, SELF_USER_ID, assert_request_refused, make_ctx, signed_out_identity,
     };
     use std::collections::BTreeMap;
 
@@ -391,7 +391,7 @@ mod tests {
         let transport = Arc::new(MockTransport::returning(Ok(poll_payload())));
         let runner = StartPollRunner::new(
             Arc::clone(&transport) as Arc<dyn HelixTransport>,
-            Arc::new(SelfIdentity::new(Arc::new(MockCreds::empty()))),
+            signed_out_identity(),
         );
         let stack = ArgStack::new();
         let (telemetry, output) = runner.execute(&full_cfg(), &make_ctx(&stack)).await;

@@ -49,8 +49,8 @@ mod warn_user;
 use std::sync::Arc;
 
 use forge_registry::{RegistryError, SubActionRegistry, SubActionRunner};
-use forge_storage::CredentialsRepo;
 
+use crate::account::broadcaster::BroadcasterSlot;
 use crate::account::identity::SelfIdentity;
 
 pub(crate) use end_poll::PollEndStatus;
@@ -164,12 +164,12 @@ const PLAIN_RUNNERS: &[RunnerBuild] = &[
 pub fn register_twitch_sub_actions(
     reg: &mut SubActionRegistry,
     transport: Arc<dyn HelixTransport>,
-    creds: Arc<dyn CredentialsRepo>,
+    broadcaster: Arc<BroadcasterSlot>,
     lifecycle: TwitchLifecycle,
     bot: Option<Arc<TwitchBotAccount>>,
 ) -> Result<(), RegistryError> {
     let mut reg = reg.owned_by(crate::TWITCH_INTEGRATION.id);
-    let identity = Arc::new(SelfIdentity::new(creds));
+    let identity = Arc::new(SelfIdentity::new(broadcaster));
     let cadence = Arc::new(CadenceLedger::default());
     reg.register(Box::new(
         SendAnnouncementRunner::new(Arc::clone(&transport), Arc::clone(&identity))
@@ -214,7 +214,7 @@ pub fn register_twitch_sub_actions(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::test_support::{MockCreds, MockTransport};
+    use crate::test_support::MockTransport;
 
     #[test]
     fn register_twitch_sub_actions_resolves_all_runner_ids() {
@@ -223,7 +223,7 @@ mod tests {
         register_twitch_sub_actions(
             &mut reg,
             Arc::new(MockTransport::returning(Ok(serde_json::Value::Null))),
-            Arc::new(MockCreds::empty()),
+            Arc::new(crate::account::broadcaster::BroadcasterSlot::default()),
             TwitchLifecycle::new(),
             None,
         )

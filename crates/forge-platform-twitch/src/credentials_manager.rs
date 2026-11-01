@@ -638,12 +638,14 @@ pub(crate) mod tests {
         let repo: Arc<dyn CredentialsRepo> = seeded_repo(&cred);
         let mgr = Arc::new(manager_with_server(Arc::clone(&repo), &server));
         let platform = Arc::new(crate::chat_platform::TwitchPlatform::new(
-            crate::config::ChatSessionConfig {
+            crate::config::ClientSettings {
                 client_id: "test_client_id".to_owned(),
-                broadcaster_id: "user_1".to_owned(),
-                user_id: "user_1".to_owned(),
                 endpoints: crate::test_support::unreachable_twitch_endpoints(),
             },
+            crate::test_support::identity_holding(
+                crate::account::broadcaster::BroadcasterIdentity::new("user_1", "streamer"),
+            )
+            .1,
             repo,
             Arc::clone(&mgr),
             crate::subscriptions::SubscriptionTracker::default(),
@@ -651,7 +653,8 @@ pub(crate) mod tests {
             crate::lifecycle::TwitchLifecycle::new(),
         ));
         let bundle =
-            crate::builtin::TwitchIntegrationBundle::new(Some("streamer".to_owned()), platform);
+            crate::builtin::TwitchIntegrationBundle::new(Some("streamer".to_owned()), platform)
+                .unwrap();
         let stale = OAuthToken::new("existing_access");
 
         let (verb, direct) = tokio::join!(bundle.refresh_token(), mgr.refresh(&stale));

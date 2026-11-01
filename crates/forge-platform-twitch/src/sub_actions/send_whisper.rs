@@ -259,7 +259,7 @@ mod tests {
         let streamer = Arc::new(MockTransport::returning(Ok(serde_json::Value::Null)));
         let runner = SendWhisperRunner::new(
             Arc::clone(&streamer) as Arc<dyn HelixTransport>,
-            Arc::new(SelfIdentity::new(Arc::clone(&harness.repo) as _)),
+            crate::test_support::self_identity(),
         )
         .with_bot(Some(Arc::clone(&harness.bot)));
 

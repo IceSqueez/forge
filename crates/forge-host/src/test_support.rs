@@ -1497,7 +1497,7 @@ fn register_twitch_runners(
     forge_platform_twitch::register_twitch_sub_actions(
         sub_actions,
         transport,
-        creds,
+        Arc::new(forge_platform_twitch::BroadcasterSlot::default()),
         forge_platform_twitch::TwitchLifecycle::new(),
         None,
     )

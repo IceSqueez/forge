@@ -95,21 +95,19 @@ mod tests {
     use super::*;
     use crate::error::TwitchError;
     use crate::test_support::{
-        MockCreds, MockTransport, SELF_USER_ID, TOKEN_SENTINEL, assert_request_refused,
-        chat_trigger_args, make_ctx,
+        MockTransport, SELF_USER_ID, TOKEN_SENTINEL, assert_request_refused, chat_trigger_args,
+        make_ctx, self_identity,
     };
     use forge_types::Variant;
     use std::collections::BTreeMap;
 
     fn runner_with(
         response: Result<serde_json::Value, TwitchError>,
-        creds: forge_storage::test_support::MemoryCredentials,
+        identity: Arc<SelfIdentity>,
     ) -> (Arc<MockTransport>, DeleteMessageRunner) {
         let transport = Arc::new(MockTransport::returning(response));
-        let runner = DeleteMessageRunner::new(
-            Arc::clone(&transport) as Arc<dyn HelixTransport>,
-            Arc::new(SelfIdentity::new(Arc::new(creds))),
-        );
+        let runner =
+            DeleteMessageRunner::new(Arc::clone(&transport) as Arc<dyn HelixTransport>, identity);
         (transport, runner)
     }
 
@@ -122,8 +120,7 @@ mod tests {
 
     #[tokio::test]
     async fn default_config_deletes_the_message_that_fired_the_chat_trigger_as_self_moderator() {
-        let (transport, runner) =
-            runner_with(Ok(serde_json::Value::Null), MockCreds::with_identity());
+        let (transport, runner) = runner_with(Ok(serde_json::Value::Null), self_identity());
         let stack = chat_trigger_args("abc-123");
 
         let (telemetry, _) = runner
@@ -152,8 +149,7 @@ mod tests {
             ("empty id", chat_trigger_args("")),
             ("no chat trigger in scope", ArgStack::new()),
         ] {
-            let (transport, runner) =
-                runner_with(Ok(serde_json::Value::Null), MockCreds::with_identity());
+            let (transport, runner) = runner_with(Ok(serde_json::Value::Null), self_identity());
 
             let (telemetry, _) = runner
                 .execute(&runner.default_config(), &make_ctx(&stack))
@@ -169,8 +165,7 @@ mod tests {
 
     #[tokio::test]
     async fn a_partially_resolved_message_id_fails_without_a_helix_call() {
-        let (transport, runner) =
-            runner_with(Ok(serde_json::Value::Null), MockCreds::with_identity());
+        let (transport, runner) = runner_with(Ok(serde_json::Value::Null), self_identity());
         let stack = chat_trigger_args("abc-123");
 
         let (telemetry, _) = runner
@@ -188,7 +183,7 @@ mod tests {
                 status: 403,
                 body: format!("moderator scope missing {TOKEN_SENTINEL}"),
             }),
-            MockCreds::with_identity(),
+            self_identity(),
         );
         let stack = ArgStack::new();
 

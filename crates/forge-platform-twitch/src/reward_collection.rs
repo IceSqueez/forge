@@ -426,9 +426,6 @@ impl TwitchIntegrationBundle {
             return Err(unknown_collection());
         }
         let broadcaster_id = self.broadcaster_id();
-        if broadcaster_id.is_empty() {
-            return Err(CollectionFailure::NotConnected);
-        }
         Ok(broadcaster_id.to_owned())
     }
 
@@ -967,18 +964,6 @@ mod tests {
             Err(CollectionFailure::InvalidInput { field: Some(ref key), .. }) if key == "in_stock"
         ));
         assert_eq!(transport.call_count(), 0);
-    }
-
-    #[tokio::test]
-    async fn a_bundle_without_a_broadcaster_reports_not_connected_without_a_request() {
-        let (transport, bundle) = bundle_with(vec![], BroadcasterTier::Affiliate, "");
-
-        let outcome = bundle.list(&rewards()).await;
-
-        assert_eq!(
-            (outcome, transport.call_count()),
-            (Err(CollectionFailure::NotConnected), 0)
-        );
     }
 
     #[tokio::test]

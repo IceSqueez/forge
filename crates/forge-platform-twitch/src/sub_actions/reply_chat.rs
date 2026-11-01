@@ -144,20 +144,18 @@ mod tests {
     use crate::error::TwitchError;
     use crate::helix::HelixMethod;
     use crate::test_support::{
-        MockCreds, MockTransport, SELF_USER_ID, TOKEN_SENTINEL, assert_failed_with_detail,
-        chat_trigger_args, make_ctx,
+        MockTransport, SELF_USER_ID, TOKEN_SENTINEL, assert_failed_with_detail, chat_trigger_args,
+        make_ctx, self_identity,
     };
     use forge_platform_core::SENDER_FIELD;
 
     fn runner_with(
         response: Result<serde_json::Value, TwitchError>,
-        creds: forge_storage::test_support::MemoryCredentials,
+        identity: Arc<SelfIdentity>,
     ) -> (Arc<MockTransport>, ReplyChatRunner) {
         let transport = Arc::new(MockTransport::returning(response));
-        let runner = ReplyChatRunner::new(
-            Arc::clone(&transport) as Arc<dyn HelixTransport>,
-            Arc::new(SelfIdentity::new(Arc::new(creds))),
-        );
+        let runner =
+            ReplyChatRunner::new(Arc::clone(&transport) as Arc<dyn HelixTransport>, identity);
         (transport, runner)
     }
 
@@ -183,7 +181,7 @@ mod tests {
 
     #[tokio::test]
     async fn default_config_replies_to_the_message_that_fired_the_chat_trigger_as_self() {
-        let (transport, runner) = runner_with(sent(), MockCreds::with_identity());
+        let (transport, runner) = runner_with(sent(), self_identity());
         let stack = chat_trigger_args("msg-abc-123");
 
         let (telemetry, _) = runner
@@ -224,8 +222,7 @@ mod tests {
         ];
 
         for (case, message, parent, stack) in cases {
-            let (transport, runner) =
-                runner_with(Ok(serde_json::Value::Null), MockCreds::with_identity());
+            let (transport, runner) = runner_with(Ok(serde_json::Value::Null), self_identity());
             let stack = stack
                 .clone()
                 .set("m".to_owned(), Variant::String(String::new()));
@@ -245,7 +242,7 @@ mod tests {
     #[tokio::test]
     async fn message_limit_enforced_by_character_count_not_byte_count() {
         for (char_count, should_send) in [(500usize, true), (501, false)] {
-            let (transport, runner) = runner_with(sent(), MockCreds::with_identity());
+            let (transport, runner) = runner_with(sent(), self_identity());
             let stack =
                 ArgStack::new().set("msg".to_owned(), Variant::String("я".repeat(char_count)));
 
@@ -281,7 +278,7 @@ mod tests {
                 status: 400,
                 body: "message_id not found".to_owned(),
             }),
-            MockCreds::with_identity(),
+            self_identity(),
         );
         let stack = ArgStack::new();
 
@@ -312,7 +309,7 @@ mod tests {
         ];
 
         for (response, expected) in cases {
-            let (_transport, runner) = runner_with(response, MockCreds::with_identity());
+            let (_transport, runner) = runner_with(response, self_identity());
 
             let (telemetry, _) = runner
                 .execute(&config("hello", "parent-1"), &make_ctx(&ArgStack::new()))
@@ -328,7 +325,7 @@ mod tests {
 
     #[tokio::test]
     async fn unknown_sender_is_rejected_by_validate_and_by_execute_without_a_helix_call() {
-        let (transport, runner) = runner_with(sent(), MockCreds::with_identity());
+        let (transport, runner) = runner_with(sent(), self_identity());
         let mut config = config("hello", "parent-1");
         config.insert(
             SENDER_FIELD.to_owned(),

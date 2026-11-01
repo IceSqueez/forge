@@ -4,10 +4,10 @@ use std::sync::Arc;
 
 use async_trait::async_trait;
 use forge_platform_twitch::{
-    HelixRequest, HelixTransport, TwitchError, TwitchLifecycle, register_twitch_sub_actions,
+    BroadcasterSlot, HelixRequest, HelixTransport, TwitchError, TwitchLifecycle,
+    register_twitch_sub_actions,
 };
 use forge_registry::SubActionRegistry;
-use forge_storage::test_support::MemoryCredentials;
 use serde_json::Value;
 
 const STORED_DEFAULTS: &str = include_str!("fixtures/stored_step_defaults.json");
@@ -26,7 +26,7 @@ fn twitch_registry() -> SubActionRegistry {
     register_twitch_sub_actions(
         &mut registry,
         Arc::new(UnreachableTransport),
-        Arc::new(MemoryCredentials::default()),
+        Arc::new(BroadcasterSlot::default()),
         TwitchLifecycle::new(),
         None,
     )

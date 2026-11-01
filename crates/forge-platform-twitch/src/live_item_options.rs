@@ -196,9 +196,6 @@ impl BuiltinOptionSource for TwitchIntegrationBundle {
         depends_on_values: &BTreeMap<String, QuickActionFieldValue>,
     ) -> CollectionOutcome<Vec<OptionEntry>> {
         let broadcaster_id = self.broadcaster_id();
-        if broadcaster_id.is_empty() {
-            return Err(CollectionFailure::NotConnected);
-        }
         match list.as_str() {
             ACTIVE_POLL_LIST => self.active_poll_entries(broadcaster_id).await,
             LOCKABLE_PREDICTION_LIST => {
@@ -676,18 +673,6 @@ mod tests {
                 );
             }
         }
-    }
-
-    #[tokio::test]
-    async fn without_a_broadcaster_every_list_fails_as_not_connected_without_asking_helix() {
-        let (transport, bundle) = bundle_answering(Vec::new(), "");
-
-        let failure = resolved(&bundle, ACTIVE_POLL_LIST, &nothing_chosen()).await;
-
-        assert_eq!(
-            (failure, transport.call_count()),
-            (Err(CollectionFailure::NotConnected), 0)
-        );
     }
 
     #[tokio::test]

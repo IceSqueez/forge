@@ -6,7 +6,6 @@ pub(super) struct SubscriptionPassContext {
     pub(super) client_id: String,
     pub(super) session_id: String,
     pub(super) broadcaster_id: String,
-    pub(super) user_id: String,
     pub(super) bus: Arc<dyn EventPublisher>,
     pub(super) tracker: SubscriptionTracker,
     pub(super) retries_tx: oneshot::Sender<TopicRetries>,
@@ -83,7 +82,6 @@ impl SubscriptionPassContext {
             &helix,
             &self.session_id,
             &self.broadcaster_id,
-            &self.user_id,
             &self.bus,
             &self.tracker,
         )

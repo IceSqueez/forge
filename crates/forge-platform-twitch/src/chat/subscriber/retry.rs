@@ -390,16 +390,9 @@ mod tests {
             let bus = Arc::new(RecordingBus::default());
             let publisher: Arc<dyn EventPublisher> = bus.clone();
             let helix: Arc<dyn HelixTransport> = stub.clone();
-            let pass = subscribe_all(
-                &helix,
-                PASS_SESSION,
-                "broadcaster",
-                "user",
-                &publisher,
-                &tracker,
-            )
-            .await
-            .expect("no topic rejects the token, so the pass must stand");
+            let pass = subscribe_all(&helix, PASS_SESSION, "broadcaster", &publisher, &tracker)
+                .await
+                .expect("no topic rejects the token, so the pass must stand");
             Self {
                 stub: Arc::clone(stub),
                 tracker,
@@ -883,7 +876,6 @@ mod tests {
             &helix,
             PASS_SESSION,
             "broadcaster",
-            "user",
             &publisher,
             &tracker,
         ));

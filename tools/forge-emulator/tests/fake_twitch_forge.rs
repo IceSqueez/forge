@@ -15,11 +15,11 @@ use forge_events::{PlatformConnectionChanged, TypedEvent};
 use forge_net::{Gateway, TokenBucketRateLimiter};
 use forge_platform_core::{BuiltinControl, ChatPlatform, PlatformEndpoints};
 use forge_platform_twitch::{
-    ChatSessionConfig, ChatSessionState, HELIX_BUDGET_CAPACITY, HELIX_BUDGET_WINDOW,
-    HelixHttpTransport, HelixTokenSource, SubscriptionTracker, TWITCH_OAUTH_BUDGET_CAPACITY,
-    TWITCH_OAUTH_BUDGET_WINDOW, TwitchAssembly, TwitchChat, TwitchChatHandle,
-    TwitchCredentialsManager, TwitchError, TwitchIntegrationBundle, TwitchLifecycle,
-    TwitchOAuthClient, helix_gateway, send_chat, twitch_oauth_gateway,
+    BroadcasterIdentity, ChatSessionConfig, ChatSessionState, HELIX_BUDGET_CAPACITY,
+    HELIX_BUDGET_WINDOW, HelixHttpTransport, HelixTokenSource, SubscriptionTracker,
+    TWITCH_OAUTH_BUDGET_CAPACITY, TWITCH_OAUTH_BUDGET_WINDOW, TwitchAssembly, TwitchChat,
+    TwitchChatHandle, TwitchCredentialsManager, TwitchError, TwitchIntegrationBundle,
+    TwitchLifecycle, TwitchOAuthClient, helix_gateway, send_chat, twitch_oauth_gateway,
 };
 use forge_storage::CredentialsRepo;
 use forge_types::{ChatPayload, OAuthToken, PermissionRung};
@@ -64,8 +64,11 @@ impl Forge {
             creds,
             config: ChatSessionConfig {
                 client_id: account.client_id.clone(),
-                broadcaster_id: account.user_id.clone(),
-                user_id: account.user_id.clone(),
+                broadcaster: BroadcasterIdentity::new(
+                    account.user_id.as_str(),
+                    account.login.as_str(),
+                )
+                .unwrap(),
                 endpoints,
             },
             bus,

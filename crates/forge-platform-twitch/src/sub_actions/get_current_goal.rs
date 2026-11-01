@@ -156,7 +156,8 @@ mod tests {
     use crate::error::TwitchError;
     use crate::test_support::TOKEN_SENTINEL;
     use crate::test_support::{
-        MockCreds, MockTransport, SELF_USER_ID, assert_request_refused, make_ctx,
+        MockTransport, SELF_USER_ID, assert_request_refused, make_ctx, self_identity,
+        signed_out_identity,
     };
     use std::collections::BTreeMap;
 
@@ -174,20 +175,17 @@ mod tests {
 
     fn runner_with(
         response: Result<serde_json::Value, TwitchError>,
-        creds: forge_storage::test_support::MemoryCredentials,
+        identity: Arc<SelfIdentity>,
     ) -> (Arc<MockTransport>, GetCurrentGoalRunner) {
         let transport = Arc::new(MockTransport::returning(response));
-        let runner = GetCurrentGoalRunner::new(
-            Arc::clone(&transport) as Arc<dyn HelixTransport>,
-            Arc::new(SelfIdentity::new(Arc::new(creds))),
-        );
+        let runner =
+            GetCurrentGoalRunner::new(Arc::clone(&transport) as Arc<dyn HelixTransport>, identity);
         (transport, runner)
     }
 
     #[tokio::test]
     async fn execute_gets_goals_and_pushes_all_outputs() {
-        let (transport, runner) =
-            runner_with(Ok(goal_payload(80, 100)), MockCreds::with_identity());
+        let (transport, runner) = runner_with(Ok(goal_payload(80, 100)), self_identity());
         let stack = ArgStack::new();
 
         let (telemetry, output) = runner.execute(&BTreeMap::new(), &make_ctx(&stack)).await;
@@ -224,10 +222,8 @@ mod tests {
             ("exactly at target", 100, 100, true),
             ("above target", 101, 100, true),
         ] {
-            let (_transport, runner) = runner_with(
-                Ok(goal_payload(current, target)),
-                MockCreds::with_identity(),
-            );
+            let (_transport, runner) =
+                runner_with(Ok(goal_payload(current, target)), self_identity());
             let stack = ArgStack::new();
 
             let (_telemetry, output) = runner.execute(&BTreeMap::new(), &make_ctx(&stack)).await;
@@ -242,10 +238,8 @@ mod tests {
 
     #[tokio::test]
     async fn empty_data_sets_exists_false_and_omits_goal_fields() {
-        let (_transport, runner) = runner_with(
-            Ok(serde_json::json!({ "data": [] })),
-            MockCreds::with_identity(),
-        );
+        let (_transport, runner) =
+            runner_with(Ok(serde_json::json!({ "data": [] })), self_identity());
         let stack = ArgStack::new();
 
         let (telemetry, output) = runner.execute(&BTreeMap::new(), &make_ctx(&stack)).await;
@@ -285,10 +279,8 @@ mod tests {
             ),
         ];
         for (missing, goal) in bases {
-            let (_transport, runner) = runner_with(
-                Ok(serde_json::json!({ "data": [goal] })),
-                MockCreds::with_identity(),
-            );
+            let (_transport, runner) =
+                runner_with(Ok(serde_json::json!({ "data": [goal] })), self_identity());
             let stack = ArgStack::new();
 
             let (telemetry, output) = runner.execute(&BTreeMap::new(), &make_ctx(&stack)).await;
@@ -308,7 +300,7 @@ mod tests {
                 status: 401,
                 body: format!("unauthorized {TOKEN_SENTINEL}"),
             }),
-            MockCreds::with_identity(),
+            self_identity(),
         );
         let stack = ArgStack::new();
 
@@ -320,7 +312,7 @@ mod tests {
 
     #[tokio::test]
     async fn missing_identity_maps_to_failed_without_calling_helix() {
-        let (transport, runner) = runner_with(Ok(goal_payload(80, 100)), MockCreds::empty());
+        let (transport, runner) = runner_with(Ok(goal_payload(80, 100)), signed_out_identity());
         let stack = ArgStack::new();
 
         let (telemetry, output) = runner.execute(&BTreeMap::new(), &make_ctx(&stack)).await;

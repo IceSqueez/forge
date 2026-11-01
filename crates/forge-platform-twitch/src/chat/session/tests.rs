@@ -20,8 +20,8 @@ fn make_session(bus: &Arc<EventChannel>) -> ChatSession {
 fn session_config(endpoints: PlatformEndpoints) -> ChatSessionConfig {
     ChatSessionConfig {
         client_id: "client".to_owned(),
-        broadcaster_id: "bcast".to_owned(),
-        user_id: "user".to_owned(),
+        broadcaster: crate::account::broadcaster::BroadcasterIdentity::new("bcast", "streamer")
+            .unwrap(),
         endpoints,
     }
 }
@@ -2491,8 +2491,13 @@ async fn bundle_over(
         Arc::clone(&creds),
     ));
     let endpoints = socket_and_api(socket_url, api_url);
+    let session = session_config(endpoints.clone());
     let platform = Arc::new(crate::chat_platform::TwitchPlatform::new(
-        session_config(endpoints.clone()),
+        crate::config::ClientSettings {
+            client_id: session.client_id.clone(),
+            endpoints: session.endpoints.clone(),
+        },
+        crate::test_support::identity_holding(Some(session.broadcaster.clone())).1,
         creds,
         manager,
         SubscriptionTracker::default(),
@@ -2505,7 +2510,8 @@ async fn bundle_over(
     let bundle = crate::builtin::TwitchIntegrationBundle::new(
         Some("streamer".to_owned()),
         Arc::clone(&platform),
-    );
+    )
+    .unwrap();
     platform.connect().await.unwrap();
     bundle
 }

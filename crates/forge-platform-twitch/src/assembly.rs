@@ -7,11 +7,13 @@ use forge_registry::SubActionRegistry;
 use forge_storage::{CredentialsRepo, StorageError, has_credentials_for};
 use forge_types::IntegrationId;
 
+use crate::account::broadcaster::{BroadcasterIdentity, BroadcasterSlot};
+use crate::account::identity::SelfIdentity;
 use crate::auth::TwitchSignIn;
 use crate::bot_account::TwitchBotAccount;
 use crate::builtin::TwitchIntegrationBundle;
 use crate::chat_platform::TwitchPlatform;
-use crate::config::{ChatSessionConfig, HELIX_BUDGET_CAPACITY, HELIX_BUDGET_WINDOW};
+use crate::config::{ClientSettings, HELIX_BUDGET_CAPACITY, HELIX_BUDGET_WINDOW};
 use crate::credentials;
 use crate::credentials_manager::TwitchCredentialsManager;
 use crate::helix::{HelixHttpTransport, HelixTokenRefresher, HelixTokenSource, HelixTransport};
@@ -31,6 +33,7 @@ pub struct TwitchAssembly {
     creds: Arc<dyn CredentialsRepo>,
     manager: Arc<TwitchCredentialsManager>,
     lifecycle: TwitchLifecycle,
+    broadcaster: Arc<BroadcasterSlot>,
     helix: Gateway,
     bot: Arc<TwitchBotAccount>,
     sign_in: TwitchSignIn,
@@ -72,10 +75,11 @@ impl TwitchAssembly {
             Arc::clone(&transport),
         );
         let sign_in = TwitchSignIn::new(oauth, helix.clone());
+        let broadcaster = Arc::new(BroadcasterSlot::default());
         if let Err(e) = register_twitch_sub_actions(
             sub_actions,
             transport,
-            Arc::clone(&creds),
+            Arc::clone(&broadcaster),
             lifecycle.clone(),
             Some(Arc::clone(&bot)),
         ) {
@@ -87,6 +91,7 @@ impl TwitchAssembly {
             creds,
             manager,
             lifecycle,
+            broadcaster,
             helix,
             bot,
             sign_in,
@@ -114,19 +119,22 @@ impl TwitchAssembly {
     }
 
     pub async fn open_session(&self) -> Result<TwitchSession, StorageError> {
-        let stored = credentials::load(self.creds.as_ref()).await?;
-        let user_id = stored
-            .as_ref()
-            .map(|stored| stored.user_id.clone())
-            .unwrap_or_default();
+        let stored = match credentials::load(self.creds.as_ref()).await {
+            Ok(stored) => stored,
+            Err(e) => {
+                self.broadcaster.replace(None);
+                return Err(e);
+            }
+        };
+        self.broadcaster
+            .replace(stored.as_ref().and_then(BroadcasterIdentity::from_stored));
         let platform = Arc::new(
             TwitchPlatform::new(
-                ChatSessionConfig {
+                ClientSettings {
                     client_id: self.client_id.clone(),
-                    broadcaster_id: user_id.clone(),
-                    user_id,
                     endpoints: self.endpoints.clone(),
                 },
+                Arc::new(SelfIdentity::new(Arc::clone(&self.broadcaster))),
                 Arc::clone(&self.creds),
                 Arc::clone(&self.manager),
                 SubscriptionTracker::default(),
@@ -147,7 +155,7 @@ impl TwitchSession {
 
     pub fn into_bundle(self) -> Option<Arc<TwitchIntegrationBundle>> {
         self.login
-            .map(|login| TwitchIntegrationBundle::new(login, self.platform))
+            .and_then(|login| TwitchIntegrationBundle::new(login, self.platform))
     }
 }
 

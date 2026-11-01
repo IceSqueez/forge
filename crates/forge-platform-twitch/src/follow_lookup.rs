@@ -35,7 +35,7 @@ fn status_from_response(response: &serde_json::Value) -> FollowStatus {
 impl FollowLookup for TwitchIntegrationBundle {
     async fn follow_status(&self, viewer_id: &str) -> FollowStatus {
         let broadcaster_id = self.broadcaster_id();
-        if broadcaster_id.is_empty() || viewer_id.is_empty() {
+        if viewer_id.is_empty() {
             return FollowStatus::Unavailable;
         }
         if viewer_id == broadcaster_id {
@@ -351,23 +351,20 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn a_missing_broadcaster_or_viewer_id_is_unavailable_without_a_request() {
-        for (broadcaster_id, viewer_id) in [("", VIEWER), (BROADCASTER, ""), ("", "")] {
-            let transport = Arc::new(MockTransport::returning(Ok(follower_page(json!(
-                FOLLOWED_AT
-            )))));
-            let bundle = bundle(
-                Arc::clone(&transport) as Arc<dyn HelixTransport>,
-                broadcaster_id,
-            );
+    async fn a_missing_viewer_id_is_unavailable_without_a_request() {
+        let transport = Arc::new(MockTransport::returning(Ok(follower_page(json!(
+            FOLLOWED_AT
+        )))));
+        let bundle = bundle(
+            Arc::clone(&transport) as Arc<dyn HelixTransport>,
+            BROADCASTER,
+        );
 
-            let status = bundle.follow_status(viewer_id).await;
+        let status = bundle.follow_status("").await;
 
-            assert_eq!(
-                (status, transport.call_count()),
-                (FollowStatus::Unavailable, 0),
-                "broadcaster {broadcaster_id:?} / viewer {viewer_id:?}"
-            );
-        }
+        assert_eq!(
+            (status, transport.call_count()),
+            (FollowStatus::Unavailable, 0)
+        );
     }
 }

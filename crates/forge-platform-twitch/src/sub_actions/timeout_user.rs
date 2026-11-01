@@ -146,7 +146,7 @@ mod tests {
     use super::*;
     use crate::error::TwitchError;
     use crate::sub_actions::fields::MAX_REASON_CHARS;
-    use crate::test_support::{MockCreds, MockTransport, make_ctx, users_fixture};
+    use crate::test_support::{MockTransport, make_ctx, signed_out_identity, users_fixture};
     use forge_registry::{ConfigReason, RegistryError, ValueBounds};
     use forge_types::Variant;
     use std::collections::BTreeMap;
@@ -237,7 +237,7 @@ mod tests {
         let runner = TimeoutUserRunner::new(
             Arc::new(MockTransport::returning(Ok(serde_json::Value::Null)))
                 as Arc<dyn HelixTransport>,
-            Arc::new(SelfIdentity::new(Arc::new(MockCreds::empty()))),
+            signed_out_identity(),
         );
         let duration_problem = || {
             Some(forge_registry::ConfigProblem::field(

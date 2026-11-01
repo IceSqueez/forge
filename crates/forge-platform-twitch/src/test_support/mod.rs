@@ -187,10 +187,31 @@ pub(crate) fn chat_trigger_args(message_id: &str) -> ArgStack {
         .build_arg_stack(&event)
 }
 
+pub(crate) fn self_broadcaster() -> crate::account::broadcaster::BroadcasterIdentity {
+    crate::account::broadcaster::BroadcasterIdentity::new(SELF_USER_ID, "streamer").unwrap()
+}
+
 pub(crate) fn self_identity() -> std::sync::Arc<crate::account::identity::SelfIdentity> {
-    std::sync::Arc::new(crate::account::identity::SelfIdentity::new(
-        std::sync::Arc::new(MockCreds::with_identity()),
-    ))
+    identity_holding(Some(self_broadcaster())).1
+}
+
+pub(crate) fn signed_out_identity() -> std::sync::Arc<crate::account::identity::SelfIdentity> {
+    identity_holding(None).1
+}
+
+pub(crate) fn identity_holding(
+    broadcaster: Option<crate::account::broadcaster::BroadcasterIdentity>,
+) -> (
+    std::sync::Arc<crate::account::broadcaster::BroadcasterSlot>,
+    std::sync::Arc<crate::account::identity::SelfIdentity>,
+) {
+    let slot = std::sync::Arc::new(crate::account::broadcaster::BroadcasterSlot::holding(
+        broadcaster,
+    ));
+    let identity = std::sync::Arc::new(crate::account::identity::SelfIdentity::new(
+        std::sync::Arc::clone(&slot),
+    ));
+    (slot, identity)
 }
 
 pub(crate) fn make_ctx(stack: &ArgStack) -> RunContext<'_> {

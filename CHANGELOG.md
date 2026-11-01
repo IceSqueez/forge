@@ -1,6 +1,599 @@
 # Changelog
 All notable changes to this project will be documented in this file.
 
+## [0.7.0] - 2026-11-01
+### ⚠️ BREAKING CHANGES
+- **obs**: 30 OBS trigger ids and 23 OBS step ids are renamed; old ids are migrated in storage and on import, external clients naming them stop matching
+
+### ⚙️ Miscellaneous Tasks
+- *(emulator)* Sync lockfile with the discord net dependency
+- *(solution)* Mark workspace crates as unpublished
+- *(solution)* Drop unused dependencies
+- *(emulator)* Align sha2 and base64 with the workspace
+- *(emulator)* Drop the removed monobank dependency from the lockfile
+- *(tts)* Remove the replaced speech crate directory
+- *(tts)* Drop async-trait from the OS engine crates
+
+### 🎨 Styling
+- *(emulator)* Format the VTube seed call
+- *(emulator)* Format the twitch test imports
+- *(solution)* Format resolved test imports
+- *(emulator)* Format the stress runner
+
+### 🐛 Bug Fixes
+- *(obs)* Send input settings as a plain JSON object and read them back
+- *(i18n)* Resolve UI text on the UI thread, never on a worker
+- *(tts)* Escape spoken text in SAPI SSML and release COM in order
+- *(integrations)* Debounce typed option-list dependencies and hold Run
+- *(vtube)* Offer hotkey, expression, model and item pickers as option lists
+- *(net)* Pin screened addresses and strip headers on cross-origin redirects
+- *(runtime)* Keep script bodies out of errors and read typed step inputs strictly
+- *(script)* Pass arrays, objects and datetimes between scripts and values
+- *(ui)* Never write settings snapshots before they finish loading
+- *(ui)* Gate favorites, backup schedule, midi devices and voice strategy on load
+- *(settings)* Fail loudly on undecodable stored settings and gate their edits
+- *(integrations)* Sign out only after credentials are forgotten
+- *(scripts)* Cascade script renames and archive deletes; find the default queue by id
+- *(components)* Share one editing layer across text inputs and fix IME selection
+- *(components)* Keep secure input text away from input methods
+- *(tts)* Find piper on Windows, scale every output format and reap timed-out engines
+- *(tts)* Keep engines alive across messages and build them off the runtime
+- *(kick)* Drop late state from retired chat sessions and cancel waits
+- *(youtube)* Reset long chat poll interval at the Pacific quota rollover
+- *(emulator)* Detect the lost server port race from forge's current log line
+- *(net)* Block site-local, 6to4-embedded and local-use NAT64 addresses
+- *(net)* Make throttle cool-downs monotonic and honour limiter weight
+- *(net)* Refill limiters from the cool-down deadline without a burst
+- *(net)* Treat a 503 as throttling only when Retry-After is present
+- *(twitch)* Send EventSub subscriptions through the Helix rate limiter
+- *(twitch)* Finish sign-in through bounded OAuth and Helix gateways
+- *(net)* Mask scheme tokens and refuse Authorization as an API key
+- *(twitch)* Keep device sign-in polling through throttling
+- *(tts)* Bound cloud catalog calls and stop them blocking queue start
+- *(tts)* Sign Polly calls through the gateway and list every voice page
+- *(youtube)* Route Data API calls through one shared cancellable gateway
+- *(twitch)* Keep expected Helix refusals out of request.fail
+- *(youtube)* Send Google OAuth through a bounded gateway with cancellable refresh
+- *(kick)* Bound Kick HTTP calls on shared gateways and isolate channel info
+- *(kick)* Send Kick OAuth through a bounded gateway with cancellable refresh
+- *(auth)* Sign out through the credential managers' refresh guard
+- *(discord)* Post webhooks through the shared gateway with strict routes
+- *(donations)* Move Donatello and Monobank onto bounded gateways
+- *(updates)* Fetch and stream releases through bounded gateways
+- *(emulator)* Refresh lockfile after platform crates dropped reqwest
+- *(egress)* Run HTTP sub-action and script HTTP on one user-directed core
+- *(twitch)* Retry transient EventSub subscription failures within the session
+- *(globals)* Show an object placeholder for the object kind
+- *(ui)* Apply the density setting across every view
+- *(ui)* Let Escape in a focused field dismiss the enclosing modal
+- *(script)* Publish script global changes through the sub-action path
+- *(awake)* Persist stay-awake through one ordered desktop writer
+- *(emulator)* Read forge boot signals from structured fields
+- *(runtime)* Fail steps on invalid choices, logins and weights instead of defaulting
+- *(soundboard)* Key playback events by play id and reject non-numeric volume
+- *(actions)* Label the switch step input as a value
+- *(soundboard)* Clear a pad's playing row when its play is stopped before start
+- *(youtube)* Emit one chat event per text and fix delete, ban, gift and tombstone fields
+- *(twitch)* Expose host_id on shared chat session updates
+- *(tts)* Make emote-to-word and strip-Twitch toggles exclusive
+- *(chat)* Mark moderated chat rows by author id and scope deletes by platform
+- *(desktop)* Key moderation marks, alias rows and list ids by stable ids
+- *(actions)* Let storage append trigger link positions and order ties by id
+- *(triggers)* Resolve legacy variables through their canonical twin
+- *(chat)* Publish the triggering message id so reply and delete steps can target it
+- *(obs)* Keep run variables after query steps and define ids, kinds and keys once
+- *(vtube)* Keep run variables after lookup and item steps
+- *(actions)* Decode step trees through one codec and keep malformed nested steps
+- *(actions)* Edit nested chains through the step codec and keep unreadable entries in place
+- *(obs)* Carry the step and trigger copy over to the renamed ids
+- *(scripts)* Derive the script API catalog from the function registrations
+- *(server)* Report available platforms and match viewers from registry data
+- *(overlays)* Validate overlay config on every save and on pack and setup import
+- *(tts)* Resolve voices in one place inside the speak queue and fix single-voice and unknown-prefix aliases
+- *(tts)* Apply a shrunk repeat window to the very next message
+- *(soundboard)* Keep accepting whole-number float volumes saved by older versions
+- *(actions)* Treat an old switch-off flag as absent and reject blank required text after substitution
+- *(twitch)* Keep the reward update toggle labels and the poll question hint in step with their copy
+- *(settings)* Keep golden tsv fixtures LF on every platform
+- *(i18n)* Resolve translated text from one process-wide bundle on every thread
+- *(i18n)* Expect the resolver to be unused only outside test builds
+- *(storage)* Rename retired kind ids in history before failure text changes shape
+- *(storage)* Keep JSON key order for storage tests only so downstream builds stay unaffected
+- *(youtube)* Keep the response body out of step failure details
+- *(twitch)* Isolate EventSub scope rejections per topic and track subscriptions as typed records
+- *(tts)* Classify engine failures from typed sources and stop retrying rejected requests
+- *(awake)* Open the platform backend only on the first enable
+- *(platforms)* Keep upstream bodies out of error text and show transfer failures through codes
+- *(tts)* Close the defect sweep across speech engines, the queue and audio output
+- *(twitch)* Close the defect sweep across chat, helix and lifecycle
+- *(obs)* Close the defect sweep across OBS and VTube sessions
+- *(vtube)* Drop a session whose write stalls instead of blocking shutdown
+- *(platforms)* Close the defect sweep across YouTube and Kick
+- *(storage)* Close the defect sweep across storage, transfer and restore
+- *(server)* Close the defect sweep across server, discord, hotkey, midi and soundboard
+- *(core)* Close the defect sweep across runs, cancels, scripts and file steps
+- *(twitch)* Align trigger field labels and guest state options with their forms
+- *(emulator)* Follow the VTube credential and sink changes
+- *(pipeline)* Judge blocklist and skip rules on the spoken text
+- *(ui)* Close the defect sweep across screens, boot, feeds and settings
+- *(core)* Close the decided runtime, trigger, hotkey and overlay defects
+- *(update)* Keep the install recoverable and guard every off-loopback bind
+- *(vtube)* Bound connect and start-path writes and drive suites through timing
+- *(storage)* Stop failed reads acting as defaults and sweep crashed imports
+- *(ui)* Carry one failure text type and close the remaining screen defects
+- *(integrations)* Close the remaining defects and script stalled VTube writes
+- *(ui)* Close the low severity sweep across screens, chords and shared components
+- *(solution)* Close the low severity sweep across runtime, storage and integrations
+- *(hotkey)* Build the backend fallback on Windows and macOS
+- *(ui)* Stop Escape leaking through popups and share the undo toast
+- *(ui)* Keep the list cursor on the row a click selected
+- *(ui)* Return keyboard focus to the list when a modal closes
+- *(ui)* Return list keys after modals and clicks outside the list
+- *(script)* Run scripts on a large stack without closures or curry
+- *(ui)* Wrap confirm footer so long labels keep every button whole
+- *(ui)* Scroll keyboard focus into view on Tab
+- *(platform)* Report sign-in required when chat has no credentials
+- *(ui)* Keep modal scrolling, tooltips and confirm cards within bounds
+- *(solution)* Carry message codes instead of finished English in contracts
+- *(integrations)* Resolve every option picker through its integration
+- *(integrations)* Deliver the final disconnect event before retiring the relay
+- *(solution)* Carry reject reasons, reject bare conditions, add test seams
+- *(platform)* Redact poller warnings and surface timestamp failures
+- *(ui)* Keep focus frames whole and tidy component details
+- *(solution)* Send float globals as numbers and tidy storage and transfer
+- *(platform)* Log credential load failures behind reconnect controls
+- *(ui)* Stop slicing ids by bytes, escape data paths and move work off render
+- *(ui)* Carry every icon the registries name and keep PCM16 exact
+- *(ui)* Show the active segment icon and split large screen files
+- *(storage)* Always bind credentials to their id and warn on bot sender
+- *(solution)* Log lost failures, stop discord pings and drop dead capability code
+- *(hotkey)* Store canonical combos and add test seams across crates
+- *(ui)* Report silent failures, move work off render and name literals
+- *(platform)* Match YouTube quota costs and close remaining integration gaps
+- *(ui)* Update voice rosters live and name remaining layout constants
+- *(server)* Parse wire values as plain JSON and close remaining platform rows
+- *(server)* Log only the shape of rejected action arguments
+- *(hotkey)* Build backend health from the tier on every platform
+- *(storage)* Sync backup renames and hide raw failures from remote clients
+- *(solution)* Show persistence failures and share device and queue paths
+- *(solution)* Surface overlay and transfer failures and tidy polish rows
+- *(solution)* Clear retired clients, type failures and bound task shutdowns
+- *(storage)* Rename a global and set its value in one transaction
+- *(transfer)* Restore overlay files from uncommitted imports after a crash
+- *(storage)* Keep globals steps working after updating from the last release
+- *(storage)* Reseal credentials from the last release at startup
+- *(storage)* Carry renamed ids and fields over from the last release
+- *(ui)* Keep selecting past field edges and show only forge paths in logs
+- *(solution)* Build every crate alone without warnings
+- *(storage)* Refuse enabling an archived trigger
+- *(overlays)* Ask before removing a color in use and reset every overlay
+- *(overlays)* Remove custom colors from each swatch and show true hues
+- *(overlays)* Draw previews with the ink each page uses
+- *(twitch)* Keep one active broadcaster identity for all account paths
+- *(tts)* Cancel abandoned speech in one shared AVSpeech and SAPI worker
+- *(tts)* Keep speech text alive when SAPI cannot confirm it stopped
+- *(audio)* Zero the level meter when the microphone is lost
+- *(audio)* Finish clips that end on a partial frame
+- *(events)* Keep replay reachable by scrolling long payloads
+
+### 📚 Documentation
+- *(readme)* Correct the OBS trigger count
+- *(readme)* Retake every screenshot on the current app
+
+### 🚀 Features
+- *(platform)* Let integrations declare option lists for pickers
+- *(integrations)* Resolve quick-action option lists through one generic path
+- *(obs)* Serve scene, source and profile pickers as option lists
+- *(net)* Add a shared throttle-hint parser and capped body reads
+- *(net)* Add the shared HTTP gateway with typed failures and redaction
+- *(net)* Carry the response excerpt on throttle failures
+- *(net)* Expose the resolved host and path a request will carry
+- *(net)* Let requests declare expected refusals that are not failures
+- *(net)* Mask path secrets declared on a request
+- *(net)* Add no-redirect and fail-fast limiter options to requests
+- *(net)* Stream bounded downloads and accept trusted absolute targets
+- *(net)* Let a buffered request tighten its body cap
+- *(tts)* Add a Strip emoji filter toggle
+- *(ui)* Scale off-scale spacing with the density setting
+- *(server)* Own bearer and overlay token access on the server handle
+- *(ui)* Emit structured boot and server-bind signals
+- *(discord)* Publish the posted message id for later edit and delete steps
+- *(obs)* [**breaking**] Rename trigger and step ids to the event kind spelling and migrate stored ids
+- *(scripts)* Warn on every launch while a script still names a renamed id
+- *(settings)* Declare settings as typed specs with derived classes and report undeclared keys
+- *(actions)* Declare step config fields once and fail invalid configs before the step runs
+- *(types)* Add a coded user-text carrier and per-producer message catalogs
+- *(storage)* Stamp each stored setting with its portability and disclosure class
+- *(storage)* Add an opt-in settings test-support store with seeding and fault modes
+- *(i18n)* Resolve coded user text through registered message catalogs
+- *(settings)* Classify exports and diagnostics by stored row class and report skipped Setup imports
+- *(integrations)* Report integration start failures as typed, translated errors with a matching remedy
+- *(actions)* Carry step and run failures as coded user text and render them translated
+- *(integrations)* Show the known connect failure reason for OBS and VTube Studio
+- *(twitch)* Report step failures as translated codes with upstream text as detail
+- *(actions)* Report built-in step failures as translated codes with upstream text as detail
+- *(obs)* Report step failures as translated codes with upstream text as detail
+- *(kick)* Report step failures as translated codes with upstream text as detail
+- *(tts)* Report speech failures as translated codes and pick spoken words by voice language
+- *(youtube)* Report step failures as translated codes with upstream text as detail
+- *(integrations)* Report VTube Studio and Discord step failures as translated codes
+- *(actions)* Report step config problems and engine failures as translated codes
+- *(integrations)* Report MIDI, soundboard and script failures as coded text
+- *(integrations)* Report every health tile as codes or typed quantities
+- *(triggers)* Report trigger conditions as translated codes
+- *(storage)* Commit imports in one transaction and bind credentials to their id
+- *(vtube)* Report each connect attempt to its own form with a bounded timeout
+- *(ui)* Raise the running window, show live OBS health and running queue actions
+- *(twitch)* Pick live polls, predictions and redemptions in quick actions
+- *(triggers)* Unify chat command arguments across platforms
+- *(tts)* Persist filter row toggles and carry the alert queue role
+- *(ui)* Add durable writes and one confirm and undo pattern
+- *(ui)* Close every menu on Escape and share list keyboard navigation
+- *(ui)* Drive menus, ban list, hotkeys and home from the keyboard
+- *(ui)* Show one load failure treatment and add keyboard activation
+- *(ui)* Reach every clickable and the chat feed from the keyboard
+- *(integrations)* Refresh detail pages from content and status revisions
+- *(integrations)* Sign out and recover credentials through one generic path
+- *(ui)* Virtualize the banned list and step sliders from the keyboard
+- *(solution)* Show money in its own currency and cancel downloads on close
+- *(overlays)* Add alert colors and images, closes #105, closes #106
+- *(overlays)* Pick alert background like accent and place images on any side
+- *(tts)* Test voices with one editable text, read as written
+
+### 🚜 Refactor
+- *(integrations)* Drop the OBS-only quick-action picker path
+- *(platform)* Remove the legacy picker kind from quick actions
+- *(net)* Move rate limiting and the address guard into a leaf crate
+- *(twitch)* Route Helix calls through the shared gateway
+- *(net)* Name HTTP statuses in forge-net and drop reqwest from platforms
+- *(solution)* Enforce expect attributes, tracing output and handled results
+- *(solution)* Delete dead code and narrow module visibility
+- *(storage)* Drop the unused script body hash
+- *(ui)* Route presentation literals through design tokens
+- *(solution)* Name protocol timeouts, limits and channel sizes
+- *(tts)* Move speech and PCM value types into a leaf crate
+- *(credentials)* Let storage classify unrecoverable stored secrets
+- *(events)* Share one event channel and subscription type
+- *(soundboard)* Own the sound sub-action runners off the runtime
+- *(audio)* Move playback event vocabulary into the soundboard
+- *(server)* Reach the event bus through history and observer ports
+- *(server)* Route desktop token access through the server handle
+- *(update)* Answer update-in-flight and hide journal internals
+- *(storage)* Move app paths into their own leaf crate
+- *(ui)* Move run disclosure next to the diagnostic bundle
+- *(ui)* Move single-screen chat and hub composites into the app
+- *(ui)* Own navigation in one module with an explicit navigator
+- *(twitch)* Give shared session, identity and field concepts foundation homes
+- *(kick)* Group modules by official API and Pusher receive transport
+- *(vtube)* Route all VTS traffic through one wire module
+- *(transfer)* Layer bundle mechanics, full backup, documents and features
+- *(emulator)* Group fakes, fixture and harness and share fake vocabulary
+- *(overlay)* Guard overlay directory confinement in one place
+- *(transfer)* State pack copy id rules per kind instead of reusing pack ids
+- *(net)* Make gateway and chat poll timings configurable with today's defaults
+- *(events)* Type the shared observability events and their producers
+- *(twitch)* Define kinds, topics, ids and payload keys once in a vocabulary module
+- *(youtube)* Define kinds, ids, payload keys and lookup results once
+- *(kick)* Define kinds, ids, variables and Pusher protocol once
+- *(integrations)* Define vtube, discord, hotkey and soundboard vocabularies once
+- *(midi)* Build bus and monitor payloads once and type the signal kind
+- *(speak)* Emit every speak outcome from one typed emitter and report clears per message
+- *(server)* Drop the unused default server info constructor
+- *(triggers)* Own the trigger variable vocabulary in the registry with one cached seed builder
+- *(integrations)* Address health metrics by declared stable ids
+- *(tts)* Read the engine class from each engine's declaration
+- *(tts)* Make the pipeline config the single filter model and move the repeat window to the queue
+- *(settings)* Declare script, runtime, soundboard, hotkey and server settings in their own crates
+- *(obs)* Declare OBS and VTube step config fields and fail invalid configs
+- *(integrations)* Declare midi, discord and soundboard step config fields and fail invalid configs
+- *(actions)* Declare every runtime step's config fields once and unify the shared field types
+- *(platforms)* Declare kick and youtube step config fields and publish the created reward id
+- *(actions)* Keep one duration field type for every step
+- *(twitch)* Declare twitch step config fields and fail invalid configs
+- *(twitch)* Publish every EventSub kind through a typed payload with unchanged wire bytes
+- *(desktop)* Decode runtime events once through the producers' typed payloads
+- *(actions)* Read step form keys, chips and queue modes from their owners
+- *(settings)* Register every owner's setting specs at the composition root
+- *(soundboard)* Write soundboard settings through the soundboard crate
+- *(storage)* Drop soundboard setting accessors now owned by the soundboard crate
+- *(vtube)* Publish the disconnect reason as a typed value and read chat viewers through a typed profile
+- *(chat)* Route chat sends in the runtime and publish whispers and command matches as typed events
+- *(chat)* Drop the unused payload sender parser
+- *(settings)* Read and write soundboard, hotkey and server settings through typed declarations
+- *(settings)* Read script and overlay settings through typed declarations
+- *(settings)* Route settings screens through typed declarations
+- *(integrations)* Label health metrics by stable id and carry their values as typed text
+- *(settings)* Route desktop boot and services through typed declarations
+- *(settings)* Read backup and safety-copy settings through typed declarations
+- *(settings)* Seal raw settings access inside storage
+- *(runtime)* Reserve scheduler handles before their tasks start
+- *(youtube)* Assemble the integration inside its crate
+- *(desktop)* Pass audio, local speech engines and platform identities into the boot
+- *(server)* Create the overlay delivery hub before the server
+- *(twitch)* Assemble the integration inside its crate
+- *(i18n)* Derive option labels from keys and drop English defaults from the kit
+- *(secrets)* Hold every credential in one redacting secret family
+- *(overlays)* Build the overlay service once with its sink and pass samples by caller
+- *(platforms)* Carry integration labels as typed user text
+- *(solution)* Inject timing into network clients and the server
+- *(runtime)* Wire the runtime through a two-stage builder
+- *(solution)* Carry typed failures and localized text to every surface
+- *(runtime)* Remove late-bound cells and not-ready step failures
+- *(solution)* Type OAuth client secrets and drop stale suppressions and dead items
+- *(solution)* Type the remaining string error seams and shared names
+- *(ui)* Split the script editor and TTS filter screens into modules
+- *(ui)* Split chat, server console, integration detail and MIDI screens
+- *(solution)* Inject clocks, app paths and the espeak program
+- *(solution)* Narrow crate surfaces and type watch and OBS results
+- *(solution)* Inject test seams and keep null repos out of production
+- *(tts)* Make the speak queue the only voice registry writer
+- *(runtime)* Give every background task an owner that awaits its stop
+- *(solution)* Move speech and integration wiring into a gpui-free host crate
+- *(solution)* Give shared integration state one writer and lock policy
+- *(platform)* Share the donation poll loop, status and control
+- *(solution)* Build and stop the runtime from the gpui-free host
+- *(platform)* Share quick action builders and the reconnect loop
+- *(ui)* Split Actions, Queues and Globals into focused modules
+- *(ui)* Split trigger detail and server settings, group view state
+- *(solution)* Share step telemetry, trigger defaults, PCM and token refresh
+- *(solution)* Collapse each crate to one error type
+- *(integrations)* Declare credential state and identity per integration
+- *(solution)* Inject clocks and signals behind timing-dependent paths
+- *(solution)* Tighten types, events, registry and runtime details
+- *(solution)* Name protocol constants and check narrowing casts
+- *(integrations)* Declare catalog groups and endpoint surfaces per crate
+- *(audio)* Signal playback completion and drain the callback in blocks
+- *(platform)* Narrow module surfaces and name remaining constants
+- *(solution)* Remove compatibility with data from before this version
+- *(solution)* Own every subsystem task and share the runtime bridge
+- *(platform)* Name moderation inputs and remove repeated work
+- *(ui)* Split Actions and the chat timeline into child view entities
+- *(ui)* Move the chat drawer and moderation into child entities
+- *(runtime)* Carry date name language on the argument stack
+- *(solution)* Remove old overlay and pack formats and unify config keys
+- *(ui)* Split Triggers into list, detail and create entities
+- *(ui)* Split Scripts and integration detail into child entities
+- *(ui)* Stop passing runtime handles to views and split long render paths
+- *(ui)* Read fonts from the presentation and type option lists
+- *(solution)* Share secret minting and staging, drop unused capabilities
+- *(platform)* Share timestamp parsing and build quick actions by name
+- *(integrations)* Name the state groups inside client objects
+- *(platform)* Split the twitch session and youtube poller by concern
+- *(server)* Type wire codes and route requests through one access gate
+- *(solution)* Type run refusals, share bulk reads and inject paths
+- *(integrations)* Declare triggers and plain runners as data tables
+- *(integrations)* Regroup hotkey, vtube and obs clients around typed seams
+- *(tts)* Carry speech text by kind and run pipeline stages once
+- *(solution)* Split speech ports, regroup modules and sweep import leftovers
+- *(ui)* Group desktop modules by domain and read the palette in render
+- *(runtime)* Stamp events at creation and split the execution driver
+- *(obs)* Spell one concept one way and keep built-in clip names in step
+- *(storage)* Chunk retention deletes and share column lists
+- *(solution)* Type step positions and finish integration boundaries
+- *(solution)* Narrow crate surfaces and bulk read clip media
+- *(audio)* Start every sink through one method and layer the crate
+
+### 🛠️ Build
+- *(build)* Build and test the emulator workspace on every push
+- *(desktop)* Drop the unused reqwest dependency
+- *(lint)* Gate reqwest clients and body reads outside forge-net
+- *(lint)* Enforce unused-dependency and licence/source policy
+- *(build)* Gate crate layering on audio and detector closure
+- *(build)* Drop the crate layering gate
+- *(build)* Follow the moved kick auth module in the http boundary check
+- *(deps)* Bump rhai, zbus, sha2, arc-swap and open
+- *(build)* Bump taiki-e/install-action to 2.87.31
+- *(deps)* Bump emulator rustls and tokio past advisories
+- *(deps)* Bump pageprobe puppeteer, undici and zod past advisories
+- *(deps)* Bump emulator quinn-proto, webpki and ctutils past advisories
+- *(deps)* Bump gpui to zed v1.26.2 and follow the scroll event rename
+- *(audit)* Ignore unreachable crypto-bigint advisory behind age p256
+- *(deps)* Refresh the emulator lockfile after the voice crate merge
+- *(build)* Drop the custom HTTP client boundary script
+- *(emulator)* Record the tokio-util dependency in the lockfile
+- *(solution)* Drop an unused conformance dependency
+- *(solution)* Drop unused conformance dependencies
+
+### 🧪 Testing
+- *(obs)* Pin exact input-settings object and reject non-object settings
+- *(i18n)* Resolve UI text off worker threads and warn on bundleless lookups
+- *(tts)* Pin shared SSML escaping, SAPI SSML root and error mapping
+- *(integrations)* Pin option-list preselect, ticketing and dependency re-resolve
+- *(integrations)* Pin debounced text-dependency re-resolve and run gating
+- *(obs)* Pin option-list resolution, revision triggers and picker wiring
+- *(vtube)* Pin option-list resolution, revision triggers and picker wiring
+- *(runtime)* Pin body-free script errors and strict JSON config inputs
+- *(script)* Pin symmetric rhai value conversion and datetime handling
+- *(ui)* Pin load-gated edits and coalesced snapshot writes
+- *(ui)* Pin load-gated favorites, backup schedule, midi devices and voice strategy
+- *(settings)* Pin strict setting decoding and load-gated settings edits
+- *(integrations)* Pin delete-first sign-out and name-keyed browser source pick
+- *(scripts)* Pin queue delete reassignment, cascading rename and archive undo
+- *(components)* Pin IME composition selection and edit policy across editors
+- *(components)* Pin secure input hiding text and compositions from the IME
+- *(tts)* Pin per-format output scaling and subprocess timeout kill and pipe exchange
+- *(tts)* Pin engine reuse, invalidation and espeak subprocess timeouts
+- *(kick)* Pin chat session generation gate, prompt disconnect and stop grace
+- *(youtube)* Pin post-rollover quota metric
+- *(net)* Repoint rate limiter test doubles to the leaf crate
+- *(net)* Cover dedup and acquire retry, add a recording limiter double
+- *(net)* Pin 6to4, NAT64 local-use and zero-capacity dedup
+- *(net)* Pin monotonic cool-down under injected time
+- *(discord)* Pin a single refill window after a stale bucket
+- *(net)* Pin throttle-hint parsing and capped body reads
+- *(net)* Pin gateway target, status, redirect and redaction rules
+- *(net)* Pin 503 throttling to Retry-After with bucket scope
+- *(twitch)* Pin Helix gateway throttling, redaction and refresh rules
+- *(emulator)* Pass the Helix gateway to the Twitch chat session
+- *(twitch)* Pin OAuth gateway sign-in, refresh mapping and cancellation
+- *(net)* Pin scheme credential masking and API key refusal
+- *(tts)* Pin cloud gateway mapping, catalog startup and list keeping
+- *(net)* Pin resolved request targets
+- *(youtube)* Pin shared Data API budget, quota charging and request.fail
+- *(net)* Pin expected refusals across gateway, Twitch and YouTube
+- *(youtube)* Pin Google OAuth gateway, single-flight refresh and lookups
+- *(kick)* Pin shared gateway budget, channel-info isolation and request.fail
+- *(kick)* Pin OAuth gateway, single-flight refresh and sign-in routing
+- *(auth)* Pin sign-out against in-flight token refreshes
+- *(discord)* Pin gateway routing, throttle scopes and webhook secrecy
+- *(donations)* Pin gateway redirects, cooldowns and token masking
+- *(net)* Pin streaming send caps, idle budgets and trusted-absolute rules
+- *(updates)* Pin split budgets, per-file caps and download redirects
+- *(twitch)* Import status codes in Helix refusal tests
+- *(emulator)* Model Helix shield mode status in the fake Twitch
+- *(net)* Pin user-directed egress guards, headers, budgets and truncation
+- *(twitch)* Pin EventSub per-topic retry policy within the live session
+- *(solution)* Replace per-module panic-lint allows with clippy test config
+- *(solution)* Satisfy allow_attributes and let_underscore_must_use in tests
+- *(solution)* Follow the dead-code sweep in tests
+- *(tts)* Pin strip-emoji persistence, defaults and live mapping
+- *(storage)* Pin the scripts body_hash drop migration
+- *(ui)* Follow token and palette renames in tests
+- *(ui)* Follow the density parameter in the ban list disclaimer test
+- *(ui)* Install the presentation global in fixtures and pin density scaling
+- *(ui)* Pin Escape dismissal from focused fields, IME and nested overlays
+- *(tts)* Repoint speech type tests and pin stored voice alias JSON
+- *(credentials)* Pin reauth only for undecryptable stored secrets
+- *(events)* Pin shared event channel lag, close and burst delivery
+- *(soundboard)* Pin sound runners, control port and unsaved volume reason
+- *(soundboard)* Pin output fan-out targets
+- *(server)* Pin event history and observer ports on the ws server
+- *(server)* Pin bearer token and reads switch on the server handle
+- *(server)* Pin desktop bearer lookup and live auth toggles
+- *(update)* Pin update-in-flight detection and move flow tests in-crate
+- *(script)* Pin global mutation parity between scripts and sub-actions
+- *(awake)* Pin ordered stay-awake toggles and store-then-send failures
+- *(ui)* Pin the boot signal console field contract
+- *(storage)* Move data-dir path tests to the paths crate
+- *(ui)* Re-home run disclosure tests next to the desktop module
+- *(ui)* Re-home input bar tests next to the desktop chat composer
+- *(ui)* Pin backup-failure toast navigation and settings sidebar parity
+- *(twitch)* Repoint tests to the reorganised module layout
+- *(kick)* Repoint tests to the reorganised module layout
+- *(vtube)* Repoint tests to the vts module and pin event decoding
+- *(transfer)* Repoint tests to the layered module layout
+- *(emulator)* Repoint tests to the grouped module layout
+- *(overlay)* Pin unsafe-identity precedence when reading page sources
+- *(runtime)* Cover strict step choices, user logins, weights and literal grammar
+- *(soundboard)* Cover per-play finish events and strict master volume
+- *(soundboard)* Cover play-id ownership of progress and stopped-before-start settle
+- *(youtube)* Cover the single chat event, command parsing and delete default
+- *(twitch)* Bind host_id on shared chat session update
+- *(tts)* Cover exclusivity of emote-to-word and strip-Twitch toggles
+- *(discord)* Pin message id publishing and stack preservation in posting runners
+- *(chat)* Cover id-first moderation marks and platform-scoped deletes
+- *(chat)* Pin id-first author removal, platform-scoped deletes and stable row ids
+- *(actions)* Cover storage-appended trigger link positions and id tie order
+- *(triggers)* Pin legacy variables to the canonical twin their names describe
+- *(net)* Run socket timeout tests on the real clock with held or paced stub servers
+- *(net)* Rewrite paused timeout tests on injected short budgets and the real clock
+- *(solution)* Pin byte goldens ahead of the typed vocabulary refactor
+- *(events)* Repair suites and pin typed event payloads with goldens
+- *(twitch)* Pin the EventSub subscription catalog and typed event payloads
+- *(youtube)* Pin typed stream and channel lookup results and runner variable mapping
+- *(chat)* Pin the triggering message id through reply and delete steps
+- *(kick)* Pin the Pusher wire bytes and repoint tests at the shared vocabulary
+- *(obs)* Pin that query steps keep earlier run variables and declare their outputs
+- *(vtube)* Pin that lookup and item steps keep earlier run variables
+- *(actions)* Pin the step-tree codec bytes, walk order and kept malformed steps
+- *(actions)* Pin that nested chain edits keep unreadable entries and unknown keys
+- *(obs)* Follow the renamed trigger and step ids and pin the stored-id migration
+- *(i18n)* Flag locale copy that names no registered kind
+- *(scripts)* Pin whole-id matching and the localized renamed-id notice
+- *(kick)* Compare pusher frames as parsed json, not key order
+- *(desktop)* Let worker-thread import and webhook tests finish before gpui polls
+- *(emulator)* Sort the kick protocol import
+- *(integrations)* Pin hotkey key compatibility and typed event payloads
+- *(midi)* Pin bus payloads, signal kind names and trigger matching per kind
+- *(speak)* Pin speak wire payloads, reason tokens and per-message clear order
+- *(server)* Pin platform availability, active-viewer matching and account parsing
+- *(scripts)* Pin the derived script API catalog and the unavailable-dependency errors
+- *(settings)* Pin typed setting codecs, catalog registration and the core encoding golden
+- *(emulator)* Import forge vocabulary constants and share test support
+- *(tts)* Follow the voice resolver into the speak queue
+- *(tts)* Restore voice resolver coverage and pin single-voice and unknown-prefix aliases
+- *(overlays)* Pin overlay config validation on save and on pack and setup import
+- *(triggers)* Follow the trigger variable vocabulary into the registry
+- *(triggers)* Cover trigger seed coverage and registry-cached declarations
+- *(integrations)* Follow health metrics onto declared stable ids
+- *(tts)* Pin filter output equivalence, engine classes, emote treatment and repeat window
+- *(settings)* Cover owner-declared settings, clamps and unreadable-store fallbacks
+- *(actions)* Cover declared step config fields and pre-run config validation
+- *(obs)* Pin declared OBS and VTube step defaults and invalid-config failures
+- *(integrations)* Pin midi, discord and soundboard step defaults and invalid-config failures
+- *(platforms)* Pin kick and youtube step defaults and declared-field config failures
+- *(twitch)* Cover declared step fields and pin stored defaults
+- *(actions)* Follow declared step config in runtime and registry tests and pin every stored default
+- *(twitch)* Cover typed EventSub payloads per topic and prune subsumed tests
+- *(desktop)* Cover runtime event decode, failure flags and feed categories
+- *(actions)* Cover owner-read step keys, trigger-category chips and queue mode events
+- *(settings)* Cover the composition-root settings catalog and soundboard setting writers
+- *(types)* Cover the user-text carrier and message catalog contract
+- *(i18n)* Cover the process-wide bundle across threads and the thread override
+- *(chat)* Move chat-send routing tests to the runtime router and cover typed whisper, command and vtube events
+- *(storage)* Cover settings row classes, migration backfill and the memory test store
+- *(i18n)* Cover the user-text resolver, catalog checks and process display formats
+- *(settings)* Cover stored-class exports, admission skips and setting undo
+- *(solution)* Repair suites for typed start errors and coded failures, cover migration and catalogs
+- *(integrations)* Cover the OBS and VTube connect failure reasons
+- *(integrations)* Repair health suites and cover typed settings, metric catalogs and rendering
+- *(settings)* Repair suites for typed declarations and cover stored reads, hotkey refresh and safety-copy mode
+- *(twitch)* Assert step failures by code and typed args, cover failure mapping and catalog parity
+- *(actions)* Assert built-in step failures by code and typed args, cover catalog parity
+- *(twitch)* Drop the paused clock from tests that run real I/O
+- *(obs)* Assert step failures as catalogued codes, cover variant mapping and catalog parity
+- *(storage)* Prove the WAL reset from a state already past the threshold
+- *(solution)* Make timing-dependent tests hold on slow runners
+- *(solution)* Replace paused clocks around real I/O with injected timings
+- *(overlays)* Wait for the torn-down panel's save instead of counting runtime yields
+- *(settings)* Move non-desktop suites onto typed settings and the storage test store
+- *(solution)* Wait for observed state instead of counting runtime yields
+- *(emulator)* Format the seeded settings imports
+- *(settings)* Move desktop and storage suites onto typed settings and the storage test store
+- *(desktop)* Boot a full runtime with fake inputs and walk it end to end
+- *(solution)* Run socket and storage suites on the real clock
+- *(solution)* Tighten test checks and emulator validation and reporting
+- *(runtime)* Check the url open failure text without launching anything
+- *(tts)* Follow the shared wait helper in the playback start suite
+- *(solution)* Cover pure helpers and the script sandbox and stop leaking temp dirs
+- *(ui)* Compare rejected origins by their typed error
+- *(solution)* Wait on signals, share fixtures and cover remaining test gaps
+- *(discord)* Take the worker baseline before the client boots
+- *(actions)* Cover refused step undo and pending writes off screen
+- *(ui)* Cover list keyboard order, filtering and rename silence
+- *(ui)* Cover list cursor after clicks, hidden rows and open menus
+- *(transfer)* Run import jobs on a worker free of storage tasks
+- *(ui)* Replace pool-inflated task baselines with real settle signals
+- *(solution)* Share fakes and replace timed windows with later signals
+- *(solution)* Share credentials fakes and name mock HTTP statuses
+- *(ui)* Click elements by selector and await Twitch state signals
+- *(solution)* Plant redaction sentinels and merge platform test support
+- *(script)* Pin closure, curry and deep value refusals
+- *(solution)* Add shared test support and conformance crates
+- *(ui)* Settle a restore failure the same way on every platform
+- *(ui)* Cover focus reveal, confirm footers, modal scroll and tooltips
+- *(ui)* Cover option pickers from integration seed to saved field
+- *(solution)* Replace wall-clock windows and yield spins with signals
+- *(solution)* Assert full values, request bodies and error variants
+- *(solution)* Cover case helpers and prediction outcomes, prune redundant tests
+- *(solution)* Share publishers, globals double and emulator scaffolding
+- *(solution)* Replace timing waits and pin public server and webhook flows
+- *(ui)* Pin case-folded scrubbing, url escaping, rule undo and preview config
+- *(hotkey)* Gate the backend wait guard to linux
+- *(transfer)* Compare staged paths with forward slashes on every platform
+- *(ui)* Resolve shortcut defaults with the platform primary modifier
+- *(ui)* Read shortcut chords through the platform resolved lookup
+- *(solution)* Wait for task quiescence and move suites to their owners
+- *(solution)* Cover owed behaviors and retire remaining rig debt
+- *(solution)* Replace timing waits with fences and cover owed failures
+- *(ui)* Cover drag selection, log tail text and log scrub rules
+- *(overlays)* Scan only production sources for the send literals
+- *(solution)* Merge input-only variants and drop duplicated contracts
+- *(server)* Pin the exact masked token shape
+- *(twitch)* Pin that runners follow the active broadcaster account
+- *(tts)* Cover the shared worker thread and pin the stored engine id
+- *(audio)* Cover the gate machine, sample formats and playback drop
+
 ## [0.6.3] - 2026-10-23
 ### ⚡ Performance
 - *(storage)* Snapshot the database off the writer connection
@@ -53,6 +646,9 @@ All notable changes to this project will be documented in this file.
 - *(ui)* Show the configured script timeout and translate event feed tags
 - *(twitch)* Accept @-prefixed logins and resolve categories by name
 - *(platforms)* Show quick-action examples as placeholders, not values
+
+### 📚 Documentation
+- *(release)* Release v0.6.3
 
 ### 🚀 Features
 - *(storage)* Inspect a stored database's schema state and credentials

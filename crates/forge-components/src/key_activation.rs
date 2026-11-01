@@ -1,6 +1,6 @@
 use gpui::{
     App, BoxShadow, InteractiveElement, KeyBinding, NoAction, ParentElement, Pixels, Rgba,
-    StatefulInteractiveElement, Styled, actions, point, px,
+    SharedString, StatefulInteractiveElement, StyleRefinement, Styled, actions, point, px,
 };
 
 use crate::focus_reveal::ReportsRevealBounds;
@@ -12,6 +12,8 @@ const STEPPED_CONTEXT: &str = "ForgeKeyStepped";
 const STEPPED_KEY_CONTEXTS: &str = "ForgeKeyActivated ForgeKeyStepped";
 const FOCUS_RING_WIDTH: Pixels = px(2.0);
 const TAB_ORDER_BY_PAINT: isize = 0;
+const HIDDEN_OPACITY: f32 = 0.0;
+pub(crate) const SHOWN_OPACITY: f32 = 1.0;
 
 actions!(forge_key_activation, [StepUp, StepDown]);
 
@@ -26,21 +28,31 @@ pub fn bind_key_activation(cx: &mut App) {
     ]);
 }
 
+fn ring_style(style: StyleRefinement, ring: Rgba) -> StyleRefinement {
+    style.shadow(vec![BoxShadow {
+        color: ring.into(),
+        offset: point(px(0.0), px(0.0)),
+        blur_radius: px(0.0),
+        spread_radius: FOCUS_RING_WIDTH,
+        inset: true,
+    }])
+}
+
 pub fn with_focus_ring<E: InteractiveElement>(element: E, ring: Rgba) -> E {
-    element.focus_visible(move |style| {
-        style.shadow(vec![BoxShadow {
-            color: ring.into(),
-            offset: point(px(0.0), px(0.0)),
-            blur_radius: px(0.0),
-            spread_radius: FOCUS_RING_WIDTH,
-            inset: true,
-        }])
-    })
+    element.focus_visible(move |style| ring_style(style, ring))
 }
 
 pub trait KeyActivated: StatefulInteractiveElement + Styled + ParentElement {
     fn key_activated(self, ring: Rgba) -> Self {
         self.tab_stop_in(KEY_CONTEXT, ring)
+    }
+
+    fn key_activated_revealed_by(self, group: SharedString, ring: Rgba) -> Self {
+        self.key_activated(ring)
+            .opacity(HIDDEN_OPACITY)
+            .group_hover(group, |style| style.opacity(SHOWN_OPACITY))
+            .focus_visible(move |style| ring_style(style, ring).opacity(SHOWN_OPACITY))
+            .occlude()
     }
 
     fn key_stepped(self, ring: Rgba) -> Self {
@@ -75,9 +87,10 @@ mod tests {
 
     use super::*;
     use crate::breadcrumb::{BreadcrumbCrumb, breadcrumb};
-    use crate::buttons::primary_button;
+    use crate::buttons::{icon_button, primary_button};
     use crate::cards::{pad_tile, row_card};
     use crate::chip::{ChipGlyph, chip};
+    use crate::icons::Icon;
     use crate::modal::modal;
     use crate::overlay::{focus_inside_modal, overlay};
     use crate::palette::FORGE_DEFAULT;
@@ -191,6 +204,91 @@ mod tests {
             });
             vcx.run_until_parked();
         }
+    }
+
+    const REVEAL_GROUP: &str = "reveal-host";
+    const REVEALED_BUTTON: &str = "revealed";
+
+    struct RevealHost {
+        focus: FocusHandle,
+        behind: Rc<Cell<usize>>,
+        revealed: Rc<Cell<usize>>,
+    }
+
+    impl Render for RevealHost {
+        fn render(&mut self, _: &mut Window, _: &mut Context<Self>) -> impl IntoElement {
+            let (behind, revealed) = (self.behind.clone(), self.revealed.clone());
+            div()
+                .size_full()
+                .track_focus(&self.focus)
+                .on_action(|_: &FocusNextField, window, cx| window.focus_next(cx))
+                .child(
+                    div()
+                        .relative()
+                        .group(REVEAL_GROUP)
+                        .size(px(40.0))
+                        .child(
+                            div()
+                                .id("behind")
+                                .size_full()
+                                .on_click(move |_, _, _| bump(&behind)),
+                        )
+                        .child(
+                            div().absolute().top_0().left_0().child(
+                                icon_button(Icon::X, &FORGE_DEFAULT)
+                                    .square(px(14.0))
+                                    .revealed_by(REVEAL_GROUP)
+                                    .on_click(REVEALED_BUTTON, move |_, _, _| bump(&revealed)),
+                            ),
+                        ),
+                )
+        }
+    }
+
+    fn mount_reveal(
+        cx: &mut TestAppContext,
+    ) -> (Rc<Cell<usize>>, Rc<Cell<usize>>, &mut VisualTestContext) {
+        cx.update(|cx| {
+            bind_key_activation(cx);
+            cx.bind_keys([KeyBinding::new("tab", FocusNextField, None)]);
+        });
+        install_presentation(cx);
+        let (behind, revealed) = (Rc::new(Cell::new(0)), Rc::new(Cell::new(0)));
+        let (seen_behind, seen_revealed) = (behind.clone(), revealed.clone());
+        let (_host, vcx) = cx.add_window_view(move |window, cx| {
+            let focus = cx.focus_handle();
+            window.focus(&focus, cx);
+            RevealHost {
+                focus,
+                behind: seen_behind,
+                revealed: seen_revealed,
+            }
+        });
+        vcx.update(|window, _| window.activate_window());
+        vcx.run_until_parked();
+        (behind, revealed, vcx)
+    }
+
+    #[gpui::test]
+    fn a_click_on_a_revealed_control_never_reaches_what_it_overlaps(cx: &mut TestAppContext) {
+        let (behind, revealed, vcx) = mount_reveal(cx);
+        let bounds = vcx
+            .debug_bounds(REVEALED_BUTTON)
+            .expect("the hidden control still paints");
+
+        vcx.simulate_click(bounds.center(), Modifiers::none());
+        vcx.run_until_parked();
+
+        assert_eq!((revealed.get(), behind.get()), (1, 0));
+    }
+
+    #[gpui::test]
+    fn a_control_hidden_at_rest_is_still_a_tab_stop(cx: &mut TestAppContext) {
+        let (_, revealed, vcx) = mount_reveal(cx);
+
+        press(vcx, "tab enter");
+
+        assert_eq!(revealed.get(), 1);
     }
 
     #[gpui::test]

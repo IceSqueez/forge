@@ -413,6 +413,28 @@ fn a_custom_accent_is_accepted_on_every_kind_and_a_named_one_stays_named() {
 }
 
 #[test]
+fn the_preview_paints_the_exact_channels_the_page_gets_for_a_stored_accent() {
+    for (stored, channels) in [
+        ("mauve", [0xcb, 0xa6, 0xf7]),
+        ("sky", [0x89, 0xdc, 0xeb]),
+        ("green", [0xa6, 0xe3, 0xa1]),
+        ("peach", [0xfa, 0xb3, 0x87]),
+        ("yellow", [0xf9, 0xe2, 0xaf]),
+        ("red", [0xf3, 0x8b, 0xa8]),
+        ("#102030", [0x10, 0x20, 0x30]),
+        ("#ABCDEF", [0xab, 0xcd, 0xef]),
+        ("flamingo", [0xcb, 0xa6, 0xf7]),
+        ("", [0xcb, 0xa6, 0xf7]),
+    ] {
+        assert_eq!(
+            PreviewAccent::from_stored(stored).channels(),
+            channels,
+            "{stored:?}"
+        );
+    }
+}
+
+#[test]
 fn the_runtime_publishes_a_custom_accent_verbatim_through_the_same_property() {
     let apply = common::js_function(RUNTIME_SOURCE, "applyAppearance");
 

@@ -9,7 +9,7 @@ use std::time::Duration;
 use forge_components::OverflowRevealingFocus;
 use forge_components::{
     ActivePresentation, BORDER_THIN, FONT_XXS, ForgePalette, KeyActivated, Picker, PickerEvent,
-    PickerItem, PickerLabels, accent_swatch, field_label, scaled, section_label, tr,
+    PickerItem, PickerLabels, field_label, scaled, section_label, tr,
 };
 use forge_overlay::config::{ACCENT, SOUND_OPTIONS_KEY, SPEECH_VOICE};
 use forge_overlay::{ConfigSection, MediaIssue, MediaSlot, SectionedField, media_slot};
@@ -26,7 +26,7 @@ use gpui::{
 use super::base_sections::{
     BaseEvent, BaseState, FIELD_SECTIONS, PanelSection, base_hint, base_label, hinted,
 };
-use super::color_choice::{ColorChoices, settle_background_choice};
+use super::color_choice::{ColorChoices, settle_background_choice, stored_color_tint};
 use super::icon_choice::{IconImage, icon_field_row};
 use super::latest_section::LatestState;
 use super::motion_notices::MotionNotices;
@@ -187,7 +187,7 @@ impl OverlayPropertyPanel {
             latest: LatestState::default(),
             _release: release,
         };
-        panel.refresh_color_options(&palette);
+        panel.refresh_color_options();
         panel.refresh_media_choices();
         panel.refresh_voice_choices();
         panel
@@ -256,15 +256,8 @@ impl OverlayPropertyPanel {
     }
 
     fn accent_tint(&self, palette: &ForgePalette) -> Rgba {
-        self.fields
-            .iter()
-            .find_map(|field| match field {
-                ConfigField::Swatch { key, selected, .. } if key == ACCENT => {
-                    accent_swatch(selected, palette)
-                }
-                _ => None,
-            })
-            .unwrap_or(palette.brand)
+        self.selected_color(ACCENT)
+            .map_or(palette.brand, stored_color_tint)
     }
 
     fn awaits_icon(&self, key: &str) -> bool {
@@ -431,8 +424,7 @@ impl OverlayPropertyPanel {
                 selected.clone_from(&choice);
             }
         }
-        let palette = cx.palette();
-        self.refresh_color_options(&palette);
+        self.refresh_color_options();
         self.emit_save(cx);
         cx.notify();
     }
@@ -668,7 +660,7 @@ impl OverlayPropertyPanel {
         for field in members {
             let control = self
                 .icon_control(field, palette, &view, density, cx)
-                .or_else(|| self.color_control(field, palette, &view, &handlers, density, cx))
+                .or_else(|| self.color_control(field, palette, &view, &handlers, density))
                 .unwrap_or_else(|| {
                     render_config_control(
                         field,
@@ -844,7 +836,9 @@ pub(crate) mod tests {
     use std::sync::Mutex;
 
     use forge_components::{Density, ThemeId};
-    use forge_overlay::config::{ACCENT_OPTIONS, HEADLINE, ICON, ICON_OPTIONS_KEY, SOUND};
+    use forge_overlay::config::{
+        ACCENT_MAUVE_HEX, ACCENT_OPTIONS, ACCENT_SKY_HEX, HEADLINE, ICON, ICON_OPTIONS_KEY, SOUND,
+    };
     use forge_overlay::config::{
         DESIGN_HEIGHT, DESIGN_SIZE_MAX_PX, DESIGN_SIZE_MIN_PX, DESIGN_WIDTH, MARGIN_BOTTOM,
         MARGIN_LEFT, MARGIN_MAX_PERCENT, MARGIN_RIGHT, MARGIN_TOP,
@@ -1652,26 +1646,22 @@ pub(crate) mod tests {
     }
 
     #[gpui::test]
-    fn the_icon_tile_is_tinted_by_the_stored_accent_and_by_the_brand_when_it_names_none(
+    fn the_icon_tile_is_tinted_by_the_color_the_page_paints_for_the_stored_accent(
         cx: &mut gpui::TestAppContext,
     ) {
-        let named = Fixture::new(cx, config(&[(ACCENT, Variant::String("sky".into()))]));
-        let unknown = Fixture::new(
-            cx,
-            config(&[(ACCENT, Variant::String("chartreuse".into()))]),
-        );
-        let palette = cx.update(|cx| cx.palette());
+        for (stored, painted) in [
+            ("sky", ACCENT_SKY_HEX),
+            ("#102030", "#102030"),
+            ("chartreuse", ACCENT_MAUVE_HEX),
+        ] {
+            let fixture = Fixture::new(cx, config(&[(ACCENT, Variant::String(stored.into()))]));
 
-        assert_eq!(
-            named.icon_tint(cx),
-            palette.info,
-            "the icon tile ignored the accent the overlay stores"
-        );
-        assert_eq!(
-            unknown.icon_tint(cx),
-            palette.brand,
-            "an accent this palette cannot name has to fall back to the brand tint"
-        );
+            assert_eq!(
+                fixture.icon_tint(cx),
+                stored_color_tint(painted),
+                "{stored}"
+            );
+        }
     }
 
     const PANEL_H: f32 = 1200.0;

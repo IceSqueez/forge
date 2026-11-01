@@ -1,24 +1,29 @@
 use forge_components::{
-    ActivePresentation, Density, ForgePalette, InputEvent, Spacing, TextInput, accent_swatch,
-    ghost_button, secondary_button, spacing, tr,
+    Density, ForgePalette, Icon, InputEvent, Radius, Spacing, TextInput, icon_button,
+    secondary_button, spacing, tr,
 };
 use forge_overlay::config::{
     ACCENT, ACCENT_OPTIONS, BACKGROUND_COLOR, BACKGROUND_COLOR_OPTIONS, DEFAULT_BACKGROUND_COLOR,
 };
-use forge_overlay::hex_color_channels;
+use forge_overlay::{PreviewAccent, hex_color_channels};
 use forge_storage::OverlayConfig;
 use gpui::{
-    AnyElement, App, ClickEvent, Context, Entity, Rgba, SharedString, Subscription, Window, div,
-    prelude::*, px, rgb,
+    AnyElement, App, ClickEvent, Context, Entity, Pixels, Rgba, SharedString, Subscription, Window,
+    div, prelude::*, px,
 };
 
 use super::custom_accents::normalized_accent;
+use super::kind_visuals::accent_color;
 use super::property_panel::{AccentListEdit, OverlayPropertyPanel};
 use crate::shared::config_form::{
-    ConfigField, ConfigFieldHandlers, read_text, render_config_control,
+    ConfigField, ConfigFieldHandlers, SwatchTile, read_text, swatch_row, swatch_tile,
 };
 
 const COLOR_INPUT_PLACEHOLDER: &str = "#ff8800";
+const SWATCH_ID_PREFIX: &str = "overlays-panel";
+const REMOVE_BADGE: Pixels = px(14.0);
+const REMOVE_GLYPH: Pixels = px(10.0);
+const REMOVE_BADGE_OVERHANG: Pixels = px(-5.0);
 pub(super) const COLOR_FIELD_KEYS: [&str; 2] = [ACCENT, BACKGROUND_COLOR];
 
 struct ColorEntry {
@@ -81,39 +86,32 @@ impl ColorEntry {
     }
 }
 
-fn hex_tint(color: &str) -> Option<Rgba> {
-    hex_color_channels(color)
-        .map(|[red, green, blue]| rgb(u32::from_be_bytes([0, red, green, blue])))
+pub(super) fn stored_color_tint(color: &str) -> Rgba {
+    accent_color(PreviewAccent::from_stored(color))
 }
 
-fn preset_colors(key: &str, palette: &ForgePalette) -> Vec<(String, Rgba)> {
-    let presets = if key == BACKGROUND_COLOR {
+fn presets_of(key: &str) -> &'static [&'static str] {
+    if key == BACKGROUND_COLOR {
         BACKGROUND_COLOR_OPTIONS
     } else {
         ACCENT_OPTIONS
-    };
-    presets
+    }
+}
+
+fn preset_colors(key: &str) -> Vec<(String, Rgba)> {
+    presets_of(key)
         .iter()
-        .map(|color| {
-            let tint = hex_tint(color)
-                .or_else(|| accent_swatch(color, palette))
-                .unwrap_or(palette.text_faint);
-            ((*color).to_owned(), tint)
-        })
+        .map(|color| ((*color).to_owned(), stored_color_tint(color)))
         .collect()
 }
 
-pub(super) fn offered_colors(
-    key: &str,
-    saved: &[String],
-    selected: &str,
-    palette: &ForgePalette,
-) -> Vec<(String, Rgba)> {
-    let mut offered = preset_colors(key, palette);
+pub(super) fn offered_colors(key: &str, saved: &[String], selected: &str) -> Vec<(String, Rgba)> {
+    let mut offered = preset_colors(key);
     let chosen = normalized_accent(selected).filter(|color| !saved.contains(color));
     for color in saved.iter().cloned().chain(chosen) {
         let listed = offered.iter().any(|(known, _)| *known == color);
-        if let (false, Some(tint)) = (listed, hex_tint(&color)) {
+        if !listed && hex_color_channels(&color).is_some() {
+            let tint = stored_color_tint(&color);
             offered.push((color, tint));
         }
     }
@@ -137,8 +135,7 @@ pub(super) fn settle_background_choice(fields: &mut [ConfigField]) {
 impl OverlayPropertyPanel {
     pub(super) fn set_custom_accents(&mut self, colors: Vec<String>, cx: &mut Context<Self>) {
         self.colors.saved = colors;
-        let palette = cx.palette();
-        self.refresh_color_options(&palette);
+        self.refresh_color_options();
         cx.notify();
     }
 
@@ -149,7 +146,7 @@ impl OverlayPropertyPanel {
         })
     }
 
-    pub(super) fn refresh_color_options(&mut self, palette: &ForgePalette) {
+    pub(super) fn refresh_color_options(&mut self) {
         for field in &mut self.fields {
             if let ConfigField::Swatch {
                 key,
@@ -159,7 +156,7 @@ impl OverlayPropertyPanel {
             } = field
                 && COLOR_FIELD_KEYS.contains(&key.as_str())
             {
-                *options = offered_colors(key, &self.colors.saved, selected, palette);
+                *options = offered_colors(key, &self.colors.saved, selected);
             }
         }
     }
@@ -194,14 +191,10 @@ impl OverlayPropertyPanel {
         cx.emit(AccentListEdit::Add(color));
     }
 
-    pub(super) fn remove_selected_color(&mut self, key: &str, cx: &mut Context<Self>) {
-        if !self.removable_color(key) {
-            return;
+    pub(super) fn remove_color(&mut self, key: &str, color: &str, cx: &mut Context<Self>) {
+        if self.removable_color(key, color) {
+            cx.emit(AccentListEdit::Remove(color.to_owned()));
         }
-        let Some(color) = self.selected_color(key).map(str::to_owned) else {
-            return;
-        };
-        cx.emit(AccentListEdit::Remove(color));
     }
 
     pub(super) fn adopt_color_reset(
@@ -219,14 +212,51 @@ impl OverlayPropertyPanel {
             }
         }
         self.stored = stored;
-        let palette = cx.palette();
-        self.refresh_color_options(&palette);
+        self.refresh_color_options();
         cx.notify();
     }
 
-    pub(super) fn removable_color(&self, key: &str) -> bool {
-        self.selected_color(key)
-            .is_some_and(|selected| self.colors.is_saved(selected))
+    pub(super) fn removable_color(&self, key: &str, color: &str) -> bool {
+        self.colors.is_saved(color) && !presets_of(key).contains(&color)
+    }
+
+    fn removable_swatch(
+        &self,
+        key: &'static str,
+        color: &str,
+        swatch: AnyElement,
+        palette: &ForgePalette,
+        view: &Entity<Self>,
+    ) -> AnyElement {
+        let group = SharedString::from(format!("overlays-color-swatch-{key}-{color}"));
+        let view = view.clone();
+        let picked = color.to_owned();
+        let remove = icon_button(Icon::X, palette)
+            .square(REMOVE_BADGE)
+            .glyph_size(REMOVE_GLYPH)
+            .corner(Radius::Pill)
+            .fill(palette.elevated, palette.text_primary)
+            .hover_fill(palette.danger)
+            .tooltip(tr!("overlays_accent_remove"))
+            .revealed_by(group.clone())
+            .on_click(
+                SharedString::from(format!("overlays-color-remove-{key}-{color}")),
+                move |_: &ClickEvent, _window: &mut Window, cx: &mut App| {
+                    view.update(cx, |this, cx| this.remove_color(key, &picked, cx));
+                },
+            );
+        div()
+            .relative()
+            .group(group)
+            .child(swatch)
+            .child(
+                div()
+                    .absolute()
+                    .top(REMOVE_BADGE_OVERHANG)
+                    .right(REMOVE_BADGE_OVERHANG)
+                    .child(remove),
+            )
+            .into_any_element()
     }
 
     pub(super) fn color_control(
@@ -236,19 +266,37 @@ impl OverlayPropertyPanel {
         view: &Entity<Self>,
         handlers: &ConfigFieldHandlers<Self>,
         density: Density,
-        cx: &App,
     ) -> Option<AnyElement> {
         let entry = self.colors.entry(field.key())?;
         let key = entry.key;
-        let swatches = render_config_control(
-            field,
-            palette,
-            "overlays-panel",
-            view,
-            handlers,
-            density,
-            cx,
-        );
+        let ConfigField::Swatch {
+            options, selected, ..
+        } = field
+        else {
+            return None;
+        };
+        let swatches = options
+            .iter()
+            .fold(swatch_row(density), |row, (name, tint)| {
+                let swatch = swatch_tile(
+                    SwatchTile {
+                        key,
+                        name,
+                        tint: *tint,
+                        selected: name == selected,
+                        id_prefix: SWATCH_ID_PREFIX,
+                    },
+                    palette,
+                    view,
+                    handlers.pick,
+                )
+                .into_any_element();
+                row.child(if self.removable_color(key, name) {
+                    self.removable_swatch(key, name, swatch, palette, view)
+                } else {
+                    swatch
+                })
+            });
         let add_view = view.clone();
         let add = secondary_button(tr!("overlays_accent_add"), palette).on_click(
             SharedString::from(format!("overlays-color-add-{key}")),
@@ -263,24 +311,12 @@ impl OverlayPropertyPanel {
             .gap(spacing(Spacing::Xs, density))
             .child(div().flex_1().min_w(px(0.0)).child(entry.input.clone()))
             .child(add);
-        let remove_view = view.clone();
-        let remove = self.removable_color(key).then(|| {
-            div().mt(spacing(Spacing::Xs, density)).child(
-                ghost_button(tr!("overlays_accent_remove"), palette).on_click(
-                    SharedString::from(format!("overlays-color-remove-{key}")),
-                    move |_: &ClickEvent, _window: &mut Window, cx: &mut App| {
-                        remove_view.update(cx, |this, cx| this.remove_selected_color(key, cx));
-                    },
-                ),
-            )
-        });
         Some(
             div()
                 .flex()
                 .flex_col()
                 .child(swatches)
                 .child(add_row)
-                .children(remove)
                 .into_any_element(),
         )
     }
@@ -288,8 +324,11 @@ impl OverlayPropertyPanel {
 
 #[cfg(test)]
 mod tests {
-    use forge_components::FORGE_DEFAULT;
-    use forge_overlay::config::{ACCENT_MAUVE, ACCENT_MAUVE_HEX};
+    use forge_overlay::config::{
+        ACCENT_GREEN, ACCENT_GREEN_HEX, ACCENT_MAUVE, ACCENT_MAUVE_HEX, ACCENT_PEACH,
+        ACCENT_PEACH_HEX, ACCENT_RED, ACCENT_RED_HEX, ACCENT_SKY, ACCENT_SKY_HEX, ACCENT_YELLOW,
+        ACCENT_YELLOW_HEX,
+    };
 
     use super::*;
 
@@ -302,7 +341,7 @@ mod tests {
 
     fn offered(key: &str, saved: &[&str], selected: &str) -> Vec<(String, Rgba)> {
         let saved: Vec<String> = saved.iter().map(|color| (*color).to_owned()).collect();
-        offered_colors(key, &saved, selected, &FORGE_DEFAULT)
+        offered_colors(key, &saved, selected)
     }
 
     fn extended(presets: &[&'static str], extra: &[&'static str]) -> Vec<&'static str> {
@@ -337,27 +376,31 @@ mod tests {
         );
     }
 
+    fn tint_of(offered: &[(String, Rgba)], color: &str) -> Option<Rgba> {
+        offered
+            .iter()
+            .find(|(name, _)| name == color)
+            .map(|(_, tint)| *tint)
+    }
+
     #[test]
-    fn a_named_accent_takes_the_palette_tint_and_a_hex_preset_its_own_color() {
+    fn a_named_accent_and_its_background_hex_paint_the_same_color() {
         let accents = offered(ACCENT, &[], ACCENT_MAUVE);
         let backgrounds = offered(BACKGROUND_COLOR, &[], DEFAULT_BACKGROUND_COLOR);
 
-        assert_eq!(
-            accents.iter().find(|(name, _)| name == ACCENT_MAUVE),
-            Some(&(
-                ACCENT_MAUVE.to_owned(),
-                accent_swatch(ACCENT_MAUVE, &FORGE_DEFAULT).unwrap()
-            ))
-        );
-        assert_eq!(
-            backgrounds
-                .iter()
-                .find(|(name, _)| name == ACCENT_MAUVE_HEX),
-            Some(&(
-                ACCENT_MAUVE_HEX.to_owned(),
-                hex_tint(ACCENT_MAUVE_HEX).unwrap()
-            ))
-        );
+        for (name, hex) in [
+            (ACCENT_MAUVE, ACCENT_MAUVE_HEX),
+            (ACCENT_SKY, ACCENT_SKY_HEX),
+            (ACCENT_GREEN, ACCENT_GREEN_HEX),
+            (ACCENT_PEACH, ACCENT_PEACH_HEX),
+            (ACCENT_YELLOW, ACCENT_YELLOW_HEX),
+            (ACCENT_RED, ACCENT_RED_HEX),
+        ] {
+            let accent = tint_of(&accents, name);
+            assert!(accent.is_some(), "{name}");
+            assert_eq!(accent, tint_of(&backgrounds, hex), "{name}");
+            assert_eq!(accent, Some(stored_color_tint(hex)), "{name}");
+        }
     }
 
     #[test]
@@ -449,14 +492,21 @@ mod panel_tests {
     use forge_overlay::{ConfigSection, SectionedField};
     use forge_registry::FormField;
     use forge_types::Variant;
-    use gpui::{AppContext, TestAppContext};
+    use gpui::{AppContext, TestAppContext, VisualTestContext, size};
     use tokio::runtime::Runtime;
 
     use super::super::property_panel::tests::launch;
     use super::*;
+    use crate::test_support::click_selector;
 
     const CUSTOM: &str = "#102030";
     const OTHER_CUSTOM: &str = "#405060";
+    const CUSTOM_SWATCH: &str = "overlays-panel-accent-#102030";
+    const CUSTOM_REMOVE: &str = "overlays-color-remove-accent-#102030";
+    const CUSTOM_BACKGROUND_REMOVE: &str = "overlays-color-remove-background_color-#102030";
+    const PRESET_REMOVE: &str = "overlays-color-remove-accent-mauve";
+    const OFF_LIST_REMOVE: &str = "overlays-color-remove-accent-#405060";
+    const PANEL_SIZE: gpui::Pixels = px(1600.0);
 
     fn color_specs() -> Vec<SectionedField> {
         vec![
@@ -522,9 +572,9 @@ mod panel_tests {
     }
 
     impl Rig {
-        fn remove(&self, key: &'static str, cx: &mut TestAppContext) {
+        fn remove(&self, key: &'static str, color: &str, cx: &mut TestAppContext) {
             self.panel
-                .update(cx, |panel, cx| panel.remove_selected_color(key, cx));
+                .update(cx, |panel, cx| panel.remove_color(key, color, cx));
             cx.run_until_parked();
         }
 
@@ -547,9 +597,9 @@ mod panel_tests {
             })
         }
 
-        fn removable(&self, key: &str, cx: &TestAppContext) -> bool {
+        fn removable(&self, key: &str, color: &str, cx: &TestAppContext) -> bool {
             self.panel
-                .read_with(cx, |panel, _| panel.removable_color(key))
+                .read_with(cx, |panel, _| panel.removable_color(key, color))
         }
 
         fn removed(&self, cx: &TestAppContext) -> Vec<String> {
@@ -561,7 +611,7 @@ mod panel_tests {
     fn asking_to_remove_a_listed_color_changes_nothing_until_the_answer(cx: &mut TestAppContext) {
         let rig = open(cx, colors_config(&[(ACCENT, CUSTOM)]), &[CUSTOM]);
 
-        rig.remove(ACCENT, cx);
+        rig.remove(ACCENT, CUSTOM, cx);
 
         assert_eq!(rig.removed(cx), vec![CUSTOM.to_owned()]);
         assert_eq!(rig.selected(ACCENT, cx), CUSTOM);
@@ -614,7 +664,7 @@ mod panel_tests {
 
         assert_eq!(rig.selected(ACCENT, cx), CUSTOM);
         assert!(rig.offers(ACCENT, CUSTOM, cx));
-        assert!(!rig.removable(ACCENT, cx));
+        assert!(!rig.removable(ACCENT, CUSTOM, cx));
 
         rig.panel.update(cx, |panel, cx| {
             panel.pick_swatch(ACCENT.to_owned(), ACCENT_SKY.to_owned(), cx);
@@ -624,24 +674,131 @@ mod panel_tests {
     }
 
     #[gpui::test]
-    fn remove_asks_nothing_for_a_color_off_the_list(cx: &mut TestAppContext) {
-        let rig = open(
-            cx,
-            colors_config(&[(ACCENT, ACCENT_SKY), (BACKGROUND_COLOR, CUSTOM)]),
-            &[OTHER_CUSTOM],
-        );
+    fn remove_asks_nothing_for_a_color_off_the_list_or_a_preset(cx: &mut TestAppContext) {
+        let rig = open(cx, colors_config(&[(ACCENT, CUSTOM)]), &[OTHER_CUSTOM]);
 
-        rig.remove(ACCENT, cx);
-        rig.remove(BACKGROUND_COLOR, cx);
+        rig.remove(ACCENT, CUSTOM, cx);
+        rig.remove(ACCENT, ACCENT_MAUVE, cx);
+        rig.remove(BACKGROUND_COLOR, DEFAULT_BACKGROUND_COLOR, cx);
 
         assert!(rig.removed(cx).is_empty());
     }
 
     #[gpui::test]
-    fn a_listed_color_is_removable_only_from_a_field_that_selects_it(cx: &mut TestAppContext) {
-        let rig = open(cx, colors_config(&[(ACCENT, CUSTOM)]), &[CUSTOM]);
+    fn a_listed_color_is_removable_in_both_fields_while_neither_selects_it(
+        cx: &mut TestAppContext,
+    ) {
+        let rig = open(cx, colors_config(&[(ACCENT, ACCENT_SKY)]), &[CUSTOM]);
 
-        assert!(rig.removable(ACCENT, cx));
-        assert!(!rig.removable(BACKGROUND_COLOR, cx));
+        assert!(rig.removable(ACCENT, CUSTOM, cx));
+        assert!(rig.removable(BACKGROUND_COLOR, CUSTOM, cx));
+    }
+
+    #[gpui::test]
+    fn a_listed_color_equal_to_a_preset_is_a_preset_in_that_field(cx: &mut TestAppContext) {
+        let rig = open(cx, OverlayConfig::new(), &[DEFAULT_BACKGROUND_COLOR]);
+
+        assert!(rig.removable(ACCENT, DEFAULT_BACKGROUND_COLOR, cx));
+        assert!(!rig.removable(BACKGROUND_COLOR, DEFAULT_BACKGROUND_COLOR, cx));
+    }
+
+    struct Shown<'a> {
+        panel: Entity<OverlayPropertyPanel>,
+        edits: Entity<Edits>,
+        vcx: &'a mut VisualTestContext,
+        _rt: Runtime,
+    }
+
+    fn show<'a>(cx: &'a mut TestAppContext, stored: OverlayConfig, colors: &[&str]) -> Shown<'a> {
+        let defaults = colors_config(&[
+            (ACCENT, ACCENT_MAUVE),
+            (BACKGROUND_COLOR, DEFAULT_BACKGROUND_COLOR),
+        ]);
+        let (mut panel_launch, _repo, rt) =
+            launch(cx, stored, color_specs(), defaults, HashMap::new());
+        panel_launch.custom_accents = colors.iter().map(|color| (*color).to_owned()).collect();
+        let (panel, vcx) =
+            cx.add_window_view(|_window, cx| OverlayPropertyPanel::new(panel_launch, cx));
+        vcx.simulate_resize(size(PANEL_SIZE, PANEL_SIZE));
+        let edits = vcx.update(|_window, cx| {
+            cx.new(|cx| Edits {
+                removed: Vec::new(),
+                _sub: cx.subscribe(&panel, |this: &mut Edits, _panel, event, _cx| {
+                    if let AccentListEdit::Remove(color) = event {
+                        this.removed.push(color.clone());
+                    }
+                }),
+            })
+        });
+        vcx.run_until_parked();
+        Shown {
+            panel,
+            edits,
+            vcx,
+            _rt: rt,
+        }
+    }
+
+    impl Shown<'_> {
+        fn removed(&mut self) -> Vec<String> {
+            let edits = self.edits.clone();
+            self.vcx
+                .update(|_window, cx| edits.read(cx).removed.clone())
+        }
+
+        fn selected(&mut self, key: &str) -> String {
+            let panel = self.panel.clone();
+            self.vcx.update(|_window, cx| {
+                panel
+                    .read(cx)
+                    .selected_color(key)
+                    .unwrap_or_default()
+                    .to_owned()
+            })
+        }
+    }
+
+    #[gpui::test]
+    fn clicking_the_remove_control_asks_to_remove_without_selecting_the_swatch(
+        cx: &mut TestAppContext,
+    ) {
+        let mut shown = show(cx, colors_config(&[(ACCENT, ACCENT_SKY)]), &[CUSTOM]);
+
+        click_selector(shown.vcx, CUSTOM_REMOVE);
+        shown.vcx.run_until_parked();
+
+        assert_eq!(shown.removed(), vec![CUSTOM.to_owned()]);
+        assert_eq!(shown.selected(ACCENT), ACCENT_SKY);
+    }
+
+    #[gpui::test]
+    fn clicking_a_removable_swatch_selects_it_and_removes_nothing(cx: &mut TestAppContext) {
+        let mut shown = show(cx, colors_config(&[(ACCENT, ACCENT_SKY)]), &[CUSTOM]);
+
+        click_selector(shown.vcx, CUSTOM_SWATCH);
+        shown.vcx.run_until_parked();
+
+        assert_eq!(shown.selected(ACCENT), CUSTOM);
+        assert!(shown.removed().is_empty());
+    }
+
+    #[gpui::test]
+    fn the_remove_control_paints_on_listed_colors_in_both_rows_and_nowhere_else(
+        cx: &mut TestAppContext,
+    ) {
+        let shown = show(cx, colors_config(&[(ACCENT, OTHER_CUSTOM)]), &[CUSTOM]);
+
+        for (selector, painted) in [
+            (CUSTOM_REMOVE, true),
+            (CUSTOM_BACKGROUND_REMOVE, true),
+            (PRESET_REMOVE, false),
+            (OFF_LIST_REMOVE, false),
+        ] {
+            assert_eq!(
+                shown.vcx.debug_bounds(selector).is_some(),
+                painted,
+                "{selector}"
+            );
+        }
     }
 }

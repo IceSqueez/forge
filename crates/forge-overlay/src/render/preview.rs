@@ -41,6 +41,33 @@ impl PreviewAccent {
             Self::Custom(_) => None,
         }
     }
+
+    pub fn from_stored(stored: &str) -> Self {
+        if let Some(channels) = config::hex_color_channels(stored) {
+            return Self::Custom(channels);
+        }
+        match stored {
+            config::ACCENT_SKY => Self::Sky,
+            config::ACCENT_GREEN => Self::Green,
+            config::ACCENT_PEACH => Self::Peach,
+            config::ACCENT_YELLOW => Self::Yellow,
+            config::ACCENT_RED => Self::Red,
+            _ => Self::Mauve,
+        }
+    }
+
+    pub fn channels(self) -> [u8; 3] {
+        let hex = match self {
+            Self::Custom(channels) => return channels,
+            Self::Mauve => config::ACCENT_MAUVE_HEX,
+            Self::Sky => config::ACCENT_SKY_HEX,
+            Self::Green => config::ACCENT_GREEN_HEX,
+            Self::Peach => config::ACCENT_PEACH_HEX,
+            Self::Yellow => config::ACCENT_YELLOW_HEX,
+            Self::Red => config::ACCENT_RED_HEX,
+        };
+        config::hex_color_channels(hex).unwrap_or_default()
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -240,18 +267,7 @@ fn image_of(shape: PreviewShape, config: &OverlayConfig) -> Option<PreviewImage>
 }
 
 fn accent_of(config: &OverlayConfig) -> PreviewAccent {
-    let stored = config::read_str(config, config::ACCENT);
-    if let Some(channels) = config::hex_color_channels(stored) {
-        return PreviewAccent::Custom(channels);
-    }
-    match stored {
-        config::ACCENT_SKY => PreviewAccent::Sky,
-        config::ACCENT_GREEN => PreviewAccent::Green,
-        config::ACCENT_PEACH => PreviewAccent::Peach,
-        config::ACCENT_YELLOW => PreviewAccent::Yellow,
-        config::ACCENT_RED => PreviewAccent::Red,
-        _ => PreviewAccent::Mauve,
-    }
+    PreviewAccent::from_stored(config::read_str(config, config::ACCENT))
 }
 
 fn font_of(config: &OverlayConfig) -> PreviewFont {

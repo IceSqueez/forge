@@ -107,7 +107,7 @@ pub(super) fn render_composition(
     density: Density,
     cx: &App,
 ) -> AnyElement {
-    let accent = accent_color(composition.accent, palette);
+    let accent = accent_color(composition.accent);
     let family = match composition.font {
         PreviewFont::Sans => cx.body_family(),
         PreviewFont::Mono => cx.mono_family(),

@@ -8,7 +8,7 @@ use gpui::{
 };
 
 use crate::icons::{Icon, icon, spinner};
-use crate::key_activation::KeyActivated;
+use crate::key_activation::{KeyActivated, SHOWN_OPACITY};
 use crate::palette::{ForgePalette, with_alpha};
 use crate::presentation::ActivePresentation;
 use crate::tokens::{
@@ -131,6 +131,7 @@ pub struct Button {
     corner: Radius,
     focus_ring: Option<Rgba>,
     tooltip: Option<SharedString>,
+    reveal_group: Option<SharedString>,
     id: Option<ElementId>,
     on_click: Option<ButtonClick>,
 }
@@ -167,6 +168,7 @@ impl Button {
             corner: Radius::Sm,
             focus_ring: None,
             tooltip: None,
+            reveal_group: None,
             id: None,
             on_click: None,
         }
@@ -302,6 +304,12 @@ impl Button {
     }
 
     #[must_use]
+    pub fn revealed_by(mut self, group: impl Into<SharedString>) -> Self {
+        self.reveal_group = Some(group.into());
+        self
+    }
+
+    #[must_use]
     pub fn label(mut self, label: Option<SharedString>) -> Self {
         self.label = label;
         self
@@ -374,7 +382,11 @@ impl Button {
         let hover_fill = c.hover_fill;
         let hover_text = c.hover_text;
         let hover_border = c.hover_border;
+        let reveals = self.reveal_group.is_some();
         let root = root.hover(move |mut style| {
+            if reveals {
+                style = style.opacity(SHOWN_OPACITY);
+            }
             if let Some(fill) = hover_fill {
                 style = style.bg(fill);
             }
@@ -393,11 +405,14 @@ impl Button {
             root = root.tooltip(tooltip_builder(text));
         }
         match self.on_click {
-            Some(handler) => root
-                .key_activated(self.focus_ring.unwrap_or(text))
-                .cursor_pointer()
-                .on_click(handler)
-                .into_any_element(),
+            Some(handler) => {
+                let ring = self.focus_ring.unwrap_or(text);
+                let root = match self.reveal_group {
+                    Some(group) => root.key_activated_revealed_by(group, ring),
+                    None => root.key_activated(ring),
+                };
+                root.cursor_pointer().on_click(handler).into_any_element()
+            }
             None => root.into_any_element(),
         }
     }

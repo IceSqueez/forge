@@ -3,7 +3,8 @@ use forge_components::{
     dropdown, icon, radius, scaled, slider, spacing, toggle, tr,
 };
 use gpui::{
-    AnyElement, App, ClickEvent, Entity, Pixels, SharedString, Window, div, prelude::*, px,
+    AnyElement, App, ClickEvent, Context, Div, Entity, Pixels, Rgba, SharedString, Stateful,
+    Window, div, prelude::*, px,
 };
 
 use super::{
@@ -54,9 +55,23 @@ pub(crate) fn render_config_control<V: 'static>(
             options,
             selected,
             ..
-        } => render_swatch(
-            key, options, selected, palette, id_prefix, view, handlers, density,
-        ),
+        } => options
+            .iter()
+            .fold(swatch_row(density), |row, (name, tint)| {
+                row.child(swatch_tile(
+                    SwatchTile {
+                        key,
+                        name,
+                        tint: *tint,
+                        selected: name == selected,
+                        id_prefix,
+                    },
+                    palette,
+                    view,
+                    handlers.pick,
+                ))
+            })
+            .into_any_element(),
         ConfigField::Choice {
             key,
             options,
@@ -154,56 +169,53 @@ fn render_slide<V: 'static>(
         .into_any_element()
 }
 
-#[expect(
-    clippy::too_many_arguments,
-    reason = "each argument is one input of the rendered control plus the active density"
-)]
-fn render_swatch<V: 'static>(
-    key: &str,
-    options: &[(String, gpui::Rgba)],
-    selected: &str,
-    palette: &ForgePalette,
-    id_prefix: &str,
-    view: &Entity<V>,
-    handlers: &ConfigFieldHandlers<V>,
-    density: Density,
-) -> AnyElement {
-    let mut row = div()
+pub(crate) fn swatch_row(density: Density) -> Div {
+    div()
         .flex()
         .flex_row()
         .flex_wrap()
-        .gap(spacing(Spacing::Xs, density));
+        .gap(spacing(Spacing::Xs, density))
+}
 
-    for (name, tint) in options {
-        let ring = if name == selected {
-            palette.text_primary
-        } else {
-            palette.surface_overlay
-        };
-        let pick_key = key.to_owned();
-        let pick_value = name.clone();
-        let view = view.clone();
-        let on_pick = handlers.pick;
+pub(crate) struct SwatchTile<'a> {
+    pub(crate) key: &'a str,
+    pub(crate) name: &'a str,
+    pub(crate) tint: Rgba,
+    pub(crate) selected: bool,
+    pub(crate) id_prefix: &'a str,
+}
 
-        row = row.child(
-            div()
-                .id(SharedString::from(format!("{id_prefix}-{key}-{name}")))
-                .size(SWATCH_SIZE)
-                .rounded(SWATCH_RADIUS)
-                .bg(*tint)
-                .border(SWATCH_RING)
-                .border_color(ring)
-                .cursor_pointer()
-                .key_activated(palette.text_primary)
-                .on_click(move |_: &ClickEvent, _window: &mut Window, cx: &mut App| {
-                    view.update(cx, |this, cx| {
-                        on_pick(this, pick_key.clone(), pick_value.clone(), cx)
-                    });
-                }),
-        );
-    }
+pub(crate) fn swatch_tile<V: 'static>(
+    tile: SwatchTile<'_>,
+    palette: &ForgePalette,
+    view: &Entity<V>,
+    on_pick: fn(&mut V, String, String, &mut Context<V>),
+) -> Stateful<Div> {
+    let ring = if tile.selected {
+        palette.text_primary
+    } else {
+        palette.surface_overlay
+    };
+    let pick_key = tile.key.to_owned();
+    let pick_value = tile.name.to_owned();
+    let view = view.clone();
+    let id = format!("{}-{}-{}", tile.id_prefix, tile.key, tile.name);
 
-    row.into_any_element()
+    div()
+        .debug_selector(|| id.clone())
+        .id(SharedString::from(id.clone()))
+        .size(SWATCH_SIZE)
+        .rounded(SWATCH_RADIUS)
+        .bg(tile.tint)
+        .border(SWATCH_RING)
+        .border_color(ring)
+        .cursor_pointer()
+        .key_activated(palette.text_primary)
+        .on_click(move |_: &ClickEvent, _window: &mut Window, cx: &mut App| {
+            view.update(cx, |this, cx| {
+                on_pick(this, pick_key.clone(), pick_value.clone(), cx)
+            });
+        })
 }
 
 #[expect(

@@ -286,7 +286,7 @@ impl IconPickerHost {
 impl OverlaysView {
     fn icon_accent(&self, palette: &ForgePalette) -> Rgba {
         self.selected_definition()
-            .map(|definition| self.visuals(definition, palette).accent)
+            .map(|definition| self.visuals(definition, palette).page_accent)
             .unwrap_or(palette.brand)
     }
 

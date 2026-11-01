@@ -421,6 +421,17 @@ mod quick_action_bridge {
         credentials: Arc<dyn CredentialsRepo>,
         sign_out: IntegrationSignOut,
     ) -> Entity<IntegrationDetail> {
+        open_detail_signing_in_with(cx, rt, object, credentials, sign_out, None)
+    }
+
+    pub(super) fn open_detail_signing_in_with(
+        cx: &mut TestAppContext,
+        rt: &tokio::runtime::Runtime,
+        object: BuiltinObject,
+        credentials: Arc<dyn CredentialsRepo>,
+        sign_out: IntegrationSignOut,
+        twitch_sign_in: Option<forge_platform_twitch::TwitchSignIn>,
+    ) -> Entity<IntegrationDetail> {
         cx.update(|cx| {
             cx.set_global(Presentation::new(ThemeId::ForgeDefault, Density::Cozy));
         });
@@ -441,7 +452,7 @@ mod quick_action_bridge {
                     twitch_slot: None,
                     kick_slot: None,
                     youtube_slot: None,
-                    twitch_sign_in: None,
+                    twitch_sign_in,
                     youtube_sign_in: None,
                     kick_sign_in: None,
                     obs_install_seed: ObsInstallSeed::new(
@@ -839,6 +850,50 @@ mod quick_action_bridge {
             shown_labels(cx, &view),
             vec!["second session, shield on".to_owned()]
         );
+    }
+
+    #[gpui::test]
+    fn a_platform_without_a_session_opens_its_connect_flow_ready_to_sign_in(
+        cx: &mut TestAppContext,
+    ) {
+        let rt = runtime();
+        let _enter = rt.enter();
+        let (backend, _writes) = test_backend();
+        let credentials = backend.credentials_repo();
+        let sign_out = sign_out_over(
+            Arc::clone(&credentials),
+            PlatformCredentialManagers::default(),
+            Arc::new(NoSlots),
+        );
+        let publisher: Arc<dyn EventPublisher> =
+            Arc::new(forge_events::test_support::NullPublisher);
+        let sign_in = forge_platform_twitch::TwitchAssembly::new(
+            &mut forge_registry::SubActionRegistry::new(),
+            Arc::clone(&credentials),
+            &publisher,
+            &forge_platform_core::PlatformEndpoints::default(),
+            "client".to_owned(),
+        )
+        .unwrap()
+        .sign_in();
+
+        let view = open_detail_signing_in_with(
+            cx,
+            &rt,
+            ShiftingActions::for_integration("twitch", "x").object(),
+            credentials,
+            sign_out,
+            Some(sign_in),
+        );
+
+        let ready = view.read_with(cx, |detail, cx| {
+            detail
+                .sign_in
+                .connect
+                .as_ref()
+                .is_some_and(|connect| connect.view.read(cx).can_sign_in_with_twitch())
+        });
+        assert!(ready);
     }
 
     #[gpui::test]

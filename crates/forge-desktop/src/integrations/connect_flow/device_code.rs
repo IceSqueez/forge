@@ -172,6 +172,12 @@ fn scopes_preview() -> String {
 }
 
 impl ConnectFlow {
+    #[cfg(test)]
+    pub(crate) fn can_sign_in_with_twitch(&self) -> bool {
+        self.device_flow()
+            .is_some_and(|flow| flow.sign_in.is_some())
+    }
+
     fn device_flow(&self) -> Option<&DeviceCodeState> {
         match &self.state {
             FlowState::DeviceCode(state) => Some(state),

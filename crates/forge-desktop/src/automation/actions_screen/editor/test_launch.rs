@@ -110,9 +110,10 @@ impl ActionEditor {
         palette: &ForgePalette,
     ) -> TestRunRow {
         let runner = self.deps.sub_action_registry.get(&step.kind_id);
-        let name = runner
+        let kind_name = runner
             .map(crate::shared::kind_copy::step_name)
             .unwrap_or_else(|| tr!("action_editor_kind_sub_action"));
+        let name = row_name(step.label.as_deref(), kind_name);
         let (icon, color) = super::editor::step_glyph(
             &step.kind_id,
             runner
@@ -161,4 +162,11 @@ impl ActionEditor {
             }
         }
     }
+}
+
+fn row_name(label: Option<&str>, kind_name: String) -> String {
+    label
+        .map(str::trim)
+        .filter(|label| !label.is_empty())
+        .map_or(kind_name, str::to_owned)
 }

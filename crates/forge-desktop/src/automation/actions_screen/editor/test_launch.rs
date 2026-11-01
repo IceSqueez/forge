@@ -170,3 +170,23 @@ fn row_name(label: Option<&str>, kind_name: String) -> String {
         .filter(|label| !label.is_empty())
         .map_or(kind_name, str::to_owned)
 }
+
+#[cfg(test)]
+mod row_name_tests {
+    use super::row_name;
+
+    #[test]
+    fn a_step_label_names_the_row_unless_it_is_blank() {
+        for (label, expected) in [
+            (
+                Some("Show alert, named cheerer"),
+                "Show alert, named cheerer",
+            ),
+            (Some("  padded  "), "padded"),
+            (Some("   "), "Send to Overlay"),
+            (None, "Send to Overlay"),
+        ] {
+            assert_eq!(row_name(label, "Send to Overlay".to_owned()), expected);
+        }
+    }
+}

@@ -1,28 +1,18 @@
-use std::collections::{HashSet, VecDeque};
+use forge_net::DedupSet;
 
 const WINDOW: usize = 512;
 
-#[derive(Default)]
-pub(super) struct MessageIdWindow {
-    seen: HashSet<String>,
-    order: VecDeque<String>,
+pub(super) struct MessageIdWindow(DedupSet);
+
+impl Default for MessageIdWindow {
+    fn default() -> Self {
+        Self(DedupSet::bounded(WINDOW))
+    }
 }
 
 impl MessageIdWindow {
     pub(super) fn is_duplicate(&mut self, message_id: &str) -> bool {
-        if message_id.is_empty() {
-            return false;
-        }
-        if !self.seen.insert(message_id.to_owned()) {
-            return true;
-        }
-        self.order.push_back(message_id.to_owned());
-        if self.order.len() > WINDOW
-            && let Some(evicted) = self.order.pop_front()
-        {
-            self.seen.remove(&evicted);
-        }
-        false
+        !message_id.is_empty() && !self.0.try_insert(message_id)
     }
 }
 

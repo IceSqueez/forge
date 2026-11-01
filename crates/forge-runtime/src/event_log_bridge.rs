@@ -1,4 +1,4 @@
-use std::fmt::{self, Write as _};
+use std::fmt;
 use std::sync::{Arc, OnceLock};
 
 use crate::bus::EventBus;
@@ -71,15 +71,7 @@ pub(crate) fn identity_digest(handle: &str) -> String {
     hasher.update(salt());
     hasher.update(handle.as_bytes());
     let digest = hasher.finalize();
-    let mut out = String::with_capacity(DIGEST_BYTES * 2);
-    for byte in digest.iter().take(DIGEST_BYTES) {
-        #[expect(
-            clippy::let_underscore_must_use,
-            reason = "writing to a String cannot fail"
-        )]
-        let _ = write!(out, "{byte:02x}");
-    }
-    out
+    forge_types::to_lower_hex(&digest[..DIGEST_BYTES])
 }
 
 fn is_token(value: &str) -> bool {

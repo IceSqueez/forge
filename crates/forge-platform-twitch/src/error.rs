@@ -3,7 +3,7 @@ use forge_storage::StorageError;
 use thiserror::Error;
 
 use crate::bot_account::BotUnavailable;
-use crate::chat::MAX_WHISPER_CHARS;
+use crate::chat::{MAX_MESSAGE_LEN, MAX_WHISPER_CHARS};
 
 #[derive(Debug, Error)]
 pub enum TwitchError {
@@ -19,8 +19,10 @@ pub enum TwitchError {
     Transport(String),
     #[error("{0}")]
     UndecodableResponse(String),
+    #[error("user not found: {login}")]
+    UserNotFound { login: String },
 
-    #[error("message exceeds 500-character limit")]
+    #[error("message exceeds {MAX_MESSAGE_LEN}-character limit")]
     MessageTooLong,
     #[error("not connected")]
     NotConnected,

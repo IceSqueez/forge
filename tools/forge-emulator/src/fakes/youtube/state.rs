@@ -28,6 +28,7 @@ pub(crate) struct Inner {
     pub(crate) tokens: Tokens,
     pub(crate) broadcast: Broadcast,
     pub(crate) chat: Vec<Value>,
+    pub(crate) unmodeled_insert: bool,
     next_message: u64,
 }
 
@@ -43,6 +44,7 @@ impl Inner {
     fn new(config: &FakeYouTubeConfig) -> Self {
         Self {
             ledger: YouTubeLedger::default(),
+            unmodeled_insert: false,
             tokens: Tokens {
                 access: config.access_token.clone(),
                 refresh: config.refresh_token.clone(),

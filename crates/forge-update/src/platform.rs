@@ -1,3 +1,5 @@
+pub(crate) const BUNDLE_EXTENSION: &str = "app";
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum Platform {
     MacosUniversal,

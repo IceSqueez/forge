@@ -150,16 +150,12 @@ impl ProcessHost for FakeHost {
             .lock_probe
             .as_ref()
             .map(|data_dir| SupervisorLock::is_held(data_dir).unwrap());
-        let pid = {
-            let mut log = self.log.lock().unwrap();
-            log.launches.push(Launch {
-                program: program.to_path_buf(),
-                args: args.to_vec(),
-                watched,
-                lock_held,
-            });
-            u32::try_from(log.launches.len()).unwrap() + 1000
-        };
+        self.log.lock().unwrap().launches.push(Launch {
+            program: program.to_path_buf(),
+            args: args.to_vec(),
+            watched,
+            lock_held,
+        });
         let spawn = self
             .queue
             .pop_front()
@@ -172,7 +168,6 @@ impl ProcessHost for FakeHost {
                 behavior,
                 honours_kill,
             } => Ok(Box::new(FakeChild {
-                pid,
                 behavior,
                 honours_kill,
                 polls: 0,
@@ -185,7 +180,6 @@ impl ProcessHost for FakeHost {
 }
 
 struct FakeChild {
-    pid: u32,
     behavior: Behavior,
     honours_kill: bool,
     polls: u32,
@@ -195,10 +189,6 @@ struct FakeChild {
 }
 
 impl ChildProcess for FakeChild {
-    fn id(&self) -> u32 {
-        self.pid
-    }
-
     fn try_exit(&mut self) -> Result<Option<ChildExit>, UpdateError> {
         if self.exited.is_some() {
             return Ok(self.exited);

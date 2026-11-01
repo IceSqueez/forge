@@ -276,7 +276,7 @@ async fn forge_probe_reads_the_version_of_a_session_that_is_not_authenticated() 
         .await
         .unwrap();
 
-    assert!(!probe.api_version.is_empty());
+    assert!(!probe.vtube_studio_version.is_empty());
     assert!(!probe.already_authenticated);
 }
 

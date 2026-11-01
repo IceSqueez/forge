@@ -186,7 +186,7 @@ async fn download_errors_never_show_the_artifact_url() {
     .await;
     let staging = tempfile::tempdir().unwrap();
     let mut errors = Vec::new();
-    for url in [server.url("/artifact"), support::refused_url().await] {
+    for url in [server.url("/artifact"), support::refused_url()] {
         errors.push(
             download(&artifact(url, &body), staging.path())
                 .await

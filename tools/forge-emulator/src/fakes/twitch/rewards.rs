@@ -240,13 +240,13 @@ fn apply_limit(
     }
 }
 
-pub(crate) struct RewardAnswer {
+pub(crate) struct HelixAnswer {
     pub(crate) status: StatusCode,
     pub(crate) body: Value,
     pub(crate) notification: Option<(&'static str, Value)>,
 }
 
-impl RewardAnswer {
+impl HelixAnswer {
     fn ok(body: Value) -> Self {
         Self {
             status: StatusCode::OK,
@@ -305,16 +305,16 @@ impl RewardStore {
     fn broadcaster_refusal(
         config: &FakeTwitchConfig,
         query: &[(String, String)],
-    ) -> Option<RewardAnswer> {
+    ) -> Option<HelixAnswer> {
         (param(query, "broadcaster_id") != Some(config.broadcaster_user_id.as_str()))
-            .then(|| RewardAnswer::refused(StatusCode::FORBIDDEN, WRONG_BROADCASTER))
+            .then(|| HelixAnswer::refused(StatusCode::FORBIDDEN, WRONG_BROADCASTER))
     }
 
     pub(crate) fn list(
         &self,
         config: &FakeTwitchConfig,
         query: &[(String, String)],
-    ) -> RewardAnswer {
+    ) -> HelixAnswer {
         if let Some(refusal) = Self::broadcaster_refusal(config, query) {
             return refusal;
         }
@@ -327,7 +327,7 @@ impl RewardStore {
             .filter(|reward| wanted_id.is_none_or(|id| reward.id == id))
             .map(|reward| reward.helix_row(config))
             .collect();
-        RewardAnswer::ok(json!({ "data": data }))
+        HelixAnswer::ok(json!({ "data": data }))
     }
 
     pub(crate) fn create(
@@ -335,37 +335,37 @@ impl RewardStore {
         config: &FakeTwitchConfig,
         query: &[(String, String)],
         body: Option<&Value>,
-    ) -> RewardAnswer {
+    ) -> HelixAnswer {
         if let Some(refusal) = Self::broadcaster_refusal(config, query) {
             return refusal;
         }
         let Some(fields) = body.and_then(Value::as_object) else {
-            return RewardAnswer::refused(StatusCode::BAD_REQUEST, "request body is missing");
+            return HelixAnswer::refused(StatusCode::BAD_REQUEST, "request body is missing");
         };
         let Some(title) = fields.get("title").and_then(Value::as_str) else {
-            return RewardAnswer::refused(
+            return HelixAnswer::refused(
                 StatusCode::BAD_REQUEST,
                 "Missing required parameter title",
             );
         };
         if fields.get("cost").and_then(Value::as_i64).is_none() {
-            return RewardAnswer::refused(
+            return HelixAnswer::refused(
                 StatusCode::BAD_REQUEST,
                 "Missing required parameter cost",
             );
         }
         if self.rewards.len() >= MAX_CUSTOM_REWARDS {
-            return RewardAnswer::refused(StatusCode::BAD_REQUEST, TOO_MANY_REWARDS);
+            return HelixAnswer::refused(StatusCode::BAD_REQUEST, TOO_MANY_REWARDS);
         }
         if self.title_taken(title, None) {
-            return RewardAnswer::refused(StatusCode::BAD_REQUEST, DUPLICATE_ON_CREATE);
+            return HelixAnswer::refused(StatusCode::BAD_REQUEST, DUPLICATE_ON_CREATE);
         }
         let mut reward = FakeReward::new(&config.client_id, title);
         if let Err(reason) = reward.apply(fields) {
-            return RewardAnswer::refused(StatusCode::BAD_REQUEST, reason);
+            return HelixAnswer::refused(StatusCode::BAD_REQUEST, reason);
         }
         self.rewards.push(reward.clone());
-        RewardAnswer::ok(json!({ "data": [reward.helix_row(config)] }))
+        HelixAnswer::ok(json!({ "data": [reward.helix_row(config)] }))
             .notifying(REWARD_ADD, reward.eventsub_event(config))
     }
 
@@ -373,19 +373,19 @@ impl RewardStore {
         &self,
         config: &FakeTwitchConfig,
         query: &[(String, String)],
-    ) -> Result<usize, RewardAnswer> {
+    ) -> Result<usize, HelixAnswer> {
         if let Some(refusal) = Self::broadcaster_refusal(config, query) {
             return Err(refusal);
         }
         let id = param(query, "id")
-            .ok_or_else(|| RewardAnswer::refused(StatusCode::BAD_REQUEST, MISSING_ID))?;
+            .ok_or_else(|| HelixAnswer::refused(StatusCode::BAD_REQUEST, MISSING_ID))?;
         let index = self
             .rewards
             .iter()
             .position(|reward| reward.id == id)
-            .ok_or_else(|| RewardAnswer::refused(StatusCode::NOT_FOUND, NOT_FOUND))?;
+            .ok_or_else(|| HelixAnswer::refused(StatusCode::NOT_FOUND, NOT_FOUND))?;
         if self.rewards[index].owner_client_id != config.client_id {
-            return Err(RewardAnswer::refused(StatusCode::FORBIDDEN, NOT_OWNED));
+            return Err(HelixAnswer::refused(StatusCode::FORBIDDEN, NOT_OWNED));
         }
         Ok(index)
     }
@@ -395,26 +395,26 @@ impl RewardStore {
         config: &FakeTwitchConfig,
         query: &[(String, String)],
         body: Option<&Value>,
-    ) -> RewardAnswer {
+    ) -> HelixAnswer {
         let index = match self.owned_index(config, query) {
             Ok(index) => index,
             Err(refusal) => return refusal,
         };
         let Some(fields) = body.and_then(Value::as_object) else {
-            return RewardAnswer::refused(StatusCode::BAD_REQUEST, "request body is missing");
+            return HelixAnswer::refused(StatusCode::BAD_REQUEST, "request body is missing");
         };
         let id = self.rewards[index].id.clone();
         if let Some(title) = fields.get("title").and_then(Value::as_str)
             && self.title_taken(title, Some(&id))
         {
-            return RewardAnswer::refused(StatusCode::BAD_REQUEST, DUPLICATE_ON_UPDATE);
+            return HelixAnswer::refused(StatusCode::BAD_REQUEST, DUPLICATE_ON_UPDATE);
         }
         let mut updated = self.rewards[index].clone();
         if let Err(reason) = updated.apply(fields) {
-            return RewardAnswer::refused(StatusCode::BAD_REQUEST, reason);
+            return HelixAnswer::refused(StatusCode::BAD_REQUEST, reason);
         }
         self.rewards[index] = updated.clone();
-        RewardAnswer::ok(json!({ "data": [updated.helix_row(config)] }))
+        HelixAnswer::ok(json!({ "data": [updated.helix_row(config)] }))
             .notifying(REWARD_UPDATE, updated.eventsub_event(config))
     }
 
@@ -422,13 +422,13 @@ impl RewardStore {
         &mut self,
         config: &FakeTwitchConfig,
         query: &[(String, String)],
-    ) -> RewardAnswer {
+    ) -> HelixAnswer {
         let index = match self.owned_index(config, query) {
             Ok(index) => index,
             Err(refusal) => return refusal,
         };
         let removed = self.rewards.remove(index);
-        RewardAnswer {
+        HelixAnswer {
             status: StatusCode::NO_CONTENT,
             body: Value::Null,
             notification: None,

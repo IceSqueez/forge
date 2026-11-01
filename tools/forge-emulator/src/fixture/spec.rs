@@ -50,14 +50,14 @@ pub struct MonobankAccount {
     pub jar_id: String,
 }
 
-#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields, default)]
 pub struct ObsConnection {
     pub password: String,
     pub port: u16,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields, default)]
 pub struct VTubeConnection {
     pub token: String,
@@ -73,7 +73,7 @@ impl Default for VTubeConnection {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct DiscordWebhook {
     pub name: String,
@@ -88,7 +88,7 @@ pub struct QueueFixture {
     pub concurrency: u32,
 }
 
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Clone, PartialEq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields, default)]
 pub struct TwitchAccount {
     pub client_id: String,
@@ -155,6 +155,44 @@ impl Default for YouTubeAccount {
             refresh_token: "emulator-youtube-refresh-token".to_owned(),
             token_expired: false,
         }
+    }
+}
+
+impl fmt::Debug for ObsConnection {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("ObsConnection")
+            .field("password", &REDACTED)
+            .field("port", &self.port)
+            .finish()
+    }
+}
+
+impl fmt::Debug for VTubeConnection {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("VTubeConnection")
+            .field("token", &REDACTED)
+            .field("port", &self.port)
+            .finish()
+    }
+}
+
+impl fmt::Debug for DiscordWebhook {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("DiscordWebhook")
+            .field("name", &self.name)
+            .field("url", &REDACTED)
+            .finish()
+    }
+}
+
+impl fmt::Debug for TwitchAccount {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("TwitchAccount")
+            .field("client_id", &self.client_id)
+            .field("user_id", &self.user_id)
+            .field("login", &self.login)
+            .field("access_token", &REDACTED)
+            .finish()
     }
 }
 

@@ -379,7 +379,6 @@ fn a_marker_left_over_from_before_the_launch_does_not_count_as_healthy() {
     std::fs::write(
         crate::HealthMarker::path_in(&fixture.data_dir),
         serde_json::to_vec(&crate::HealthMarker {
-            pid: 1,
             version: TO.to_owned(),
         })
         .unwrap(),

@@ -329,28 +329,8 @@ async fn main() -> ExitCode {
         Ok(code) => code,
         Err(e) => {
             eprintln!("forge-emulator: {e}");
-            ExitCode::from(exit_code(&e))
+            ExitCode::from(e.exit_code())
         }
-    }
-}
-
-fn exit_code(error: &EmulatorError) -> u8 {
-    match error {
-        EmulatorError::GameInProgress { .. } | EmulatorError::GameStateUnreadable { .. } => 3,
-        EmulatorError::LiveDataDir { .. } | EmulatorError::LiveHome { .. } => 4,
-        EmulatorError::ForgeExited { .. } => 5,
-        EmulatorError::EndpointOverrideRefused { .. } => 6,
-        EmulatorError::ServerPortTaken { .. } => 7,
-        EmulatorError::ReadinessTimeout { .. } => 8,
-        EmulatorError::ScenarioUnreadable { .. } => 9,
-        EmulatorError::ScenarioSyntax { .. } => 10,
-        EmulatorError::ScenarioInvalid { .. } => 11,
-        EmulatorError::StressProfileUnreadable { .. } => 10,
-        EmulatorError::StressProfileInvalid { .. } => 11,
-        EmulatorError::ServerNotStarted { .. } => 12,
-        EmulatorError::BootFailed { .. } => 13,
-        EmulatorError::AlreadyRunning { .. } => 14,
-        _ => 1,
     }
 }
 
@@ -501,7 +481,7 @@ async fn fake_obs(password: Option<String>, scenes: Vec<String>) -> Result<(), E
 async fn fake_vtube(token: Option<String>, deny_token_requests: bool) -> Result<(), EmulatorError> {
     let defaults = FakeVTubeConfig::default();
     let config = FakeVTubeConfig {
-        token: token.unwrap_or(defaults.token.clone()),
+        token: token.unwrap_or_else(|| defaults.token.clone()),
         approve_token_requests: !deny_token_requests,
         ..defaults
     };
@@ -530,12 +510,7 @@ async fn fake_donatello(config: FakeDonatelloConfig) -> Result<(), EmulatorError
     let mut console = DonatelloConsole::new(&fake);
     serve_console(|line| match parse_donatello_command(line) {
         Ok(None) => Ok(None),
-        Ok(Some(command)) => console
-            .apply(command)
-            .map(Some)
-            .map_err(|e| ConsoleRefusal {
-                reason: e.to_string(),
-            }),
+        Ok(Some(command)) => console.apply(command).map(Some),
         Err(refusal) => Err(refusal),
     })
     .await?;
@@ -738,17 +713,27 @@ async fn print_until_stopped(
                 });
             }
             observation = events.next() => match observation {
-                Some(Observation::Event(event)) => print_event(&mut out, &event)?,
-                Some(Observation::Dropped(count)) => {
-                    eprintln!("forge-emulator: server dropped {count} events");
-                }
-                Some(Observation::Undecodable { frame, reason }) => {
-                    eprintln!("forge-emulator: undecodable frame ({reason}): {frame}");
-                }
+                Some(observation) => report_observation(&mut out, observation)?,
                 None => return Err(EmulatorError::ConnectionClosed),
             },
         }
     }
+}
+
+fn report_observation(
+    out: &mut std::io::Stdout,
+    observation: Observation,
+) -> Result<(), EmulatorError> {
+    match observation {
+        Observation::Event(event) => print_event(out, &event)?,
+        Observation::Dropped(count) => {
+            eprintln!("forge-emulator: server dropped {count} events");
+        }
+        Observation::Undecodable { frame, reason } => {
+            eprintln!("forge-emulator: undecodable frame ({reason}): {frame}");
+        }
+    }
+    Ok(())
 }
 
 async fn stop_requested() {
@@ -813,7 +798,7 @@ async fn watch(host: &str, port: u16, history: u32) -> Result<(), EmulatorError>
     client.authenticate(&token).await?;
     client.subscribe(&[EventFilter::default()]).await?;
 
-    let interrupted = tokio::signal::ctrl_c();
+    let interrupted = stop_requested();
     tokio::pin!(interrupted);
     let mut out = std::io::stdout();
     if history > 0 {
@@ -823,15 +808,9 @@ async fn watch(host: &str, port: u16, history: u32) -> Result<(), EmulatorError>
     }
     loop {
         tokio::select! {
-            _ = &mut interrupted => return Ok(()),
+            () = &mut interrupted => return Ok(()),
             observation = observations.next() => match observation {
-                Some(Observation::Event(event)) => print_event(&mut out, &event)?,
-                Some(Observation::Dropped(count)) => {
-                    eprintln!("forge-emulator: server dropped {count} events");
-                }
-                Some(Observation::Undecodable { frame, reason }) => {
-                    eprintln!("forge-emulator: undecodable frame ({reason}): {frame}");
-                }
+                Some(observation) => report_observation(&mut out, observation)?,
                 None => return Err(EmulatorError::ConnectionClosed),
             },
         }

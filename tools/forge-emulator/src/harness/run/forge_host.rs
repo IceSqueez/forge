@@ -1,3 +1,4 @@
+use std::sync::Arc;
 use std::sync::atomic::{AtomicU32, Ordering};
 use std::time::Duration;
 
@@ -12,9 +13,20 @@ use crate::harness::launch::{ForgeExit, ForgeProcess, GameGuard, LaunchSpec, Liv
 
 const BOOT_HISTORY_LIMIT: u32 = 500;
 
+pub(super) async fn abandon(
+    process: ForgeProcess,
+    grace: Duration,
+    cause: EmulatorError,
+) -> EmulatorError {
+    match process.shutdown(grace).await {
+        Ok(_) => cause,
+        Err(teardown) => cause.with_teardown_failure(teardown),
+    }
+}
+
 pub struct LiveForge {
     pub process: Option<ForgeProcess>,
-    pub client: ControlClient,
+    pub client: Arc<ControlClient>,
     feeder: Option<JoinHandle<()>>,
 }
 
@@ -47,7 +59,7 @@ impl ForgeHost {
             last_pid: AtomicU32::new(process.pid()),
             live: Mutex::new(Some(LiveForge {
                 process: Some(process),
-                client,
+                client: Arc::new(client),
                 feeder: Some(feeder),
             })),
             journal,
@@ -60,7 +72,7 @@ impl ForgeHost {
             last_pid: AtomicU32::new(0),
             live: Mutex::new(Some(LiveForge {
                 process: None,
-                client,
+                client: Arc::new(client),
                 feeder: None,
             })),
             journal,
@@ -95,17 +107,13 @@ impl ForgeHost {
             .await
         {
             Ok(connected) => connected,
-            Err(e) => {
-                let _ = process.shutdown(relaunch.shutdown_grace).await;
-                return Err(e);
-            }
+            Err(e) => return Err(abandon(process, relaunch.shutdown_grace, e).await),
         };
         if !relaunch.filters.is_empty()
             && let Err(e) = client.subscribe(&relaunch.filters).await
         {
             drop(client);
-            let _ = process.shutdown(relaunch.shutdown_grace).await;
-            return Err(e);
+            return Err(abandon(process, relaunch.shutdown_grace, e).await);
         }
         match client.recent_events(BOOT_HISTORY_LIMIT).await {
             Ok(history) => self.journal.seed(
@@ -120,8 +128,7 @@ impl ForgeHost {
             ),
             Err(e) => {
                 drop(client);
-                let _ = process.shutdown(relaunch.shutdown_grace).await;
-                return Err(e);
+                return Err(abandon(process, relaunch.shutdown_grace, e).await);
             }
         }
         let pid = process.pid();
@@ -129,7 +136,7 @@ impl ForgeHost {
         let feeder = self.journal.attach(events);
         *self.live.lock().await = Some(LiveForge {
             process: Some(process),
-            client,
+            client: Arc::new(client),
             feeder: Some(feeder),
         });
         Ok(pid)
@@ -153,7 +160,13 @@ impl ForgeHost {
 }
 
 impl LiveForge {
-    pub fn into_parts(self) -> (Option<ForgeProcess>, ControlClient, Option<JoinHandle<()>>) {
+    pub fn into_parts(
+        self,
+    ) -> (
+        Option<ForgeProcess>,
+        Arc<ControlClient>,
+        Option<JoinHandle<()>>,
+    ) {
         (self.process, self.client, self.feeder)
     }
 }

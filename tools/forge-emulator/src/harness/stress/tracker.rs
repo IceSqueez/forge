@@ -224,11 +224,7 @@ impl Tracker {
         }
     }
 
-    pub fn action_position(&self, name: &str) -> Option<usize> {
-        self.action_index(name)
-    }
-
-    fn action_index(&self, name: &str) -> Option<usize> {
+    pub fn action_index(&self, name: &str) -> Option<usize> {
         self.actions.iter().position(|action| action == name)
     }
 
@@ -274,13 +270,6 @@ impl Tracker {
             .filter(|(runs, _)| runs.contains(&action))
             .map(|(_, injected)| *injected)
             .sum()
-    }
-
-    pub fn injected_of(&self, stimulus: usize) -> u64 {
-        self.injected_per_stimulus
-            .get(stimulus)
-            .copied()
-            .unwrap_or(0)
     }
 }
 

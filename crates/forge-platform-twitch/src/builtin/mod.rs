@@ -271,23 +271,35 @@ impl TwitchIntegrationBundle {
         self.record_reported_connection(state.to_connection_state());
     }
 
-    fn spawn_stored_expiry_read(bundle: &Arc<Self>) {
-        let bundle = Arc::clone(bundle);
+    fn spawn_until_retired<F, Fut>(bundle: &Arc<Self>, work: F)
+    where
+        F: FnOnce(Arc<Self>) -> Fut,
+        Fut: Future<Output = ()> + Send + 'static,
+    {
+        let retired = bundle.retired.clone();
+        let work = work(Arc::clone(bundle));
         tokio::spawn(async move {
+            tokio::select! {
+                () = retired.cancelled() => {}
+                () = work => {}
+            }
+        });
+    }
+
+    fn spawn_stored_expiry_read(bundle: &Arc<Self>) {
+        Self::spawn_until_retired(bundle, |bundle| async move {
             bundle.read_stored_expiry().await;
         });
     }
 
     fn spawn_identity_refresh(bundle: &Arc<Self>) {
-        let bundle = Arc::clone(bundle);
-        tokio::spawn(async move {
+        Self::spawn_until_retired(bundle, |bundle| async move {
             bundle.refresh_identity().await;
         });
     }
 
     fn spawn_lifecycle_seed(bundle: &Arc<Self>) {
-        let bundle = Arc::clone(bundle);
-        tokio::spawn(async move {
+        Self::spawn_until_retired(bundle, |bundle| async move {
             bundle
                 .lifecycle
                 .seed_from_helix(bundle.transport.as_ref(), &bundle.config.broadcaster_id)
@@ -300,8 +312,7 @@ impl TwitchIntegrationBundle {
     }
 
     fn spawn_goal_sync(bundle: &Arc<Self>) {
-        let bundle = Arc::clone(bundle);
-        tokio::spawn(async move {
+        Self::spawn_until_retired(bundle, |bundle| async move {
             match creator_goals::publish_current_goals(
                 bundle.transport.as_ref(),
                 bundle.bus.as_ref(),

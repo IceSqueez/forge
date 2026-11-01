@@ -83,10 +83,26 @@ enum Verdict {
     Unhealthy(RollbackReason),
 }
 
+fn acquire_lock(context: &SupervisorContext<'_>) -> Result<SupervisorLock, UpdateError> {
+    for _ in 0..context.settings.file_retry_attempts {
+        if let Some(lock) = SupervisorLock::try_acquire(context.data_dir)? {
+            return Ok(lock);
+        }
+        context.clock.sleep(context.settings.file_retry_delay);
+    }
+    SupervisorLock::try_acquire(context.data_dir)?.ok_or(UpdateError::SupervisorBusy)
+}
+
+fn file_retry<'a>(clock: &'a dyn MonotonicClock, settings: SupervisorSettings) -> FileRetry<'a> {
+    FileRetry {
+        clock,
+        attempts: settings.file_retry_attempts,
+        delay: settings.file_retry_delay,
+    }
+}
+
 pub fn run_supervisor(context: SupervisorContext<'_>) -> Result<SupervisorOutcome, UpdateError> {
-    let Some(lock) = SupervisorLock::try_acquire(context.data_dir)? else {
-        return Err(UpdateError::SupervisorBusy);
-    };
+    let lock = acquire_lock(&context)?;
     let data_dir = context.data_dir;
     let (Some(journal), Some(state)) = (
         UpdateJournal::read_blocking(data_dir)?,
@@ -120,11 +136,7 @@ struct Supervisor<'a> {
 
 impl Supervisor<'_> {
     fn retry(&self) -> FileRetry<'_> {
-        FileRetry {
-            clock: self.context.clock,
-            attempts: self.context.settings.file_retry_attempts,
-            delay: self.context.settings.file_retry_delay,
-        }
+        file_retry(self.context.clock, self.context.settings)
     }
 
     fn set_phase(&mut self, phase: ApplyPhase) -> Result<(), UpdateError> {
@@ -150,11 +162,7 @@ impl Supervisor<'_> {
                 clock: self.context.clock,
                 installer_timeout: settings.installer_timeout,
                 poll_interval: settings.poll_interval,
-                retry: FileRetry {
-                    clock: self.context.clock,
-                    attempts: settings.file_retry_attempts,
-                    delay: settings.file_retry_delay,
-                },
+                retry: file_retry(self.context.clock, settings),
             },
         );
         if let Err(error) = applied {
@@ -231,6 +239,7 @@ impl Supervisor<'_> {
 
     fn marker_confirms(&self) -> bool {
         read_health_marker(self.context.data_dir)
+            .inspect_err(|error| tracing::debug!(%error, "health marker is unreadable"))
             .ok()
             .flatten()
             .is_some_and(|marker: HealthMarker| marker.is_for_version(&self.journal.to_version))
@@ -239,7 +248,8 @@ impl Supervisor<'_> {
     fn stop(&self, candidate: &mut dyn ChildProcess) {
         let settings = self.context.settings;
         let clock = self.context.clock;
-        if candidate.kill().is_err() {
+        if let Err(error) = candidate.kill() {
+            tracing::warn!(%error, "the update candidate could not be killed");
             return;
         }
         let started = clock.now();

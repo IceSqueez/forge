@@ -142,19 +142,11 @@ fn resolve_glyph(key: &str, name: &str) -> Result<ResolvedMedia, MediaIssue> {
 }
 
 fn content_identity(bytes: &[u8]) -> String {
-    use std::fmt::Write as _;
-
     let digest = Sha256::digest(bytes);
     let mut identity = String::with_capacity(CONTENT_DIGEST_LABEL.len() + 1 + digest.len() * 2);
     identity.push_str(CONTENT_DIGEST_LABEL);
     identity.push(IDENTITY_SEPARATOR);
-    for byte in digest {
-        #[expect(
-            clippy::let_underscore_must_use,
-            reason = "writing to a String cannot fail"
-        )]
-        let _ = write!(identity, "{byte:02x}");
-    }
+    identity.push_str(&forge_types::to_lower_hex(&digest));
     identity
 }
 

@@ -2,6 +2,7 @@ use sqlx::SqliteConnection;
 
 use crate::error::SqliteStorageError;
 use crate::kind_id_rename::{OBS_KIND_ID_RENAME_VERSION, VTUBE_KIND_ID_RENAME_VERSION};
+use crate::row_int::decode_u32;
 
 pub static MIGRATIONS: sqlx::migrate::Migrator = sqlx::migrate!("./migrations");
 
@@ -63,7 +64,7 @@ pub(crate) async fn applied_version(pool: &sqlx::SqlitePool) -> Result<u32, Sqli
         .await
         .map_err(SqliteStorageError::Sqlx)?;
 
-    Ok(version.unwrap_or(0) as u32)
+    decode_u32("migration version", version.unwrap_or(0))
 }
 
 pub(crate) async fn prepare_journal(pool: &sqlx::SqlitePool) -> Result<(), SqliteStorageError> {

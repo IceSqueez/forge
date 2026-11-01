@@ -1,4 +1,4 @@
-use std::collections::HashMap;
+use std::collections::BTreeMap;
 use std::fmt;
 
 use crate::config::{effective_overlay_config, validate_overlay_config};
@@ -7,7 +7,7 @@ use crate::error::OverlayError;
 
 #[derive(Default)]
 pub struct OverlayKindRegistry {
-    descriptors: HashMap<String, Box<dyn OverlayKindDescriptor>>,
+    descriptors: BTreeMap<String, Box<dyn OverlayKindDescriptor>>,
 }
 
 impl fmt::Debug for OverlayKindRegistry {

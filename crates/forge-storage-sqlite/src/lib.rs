@@ -24,6 +24,7 @@ mod provider;
 mod queue_impl;
 mod registry_migration;
 pub(crate) mod retention_task;
+mod row_int;
 mod scheduled_run_impl;
 mod schema_probe;
 mod script_impl;

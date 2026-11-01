@@ -30,7 +30,6 @@ impl ChildExit {
 }
 
 pub trait ChildProcess: Send {
-    fn id(&self) -> u32;
     fn try_exit(&mut self) -> Result<Option<ChildExit>, UpdateError>;
     fn kill(&mut self) -> Result<(), UpdateError>;
 }
@@ -116,10 +115,6 @@ fn drain_until_closed(mut input: impl Read) {
 struct SystemChild(Child);
 
 impl ChildProcess for SystemChild {
-    fn id(&self) -> u32 {
-        self.0.id()
-    }
-
     fn try_exit(&mut self) -> Result<Option<ChildExit>, UpdateError> {
         Ok(self
             .0

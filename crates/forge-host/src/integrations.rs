@@ -210,6 +210,7 @@ impl VTubeInstallSeed {
     }
 
     fn forget_object(&self) {
+        self.sink.clear();
         self.builtins.remove(&forge_vtube::VTUBE_INTEGRATION.id);
     }
 

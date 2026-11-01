@@ -6,7 +6,7 @@ pub(crate) const NANOS_PER_MILLI: i128 = 1_000_000;
 pub(crate) const TELEMETRY_AVERAGE_WINDOW: u32 = 100;
 
 pub(crate) fn to_epoch_ms(dt: OffsetDateTime) -> i64 {
-    (dt.unix_timestamp_nanos() / NANOS_PER_MILLI) as i64
+    i64::try_from(dt.unix_timestamp_nanos() / NANOS_PER_MILLI).unwrap_or(i64::MAX)
 }
 
 pub(crate) fn epoch_ms_now() -> i64 {

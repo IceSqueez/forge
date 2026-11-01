@@ -26,7 +26,7 @@ impl fmt::Debug for SeededServer {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.debug_struct("SeededServer")
             .field("port", &self.port)
-            .field("bearer_token", &"<redacted>")
+            .field("bearer_token", &crate::vocabulary::REDACTED)
             .finish()
     }
 }
@@ -52,7 +52,7 @@ impl fmt::Debug for SeededOverlay {
             .field("id", &self.id)
             .field("display_name", &self.display_name)
             .field("kind_id", &self.kind_id)
-            .field("credential", &"<redacted>")
+            .field("credential", &crate::vocabulary::REDACTED)
             .finish()
     }
 }

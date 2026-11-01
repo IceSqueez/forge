@@ -3,7 +3,7 @@ use forge_platform_twitch::vocabulary::topics;
 use serde_json::{Value, json};
 
 use super::config::FakeTwitchConfig;
-use super::rewards::RewardAnswer;
+use super::rewards::HelixAnswer;
 
 pub(crate) const BAN: &str = topics::CHANNEL_BAN;
 pub(crate) const UNBAN: &str = topics::CHANNEL_UNBAN;
@@ -31,7 +31,7 @@ fn param<'a>(query: &'a [(String, String)], key: &str) -> Option<&'a str> {
         .map(|(_, value)| value.as_str())
 }
 
-fn required<'a>(query: &'a [(String, String)], key: &str) -> Result<&'a str, RewardAnswer> {
+fn required<'a>(query: &'a [(String, String)], key: &str) -> Result<&'a str, HelixAnswer> {
     param(query, key)
         .filter(|value| !value.is_empty())
         .ok_or_else(|| {
@@ -42,8 +42,8 @@ fn required<'a>(query: &'a [(String, String)], key: &str) -> Result<&'a str, Rew
         })
 }
 
-fn refused(status: StatusCode, message: &str) -> RewardAnswer {
-    RewardAnswer {
+fn refused(status: StatusCode, message: &str) -> HelixAnswer {
+    HelixAnswer {
         status,
         body: json!({
             "error": status.canonical_reason().unwrap_or_default(),
@@ -76,7 +76,7 @@ fn banned_row(event: &Value) -> Value {
     })
 }
 
-fn page_size(query: &[(String, String)]) -> Result<usize, RewardAnswer> {
+fn page_size(query: &[(String, String)]) -> Result<usize, HelixAnswer> {
     match param(query, "first") {
         None => Ok(DEFAULT_PAGE),
         Some(raw) => raw
@@ -87,7 +87,7 @@ fn page_size(query: &[(String, String)]) -> Result<usize, RewardAnswer> {
     }
 }
 
-fn page_offset(query: &[(String, String)]) -> Result<usize, RewardAnswer> {
+fn page_offset(query: &[(String, String)]) -> Result<usize, HelixAnswer> {
     match param(query, "after") {
         None => Ok(0),
         Some(cursor) => cursor
@@ -111,7 +111,7 @@ impl BanStore {
     fn broadcaster_refusal(
         config: &FakeTwitchConfig,
         query: &[(String, String)],
-    ) -> Result<(), RewardAnswer> {
+    ) -> Result<(), HelixAnswer> {
         if required(query, "broadcaster_id")? != config.broadcaster_user_id {
             return Err(refused(StatusCode::UNAUTHORIZED, FOREIGN_BROADCASTER_ID));
         }
@@ -122,7 +122,7 @@ impl BanStore {
         &self,
         config: &FakeTwitchConfig,
         query: &[(String, String)],
-    ) -> RewardAnswer {
+    ) -> HelixAnswer {
         let page = Self::broadcaster_refusal(config, query)
             .and_then(|()| Ok((page_size(query)?, page_offset(query)?)));
         let (size, offset) = match page {
@@ -143,7 +143,7 @@ impl BanStore {
         } else {
             json!({})
         };
-        RewardAnswer {
+        HelixAnswer {
             status: StatusCode::OK,
             body: json!({ "data": data, "pagination": pagination }),
             notification: None,
@@ -154,7 +154,7 @@ impl BanStore {
         &mut self,
         config: &FakeTwitchConfig,
         query: &[(String, String)],
-    ) -> RewardAnswer {
+    ) -> HelixAnswer {
         let target = Self::broadcaster_refusal(config, query).and_then(|()| {
             Ok((
                 required(query, "moderator_id")?,
@@ -183,7 +183,7 @@ impl BanStore {
             "moderator_user_login": config.broadcaster_login,
             "moderator_user_name": config.broadcaster_login,
         });
-        RewardAnswer {
+        HelixAnswer {
             status: StatusCode::NO_CONTENT,
             body: Value::Null,
             notification: Some((UNBAN, event)),

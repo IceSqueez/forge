@@ -16,6 +16,7 @@ use forge_storage::{
 use forge_types::{ScriptId, Variant};
 use time::OffsetDateTime;
 use tokio::sync::Notify;
+use tokio::task::AbortHandle;
 
 use crate::checkpoint_task::spawn_checkpoint_task;
 use crate::error::SqliteStorageError;
@@ -96,10 +97,12 @@ pub struct SqliteBackend {
     ban_ledger: Arc<SqliteBanLedgerRepo>,
     retention_window_changed: Arc<Notify>,
     shutdown: Arc<Notify>,
+    checkpoint: AbortHandle,
 }
 
 impl Drop for SqliteBackend {
     fn drop(&mut self) {
+        self.checkpoint.abort();
         self.shutdown.notify_one();
         self.globals.read_tally().close();
     }
@@ -182,7 +185,7 @@ impl SqliteBackend {
             scheduled_run_revision.clone(),
         );
 
-        spawn_checkpoint_task(
+        let checkpoint = spawn_checkpoint_task(
             pool.checkpointer().clone(),
             pool.writer().clone(),
             pool.busy_timeout(),
@@ -210,6 +213,7 @@ impl SqliteBackend {
         spawn_read_flush_task(Arc::clone(globals.read_tally()), pool.writer().clone());
 
         Self {
+            checkpoint,
             globals,
             user_globals: SqliteUserGlobalsRepo::new(pool.clone()),
             settings: SqliteSettingsRepo::new(pool.clone()),

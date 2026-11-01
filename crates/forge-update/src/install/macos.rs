@@ -2,8 +2,8 @@ use std::ffi::OsStr;
 use std::path::Path;
 
 use super::{InstallEnvironment, InstallKind, InstallLayout, ManualReason, updatable};
+use crate::platform::BUNDLE_EXTENSION;
 
-const BUNDLE_EXTENSION: &str = "app";
 const TRANSLOCATION_DIR: &str = "AppTranslocation";
 
 pub(super) fn classify(env: &InstallEnvironment) -> InstallKind {

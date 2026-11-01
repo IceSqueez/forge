@@ -66,7 +66,7 @@ pub(crate) async fn resolve_user_id(
         .and_then(|arr| arr.first())
         .and_then(|u| u["id"].as_str())
         .map(|s| s.to_owned())
-        .ok_or_else(not_found)
+        .ok_or(TwitchError::UserNotFound { login })
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
@@ -182,7 +182,7 @@ mod tests {
         let err = resolve_user_id(&transport, "ghost").await.unwrap_err();
 
         assert!(
-            matches!(err, TwitchError::Http { status: 404, .. }),
+            matches!(err, TwitchError::UserNotFound { .. }),
             "empty data array must map to a not-found error, got: {err}"
         );
     }

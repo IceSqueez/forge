@@ -11,7 +11,6 @@ pub(crate) const HEALTH_MARKER_FILE: &str = "update-health.json";
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub(crate) struct HealthMarker {
-    pub pid: u32,
     pub version: String,
 }
 
@@ -32,7 +31,6 @@ pub fn write_health_marker(data_dir: &Path, running_version: &str) -> Result<boo
         return Ok(false);
     }
     let marker = HealthMarker {
-        pid: std::process::id(),
         version: running_version.to_owned(),
     };
     write_record(&HealthMarker::path_in(data_dir), &marker)?;

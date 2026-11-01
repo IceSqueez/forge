@@ -498,7 +498,7 @@ mod tests {
             id: "test-id".to_string(),
             event_id: EventId::new(),
             source: PlatformId::Twitch,
-            received_at: OffsetDateTime::now_utc(),
+            received_at: OffsetDateTime::UNIX_EPOCH,
             author: "testuser".to_string(),
             author_id: None,
             author_color: None,

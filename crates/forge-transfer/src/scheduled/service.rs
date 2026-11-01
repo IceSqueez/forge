@@ -7,6 +7,7 @@ use time::OffsetDateTime;
 use tokio::sync::{Notify, watch};
 use tokio_util::sync::CancellationToken;
 
+use crate::bundle::blocking::run_blocking;
 use crate::bundle::exclusivity::TransferExclusivity;
 use crate::scheduled::clock::BackupClock;
 use crate::scheduled::due::next_due;
@@ -35,6 +36,7 @@ pub(crate) struct Signals {
 #[derive(Clone)]
 pub struct ScheduledBackupHandle {
     signals: Arc<Signals>,
+    stopped: CancellationToken,
     suspended: Arc<watch::Sender<bool>>,
     status: watch::Receiver<ScheduledBackupStatus>,
 }
@@ -70,6 +72,10 @@ impl ScheduledBackupHandle {
     pub fn shutdown(&self) {
         self.signals.shutdown.cancel();
     }
+
+    pub async fn stopped(&self) {
+        self.stopped.cancelled().await;
+    }
 }
 
 pub fn spawn_scheduled_backups(parts: ScheduledBackupParts) -> ScheduledBackupHandle {
@@ -96,9 +102,15 @@ pub fn spawn_scheduled_backups(parts: ScheduledBackupParts) -> ScheduledBackupHa
         suspended: false,
         running: false,
     };
-    tokio::spawn(service.drive(suspended_rx));
+    let stopped = CancellationToken::new();
+    let marks_stopped = stopped.clone().drop_guard();
+    tokio::spawn(async move {
+        let _marks_stopped = marks_stopped;
+        service.drive(suspended_rx).await;
+    });
     ScheduledBackupHandle {
         signals,
+        stopped,
         suspended: Arc::new(suspended_tx),
         status: status_rx,
     }
@@ -221,8 +233,9 @@ impl Service {
         let data_dir = self.parts.data_dir.clone();
         let destination = self.settings.destination.clone();
         self.storage_used =
-            tokio::task::spawn_blocking(move || measure(&data_dir, destination.as_deref()))
+            run_blocking((), move |()| Ok(measure(&data_dir, destination.as_deref())))
                 .await
+                .inspect_err(|error| tracing::warn!(%error, "backup storage could not be measured"))
                 .ok();
     }
 

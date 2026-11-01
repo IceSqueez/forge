@@ -1,6 +1,7 @@
 use std::io::ErrorKind;
 use std::path::{Path, PathBuf};
 
+use crate::bundle::blocking::run_blocking;
 use crate::bundle::layout::INCLUDED_DIRS;
 use crate::bundle::naming::backups_dir;
 use crate::scheduled::status::FailureCategory;
@@ -38,10 +39,12 @@ pub(crate) async fn resolve_folder(
         .await
         .unwrap_or_else(|_| data_dir.to_path_buf());
     let scope_folder = folder.clone();
-    let inside =
-        tokio::task::spawn_blocking(move || inside_backup_scope(&scope_folder, &data_root))
-            .await
-            .unwrap_or(true);
+    let inside = run_blocking((), move |()| {
+        Ok(inside_backup_scope(&scope_folder, &data_root))
+    })
+    .await
+    .inspect_err(|error| tracing::warn!(%error, "backup destination could not be checked"))
+    .unwrap_or(true);
     if inside {
         return Err(FailureCategory::DestinationInsideBackupScope);
     }

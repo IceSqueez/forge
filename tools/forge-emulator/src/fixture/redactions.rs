@@ -4,7 +4,7 @@ use serde_json::{Map, Value};
 
 use super::report::SeedReport;
 use super::spec::Fixture;
-use crate::vocabulary::REDACTED;
+use crate::vocabulary::{FAKE_DONATELLO_TOKEN, FAKE_MONOBANK_TOKEN, REDACTED};
 
 #[derive(Clone, Default, PartialEq, Eq)]
 pub struct Redactions {
@@ -51,9 +51,19 @@ impl Redactions {
             .youtube
             .iter()
             .flat_map(|youtube| [youtube.access_token.clone(), youtube.refresh_token.clone()]);
+        let webhooks = fixture
+            .discord_webhooks
+            .iter()
+            .map(|webhook| webhook.url.clone());
+        let fake_tokens = [
+            FAKE_DONATELLO_TOKEN.to_owned(),
+            FAKE_MONOBANK_TOKEN.to_owned(),
+        ];
         Self::new(
             access_token
                 .into_iter()
+                .chain(webhooks)
+                .chain(fake_tokens)
                 .chain(bearer)
                 .chain(overlays)
                 .chain(obs_password)

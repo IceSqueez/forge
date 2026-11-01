@@ -17,6 +17,7 @@ pub(crate) fn helix_message(error: &TwitchError) -> MessageRef {
         | TwitchError::SendFailed(detail)
         | TwitchError::SendRefused(detail) => messages::request_failed(detail),
         TwitchError::UndecodableResponse(detail) => messages::response_unreadable(detail),
+        TwitchError::UserNotFound { login } => messages::user_not_found(login),
         TwitchError::MessageTooLong => messages::message_too_long(MAX_MESSAGE_LEN),
         TwitchError::NotConnected => messages::chat_not_connected(),
         TwitchError::MessageDropped { code, message } => messages::message_dropped(code, message),

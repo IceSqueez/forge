@@ -264,8 +264,10 @@ impl Studio {
             .get("order")
             .and_then(Value::as_f64)
             .filter(|order| *order > IGNORED_BELOW);
-        if let Some(order) = order {
-            let order = order as i64;
+        if order.is_some() {
+            let Some(order) = entry.get("order").and_then(Value::as_i64) else {
+                return Some(ERROR_ITEM_MOVE_ORDER_INVALID);
+            };
             if order != self.scene[index].order && !self.spot_is_free(order) {
                 return Some(ERROR_ITEM_MOVE_ORDER_INVALID);
             }

@@ -11,6 +11,7 @@ rust-version.workspace = true
 workspace = true
 
 [dependencies]
+tracing = { workspace = true }
 flate2 = { workspace = true }
 forge-durable = { path = "../forge-durable" }
 forge-net = { path = "../forge-net" }
@@ -22,7 +23,6 @@ sha2 = { workspace = true }
 tar = { workspace = true }
 tempfile = { workspace = true }
 thiserror = { workspace = true }
-tracing = { workspace = true }
 tokio = { workspace = true }
 tokio-util = { workspace = true }
 

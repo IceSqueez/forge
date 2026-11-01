@@ -98,7 +98,7 @@ async fn the_probe_reads_the_version_and_session_flag_out_of_the_api_state_respo
     .await
     .unwrap();
 
-    assert_eq!(result.api_version, "1.30.1");
+    assert_eq!(result.vtube_studio_version, "1.30.1");
     assert!(result.already_authenticated);
 }
 
@@ -129,7 +129,7 @@ async fn a_response_without_the_version_fields_degrades_instead_of_failing() {
         .await
         .unwrap();
 
-    assert_eq!(result.api_version, "unknown");
+    assert_eq!(result.vtube_studio_version, "unknown");
     assert!(!result.already_authenticated);
 }
 

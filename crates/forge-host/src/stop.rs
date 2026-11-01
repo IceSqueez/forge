@@ -9,7 +9,7 @@ use forge_runtime::{
 use forge_server::ServerHandle;
 use forge_speak_queue::{SpeakCommand, SpeakQueueHandle};
 use forge_storage::DataProvider;
-use forge_transfer::{ScheduleState, ScheduledBackupHandle};
+use forge_transfer::ScheduledBackupHandle;
 
 use crate::integrations::BuiltinObject;
 
@@ -43,9 +43,7 @@ const SCHEDULED_BACKUP_STOP_BUDGET: Duration = GRACEFUL_BUDGET;
 async fn stop_scheduled_backups(scheduled: ScheduledBackupHandle) {
     scheduled.cancel_in_flight();
     scheduled.shutdown();
-    let mut status = scheduled.status();
-    let stopped = status.wait_for(|current| current.state != ScheduleState::Running);
-    if tokio::time::timeout(SCHEDULED_BACKUP_STOP_BUDGET, stopped)
+    if tokio::time::timeout(SCHEDULED_BACKUP_STOP_BUDGET, scheduled.stopped())
         .await
         .is_err()
     {
@@ -287,6 +285,8 @@ mod tests {
         TriggerConfig, TriggerInstance, TriggerInstanceId, Variant,
     };
     use time::OffsetDateTime;
+
+    use forge_transfer::ScheduleState;
 
     use super::*;
     use crate::test_support::{stub_catalog, test_backend};

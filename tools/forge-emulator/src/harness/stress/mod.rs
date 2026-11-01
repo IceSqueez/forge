@@ -12,7 +12,7 @@ pub use load::{
 };
 pub use marker::{find_marker, marker};
 pub use probe::{
-    CLOCK_TICKS_PER_SEC, ProcessProbe, ProcessReading, cpu_percent, kib_field, stat_cpu_ticks,
+    CLOCK_TICKS_PER_SEC, ProcessProbe, ProcessReading, cpu_percent, numeric_field, stat_cpu_ticks,
 };
 pub use profile::{
     Burst, KneeRule, MAX_RATE, MAX_SENDERS, Ramp, Stimulus, StimulusKind, StressProfile,

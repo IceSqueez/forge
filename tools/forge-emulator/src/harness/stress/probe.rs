@@ -35,16 +35,16 @@ impl ProcessProbe {
                 .and_then(stat_cpu_ticks),
             rss_kib: read(&self.root.join("smaps_rollup"))
                 .as_deref()
-                .and_then(|text| kib_field(text, "Rss:")),
+                .and_then(|text| numeric_field(text, "Rss:")),
             anonymous_kib: read(&self.root.join("smaps_rollup"))
                 .as_deref()
-                .and_then(|text| kib_field(text, "Anonymous:")),
+                .and_then(|text| numeric_field(text, "Anonymous:")),
             fds: std::fs::read_dir(self.root.join("fd"))
                 .ok()
                 .map(|entries| entries.count() as u64),
             threads: read(&self.root.join("status"))
                 .as_deref()
-                .and_then(|text| plain_field(text, "Threads:")),
+                .and_then(|text| numeric_field(text, "Threads:")),
         }
     }
 }
@@ -61,18 +61,15 @@ pub fn stat_cpu_ticks(stat: &str) -> Option<u64> {
     Some(utime + stime)
 }
 
-pub fn kib_field(text: &str, name: &str) -> Option<u64> {
+pub fn numeric_field(text: &str, name: &str) -> Option<u64> {
     text.lines()
         .find_map(|line| line.strip_prefix(name))
         .and_then(|rest| rest.split_whitespace().next())
         .and_then(|value| value.parse().ok())
 }
 
-fn plain_field(text: &str, name: &str) -> Option<u64> {
-    kib_field(text, name)
-}
-
 pub const CLOCK_TICKS_PER_SEC: f64 = 100.0;
+const PERCENT_MILLIS_PER_SECOND: f64 = 100_000.0;
 
 pub fn cpu_percent(before: Option<u64>, after: Option<u64>, elapsed_ms: u64) -> Option<f64> {
     let (before, after) = (before?, after?);
@@ -80,7 +77,7 @@ pub fn cpu_percent(before: Option<u64>, after: Option<u64>, elapsed_ms: u64) -> 
         return None;
     }
     let seconds = (after - before) as f64 / CLOCK_TICKS_PER_SEC;
-    Some(seconds * 100_000.0 / elapsed_ms as f64)
+    Some(seconds * PERCENT_MILLIS_PER_SECOND / elapsed_ms as f64)
 }
 
 pub fn database_bytes(data_dir: &Path) -> Option<u64> {
@@ -130,9 +127,9 @@ mod tests {
     #[test]
     fn smaps_rollup_fields_are_read_by_exact_name() {
         let rollup = "Rss:              265812 kB\nPss_Anon:          79000 kB\nAnonymous:         81044 kB\n";
-        assert_eq!(kib_field(rollup, "Rss:"), Some(265_812));
-        assert_eq!(kib_field(rollup, "Anonymous:"), Some(81_044));
-        assert_eq!(kib_field(rollup, "Swap:"), None);
+        assert_eq!(numeric_field(rollup, "Rss:"), Some(265_812));
+        assert_eq!(numeric_field(rollup, "Anonymous:"), Some(81_044));
+        assert_eq!(numeric_field(rollup, "Swap:"), None);
     }
 
     #[test]

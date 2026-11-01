@@ -182,23 +182,28 @@ fn serialize_content_frame(
 }
 
 async fn fan_out(registry: &RwLock<Vec<ConnectedClient>>, event: &Event) {
-    let json = match serialize_push(event) {
-        Ok(json) => json,
-        Err(error) => {
-            tracing::warn!(%error, kind = %event.kind, "bus event not serialized for clients");
-            return;
-        }
-    };
-    let frame = WsFrame::Text(json);
-
     let mut disconnected = Vec::new();
     {
         let reg = registry.read().await;
+        let mut frame = None;
         for client in reg.iter() {
-            if client.overlay.is_some() {
+            if client.overlay.is_some() || !client.filters.matches(event) {
                 continue;
             }
-            if client.filters.matches(event) && client.sender.send(frame.clone()).is_err() {
+            if frame.is_none() {
+                let json = match serialize_push(event) {
+                    Ok(json) => json,
+                    Err(error) => {
+                        tracing::warn!(%error, kind = %event.kind, "bus event not serialized for clients");
+                        return;
+                    }
+                };
+                frame = Some(WsFrame::Text(json));
+            }
+            if frame
+                .clone()
+                .is_some_and(|frame| client.sender.send(frame).is_err())
+            {
                 disconnected.push(client.id);
             }
         }

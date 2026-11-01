@@ -4,10 +4,9 @@ use super::outcome::{EVIDENCE_LIMIT, Evidence, FailureCause, Verdict};
 use crate::fakes::discord::{FakeDiscord, RecordedPost};
 use crate::harness::scenario::DiscordPost;
 
-const POST_METHOD: &str = "POST";
-
 pub(crate) fn post_matches(post: &RecordedPost, expected: &DiscordPost) -> bool {
-    let accepted = (200..300).contains(&post.status);
+    let accepted =
+        reqwest::StatusCode::from_u16(post.status).is_ok_and(|status| status.is_success());
     let content_matches = expected.content_contains.as_deref().is_none_or(|needle| {
         post.content
             .as_deref()
@@ -19,7 +18,7 @@ pub(crate) fn post_matches(post: &RecordedPost, expected: &DiscordPost) -> bool 
         post.mention_parse() == Some(kinds)
     });
     accepted
-        && post.method == POST_METHOD
+        && post.method == reqwest::Method::POST.as_str()
         && post.webhook.as_deref() == Some(expected.webhook.as_str())
         && content_matches
         && mentions_match

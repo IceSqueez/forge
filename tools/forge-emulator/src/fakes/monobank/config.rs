@@ -89,11 +89,6 @@ impl FakeTransaction {
         self
     }
 
-    pub fn with_counter_name(mut self, name: &str) -> Self {
-        self.counter_name = Some(name.to_owned());
-        self
-    }
-
     pub fn with_currency(mut self, iso_numeric: i64) -> Self {
         self.currency_code = iso_numeric;
         self

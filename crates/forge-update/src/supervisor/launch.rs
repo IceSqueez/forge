@@ -1,6 +1,6 @@
 use std::ffi::OsString;
 use std::path::{Path, PathBuf};
-use std::process::{Command, Stdio};
+use std::process::{ChildStdin, Command, Stdio};
 
 use crate::UpdateError;
 use crate::apply_state::ApplyState;
@@ -42,8 +42,12 @@ pub fn launch_supervisor(data_dir: &Path) -> Result<u32, UpdateError> {
         .stderr(Stdio::null())
         .spawn()?;
     let pid = supervisor.id();
-    std::mem::forget(supervisor.stdin.take());
+    hold_pipe_until_exit(supervisor.stdin.take());
     Ok(pid)
+}
+
+fn hold_pipe_until_exit(stdin: Option<ChildStdin>) {
+    std::mem::forget(stdin);
 }
 
 fn copy_to_temp(executable: &Path) -> Result<PathBuf, UpdateError> {

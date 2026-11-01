@@ -6,6 +6,7 @@ use forge_storage::{
 
 use crate::error::SqliteStorageError;
 use crate::pool::SqlitePools;
+use crate::row_int::decode_u32;
 use crate::wire_label::{parse_label, wire_label};
 
 pub struct SqliteTtsFiltersRepo {
@@ -34,7 +35,7 @@ fn decode_rule_row(row: RuleRow) -> Result<FilterRule, StorageError> {
         id: row.id,
         name: row.name,
         enabled: row.enabled != 0,
-        position: row.position as u32,
+        position: decode_u32("position", row.position)?,
         kind,
     })
 }
@@ -209,16 +210,22 @@ fn decode_settings_row(row: SettingsRow) -> Result<TtsPipelineSettings, StorageE
         skip_from_bot_accounts: row.skip_from_bot_accounts != 0,
         bot_accounts,
         skip_longer_than: row.skip_longer_than != 0,
-        longer_than_max_chars: row.longer_than_max_chars as u32,
+        longer_than_max_chars: decode_u32("longer_than_max_chars", row.longer_than_max_chars)?,
         skip_repeat_of_recent: row.skip_repeat_of_recent != 0,
-        repeat_of_recent_window: row.repeat_of_recent_window as u32,
+        repeat_of_recent_window: decode_u32(
+            "repeat_of_recent_window",
+            row.repeat_of_recent_window,
+        )?,
         output_read_display_name_first: row.output_read_display_name_first != 0,
         output_emote_to_word: row.output_emote_to_word != 0,
         skip_emote_only: ext.skip_emote_only != 0,
         skip_mostly_non_latin: ext.skip_mostly_non_latin != 0,
         skip_custom_regexes,
         output_sanitize_punctuation: ext.output_sanitize_punctuation != 0,
-        output_max_duration_secs: ext.output_max_duration_secs.map(|v| v as u32),
+        output_max_duration_secs: ext
+            .output_max_duration_secs
+            .map(|secs| decode_u32("output_max_duration_secs", secs))
+            .transpose()?,
         output_max_duration_enabled: ext.output_max_duration_enabled != 0,
         output_language_aware_voice: ext.output_language_aware_voice.map(|v| v != 0),
     })

@@ -2,8 +2,8 @@
 use std::path::{Path, PathBuf};
 use std::process::Command;
 
-use forge_emulator::EmulatorError;
 use forge_emulator::harness::scenario::{Scenario, load_scenario, parse_scenario};
+use forge_emulator::{EXIT_INPUT_INVALID, EXIT_INPUT_SYNTAX, EXIT_INPUT_UNREADABLE, EmulatorError};
 
 mod support;
 use support::{EMULATOR, shipped_json};
@@ -197,9 +197,21 @@ fn check_command_exit_code_names_the_failure_class() {
 
     for (file, code, stream_fragment) in [
         (valid.clone(), 0, "ok, `n` with 1 step(s)"),
-        (dir.path().join("absent.json"), 9, "cannot read scenario"),
-        (syntax, 10, "syntax.json:1:1: EOF while parsing an object"),
-        (invalid, 11, "name: must not be blank"),
+        (
+            dir.path().join("absent.json"),
+            i32::from(EXIT_INPUT_UNREADABLE),
+            "cannot read scenario",
+        ),
+        (
+            syntax,
+            i32::from(EXIT_INPUT_SYNTAX),
+            "syntax.json:1:1: EOF while parsing an object",
+        ),
+        (
+            invalid,
+            i32::from(EXIT_INPUT_INVALID),
+            "name: must not be blank",
+        ),
     ] {
         let output = Command::new(EMULATOR)
             .args(["scenario", "check"])
@@ -230,7 +242,13 @@ fn run_command_refuses_a_bad_scenario_file_before_launching_anything() {
     std::fs::write(&invalid, VALID.replace(r#""name": "n""#, r#""name": """#)).unwrap();
     let run_root = dir.path().join("run");
 
-    for (file, code) in [(dir.path().join("absent.json"), 9), (invalid, 11)] {
+    for (file, code) in [
+        (
+            dir.path().join("absent.json"),
+            i32::from(EXIT_INPUT_UNREADABLE),
+        ),
+        (invalid, i32::from(EXIT_INPUT_INVALID)),
+    ] {
         let output = Command::new(EMULATOR)
             .args(["scenario", "run"])
             .arg(&file)

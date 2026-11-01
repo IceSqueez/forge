@@ -3,7 +3,6 @@ use std::time::{SystemTime, UNIX_EPOCH};
 use axum::http::StatusCode;
 use time::OffsetDateTime;
 
-use crate::EmulatorError;
 use crate::fakes::donatello::{DonatesFault, FakeDonatello, FakeDonation, donatello_wall_clock};
 use crate::fakes::monobank::{FakeJar, FakeMonobank, FakeTransaction};
 
@@ -116,7 +115,7 @@ impl<'a> DonatelloConsole<'a> {
         Self { fake, issued: 0 }
     }
 
-    pub fn apply(&mut self, command: DonatelloCommand) -> Result<String, EmulatorError> {
+    pub fn apply(&mut self, command: DonatelloCommand) -> Result<String, ConsoleRefusal> {
         match command {
             DonatelloCommand::Donate {
                 donor,
@@ -125,7 +124,8 @@ impl<'a> DonatelloConsole<'a> {
             } => {
                 self.issued += 1;
                 let id = format!("console-{}", self.issued);
-                let created_at = donatello_wall_clock(OffsetDateTime::now_utc())?;
+                let created_at = donatello_wall_clock(OffsetDateTime::now_utc())
+                    .map_err(|error| ConsoleRefusal::new(error.to_string()))?;
                 let mut donation = FakeDonation::new(&id, &donor, &amount, &created_at);
                 if let Some(message) = &message {
                     donation = donation.with_message(message);

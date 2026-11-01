@@ -230,7 +230,7 @@ impl VTubeConnectForm {
                 title: tr!("vtube_connect_test_successful"),
                 detail: tr!(
                     "vtube_connect_test_detail",
-                    version = report.api_version,
+                    version = report.vtube_studio_version,
                     rtt = i64::try_from(report.round_trip_ms).unwrap_or(i64::MAX),
                     auth = authorization_label(report.already_authenticated)
                 ),

@@ -181,8 +181,10 @@ impl<'a> Validator<'a> {
 
     fn check_fixture(&mut self) {
         let fixture = &self.scenario.fixture;
-        if let Err(EmulatorError::InvalidFixture { reason }) = fixture.validate() {
-            self.report("fixture", reason);
+        match fixture.validate() {
+            Ok(()) => {}
+            Err(EmulatorError::InvalidFixture { reason }) => self.report("fixture", reason),
+            Err(other) => self.report("fixture", other.to_string()),
         }
         let mut first_use: HashMap<&str, String> = HashMap::new();
         for action in fixture.actions() {

@@ -18,6 +18,7 @@ use crate::full::stage::restore_staging_root;
 
 pub fn apply_pending_restore(data_dir: &Path) -> Result<RestoreOutcome, TransferError> {
     if let Some(journal) = RestoreJournal::read(data_dir)? {
+        tracing::info!(phase = ?journal.phase, "resuming an interrupted restore");
         return resume(data_dir, journal);
     }
     let marker = match RestoreMarker::read(data_dir) {
@@ -139,6 +140,7 @@ fn place_staged(data_dir: &Path, journal: &RestoreJournal) -> Result<(), Transfe
 }
 
 fn commit(data_dir: &Path, mut journal: RestoreJournal) -> Result<RestoreOutcome, TransferError> {
+    tracing::info!("restore committing");
     if journal.phase != RestorePhase::Committed {
         journal.advance(data_dir, RestorePhase::Committed)?;
     }
@@ -157,6 +159,7 @@ fn start_rollback(
     mut journal: RestoreJournal,
     reason: RestoreRollback,
 ) -> Result<RestoreOutcome, TransferError> {
+    tracing::warn!(?reason, "restore rolling back");
     journal.advance(
         data_dir,
         RestorePhase::RollingBack {

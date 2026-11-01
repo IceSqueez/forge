@@ -193,7 +193,7 @@ async fn a_missing_release_asset_reports_its_status_without_the_url() {
 
 #[tokio::test]
 async fn an_unreachable_update_server_reports_a_network_error_without_the_url() {
-    let url = support::refused_url().await;
+    let url = support::refused_url();
     let source = ManifestSource::new(url.clone(), url.clone());
 
     let error = check(&source, "0.0.1").await.unwrap_err();

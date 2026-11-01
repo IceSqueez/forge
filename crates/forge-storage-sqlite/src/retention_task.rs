@@ -104,11 +104,11 @@ async fn sweep(
     let cutoff = now - time::Duration::days(i64::from(windows.event_log_days));
     let history_cutoff = now - time::Duration::days(i64::from(windows.action_history_days));
 
-    prune_in_chunks("event_log", cutoff, signals, |chunk_rows| {
+    prune_in_chunks("event_log", signals, |chunk_rows| {
         targets.event_log.prune_chunk_before(cutoff, chunk_rows)
     })
     .await?;
-    prune_in_chunks("action_history", history_cutoff, signals, |chunk_rows| {
+    prune_in_chunks("action_history", signals, |chunk_rows| {
         targets
             .history
             .prune_chunk_before(history_cutoff, chunk_rows)
@@ -116,11 +116,7 @@ async fn sweep(
     .await?;
 
     match targets.action.prune_executions_before(history_cutoff).await {
-        Ok(pruned) => tracing::info!(
-            pruned_rows = pruned,
-            cutoff = ?history_cutoff,
-            "action_executions pruning complete"
-        ),
+        Ok(pruned) => log_pruned("action_executions", pruned),
         Err(e) => tracing::warn!(
             error = %e,
             "action_executions pruning failed; will retry on next cycle"
@@ -128,11 +124,7 @@ async fn sweep(
     }
 
     match targets.script.prune_executions_before(history_cutoff).await {
-        Ok(pruned) => tracing::info!(
-            pruned_rows = pruned,
-            cutoff = ?history_cutoff,
-            "script_executions pruning complete"
-        ),
+        Ok(pruned) => log_pruned("script_executions", pruned),
         Err(e) => tracing::warn!(
             error = %e,
             "script_executions pruning failed; will retry on next cycle"
@@ -140,11 +132,7 @@ async fn sweep(
     }
 
     match targets.scheduled_run.prune_resolved_before(cutoff).await {
-        Ok(pruned) => tracing::info!(
-            pruned_rows = pruned,
-            ?cutoff,
-            "scheduled_runs pruning complete"
-        ),
+        Ok(pruned) => log_pruned("scheduled_runs", pruned),
         Err(e) => tracing::warn!(
             error = %e,
             "scheduled_runs pruning failed; will retry on next cycle"
@@ -155,7 +143,6 @@ async fn sweep(
 
 async fn prune_in_chunks<F, Fut>(
     table: &'static str,
-    cutoff: OffsetDateTime,
     signals: &RetentionSignals,
     prune_chunk: F,
 ) -> Result<(), Interrupt>
@@ -183,8 +170,16 @@ where
             _ = signals.shutdown.notified() => return Err(Interrupt::Shutdown),
         }
     }
-    tracing::info!(table, pruned_rows = pruned, ?cutoff, "pruning complete");
+    log_pruned(table, pruned);
     Ok(())
+}
+
+fn log_pruned(table: &'static str, pruned: u64) {
+    if pruned == 0 {
+        tracing::debug!(table, "nothing to prune");
+    } else {
+        tracing::info!(table, pruned_rows = pruned, "pruning complete");
+    }
 }
 
 #[cfg(test)]
@@ -232,7 +227,7 @@ mod tests {
     }
 
     async fn run(script: &ScriptedChunks, signals: &RetentionSignals) -> Result<(), Interrupt> {
-        prune_in_chunks("action_history", cutoff(), signals, |_| script.next()).await
+        prune_in_chunks("action_history", signals, |_| script.next()).await
     }
 
     #[tokio::test(start_paused = true)]
@@ -336,17 +331,12 @@ mod tests {
             history
         });
 
-        let outcome = db_runtime.block_on(prune_in_chunks(
-            "action_history",
-            cutoff(),
-            &signals(),
-            |rows| {
-                let history = Arc::clone(&history);
-                let chunk = db_runtime
-                    .spawn(async move { history.prune_chunk_before(cutoff(), rows).await });
-                async move { chunk.await.unwrap() }
-            },
-        ));
+        let outcome = db_runtime.block_on(prune_in_chunks("action_history", &signals(), |rows| {
+            let history = Arc::clone(&history);
+            let chunk =
+                db_runtime.spawn(async move { history.prune_chunk_before(cutoff(), rows).await });
+            async move { chunk.await.unwrap() }
+        }));
 
         assert!(outcome.is_ok());
         let survivors = db_runtime.block_on(history.recent(u32::MAX)).unwrap();

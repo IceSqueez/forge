@@ -1,5 +1,6 @@
 use std::future::Future;
 use std::path::PathBuf;
+use std::sync::Arc;
 use std::time::Duration;
 
 use tokio::time::Instant;
@@ -218,10 +219,15 @@ async fn perform(
     if let StepAction::ForgeRestart { within_ms, offline } = &step.action {
         return restart_forge(session.forge, session.donations, *within_ms, offline).await;
     }
-    let live = session.forge.live().await;
-    let live = live.as_ref().ok_or_else(forge_down)?;
+    let client = session
+        .forge
+        .live()
+        .await
+        .as_ref()
+        .map(|live| Arc::clone(&live.client))
+        .ok_or_else(forge_down)?;
     let stimuli = Stimuli {
-        client: &live.client,
+        client: &client,
         twitch: session.twitch,
         kick: session.kick,
         youtube: session.youtube,

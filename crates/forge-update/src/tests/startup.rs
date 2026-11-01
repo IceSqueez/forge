@@ -222,7 +222,6 @@ fn a_written_health_marker_names_the_running_version_and_process() {
     assert_eq!(
         crate::read_health_marker(&fixture.data_dir).unwrap(),
         Some(HealthMarker {
-            pid: std::process::id(),
             version: TO.to_owned(),
         })
     );

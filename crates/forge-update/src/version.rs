@@ -48,9 +48,9 @@ pub fn parse_version(raw: &str) -> Option<Version> {
     };
 
     let mut parts = core.split('.');
-    let major = parts.next()?.parse().ok()?;
-    let minor = parts.next()?.parse().ok()?;
-    let patch = parts.next()?.parse().ok()?;
+    let major = numeric_component(parts.next()?)?;
+    let minor = numeric_component(parts.next()?)?;
+    let patch = numeric_component(parts.next()?)?;
     if parts.next().is_some() {
         return None;
     }
@@ -72,6 +72,14 @@ pub fn parse_version(raw: &str) -> Option<Version> {
     })
 }
 
+fn numeric_component(raw: &str) -> Option<u64> {
+    let digits_only = !raw.is_empty() && raw.bytes().all(|byte| byte.is_ascii_digit());
+    let no_leading_zero = raw == "0" || !raw.starts_with('0');
+    (digits_only && no_leading_zero)
+        .then(|| raw.parse().ok())
+        .flatten()
+}
+
 fn compare_prerelease(a: &[String], b: &[String]) -> Ordering {
     match (a.is_empty(), b.is_empty()) {
         (true, true) => Ordering::Equal,
@@ -90,11 +98,11 @@ fn compare_prerelease(a: &[String], b: &[String]) -> Ordering {
 }
 
 fn compare_identifier(a: &str, b: &str) -> Ordering {
-    match (a.parse::<u64>(), b.parse::<u64>()) {
-        (Ok(left), Ok(right)) => left.cmp(&right),
-        (Ok(_), Err(_)) => Ordering::Less,
-        (Err(_), Ok(_)) => Ordering::Greater,
-        (Err(_), Err(_)) => a.cmp(b),
+    match (numeric_component(a), numeric_component(b)) {
+        (Some(left), Some(right)) => left.cmp(&right),
+        (Some(_), None) => Ordering::Less,
+        (None, Some(_)) => Ordering::Greater,
+        (None, None) => a.cmp(b),
     }
 }
 

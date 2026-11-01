@@ -23,6 +23,7 @@ msg-twitch-field_required = Поле { $field } обов'язкове
 msg-twitch-target_empty = Поля { $login } і { $id } порожні після підстановки змінних
 msg-twitch-category_empty = Поля category_id і category_name порожні після підстановки змінних
 msg-twitch-category_not_found = Категорію не знайдено: { $category }
+msg-twitch-user_not_found = Користувача не знайдено: { $login }
 msg-twitch-empty_response = Twitch повернув порожню відповідь
 msg-twitch-response_field_missing = У відповіді Twitch немає поля { $field }
 msg-twitch-message_empty = Повідомлення порожнє після підстановки змінних

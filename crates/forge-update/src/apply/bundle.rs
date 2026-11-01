@@ -7,9 +7,9 @@ use flate2::read::GzDecoder;
 
 use super::files::{FileRetry, remove_leftover, remove_path, swap_in};
 use crate::UpdateError;
+use crate::platform::BUNDLE_EXTENSION;
 
 const EXTRACT_DIR_PREFIX: &str = ".forge-update-extract-";
-const BUNDLE_EXTENSION: &str = "app";
 
 pub(super) fn apply(
     archive: &Path,

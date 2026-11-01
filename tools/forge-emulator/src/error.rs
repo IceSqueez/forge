@@ -115,6 +115,12 @@ pub enum EmulatorError {
     #[error("refusing to launch forge: a fullscreen window or a running game is open ({windows})")]
     GameInProgress { windows: String },
 
+    #[error("{cause}; teardown also failed: {teardown}")]
+    AbandonFailed {
+        cause: Box<EmulatorError>,
+        teardown: Box<EmulatorError>,
+    },
+
     #[error(
         "refusing to launch forge: Hyprland state is unreadable, so a fullscreen game cannot be ruled out: {reason}"
     )]
@@ -204,4 +210,46 @@ fn listed(problems: &[Problem]) -> String {
         .iter()
         .map(|problem| format!("\n  {problem}"))
         .collect()
+}
+
+pub const EXIT_FAILURE: u8 = 1;
+pub const EXIT_GAME_GUARD: u8 = 3;
+pub const EXIT_LIVE_PATHS: u8 = 4;
+pub const EXIT_FORGE_EXITED: u8 = 5;
+pub const EXIT_OVERRIDE_REFUSED: u8 = 6;
+pub const EXIT_PORT_TAKEN: u8 = 7;
+pub const EXIT_NOT_READY: u8 = 8;
+pub const EXIT_INPUT_UNREADABLE: u8 = 9;
+pub const EXIT_INPUT_SYNTAX: u8 = 10;
+pub const EXIT_INPUT_INVALID: u8 = 11;
+pub const EXIT_SERVER_NOT_STARTED: u8 = 12;
+pub const EXIT_BOOT_FAILED: u8 = 13;
+pub const EXIT_ALREADY_RUNNING: u8 = 14;
+
+impl EmulatorError {
+    pub fn exit_code(&self) -> u8 {
+        match self {
+            Self::GameInProgress { .. } | Self::GameStateUnreadable { .. } => EXIT_GAME_GUARD,
+            Self::LiveDataDir { .. } | Self::LiveHome { .. } => EXIT_LIVE_PATHS,
+            Self::ForgeExited { .. } => EXIT_FORGE_EXITED,
+            Self::EndpointOverrideRefused { .. } => EXIT_OVERRIDE_REFUSED,
+            Self::ServerPortTaken { .. } => EXIT_PORT_TAKEN,
+            Self::ReadinessTimeout { .. } => EXIT_NOT_READY,
+            Self::ScenarioUnreadable { .. } => EXIT_INPUT_UNREADABLE,
+            Self::ScenarioSyntax { .. } | Self::StressProfileUnreadable { .. } => EXIT_INPUT_SYNTAX,
+            Self::ScenarioInvalid { .. } | Self::StressProfileInvalid { .. } => EXIT_INPUT_INVALID,
+            Self::ServerNotStarted { .. } => EXIT_SERVER_NOT_STARTED,
+            Self::BootFailed { .. } => EXIT_BOOT_FAILED,
+            Self::AlreadyRunning { .. } => EXIT_ALREADY_RUNNING,
+            Self::AbandonFailed { cause, .. } => cause.exit_code(),
+            _ => EXIT_FAILURE,
+        }
+    }
+
+    pub(crate) fn with_teardown_failure(self, teardown: Self) -> Self {
+        Self::AbandonFailed {
+            cause: Box::new(self),
+            teardown: Box::new(teardown),
+        }
+    }
 }

@@ -51,7 +51,7 @@ pub async fn seed_forge_environment(fixture: &Fixture) -> Result<SeedReport, Emu
     let port = free_loopback_port()?;
     let bearer_token = forge_server::generate_token();
 
-    let database = forge_paths::data_dir().join(DATABASE_FILE_NAME);
+    let database = data_dir.path().join(DATABASE_FILE_NAME);
     let url = format!("sqlite://{}?mode=rwc", database.display());
     let backend = SqliteBackend::open(&url)
         .await

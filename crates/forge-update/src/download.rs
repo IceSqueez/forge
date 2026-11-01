@@ -7,6 +7,7 @@ use tokio::sync::watch;
 use tokio_util::sync::CancellationToken;
 
 use crate::UpdateError;
+use crate::cleanup::log_failed_cleanup;
 use crate::digest::StreamingSha256;
 use crate::http::{StreamError, UpdateClient};
 use crate::manifest::{Artifact, is_plain_file_name};
@@ -178,11 +179,10 @@ impl PartialFile {
 impl Drop for PartialFile {
     fn drop(&mut self) {
         if self.armed {
-            #[expect(
-                clippy::let_underscore_must_use,
-                reason = "drop has no caller to report a cleanup failure to"
-            )]
-            let _ = std::fs::remove_file(&self.path);
+            log_failed_cleanup(
+                "drop has no caller to report a cleanup failure to",
+                std::fs::remove_file(&self.path),
+            );
         }
     }
 }

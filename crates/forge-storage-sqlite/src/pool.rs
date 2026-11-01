@@ -134,17 +134,30 @@ pub async fn connect_pools_with_busy_timeout(
         .await
         .map_err(SqliteStorageError::Sqlx)?;
 
-    let checkpointer = SqlitePoolOptions::new()
+    let checkpointer = match SqlitePoolOptions::new()
         .max_connections(WRITER_CONNECTIONS)
         .connect_with(opts.clone())
         .await
-        .map_err(SqliteStorageError::Sqlx)?;
+    {
+        Ok(checkpointer) => checkpointer,
+        Err(error) => {
+            writer.close().await;
+            return Err(SqliteStorageError::Sqlx(error));
+        }
+    };
 
-    let reader = SqlitePoolOptions::new()
+    let reader = match SqlitePoolOptions::new()
         .max_connections(reader_connections())
         .connect_with(opts.pragma("query_only", "ON"))
         .await
-        .map_err(SqliteStorageError::Sqlx)?;
+    {
+        Ok(reader) => reader,
+        Err(error) => {
+            checkpointer.close().await;
+            writer.close().await;
+            return Err(SqliteStorageError::Sqlx(error));
+        }
+    };
 
     Ok(SqlitePools {
         reader,

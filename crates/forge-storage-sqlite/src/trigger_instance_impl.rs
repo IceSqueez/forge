@@ -13,6 +13,7 @@ use crate::epoch::epoch_ms_now;
 use crate::error::SqliteStorageError;
 use crate::pool::SqlitePools;
 use crate::queue_impl::{mark_overlay_alert_queue, upsert_queue};
+use crate::row_int::decode_u32;
 use crate::wire_label::parse_label;
 
 const REFERENCE_BLOCK_SAMPLE_NAMES: usize = 3;
@@ -55,7 +56,7 @@ fn decode_row(row: InstanceRow) -> Result<TriggerInstance, SqliteStorageError> {
         enabled: row.enabled != 0,
         user_defined: row.user_defined != 0,
         platform_scope,
-        cooldown_secs: row.cooldown_secs.max(0) as u32,
+        cooldown_secs: decode_u32("cooldown_secs", row.cooldown_secs)?,
         cooldown_global: row.cooldown_global != 0,
         permission_rung,
     })

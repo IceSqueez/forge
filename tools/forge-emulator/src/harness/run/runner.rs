@@ -5,7 +5,7 @@ use std::time::Duration;
 use tokio::task::JoinHandle;
 use tokio::time::Instant;
 
-use super::forge_host::{ForgeHost, LiveForge, Relaunch};
+use super::forge_host::{ForgeHost, LiveForge, Relaunch, abandon};
 use super::journal::Journal;
 use super::log_tail::newest_lines;
 use super::outcome::{
@@ -83,9 +83,9 @@ pub async fn run_scenario(
         Ok(attached) => attached,
         Err(e) => {
             drop(client);
-            let _ = process.shutdown(grace).await;
+            let error = abandon(process, grace, e).await;
             fakes.shutdown().await;
-            return Err(e);
+            return Err(error);
         }
     };
     let log_dir = process.log_dir();

@@ -19,7 +19,6 @@ pub(crate) const OAUTH_PREFIX: &str = "/oauth2";
 
 pub const LIVE_CHAT_MESSAGES_PATH: &str = "/youtube/v3/liveChat/messages";
 pub const LIVE_BROADCASTS_PATH: &str = "/youtube/v3/liveBroadcasts";
-pub const SUBSCRIPTIONS_PATH: &str = "/youtube/v3/subscriptions";
 pub const TOKEN_PATH: &str = "/oauth2/token";
 
 const REFRESH_GRANT: &str = "refresh_token";
@@ -107,6 +106,7 @@ async fn handle(
             }
             Some(route) => serve(inner, shared.config(), route, &query, body.as_ref()),
         };
+        let modeled = route.is_some() && !std::mem::take(&mut inner.unmodeled_insert);
         inner.record_request(YouTubeRequest {
             surface,
             method: method.as_str().to_owned(),
@@ -116,15 +116,11 @@ async fn handle(
             credentials,
             status: status.as_u16(),
             response: response.clone(),
-            modeled: route.is_some() && !unmodeled_insert(&response),
+            modeled,
         });
         (status, response)
     });
     (status, Json(response)).into_response()
-}
-
-fn unmodeled_insert(response: &Value) -> bool {
-    response.pointer("/error/message").and_then(Value::as_str) == Some(UNMODELED_INSERT)
 }
 
 fn decode_body(surface: YouTubeSurface, bytes: &Bytes) -> Option<Value> {
@@ -348,6 +344,7 @@ fn insert_chat(
         None => return invalid("typeRequired", "The type is required."),
         Some("textMessageEvent") => {}
         Some(_) => {
+            inner.unmodeled_insert = true;
             return google_error(
                 StatusCode::BAD_REQUEST,
                 GLOBAL_DOMAIN,

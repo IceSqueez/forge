@@ -192,18 +192,19 @@ impl TwitchBotAccount {
     }
 
     pub(crate) fn mark_reauth_required(&self) {
-        let (login, user_id) = {
+        let changed = {
             let mut guard = self.state.write_recover();
             guard.token_rejected = true;
-            (
-                guard.status.login().map(str::to_owned),
-                guard.user_id.clone(),
-            )
+            let Some(login) = guard.status.login().map(str::to_owned) else {
+                return;
+            };
+            let status = BotStatus::ReauthRequired { login };
+            let changed = guard.status != status;
+            guard.status = status;
+            changed
         };
-        if let Some(login) = login {
-            self.set_state(BotStatus::ReauthRequired { login }, user_id);
-            let mut guard = self.state.write_recover();
-            guard.token_rejected = true;
+        if changed {
+            self.publish_status();
         }
     }
 

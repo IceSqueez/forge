@@ -12,7 +12,7 @@ use super::chat::{Viewer, user_json};
 use super::config::FakeTwitchConfig;
 use super::ids;
 use super::ledger::{CredentialCheck, RecordedRequest};
-use super::rewards::RewardAnswer;
+use super::rewards::HelixAnswer;
 use super::state::{Inner, Shared, SubscriptionOutcome, SubscriptionRequest};
 
 const CUSTOM_REWARDS: &str = "/helix/channel_points/custom_rewards";
@@ -122,8 +122,8 @@ async fn handle(
     (answer.status, Json(answer.body)).into_response()
 }
 
-fn plain((status, body): (StatusCode, Value)) -> RewardAnswer {
-    RewardAnswer {
+fn plain((status, body): (StatusCode, Value)) -> HelixAnswer {
+    HelixAnswer {
         status,
         body,
         notification: None,
@@ -182,7 +182,7 @@ fn serve(
     route: Route,
     query: &[(String, String)],
     body: Option<&Value>,
-) -> RewardAnswer {
+) -> HelixAnswer {
     match route {
         Route::ListRewards => inner.rewards.list(config, query),
         Route::CreateReward => inner.rewards.create(config, query, body),

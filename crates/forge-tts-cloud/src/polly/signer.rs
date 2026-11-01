@@ -201,14 +201,7 @@ fn derive_signing_key(secret: &[u8], date: &str, region: &str) -> Result<Vec<u8>
 }
 
 fn hex_encode(bytes: &[u8]) -> String {
-    bytes.iter().fold(String::new(), |mut s, b| {
-        #[expect(
-            clippy::let_underscore_must_use,
-            reason = "writing to a String cannot fail"
-        )]
-        let _ = write!(s, "{b:02x}");
-        s
-    })
+    forge_types::to_lower_hex(bytes)
 }
 
 fn format_datetime(t: &OffsetDateTime) -> String {

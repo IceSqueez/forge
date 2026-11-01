@@ -10,6 +10,7 @@ use sqlx::SqliteConnection;
 use crate::epoch::{epoch_ms_now, from_epoch_ms, to_epoch_ms};
 use crate::error::SqliteStorageError;
 use crate::pool::SqlitePools;
+use crate::row_int::decode_u32;
 
 #[derive(sqlx::FromRow)]
 struct OverlayRow {
@@ -40,8 +41,8 @@ fn decode_row(row: OverlayRow) -> Result<OverlayDefinition, SqliteStorageError> 
         enabled: row.enabled != 0,
         position: row.position,
         config,
-        config_schema_version: row.config_schema_version.max(0) as u32,
-        generator_version: row.generator_version.max(0) as u32,
+        config_schema_version: decode_u32("config_schema_version", row.config_schema_version)?,
+        generator_version: decode_u32("generator_version", row.generator_version)?,
         source_overrides,
         credential: OverlayCredential::new(row.credential),
         created_at: from_epoch_ms(row.created_at)?,

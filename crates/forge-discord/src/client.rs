@@ -339,7 +339,13 @@ impl DiscordClient {
             .json::<serde_json::Value>()
             .ok()
             .and_then(|body| body["id"].as_str().map(str::to_owned))
-            .unwrap_or_default();
+            .unwrap_or_else(|| {
+                tracing::warn!(
+                    webhook = webhook_name,
+                    "discord accepted the post without a readable message id"
+                );
+                String::new()
+            });
         self.apply_send_result(
             webhook_name,
             delivered.latency_ms,

@@ -711,7 +711,7 @@ fn judge_phase(
     }
     let allowed = result.phase.flood_per_sec * knee.max_backlog_secs;
     for name in &knee.watch {
-        let Some(action) = tracker.action_position(name) else {
+        let Some(action) = tracker.action_index(name) else {
             continue;
         };
         let backlog = tracker.unstarted(action) + tracker.in_flight(action);

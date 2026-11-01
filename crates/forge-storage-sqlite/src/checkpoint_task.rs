@@ -1,6 +1,7 @@
 use std::time::Duration;
 
 use sqlx::SqlitePool;
+use tokio::task::AbortHandle;
 
 use crate::pool::set_busy_timeout;
 
@@ -16,8 +17,8 @@ pub(crate) fn spawn_checkpoint_task(
     checkpointer: SqlitePool,
     writer: SqlitePool,
     busy_timeout: Duration,
-) {
-    tokio::spawn(async move {
+) -> AbortHandle {
+    let task = tokio::spawn(async move {
         let mut ticker = tokio::time::interval(CHECKPOINT_INTERVAL);
         ticker.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);
         let mut restarted_at_frames = None;
@@ -62,6 +63,7 @@ pub(crate) fn spawn_checkpoint_task(
             }
         }
     });
+    task.abort_handle()
 }
 
 async fn passive_checkpoint(checkpointer: &SqlitePool) -> Result<i64, sqlx::Error> {

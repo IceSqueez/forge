@@ -111,10 +111,6 @@ impl FakeDonatello {
             .mutate(|inner| inner.config.profile_complete = complete);
     }
 
-    pub fn set_order(&self, order: DonatesOrder) {
-        self.shared.mutate(|inner| inner.config.order = order);
-    }
-
     pub fn requests(&self) -> Vec<RecordedDonatelloRequest> {
         self.shared.read(|inner| inner.requests.clone())
     }

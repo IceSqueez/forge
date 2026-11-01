@@ -12,7 +12,9 @@ pub struct Sha256Digest([u8; SHA256_LEN]);
 impl Sha256Digest {
     pub fn from_hex(hex: &str) -> Option<Self> {
         let hex = hex.trim();
-        if hex.len() != SHA256_LEN * HEX_DIGITS_PER_BYTE || !hex.is_ascii() {
+        if hex.len() != SHA256_LEN * HEX_DIGITS_PER_BYTE
+            || !hex.bytes().all(|byte| byte.is_ascii_hexdigit())
+        {
             return None;
         }
         let mut bytes = [0u8; SHA256_LEN];

@@ -168,6 +168,6 @@ pub(crate) fn client() -> UpdateClient {
     .unwrap()
 }
 
-pub(crate) async fn refused_url() -> String {
+pub(crate) fn refused_url() -> String {
     format!("http://127.0.0.1:0/forge.AppImage?token={SECRET}")
 }

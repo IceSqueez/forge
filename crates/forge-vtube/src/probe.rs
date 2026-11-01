@@ -11,7 +11,7 @@ pub(crate) const PROBE_TIMEOUT: Duration = Duration::from_secs(5);
 
 #[derive(Debug, Clone)]
 pub struct VTubeProbeResult {
-    pub api_version: String,
+    pub vtube_studio_version: String,
     pub already_authenticated: bool,
     pub round_trip_ms: u64,
 }
@@ -56,7 +56,7 @@ async fn run_probe(
         });
     }
 
-    let api_version = msg["data"]["vTubeStudioVersion"]
+    let vtube_studio_version = msg["data"]["vTubeStudioVersion"]
         .as_str()
         .unwrap_or("unknown")
         .to_owned();
@@ -65,7 +65,7 @@ async fn run_probe(
         .unwrap_or(false);
 
     Ok(VTubeProbeResult {
-        api_version,
+        vtube_studio_version,
         already_authenticated,
         round_trip_ms,
     })

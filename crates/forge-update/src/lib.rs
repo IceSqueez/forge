@@ -1,6 +1,7 @@
 mod apply;
 mod apply_state;
 mod check;
+mod cleanup;
 mod database;
 mod digest;
 mod download;

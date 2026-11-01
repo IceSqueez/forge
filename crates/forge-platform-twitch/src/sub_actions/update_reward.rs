@@ -9,8 +9,8 @@ use forge_registry::{
 };
 use forge_types::{ArgStack, SubActionOutcome, SubActionTelemetry};
 
-use super::enable_reward::REWARD_ID;
 use super::fields::{HexColorField, ModeToggle, mode_toggle};
+use super::reward_toggle::REWARD_ID;
 use crate::account::identity::SelfIdentity;
 use crate::custom_rewards::{
     MAX_PROMPT_CHARS, MAX_TITLE_CHARS, MIN_COST, RewardBody, update_request,

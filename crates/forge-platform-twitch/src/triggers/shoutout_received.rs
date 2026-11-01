@@ -1,93 +1,60 @@
+use super::spec::TwitchTriggerSpec;
 use crate::vocabulary::event_kinds;
 use crate::vocabulary::trigger_ids;
-use forge_events::{Event, EventSource};
+use forge_events::Event;
 use forge_registry::{
     ActorDeclaration, ActorIdentity, ActorRole, ActorSlot, CanonicalCount, CanonicalVariable,
-    EventFilter, KindPlatformContract, TriggerCategory, TriggerKindDescriptor, TriggerVariables,
+    TriggerCategory, TriggerVariables,
 };
-use forge_types::{DeclaredVariable, PlatformId, TriggerConfig, VariantKind};
+use forge_types::{DeclaredVariable, VariantKind};
 
 use super::payload_read::{self, twitch_actor};
 use crate::vocabulary::fields::shoutout as shoutout_fields;
 
-pub(crate) struct ShoutoutReceivedDescriptor;
-
-impl TriggerKindDescriptor for ShoutoutReceivedDescriptor {
-    fn id(&self) -> &str {
-        trigger_ids::CHANNEL_SHOUTOUT_RECEIVED
-    }
-
-    fn category(&self) -> TriggerCategory {
-        TriggerCategory::Moderation
-    }
-
-    fn label(&self) -> &str {
-        "Shoutout received"
-    }
-
-    fn summary(&self) -> &str {
-        "Fires when another broadcaster gives the channel a shoutout"
-    }
-
-    fn search_text(&self) -> &str {
-        "twitch shoutout received incoming raid moderation"
-    }
-
-    fn icon_name(&self) -> &str {
-        "megaphone"
-    }
-
-    fn platform_contract(&self) -> KindPlatformContract {
-        KindPlatformContract::PlatformSpecific(PlatformId::Twitch)
-    }
-
-    fn event_filter(&self) -> EventFilter {
-        EventFilter {
-            source: Some(EventSource::Twitch),
-            kind_prefix: Some(event_kinds::CHANNEL_SHOUTOUT_RECEIVE.to_owned()),
-        }
-    }
-
-    fn matches_trigger(&self, _config: &TriggerConfig, _event: &Event) -> bool {
-        true
-    }
-
-    fn variables(&self) -> Option<TriggerVariables> {
-        Some(
-            TriggerVariables::new()
-                .actor(
-                    twitch_actor(ActorRole::Principal),
-                    shoutout_channel_identity,
-                )
-                .count(CanonicalCount::ViewerCount, |event| {
-                    payload_read::number(event, shoutout_fields::VIEWER_COUNT)
-                })
-                .event_specific_optional(
-                    DeclaredVariable {
-                        name: "started_at".to_owned(),
-                        kind: VariantKind::Datetime,
-                        label: "Started at".to_owned(),
-                        synthesis: None,
-                    },
-                    |event| payload_read::timestamp(event, shoutout_fields::STARTED_AT),
-                )
-                .legacy(
-                    "from_broadcaster_login",
-                    "Shouting-out channel login",
-                    CanonicalVariable::actor(ActorRole::Principal, ActorSlot::Login),
-                )
-                .legacy(
-                    "from_broadcaster_id",
-                    "Shouting-out channel ID",
-                    CanonicalVariable::actor(ActorRole::Principal, ActorSlot::Id),
-                ),
-        )
-    }
-
-    fn actors(&self) -> ActorDeclaration {
-        ActorDeclaration::principal()
-    }
+fn variables() -> Option<TriggerVariables> {
+    Some(
+        TriggerVariables::new()
+            .actor(
+                twitch_actor(ActorRole::Principal),
+                shoutout_channel_identity,
+            )
+            .count(CanonicalCount::ViewerCount, |event| {
+                payload_read::number(event, shoutout_fields::VIEWER_COUNT)
+            })
+            .event_specific_optional(
+                DeclaredVariable {
+                    name: "started_at".to_owned(),
+                    kind: VariantKind::Datetime,
+                    label: "Started at".to_owned(),
+                    synthesis: None,
+                },
+                |event| payload_read::timestamp(event, shoutout_fields::STARTED_AT),
+            )
+            .legacy(
+                "from_broadcaster_login",
+                "Shouting-out channel login",
+                CanonicalVariable::actor(ActorRole::Principal, ActorSlot::Login),
+            )
+            .legacy(
+                "from_broadcaster_id",
+                "Shouting-out channel ID",
+                CanonicalVariable::actor(ActorRole::Principal, ActorSlot::Id),
+            ),
+    )
 }
+
+pub(super) const SPEC: TwitchTriggerSpec = TwitchTriggerSpec {
+    id: trigger_ids::CHANNEL_SHOUTOUT_RECEIVED,
+    category: TriggerCategory::Moderation,
+    label: "Shoutout received",
+    summary: "Fires when another broadcaster gives the channel a shoutout",
+    search_text: "twitch shoutout received incoming raid moderation",
+    icon: "megaphone",
+    kind: event_kinds::CHANNEL_SHOUTOUT_RECEIVE,
+    actors: ActorDeclaration::principal(),
+    variables,
+    ..TwitchTriggerSpec::BASE
+};
 
 fn shoutout_channel_identity(event: &Event) -> ActorIdentity {
     payload_read::identity(
@@ -102,6 +69,8 @@ fn shoutout_channel_identity(event: &Event) -> ActorIdentity {
 mod tests {
     use super::*;
     use crate::timestamp::tests::instant;
+    use forge_events::EventSource;
+    use forge_registry::TriggerKindDescriptor;
     use forge_types::Variant;
 
     fn shoutout_received_event() -> Event {
@@ -119,7 +88,7 @@ mod tests {
 
     #[test]
     fn event_filter_targets_shoutout_receive_topic_from_twitch() {
-        let filter = ShoutoutReceivedDescriptor.event_filter();
+        let filter = SPEC.event_filter();
         assert_eq!(filter.source, Some(EventSource::Twitch));
         assert_eq!(
             filter.kind_prefix.as_deref(),
@@ -129,7 +98,7 @@ mod tests {
 
     #[test]
     fn build_arg_stack_maps_source_fields_and_types_viewer_count_as_int() {
-        let stack = ShoutoutReceivedDescriptor.build_arg_stack(&shoutout_received_event());
+        let stack = SPEC.build_arg_stack(&shoutout_received_event());
         assert_eq!(
             stack.get("from_broadcaster_login"),
             Some(&Variant::String("raider_chan".to_owned()))

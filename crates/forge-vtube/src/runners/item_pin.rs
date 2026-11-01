@@ -3,8 +3,8 @@ use std::sync::Arc;
 use async_trait::async_trait;
 use forge_registry::SubActionConfig;
 use forge_registry::{
-    ChoiceField, ConfigChoice, ConfigProblem, ConfigSpec, NumberField, OptionalField, RunContext,
-    StepTimer, SubActionCategory, SubActionRunner, TextField, ToggleField, TypedField,
+    ChoiceField, ConfigProblem, ConfigSpec, NumberField, OptionalField, RunContext, StepTimer,
+    SubActionCategory, SubActionRunner, TextField, ToggleField, TypedField,
 };
 use forge_types::{ArgStack, SubActionTelemetry};
 
@@ -13,7 +13,7 @@ use crate::runners::fields::{
     ITEM_INSTANCE_ID, ITEM_SIZE, optional_number, optional_text, read_non_empty,
 };
 use crate::runners::step_failure;
-use crate::sink::VTubeSink;
+use crate::sink::{ItemPin, VTubeSink};
 use crate::vocabulary::{config_keys, sub_action_ids};
 
 const DEFAULT_PIN_ANGLE: f64 = 0.0;
@@ -145,17 +145,17 @@ impl SubActionRunner for ItemPinRunner {
         let outcome = step_failure::outcome(
             &self
                 .sink
-                .pin_item(
-                    &request.item_instance_id,
-                    request.pin,
-                    request.angle_relative_to.wire_name(),
-                    request.size_relative_to.wire_name(),
-                    request.vertex_pin_type.wire_name(),
-                    request.model_id.as_deref().unwrap_or_default(),
-                    request.art_mesh_id.as_deref().unwrap_or_default(),
-                    request.angle.unwrap_or(DEFAULT_PIN_ANGLE),
-                    request.size.unwrap_or(DEFAULT_PIN_SIZE),
-                )
+                .pin_item(&ItemPin {
+                    item_instance_id: &request.item_instance_id,
+                    pin: request.pin,
+                    angle_relative_to: request.angle_relative_to,
+                    size_relative_to: request.size_relative_to,
+                    vertex_pin_type: request.vertex_pin_type,
+                    model_id: request.model_id.as_deref().unwrap_or_default(),
+                    art_mesh_id: request.art_mesh_id.as_deref().unwrap_or_default(),
+                    angle: request.angle.unwrap_or(DEFAULT_PIN_ANGLE),
+                    size: request.size.unwrap_or(DEFAULT_PIN_SIZE),
+                })
                 .await,
         );
         (timer.finish(outcome), None)

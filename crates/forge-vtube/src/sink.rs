@@ -3,6 +3,45 @@ use async_trait::async_trait;
 use forge_types::Variant;
 
 use crate::error::VTubeError;
+use crate::runners::choices::{AngleRelativeTo, FadeMode, SizeRelativeTo, VertexPinType};
+
+#[derive(Debug, Clone, Copy, Default)]
+pub struct ItemPlacement {
+    pub x: Option<f64>,
+    pub y: Option<f64>,
+    pub size: Option<f64>,
+    pub rotation: Option<f64>,
+    pub order: Option<i64>,
+}
+
+#[derive(Clone, Copy)]
+pub struct ItemMove<'a> {
+    pub item_instance_id: &'a str,
+    pub placement: ItemPlacement,
+    pub time_in_seconds: f64,
+    pub fade_mode: FadeMode,
+}
+
+#[derive(Clone, Copy)]
+pub struct ItemPin<'a> {
+    pub item_instance_id: &'a str,
+    pub pin: bool,
+    pub angle_relative_to: AngleRelativeTo,
+    pub size_relative_to: SizeRelativeTo,
+    pub vertex_pin_type: VertexPinType,
+    pub model_id: &'a str,
+    pub art_mesh_id: &'a str,
+    pub angle: f64,
+    pub size: f64,
+}
+
+#[derive(Clone, Copy)]
+pub struct ItemLoad<'a> {
+    pub file_name: &'a str,
+    pub placement: ItemPlacement,
+    pub fade_time: Option<f64>,
+    pub unload_on_disconnect: bool,
+}
 
 #[async_trait]
 pub trait VTubeSink: Send + Sync {
@@ -25,21 +64,7 @@ pub trait VTubeSink: Send + Sync {
         time_in_seconds: f64,
     ) -> Result<(), VTubeError>;
 
-    #[expect(
-        clippy::too_many_arguments,
-        reason = "each argument is one field of the outbound request"
-    )]
-    async fn move_item(
-        &self,
-        item_instance_id: &str,
-        x: Option<f64>,
-        y: Option<f64>,
-        size: Option<f64>,
-        rotation: Option<f64>,
-        order: Option<i64>,
-        time_in_seconds: f64,
-        fade_mode: &str,
-    ) -> Result<(), VTubeError>;
+    async fn move_item(&self, request: &ItemMove<'_>) -> Result<(), VTubeError>;
 
     async fn get_current_model(&self) -> Result<Variant, VTubeError>;
 
@@ -51,38 +76,9 @@ pub trait VTubeSink: Send + Sync {
 
     async fn get_items(&self) -> Result<Variant, VTubeError>;
 
-    #[expect(
-        clippy::too_many_arguments,
-        reason = "each argument is one field of the outbound request"
-    )]
-    async fn pin_item(
-        &self,
-        item_instance_id: &str,
-        pin: bool,
-        angle_relative_to: &str,
-        size_relative_to: &str,
-        vertex_pin_type: &str,
-        model_id: &str,
-        art_mesh_id: &str,
-        angle: f64,
-        size: f64,
-    ) -> Result<(), VTubeError>;
+    async fn pin_item(&self, request: &ItemPin<'_>) -> Result<(), VTubeError>;
 
-    #[expect(
-        clippy::too_many_arguments,
-        reason = "each argument is one field of the outbound request"
-    )]
-    async fn load_item(
-        &self,
-        file_name: &str,
-        x: Option<f64>,
-        y: Option<f64>,
-        size: Option<f64>,
-        rotation: Option<f64>,
-        fade_time: Option<f64>,
-        order: Option<i64>,
-        unload_on_disconnect: bool,
-    ) -> Result<Variant, VTubeError>;
+    async fn load_item(&self, request: &ItemLoad<'_>) -> Result<Variant, VTubeError>;
 
     async fn unload_all_items(&self) -> Result<(), VTubeError>;
 

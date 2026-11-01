@@ -1,77 +1,34 @@
-use forge_events::{Event, EventSource};
-use forge_registry::{EventFilter, KindPlatformContract, TriggerCategory, TriggerKindDescriptor};
-use forge_types::{ArgStack, TriggerConfig, UserText, VariableSchema};
-
-use super::virtualcam_status_changed::{build_virtualcam_arg_stack, virtualcam_variables};
+use super::families;
+use forge_events::EventSource;
+use forge_registry::{EventTriggerSpec, TriggerCondition, TriggerMatcher, no_config_fields};
 
 use crate::vocabulary::{event_kinds, messages, trigger_ids};
 
-pub(crate) struct VirtualcamStoppedDescriptor;
-
-impl TriggerKindDescriptor for VirtualcamStoppedDescriptor {
-    fn id(&self) -> &str {
-        trigger_ids::VIRTUALCAM_STOPPED
-    }
-
-    fn category(&self) -> TriggerCategory {
-        TriggerCategory::Integration
-    }
-
-    fn label(&self) -> &str {
-        "OBS virtual camera stopped"
-    }
-
-    fn summary(&self) -> &str {
-        "Fires when the OBS virtual camera output has fully stopped."
-    }
-
-    fn search_text(&self) -> &str {
-        "obs virtual camera stopped off disabled"
-    }
-
-    fn icon_name(&self) -> &str {
-        "camera-off"
-    }
-
-    fn platform_contract(&self) -> KindPlatformContract {
-        KindPlatformContract::Universal
-    }
-
-    fn condition_display(&self, _: &TriggerConfig) -> UserText {
-        messages::CONDITION_VIRTUAL_CAMERA_STOPPED.into()
-    }
-
-    fn event_filter(&self) -> EventFilter {
-        EventFilter {
-            source: Some(EventSource::Obs),
-            kind_prefix: Some(event_kinds::VIRTUALCAM_PREFIX.to_owned()),
-        }
-    }
-
-    fn matches_trigger(&self, _config: &TriggerConfig, event: &Event) -> bool {
-        event.kind == event_kinds::VIRTUALCAM_STOPPED
-    }
-
-    fn build_arg_stack(&self, event: &Event) -> ArgStack {
-        build_virtualcam_arg_stack(event)
-    }
-
-    fn output_schema(&self) -> Option<VariableSchema> {
-        Some(VariableSchema {
-            variables: virtualcam_variables(),
-        })
-    }
-}
+pub(crate) const VIRTUALCAM_STOPPED: EventTriggerSpec = EventTriggerSpec {
+    id: trigger_ids::VIRTUALCAM_STOPPED,
+    source: EventSource::Obs,
+    label: "OBS virtual camera stopped",
+    summary: "Fires when the OBS virtual camera output has fully stopped.",
+    search_text: "obs virtual camera stopped off disabled",
+    icon: "camera-off",
+    prefix: event_kinds::VIRTUALCAM_PREFIX,
+    matcher: TriggerMatcher::Kind(event_kinds::VIRTUALCAM_STOPPED),
+    condition: TriggerCondition::Fixed(messages::CONDITION_VIRTUAL_CAMERA_STOPPED),
+    config_fields: no_config_fields,
+    variables: families::virtualcam_variables,
+};
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use forge_events::{Event, EventSource};
+    use forge_registry::TriggerKindDescriptor;
     use serde_json::json;
     use std::collections::BTreeMap;
 
     #[test]
     fn matches_only_stopped_kind_among_virtualcam_lifecycle() {
-        let d = VirtualcamStoppedDescriptor;
+        let d = VIRTUALCAM_STOPPED;
         for (kind, expected) in [
             ("obs.virtualcam.stopped", true),
             ("obs.virtualcam.started", false),
@@ -89,7 +46,7 @@ mod tests {
 
     #[test]
     fn does_not_match_foreign_source_kind() {
-        let d = VirtualcamStoppedDescriptor;
+        let d = VIRTUALCAM_STOPPED;
         let event = Event::new(EventSource::Obs, "obs.recording.stopped", json!({}));
         assert!(!d.matches_trigger(&BTreeMap::new(), &event));
     }

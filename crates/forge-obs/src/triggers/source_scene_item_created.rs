@@ -1,116 +1,44 @@
-use forge_events::{Event, EventSource};
-use forge_registry::{EventFilter, KindPlatformContract, TriggerCategory, TriggerKindDescriptor};
-use forge_types::{
-    ArgStack, DeclaredVariable, TriggerConfig, UserText, VariableSchema, Variant, VariantKind,
+use forge_events::EventSource;
+use forge_registry::TriggerVariables;
+use forge_registry::{
+    EventTriggerSpec, EventVariable, TriggerCondition, TriggerMatcher, event_variables,
+    no_config_fields,
 };
 
 use crate::vocabulary::fields::source as fields;
 use crate::vocabulary::messages;
 use crate::vocabulary::{event_kinds, trigger_ids, variables};
 
-pub(crate) struct SourceSceneItemCreatedDescriptor;
+const VARIABLES: &[EventVariable] = &[
+    EventVariable::text(variables::scene::NAME, "Scene name", fields::SCENE_NAME),
+    EventVariable::text(variables::source::NAME, "Source name", fields::SOURCE_NAME),
+    EventVariable::int(variables::source::ITEM_ID, "Scene item ID", fields::ITEM_ID),
+];
 
-impl TriggerKindDescriptor for SourceSceneItemCreatedDescriptor {
-    fn id(&self) -> &str {
-        trigger_ids::SOURCE_SCENE_ITEM_CREATED
-    }
-
-    fn category(&self) -> TriggerCategory {
-        TriggerCategory::Integration
-    }
-
-    fn label(&self) -> &str {
-        "OBS scene item added"
-    }
-
-    fn summary(&self) -> &str {
-        "Fires when a source is added to a scene in OBS."
-    }
-
-    fn search_text(&self) -> &str {
-        "obs scene item source added new"
-    }
-
-    fn icon_name(&self) -> &str {
-        "plus-circle"
-    }
-
-    fn platform_contract(&self) -> KindPlatformContract {
-        KindPlatformContract::Universal
-    }
-
-    fn condition_display(&self, _: &TriggerConfig) -> UserText {
-        messages::CONDITION_ANY_SCENE_ITEM_ADDED.into()
-    }
-
-    fn event_filter(&self) -> EventFilter {
-        EventFilter {
-            source: Some(EventSource::Obs),
-            kind_prefix: Some(event_kinds::SOURCE_PREFIX.to_owned()),
-        }
-    }
-
-    fn matches_trigger(&self, _config: &TriggerConfig, event: &Event) -> bool {
-        event.kind == event_kinds::SOURCE_SCENE_ITEM_CREATED
-    }
-
-    fn build_arg_stack(&self, event: &Event) -> ArgStack {
-        let mut stack = ArgStack::new();
-        if let Some(scene) = event
-            .payload
-            .get(fields::SCENE_NAME)
-            .and_then(|v| v.as_str())
-        {
-            stack = stack.set(
-                variables::scene::NAME.to_owned(),
-                Variant::String(scene.to_owned()),
-            );
-        }
-        if let Some(source) = event
-            .payload
-            .get(fields::SOURCE_NAME)
-            .and_then(|v| v.as_str())
-        {
-            stack = stack.set(
-                variables::source::NAME.to_owned(),
-                Variant::String(source.to_owned()),
-            );
-        }
-        if let Some(item_id) = event.payload.get(fields::ITEM_ID).and_then(|v| v.as_i64()) {
-            stack = stack.set(variables::source::ITEM_ID.to_owned(), Variant::Int(item_id));
-        }
-        stack
-    }
-
-    fn output_schema(&self) -> Option<VariableSchema> {
-        Some(VariableSchema {
-            variables: vec![
-                DeclaredVariable {
-                    name: variables::scene::NAME.to_owned(),
-                    kind: VariantKind::String,
-                    label: "Scene name".to_owned(),
-                    synthesis: None,
-                },
-                DeclaredVariable {
-                    name: variables::source::NAME.to_owned(),
-                    kind: VariantKind::String,
-                    label: "Source name".to_owned(),
-                    synthesis: None,
-                },
-                DeclaredVariable {
-                    name: variables::source::ITEM_ID.to_owned(),
-                    kind: VariantKind::Int,
-                    label: "Scene item ID".to_owned(),
-                    synthesis: None,
-                },
-            ],
-        })
-    }
+fn variables() -> Option<TriggerVariables> {
+    event_variables(VARIABLES)
 }
+
+pub(crate) const SOURCE_SCENE_ITEM_CREATED: EventTriggerSpec = EventTriggerSpec {
+    id: trigger_ids::SOURCE_SCENE_ITEM_CREATED,
+    source: EventSource::Obs,
+    label: "OBS scene item added",
+    summary: "Fires when a source is added to a scene in OBS.",
+    search_text: "obs scene item source added new",
+    icon: "plus-circle",
+    prefix: event_kinds::SOURCE_PREFIX,
+    matcher: TriggerMatcher::Kind(event_kinds::SOURCE_SCENE_ITEM_CREATED),
+    condition: TriggerCondition::Fixed(messages::CONDITION_ANY_SCENE_ITEM_ADDED),
+    config_fields: no_config_fields,
+    variables,
+};
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use forge_events::{Event, EventSource};
+    use forge_registry::TriggerKindDescriptor;
+    use forge_types::{TriggerConfig, Variant};
     use serde_json::json;
 
     fn event(kind: &str, payload: serde_json::Value) -> Event {
@@ -127,7 +55,7 @@ mod tests {
             ("obs.scene.created", false),
         ] {
             assert_eq!(
-                SourceSceneItemCreatedDescriptor.matches_trigger(&cfg, &event(kind, json!({}))),
+                SOURCE_SCENE_ITEM_CREATED.matches_trigger(&cfg, &event(kind, json!({}))),
                 expected,
                 "{kind}"
             );
@@ -136,7 +64,7 @@ mod tests {
 
     #[test]
     fn arg_stack_carries_the_scene_source_and_item_id() {
-        let stack = SourceSceneItemCreatedDescriptor.build_arg_stack(&event(
+        let stack = SOURCE_SCENE_ITEM_CREATED.build_arg_stack(&event(
             "obs.source.scene_item_created",
             json!({ "scene_name": "Gameplay", "source_name": "Webcam", "item_id": 42 }),
         ));
@@ -154,7 +82,7 @@ mod tests {
 
     #[test]
     fn arg_stack_omits_every_key_whose_payload_field_is_absent_or_mistyped() {
-        let stack = SourceSceneItemCreatedDescriptor.build_arg_stack(&event(
+        let stack = SOURCE_SCENE_ITEM_CREATED.build_arg_stack(&event(
             "obs.source.scene_item_created",
             json!({ "scene_name": 7, "item_id": "42" }),
         ));

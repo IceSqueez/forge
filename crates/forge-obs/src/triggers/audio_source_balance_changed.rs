@@ -1,126 +1,50 @@
-use forge_events::{Event, EventSource};
+use super::audio_source;
+use forge_events::EventSource;
+use forge_registry::TriggerVariables;
 use forge_registry::{
-    EventFilter, FormField, KindPlatformContract, SubActionConfigExt, TriggerCategory,
-    TriggerKindDescriptor,
-};
-use forge_types::{
-    ArgStack, DeclaredVariable, TriggerConfig, UserText, VariableSchema, Variant, VariantKind,
+    EventTriggerSpec, EventVariable, TriggerCondition, TriggerMatcher, event_variables,
 };
 
-use super::audio_source_mute_changed::source_name_matches;
 use crate::vocabulary::fields::audio as fields;
-use crate::vocabulary::messages;
-use crate::vocabulary::{event_kinds, picker_keys, trigger_ids, variables};
+use crate::vocabulary::{event_kinds, trigger_ids, variables};
 
-pub(crate) struct AudioSourceBalanceChangedDescriptor;
+const VARIABLES: &[EventVariable] = &[
+    EventVariable::text(variables::source::NAME, "Source name", fields::SOURCE_NAME),
+    EventVariable::float(
+        variables::source::BALANCE,
+        "Source balance",
+        fields::BALANCE,
+    ),
+];
 
-impl TriggerKindDescriptor for AudioSourceBalanceChangedDescriptor {
-    fn id(&self) -> &str {
-        trigger_ids::AUDIO_SOURCE_BALANCE_CHANGED
-    }
-
-    fn category(&self) -> TriggerCategory {
-        TriggerCategory::Integration
-    }
-
-    fn label(&self) -> &str {
-        "OBS audio source balance changed"
-    }
-
-    fn summary(&self) -> &str {
-        "Fires when the audio balance of an OBS input source changes."
-    }
-
-    fn search_text(&self) -> &str {
-        "obs audio balance pan stereo source input"
-    }
-
-    fn icon_name(&self) -> &str {
-        "sliders"
-    }
-
-    fn platform_contract(&self) -> KindPlatformContract {
-        KindPlatformContract::Universal
-    }
-
-    fn config_fields(&self) -> Vec<FormField> {
-        vec![FormField::Optional {
-            key: "source_name",
-            label: "Source name (leave empty to match any)",
-            inner: Box::new(FormField::DynamicSelect {
-                key: "source_name",
-                label: "Source name",
-                options_key: picker_keys::AUDIO_INPUT_NAMES,
-            }),
-        }]
-    }
-
-    fn condition_display(&self, config: &TriggerConfig) -> UserText {
-        match config.str_nonempty("source_name") {
-            Some(s) => messages::condition_source(s).into(),
-            None => messages::CONDITION_ANY_SOURCE.into(),
-        }
-    }
-
-    fn event_filter(&self) -> EventFilter {
-        EventFilter {
-            source: Some(EventSource::Obs),
-            kind_prefix: Some(event_kinds::AUDIO_PREFIX.to_owned()),
-        }
-    }
-
-    fn matches_trigger(&self, config: &TriggerConfig, event: &Event) -> bool {
-        if event.kind != event_kinds::AUDIO_SOURCE_BALANCE_CHANGED {
-            return false;
-        }
-        source_name_matches(config, event)
-    }
-
-    fn build_arg_stack(&self, event: &Event) -> ArgStack {
-        let mut stack = ArgStack::new();
-        if let Some(name) = event
-            .payload
-            .get(fields::SOURCE_NAME)
-            .and_then(|v| v.as_str())
-        {
-            stack = stack.set(
-                variables::source::NAME.to_owned(),
-                Variant::String(name.to_owned()),
-            );
-        }
-        if let Some(balance) = event.payload.get(fields::BALANCE).and_then(|v| v.as_f64()) {
-            stack = stack.set(
-                variables::source::BALANCE.to_owned(),
-                Variant::Float(balance),
-            );
-        }
-        stack
-    }
-
-    fn output_schema(&self) -> Option<VariableSchema> {
-        Some(VariableSchema {
-            variables: vec![
-                DeclaredVariable {
-                    name: variables::source::NAME.to_owned(),
-                    kind: VariantKind::String,
-                    label: "Source name".to_owned(),
-                    synthesis: None,
-                },
-                DeclaredVariable {
-                    name: variables::source::BALANCE.to_owned(),
-                    kind: VariantKind::Float,
-                    label: "Source balance".to_owned(),
-                    synthesis: None,
-                },
-            ],
-        })
-    }
+fn variables() -> Option<TriggerVariables> {
+    event_variables(VARIABLES)
 }
+
+pub(crate) const AUDIO_SOURCE_BALANCE_CHANGED: EventTriggerSpec = EventTriggerSpec {
+    id: trigger_ids::AUDIO_SOURCE_BALANCE_CHANGED,
+    source: EventSource::Obs,
+    label: "OBS audio source balance changed",
+    summary: "Fires when the audio balance of an OBS input source changes.",
+    search_text: "obs audio balance pan stereo source input",
+    icon: "sliders",
+    prefix: event_kinds::AUDIO_PREFIX,
+    matcher: TriggerMatcher::KindWhere(
+        event_kinds::AUDIO_SOURCE_BALANCE_CHANGED,
+        audio_source::source_name_matches,
+    ),
+    condition: TriggerCondition::FromConfig(audio_source::condition_display),
+    config_fields: audio_source::config_fields,
+    variables,
+};
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use forge_events::Event;
+    use forge_events::EventSource;
     use forge_registry::TriggerKindDescriptor;
+    use forge_types::Variant;
     use serde_json::json;
 
     #[test]
@@ -130,7 +54,7 @@ mod tests {
             "obs.audio.source_balance_changed",
             json!({ "source_name": "Mic", "balance": 0.75 }),
         );
-        let stack = AudioSourceBalanceChangedDescriptor.build_arg_stack(&event);
+        let stack = AUDIO_SOURCE_BALANCE_CHANGED.build_arg_stack(&event);
         assert_eq!(
             stack.get("obs.source.name"),
             Some(&Variant::String("Mic".to_owned())),
@@ -145,7 +69,7 @@ mod tests {
             "obs.audio.source_balance_changed",
             json!({}),
         );
-        let stack = AudioSourceBalanceChangedDescriptor.build_arg_stack(&event);
+        let stack = AUDIO_SOURCE_BALANCE_CHANGED.build_arg_stack(&event);
         assert!(stack.get("obs.source.name").is_none());
         assert!(stack.get("obs.source.balance").is_none());
     }

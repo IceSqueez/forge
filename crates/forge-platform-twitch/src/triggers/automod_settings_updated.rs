@@ -1,88 +1,50 @@
+use super::spec::TwitchTriggerSpec;
 use crate::vocabulary::event_kinds;
 use crate::vocabulary::trigger_ids;
-use forge_events::{Event, EventSource};
+use forge_events::Event;
 use forge_registry::{
-    ActorDeclaration, ActorIdentity, ActorRole, EventFilter, KindPlatformContract, TriggerCategory,
-    TriggerKindDescriptor, TriggerVariables,
+    ActorDeclaration, ActorIdentity, ActorRole, TriggerCategory, TriggerVariables,
 };
-use forge_types::{
-    DeclaredVariable, PlatformId, SynthesisHint, TriggerConfig, Variant, VariantKind,
-};
+use forge_types::{DeclaredVariable, SynthesisHint, Variant, VariantKind};
 
 use super::payload_read::{self, twitch_actor};
 use crate::vocabulary::fields::automod as automod_fields;
 
-pub(crate) struct AutomodSettingsUpdatedDescriptor;
-
-impl TriggerKindDescriptor for AutomodSettingsUpdatedDescriptor {
-    fn id(&self) -> &str {
-        trigger_ids::AUTOMOD_SETTINGS_UPDATED
-    }
-
-    fn category(&self) -> TriggerCategory {
-        TriggerCategory::Moderation
-    }
-
-    fn label(&self) -> &str {
-        "AutoMod settings updated"
-    }
-
-    fn summary(&self) -> &str {
-        "Fires when a moderator changes the channel AutoMod filter settings"
-    }
-
-    fn search_text(&self) -> &str {
-        "twitch automod settings filter level moderator updated changed"
-    }
-
-    fn icon_name(&self) -> &str {
-        "shield"
-    }
-
-    fn platform_contract(&self) -> KindPlatformContract {
-        KindPlatformContract::PlatformSpecific(PlatformId::Twitch)
-    }
-
-    fn event_filter(&self) -> EventFilter {
-        EventFilter {
-            source: Some(EventSource::Twitch),
-            kind_prefix: Some(event_kinds::AUTOMOD_SETTINGS_UPDATE.to_owned()),
-        }
-    }
-
-    fn matches_trigger(&self, _config: &TriggerConfig, _event: &Event) -> bool {
-        true
-    }
-
-    fn variables(&self) -> Option<TriggerVariables> {
-        Some(
-            TriggerVariables::new()
-                .actor(
-                    twitch_actor(ActorRole::Principal),
-                    settings_moderator_identity,
-                )
-                .actor(
-                    twitch_actor(ActorRole::Moderator),
-                    settings_moderator_identity,
-                )
-                .event_specific(
-                    DeclaredVariable {
-                        name: "automod.overall_level".to_owned(),
-                        kind: VariantKind::Int,
-                        label: "Automod overall level".to_owned(),
-                        synthesis: Some(SynthesisHint::BoundedInt { min: 0, max: 4 }),
-                    },
-                    |event| {
-                        Variant::Int(payload_read::number(event, automod_fields::OVERALL_LEVEL))
-                    },
-                ),
-        )
-    }
-
-    fn actors(&self) -> ActorDeclaration {
-        ActorDeclaration::Actors(&[ActorRole::Moderator])
-    }
+fn variables() -> Option<TriggerVariables> {
+    Some(
+        TriggerVariables::new()
+            .actor(
+                twitch_actor(ActorRole::Principal),
+                settings_moderator_identity,
+            )
+            .actor(
+                twitch_actor(ActorRole::Moderator),
+                settings_moderator_identity,
+            )
+            .event_specific(
+                DeclaredVariable {
+                    name: "automod.overall_level".to_owned(),
+                    kind: VariantKind::Int,
+                    label: "Automod overall level".to_owned(),
+                    synthesis: Some(SynthesisHint::BoundedInt { min: 0, max: 4 }),
+                },
+                |event| Variant::Int(payload_read::number(event, automod_fields::OVERALL_LEVEL)),
+            ),
+    )
 }
+
+pub(super) const SPEC: TwitchTriggerSpec = TwitchTriggerSpec {
+    id: trigger_ids::AUTOMOD_SETTINGS_UPDATED,
+    category: TriggerCategory::Moderation,
+    label: "AutoMod settings updated",
+    summary: "Fires when a moderator changes the channel AutoMod filter settings",
+    search_text: "twitch automod settings filter level moderator updated changed",
+    icon: "shield",
+    kind: event_kinds::AUTOMOD_SETTINGS_UPDATE,
+    actors: ActorDeclaration::Actors(&[ActorRole::Moderator]),
+    variables,
+    ..TwitchTriggerSpec::BASE
+};
 
 fn settings_moderator_identity(event: &Event) -> ActorIdentity {
     payload_read::identity(
@@ -96,6 +58,8 @@ fn settings_moderator_identity(event: &Event) -> ActorIdentity {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use forge_events::EventSource;
+    use forge_registry::TriggerKindDescriptor;
 
     fn settings_event() -> Event {
         Event::new(
@@ -114,7 +78,7 @@ mod tests {
 
     #[test]
     fn event_filter_targets_automod_settings_update_kind_from_twitch() {
-        let filter = AutomodSettingsUpdatedDescriptor.event_filter();
+        let filter = SPEC.event_filter();
         assert_eq!(filter.source, Some(EventSource::Twitch));
         assert_eq!(
             filter.kind_prefix.as_deref(),
@@ -124,7 +88,7 @@ mod tests {
 
     #[test]
     fn build_arg_stack_marshals_overall_level_as_int_and_exposes_moderator() {
-        let stack = AutomodSettingsUpdatedDescriptor.build_arg_stack(&settings_event());
+        let stack = SPEC.build_arg_stack(&settings_event());
         assert_eq!(
             stack.get("moderator_login"),
             Some(&Variant::String("mod_login".to_owned()))

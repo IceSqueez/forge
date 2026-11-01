@@ -1,120 +1,83 @@
+use super::spec::TwitchTriggerSpec;
 use crate::vocabulary::event_kinds;
 use crate::vocabulary::trigger_ids;
-use forge_events::{Event, EventSource};
+use forge_events::Event;
 use forge_registry::{
-    ActorDeclaration, ActorIdentity, ActorRole, ActorSlot, CanonicalVariable, EventFilter,
-    KindPlatformContract, TriggerCategory, TriggerKindDescriptor, TriggerVariables,
+    ActorDeclaration, ActorIdentity, ActorRole, ActorSlot, CanonicalVariable, TriggerCategory,
+    TriggerVariables,
 };
-use forge_types::{
-    DeclaredVariable, PlatformId, SynthesisHint, TriggerConfig, Variant, VariantKind,
-};
+use forge_types::{DeclaredVariable, SynthesisHint, Variant, VariantKind};
 
 use super::payload_read::{self, twitch_actor};
 use crate::vocabulary::fields::unban_request as unban_request_fields;
 
-pub(crate) struct UnbanRequestResolvedDescriptor;
-
-impl TriggerKindDescriptor for UnbanRequestResolvedDescriptor {
-    fn id(&self) -> &str {
-        trigger_ids::CHANNEL_UNBAN_REQUEST_RESOLVED
-    }
-
-    fn category(&self) -> TriggerCategory {
-        TriggerCategory::Moderation
-    }
-
-    fn label(&self) -> &str {
-        "Unban request resolved"
-    }
-
-    fn summary(&self) -> &str {
-        "Fires when a moderator approves, denies, or cancels an unban request"
-    }
-
-    fn search_text(&self) -> &str {
-        "twitch unban request resolved approved denied canceled moderator moderation"
-    }
-
-    fn icon_name(&self) -> &str {
-        "shield-check"
-    }
-
-    fn platform_contract(&self) -> KindPlatformContract {
-        KindPlatformContract::PlatformSpecific(PlatformId::Twitch)
-    }
-
-    fn event_filter(&self) -> EventFilter {
-        EventFilter {
-            source: Some(EventSource::Twitch),
-            kind_prefix: Some(event_kinds::CHANNEL_UNBAN_REQUEST_RESOLVE.to_owned()),
-        }
-    }
-
-    fn matches_trigger(&self, _config: &TriggerConfig, _event: &Event) -> bool {
-        true
-    }
-
-    fn variables(&self) -> Option<TriggerVariables> {
-        Some(
-            TriggerVariables::new()
-                .actor(twitch_actor(ActorRole::Principal), unban_target_identity)
-                .actor(
-                    twitch_actor(ActorRole::Moderator),
-                    resolving_moderator_identity,
-                )
-                .event_specific(
-                    DeclaredVariable {
-                        name: "unban.request_id".to_owned(),
-                        kind: VariantKind::String,
-                        label: "Unban request ID".to_owned(),
-                        synthesis: None,
-                    },
-                    |event| {
-                        Variant::String(payload_read::text(event, unban_request_fields::REQUEST_ID))
-                    },
-                )
-                .event_specific(
-                    DeclaredVariable {
-                        name: "unban.resolution".to_owned(),
-                        kind: VariantKind::String,
-                        label: "Resolution status".to_owned(),
-                        synthesis: None,
-                    },
-                    |event| {
-                        Variant::String(payload_read::text(event, unban_request_fields::STATUS))
-                    },
-                )
-                .legacy(
-                    "unban.target.login",
-                    "Target user login",
-                    CanonicalVariable::actor(ActorRole::Principal, ActorSlot::Login),
-                )
-                .legacy(
-                    "unban.moderator.login",
-                    "Resolving moderator login",
-                    CanonicalVariable::actor(ActorRole::Moderator, ActorSlot::Login),
-                )
-                .event_specific(
-                    DeclaredVariable {
-                        name: "unban.resolution_text".to_owned(),
-                        kind: VariantKind::String,
-                        label: "Resolution note".to_owned(),
-                        synthesis: Some(SynthesisHint::Message),
-                    },
-                    |event| {
-                        Variant::String(payload_read::text(
-                            event,
-                            unban_request_fields::RESOLUTION_TEXT,
-                        ))
-                    },
-                ),
-        )
-    }
-
-    fn actors(&self) -> ActorDeclaration {
-        ActorDeclaration::Actors(&[ActorRole::Moderator])
-    }
+fn variables() -> Option<TriggerVariables> {
+    Some(
+        TriggerVariables::new()
+            .actor(twitch_actor(ActorRole::Principal), unban_target_identity)
+            .actor(
+                twitch_actor(ActorRole::Moderator),
+                resolving_moderator_identity,
+            )
+            .event_specific(
+                DeclaredVariable {
+                    name: "unban.request_id".to_owned(),
+                    kind: VariantKind::String,
+                    label: "Unban request ID".to_owned(),
+                    synthesis: None,
+                },
+                |event| {
+                    Variant::String(payload_read::text(event, unban_request_fields::REQUEST_ID))
+                },
+            )
+            .event_specific(
+                DeclaredVariable {
+                    name: "unban.resolution".to_owned(),
+                    kind: VariantKind::String,
+                    label: "Resolution status".to_owned(),
+                    synthesis: None,
+                },
+                |event| Variant::String(payload_read::text(event, unban_request_fields::STATUS)),
+            )
+            .legacy(
+                "unban.target.login",
+                "Target user login",
+                CanonicalVariable::actor(ActorRole::Principal, ActorSlot::Login),
+            )
+            .legacy(
+                "unban.moderator.login",
+                "Resolving moderator login",
+                CanonicalVariable::actor(ActorRole::Moderator, ActorSlot::Login),
+            )
+            .event_specific(
+                DeclaredVariable {
+                    name: "unban.resolution_text".to_owned(),
+                    kind: VariantKind::String,
+                    label: "Resolution note".to_owned(),
+                    synthesis: Some(SynthesisHint::Message),
+                },
+                |event| {
+                    Variant::String(payload_read::text(
+                        event,
+                        unban_request_fields::RESOLUTION_TEXT,
+                    ))
+                },
+            ),
+    )
 }
+
+pub(super) const SPEC: TwitchTriggerSpec = TwitchTriggerSpec {
+    id: trigger_ids::CHANNEL_UNBAN_REQUEST_RESOLVED,
+    category: TriggerCategory::Moderation,
+    label: "Unban request resolved",
+    summary: "Fires when a moderator approves, denies, or cancels an unban request",
+    search_text: "twitch unban request resolved approved denied canceled moderator moderation",
+    icon: "shield-check",
+    kind: event_kinds::CHANNEL_UNBAN_REQUEST_RESOLVE,
+    actors: ActorDeclaration::Actors(&[ActorRole::Moderator]),
+    variables,
+    ..TwitchTriggerSpec::BASE
+};
 
 fn unban_target_identity(event: &Event) -> ActorIdentity {
     payload_read::identity(
@@ -137,10 +100,12 @@ fn resolving_moderator_identity(event: &Event) -> ActorIdentity {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use forge_events::EventSource;
+    use forge_registry::TriggerKindDescriptor;
 
     #[test]
     fn event_filter_targets_unban_request_resolve_topic_from_twitch() {
-        let filter = UnbanRequestResolvedDescriptor.event_filter();
+        let filter = SPEC.event_filter();
         assert_eq!(filter.source, Some(EventSource::Twitch));
         assert_eq!(
             filter.kind_prefix.as_deref(),
@@ -162,7 +127,7 @@ mod tests {
             "channel.unban_request.resolve",
             payload,
         );
-        let stack = UnbanRequestResolvedDescriptor.build_arg_stack(&event);
+        let stack = SPEC.build_arg_stack(&event);
 
         for (key, expected) in [
             ("unban.request_id", "req-42"),
@@ -186,7 +151,7 @@ mod tests {
             "channel.unban_request.resolve",
             serde_json::json!({}),
         );
-        let stack = UnbanRequestResolvedDescriptor.build_arg_stack(&event);
+        let stack = SPEC.build_arg_stack(&event);
 
         for key in [
             "unban.request_id",

@@ -1,103 +1,74 @@
+use super::spec::TwitchTriggerSpec;
 use crate::vocabulary::event_kinds;
 use crate::vocabulary::trigger_ids;
-use forge_events::{Event, EventSource};
-use forge_registry::{
-    ActorDeclaration, ActorRole, EventFilter, KindPlatformContract, TriggerCategory,
-    TriggerKindDescriptor, TriggerVariables,
-};
-use forge_types::{DeclaredVariable, PlatformId, TriggerConfig, Variant, VariantKind};
+use forge_events::Event;
+use forge_registry::{ActorDeclaration, ActorRole, TriggerCategory, TriggerVariables};
+use forge_types::{DeclaredVariable, TriggerConfig, Variant, VariantKind};
 
 use super::payload_read::{self, twitch_actor};
 use crate::vocabulary::fields::moderation as fields;
 
-pub(crate) struct ChannelBanDescriptor;
-
-impl TriggerKindDescriptor for ChannelBanDescriptor {
-    fn id(&self) -> &str {
-        trigger_ids::CHANNEL_BAN
-    }
-
-    fn category(&self) -> TriggerCategory {
-        TriggerCategory::Moderation
-    }
-
-    fn label(&self) -> &str {
-        "User banned (permanent)"
-    }
-
-    fn summary(&self) -> &str {
-        "Fires when a viewer is permanently banned from the channel"
-    }
-
-    fn search_text(&self) -> &str {
-        "twitch ban banned permanent moderation"
-    }
-
-    fn icon_name(&self) -> &str {
-        "ban"
-    }
-
-    fn platform_contract(&self) -> KindPlatformContract {
-        KindPlatformContract::PlatformSpecific(PlatformId::Twitch)
-    }
-
-    fn event_filter(&self) -> EventFilter {
-        EventFilter {
-            source: Some(EventSource::Twitch),
-            kind_prefix: Some(event_kinds::CHANNEL_BAN.to_owned()),
-        }
-    }
-
-    fn matches_trigger(&self, _config: &TriggerConfig, event: &Event) -> bool {
-        event
-            .payload
-            .get(fields::IS_PERMANENT)
-            .and_then(|v| v.as_bool())
-            .unwrap_or(false)
-    }
-
-    fn variables(&self) -> Option<TriggerVariables> {
-        Some(
-            TriggerVariables::new()
-                .actor(
-                    twitch_actor(ActorRole::Principal),
-                    payload_read::moderated_user_identity,
-                )
-                .actor(
-                    twitch_actor(ActorRole::Moderator),
-                    payload_read::acting_moderator_identity,
-                )
-                .event_specific(
-                    DeclaredVariable {
-                        name: "reason".to_owned(),
-                        kind: VariantKind::String,
-                        label: "Ban reason".to_owned(),
-                        synthesis: None,
-                    },
-                    |event| Variant::String(payload_read::text(event, fields::REASON)),
-                )
-                .event_specific_optional(
-                    DeclaredVariable {
-                        name: "banned_at".to_owned(),
-                        kind: VariantKind::Datetime,
-                        label: "Banned at".to_owned(),
-                        synthesis: None,
-                    },
-                    |event| payload_read::timestamp(event, fields::BANNED_AT),
-                ),
-        )
-    }
-
-    fn actors(&self) -> ActorDeclaration {
-        ActorDeclaration::Actors(&[ActorRole::Moderator])
-    }
+fn matches(_config: &TriggerConfig, event: &Event) -> bool {
+    event
+        .payload
+        .get(fields::IS_PERMANENT)
+        .and_then(|v| v.as_bool())
+        .unwrap_or(false)
 }
+
+fn variables() -> Option<TriggerVariables> {
+    Some(
+        TriggerVariables::new()
+            .actor(
+                twitch_actor(ActorRole::Principal),
+                payload_read::moderated_user_identity,
+            )
+            .actor(
+                twitch_actor(ActorRole::Moderator),
+                payload_read::acting_moderator_identity,
+            )
+            .event_specific(
+                DeclaredVariable {
+                    name: "reason".to_owned(),
+                    kind: VariantKind::String,
+                    label: "Ban reason".to_owned(),
+                    synthesis: None,
+                },
+                |event| Variant::String(payload_read::text(event, fields::REASON)),
+            )
+            .event_specific_optional(
+                DeclaredVariable {
+                    name: "banned_at".to_owned(),
+                    kind: VariantKind::Datetime,
+                    label: "Banned at".to_owned(),
+                    synthesis: None,
+                },
+                |event| payload_read::timestamp(event, fields::BANNED_AT),
+            ),
+    )
+}
+
+pub(super) const SPEC: TwitchTriggerSpec = TwitchTriggerSpec {
+    id: trigger_ids::CHANNEL_BAN,
+    category: TriggerCategory::Moderation,
+    label: "User banned (permanent)",
+    summary: "Fires when a viewer is permanently banned from the channel",
+    search_text: "twitch ban banned permanent moderation",
+    icon: "ban",
+    kind: event_kinds::CHANNEL_BAN,
+    actors: ActorDeclaration::Actors(&[ActorRole::Moderator]),
+    variables,
+    matches,
+    ..TwitchTriggerSpec::BASE
+};
 
 #[cfg(test)]
 mod tests {
     use super::*;
     use crate::timestamp::tests::instant;
-    use crate::triggers::channel_timeout::ChannelTimeoutDescriptor;
+    use crate::triggers::channel_timeout::SPEC as CHANNEL_TIMEOUT;
+    use forge_events::EventSource;
+    use forge_registry::TriggerKindDescriptor;
 
     fn ban_event(is_permanent: bool) -> Event {
         let payload = serde_json::json!({
@@ -117,21 +88,21 @@ mod tests {
 
         let permanent = ban_event(true);
         assert!(
-            ChannelBanDescriptor.matches_trigger(&cfg, &permanent),
+            SPEC.matches_trigger(&cfg, &permanent),
             "permanent ban must fire the ban descriptor"
         );
         assert!(
-            !ChannelTimeoutDescriptor.matches_trigger(&cfg, &permanent),
+            !CHANNEL_TIMEOUT.matches_trigger(&cfg, &permanent),
             "permanent ban must NOT fire the timeout descriptor"
         );
 
         let timeout = ban_event(false);
         assert!(
-            !ChannelBanDescriptor.matches_trigger(&cfg, &timeout),
+            !SPEC.matches_trigger(&cfg, &timeout),
             "timeout must NOT fire the ban descriptor"
         );
         assert!(
-            ChannelTimeoutDescriptor.matches_trigger(&cfg, &timeout),
+            CHANNEL_TIMEOUT.matches_trigger(&cfg, &timeout),
             "timeout must fire the timeout descriptor"
         );
     }
@@ -144,20 +115,20 @@ mod tests {
             "moderator": { "login": "m", "display_name": "M" },
         });
         let event = Event::new(EventSource::Twitch, "twitch.channel.ban", payload);
-        assert!(!ChannelBanDescriptor.matches_trigger(&cfg, &event));
-        assert!(ChannelTimeoutDescriptor.matches_trigger(&cfg, &event));
+        assert!(!SPEC.matches_trigger(&cfg, &event));
+        assert!(CHANNEL_TIMEOUT.matches_trigger(&cfg, &event));
     }
 
     #[test]
     fn event_filter_targets_channel_ban_topic_from_twitch() {
-        let filter = ChannelBanDescriptor.event_filter();
+        let filter = SPEC.event_filter();
         assert_eq!(filter.source, Some(EventSource::Twitch));
         assert_eq!(filter.kind_prefix.as_deref(), Some("twitch.channel.ban"));
     }
 
     #[test]
     fn build_arg_stack_exposes_user_moderator_reason_and_banned_at() {
-        let stack = ChannelBanDescriptor.build_arg_stack(&ban_event(true));
+        let stack = SPEC.build_arg_stack(&ban_event(true));
         assert_eq!(
             stack.get("user_login"),
             Some(&Variant::String("viewer_one".to_owned()))
@@ -190,7 +161,7 @@ mod tests {
         let mut event = ban_event(true);
         event.payload["ends_at"] = serde_json::Value::Null;
 
-        let stack = ChannelBanDescriptor.build_arg_stack(&event);
+        let stack = SPEC.build_arg_stack(&event);
 
         assert_eq!(
             stack.get("banned_at"),

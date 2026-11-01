@@ -5,7 +5,7 @@ use async_trait::async_trait;
 
 use crate::client::VTubeClient;
 use crate::error::VTubeError;
-use crate::sink::VTubeSink;
+use crate::sink::{ItemLoad, ItemMove, ItemPin, VTubeSink};
 
 pub struct SwitchableVTubeSink {
     inner: RwLock<Option<Arc<VTubeClient>>>,
@@ -83,30 +83,9 @@ impl VTubeSink for SwitchableVTubeSink {
             .await
     }
 
-    async fn move_item(
-        &self,
-        item_instance_id: &str,
-        x: Option<f64>,
-        y: Option<f64>,
-        size: Option<f64>,
-        rotation: Option<f64>,
-        order: Option<i64>,
-        time_in_seconds: f64,
-        fade_mode: &str,
-    ) -> Result<(), VTubeError> {
+    async fn move_item(&self, request: &ItemMove<'_>) -> Result<(), VTubeError> {
         let client = self.get()?;
-        client
-            .move_item(
-                item_instance_id,
-                x,
-                y,
-                size,
-                rotation,
-                order,
-                time_in_seconds,
-                fade_mode,
-            )
-            .await
+        client.move_item(request).await
     }
 
     async fn get_current_model(&self) -> Result<Variant, VTubeError> {
@@ -134,58 +113,14 @@ impl VTubeSink for SwitchableVTubeSink {
         client.get_items().await
     }
 
-    async fn pin_item(
-        &self,
-        item_instance_id: &str,
-        pin: bool,
-        angle_relative_to: &str,
-        size_relative_to: &str,
-        vertex_pin_type: &str,
-        model_id: &str,
-        art_mesh_id: &str,
-        angle: f64,
-        size: f64,
-    ) -> Result<(), VTubeError> {
+    async fn pin_item(&self, request: &ItemPin<'_>) -> Result<(), VTubeError> {
         let client = self.get()?;
-        client
-            .pin_item(
-                item_instance_id,
-                pin,
-                angle_relative_to,
-                size_relative_to,
-                vertex_pin_type,
-                model_id,
-                art_mesh_id,
-                angle,
-                size,
-            )
-            .await
+        client.pin_item(request).await
     }
 
-    async fn load_item(
-        &self,
-        file_name: &str,
-        x: Option<f64>,
-        y: Option<f64>,
-        size: Option<f64>,
-        rotation: Option<f64>,
-        fade_time: Option<f64>,
-        order: Option<i64>,
-        unload_on_disconnect: bool,
-    ) -> Result<Variant, VTubeError> {
+    async fn load_item(&self, request: &ItemLoad<'_>) -> Result<Variant, VTubeError> {
         let client = self.get()?;
-        client
-            .load_item(
-                file_name,
-                x,
-                y,
-                size,
-                rotation,
-                fade_time,
-                order,
-                unload_on_disconnect,
-            )
-            .await
+        client.load_item(request).await
     }
 
     async fn unload_all_items(&self) -> Result<(), VTubeError> {

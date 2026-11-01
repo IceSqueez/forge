@@ -1,138 +1,50 @@
+use super::spec::{TwitchTriggerSpec, Variable, table_variables};
 use crate::vocabulary::event_kinds;
 use crate::vocabulary::trigger_ids;
-use forge_events::{Event, EventSource};
-use forge_registry::{
-    ActorDeclaration, EventFilter, KindPlatformContract, TriggerCategory, TriggerKindDescriptor,
-};
-use forge_types::{
-    ArgStack, DeclaredVariable, PlatformId, TriggerConfig, VariableSchema, Variant, VariantKind,
-};
+use forge_registry::TriggerVariables;
+use forge_registry::{ActorDeclaration, TriggerCategory};
+use forge_types::VariantKind;
 
-use crate::triggers::poll_started::build_choices_variant;
+use super::families::build_choices_variant;
 use crate::vocabulary::fields::poll as fields;
 
-pub(crate) struct PollEndedDescriptor;
+const VARIABLES: &[Variable] = &[
+    Variable::nested_text("poll.id", "Poll ID", fields::POLL, fields::POLL_ID),
+    Variable::nested_text("poll.title", "Poll title", fields::POLL, fields::POLL_TITLE),
+    Variable::nested_text("poll.status", "Poll status", fields::POLL, fields::STATUS),
+    Variable::nested_timestamp("poll.ended_at", "Ended at", fields::POLL, fields::ENDED_AT),
+    Variable::custom(
+        "poll.choices",
+        VariantKind::Array,
+        "Poll choices",
+        build_choices_variant,
+    ),
+];
 
-impl TriggerKindDescriptor for PollEndedDescriptor {
-    fn id(&self) -> &str {
-        trigger_ids::POLL_ENDED
-    }
-
-    fn category(&self) -> TriggerCategory {
-        TriggerCategory::Polls
-    }
-
-    fn label(&self) -> &str {
-        "Poll ended"
-    }
-
-    fn summary(&self) -> &str {
-        "Fires when a poll ends (completed, archived, or terminated)"
-    }
-
-    fn search_text(&self) -> &str {
-        "twitch poll ended completed archived terminated"
-    }
-
-    fn icon_name(&self) -> &str {
-        "chart-bar"
-    }
-
-    fn platform_contract(&self) -> KindPlatformContract {
-        KindPlatformContract::PlatformSpecific(PlatformId::Twitch)
-    }
-
-    fn event_filter(&self) -> EventFilter {
-        EventFilter {
-            source: Some(EventSource::Twitch),
-            kind_prefix: Some(event_kinds::CHANNEL_POLL_END.to_owned()),
-        }
-    }
-
-    fn matches_trigger(&self, _config: &TriggerConfig, _event: &Event) -> bool {
-        true
-    }
-
-    fn actors(&self) -> ActorDeclaration {
-        ActorDeclaration::Actorless
-    }
-
-    fn build_arg_stack(&self, event: &Event) -> ArgStack {
-        let poll = event.payload.get(fields::POLL);
-
-        let poll_id = poll
-            .and_then(|v| v.get(fields::POLL_ID))
-            .and_then(|v| v.as_str())
-            .unwrap_or("")
-            .to_owned();
-        let title = poll
-            .and_then(|v| v.get(fields::POLL_TITLE))
-            .and_then(|v| v.as_str())
-            .unwrap_or("")
-            .to_owned();
-        let status = poll
-            .and_then(|v| v.get(fields::STATUS))
-            .and_then(|v| v.as_str())
-            .unwrap_or("")
-            .to_owned();
-        let ended_at = poll
-            .and_then(|v| v.get(fields::ENDED_AT))
-            .and_then(|v| v.as_str())
-            .and_then(crate::timestamp::variant);
-
-        let choices = build_choices_variant(event);
-
-        let stack = ArgStack::new()
-            .set("poll.id".to_owned(), Variant::String(poll_id))
-            .set("poll.title".to_owned(), Variant::String(title))
-            .set("poll.status".to_owned(), Variant::String(status))
-            .set("poll.choices".to_owned(), choices);
-        crate::timestamp::set(stack, "poll.ended_at", ended_at)
-    }
-    fn output_schema(&self) -> Option<VariableSchema> {
-        Some({
-            VariableSchema {
-                variables: vec![
-                    DeclaredVariable {
-                        name: "poll.id".to_owned(),
-                        kind: VariantKind::String,
-                        label: "Poll ID".to_owned(),
-                        synthesis: None,
-                    },
-                    DeclaredVariable {
-                        name: "poll.title".to_owned(),
-                        kind: VariantKind::String,
-                        label: "Poll title".to_owned(),
-                        synthesis: None,
-                    },
-                    DeclaredVariable {
-                        name: "poll.status".to_owned(),
-                        kind: VariantKind::String,
-                        label: "Poll status".to_owned(),
-                        synthesis: None,
-                    },
-                    DeclaredVariable {
-                        name: "poll.ended_at".to_owned(),
-                        kind: VariantKind::Datetime,
-                        label: "Ended at".to_owned(),
-                        synthesis: None,
-                    },
-                    DeclaredVariable {
-                        name: "poll.choices".to_owned(),
-                        kind: VariantKind::Array,
-                        label: "Poll choices".to_owned(),
-                        synthesis: None,
-                    },
-                ],
-            }
-        })
-    }
+fn variables() -> Option<TriggerVariables> {
+    Some(table_variables(VARIABLES))
 }
+
+pub(super) const SPEC: TwitchTriggerSpec = TwitchTriggerSpec {
+    id: trigger_ids::POLL_ENDED,
+    category: TriggerCategory::Polls,
+    label: "Poll ended",
+    summary: "Fires when a poll ends (completed, archived, or terminated)",
+    search_text: "twitch poll ended completed archived terminated",
+    icon: "chart-bar",
+    kind: event_kinds::CHANNEL_POLL_END,
+    actors: ActorDeclaration::Actorless,
+    variables,
+    ..TwitchTriggerSpec::BASE
+};
 
 #[cfg(test)]
 mod tests {
     use super::*;
     use crate::timestamp::tests::instant;
+    use forge_events::{Event, EventSource};
+    use forge_registry::TriggerKindDescriptor;
+    use forge_types::Variant;
 
     fn poll_end_event() -> Event {
         let payload = serde_json::json!({
@@ -148,7 +60,7 @@ mod tests {
 
     #[test]
     fn event_filter_targets_poll_end_topic_from_twitch() {
-        let filter = PollEndedDescriptor.event_filter();
+        let filter = SPEC.event_filter();
         assert_eq!(filter.source, Some(EventSource::Twitch));
         assert_eq!(
             filter.kind_prefix.as_deref(),
@@ -158,7 +70,7 @@ mod tests {
 
     #[test]
     fn build_arg_stack_maps_status_and_ended_at_alongside_id_and_title() {
-        let stack = PollEndedDescriptor.build_arg_stack(&poll_end_event());
+        let stack = SPEC.build_arg_stack(&poll_end_event());
         assert_eq!(
             stack.get("poll.id"),
             Some(&Variant::String("poll-3".to_owned()))

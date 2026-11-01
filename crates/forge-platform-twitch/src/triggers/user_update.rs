@@ -1,102 +1,70 @@
+use super::spec::TwitchTriggerSpec;
 use crate::vocabulary::trigger_ids;
 use crate::vocabulary::{event_kinds, messages};
-use forge_events::{Event, EventSource};
+use forge_events::Event;
 use forge_registry::{
-    ActorDeclaration, ActorIdentity, ActorRole, ActorSlot, CanonicalVariable, EventFilter,
-    KindPlatformContract, TriggerCategory, TriggerKindDescriptor, TriggerVariables,
+    ActorDeclaration, ActorIdentity, ActorRole, ActorSlot, CanonicalVariable, TriggerCategory,
+    TriggerVariables,
 };
-use forge_types::{DeclaredVariable, PlatformId, TriggerConfig, UserText, Variant, VariantKind};
+use forge_types::{DeclaredVariable, TriggerConfig, UserText, Variant, VariantKind};
 
 use super::payload_read::{self, twitch_actor};
 use crate::vocabulary::fields::user as user_fields;
 
-pub(crate) struct UserUpdateDescriptor;
-
-impl TriggerKindDescriptor for UserUpdateDescriptor {
-    fn id(&self) -> &str {
-        trigger_ids::USER_UPDATE
-    }
-
-    fn category(&self) -> TriggerCategory {
-        TriggerCategory::Users
-    }
-
-    fn label(&self) -> &str {
-        "User profile updated"
-    }
-
-    fn summary(&self) -> &str {
-        "Fires when the authenticated user changes their profile description or display name"
-    }
-
-    fn search_text(&self) -> &str {
-        "twitch user update profile description display name account changed"
-    }
-
-    fn icon_name(&self) -> &str {
-        "user-pen"
-    }
-
-    fn platform_contract(&self) -> KindPlatformContract {
-        KindPlatformContract::PlatformSpecific(PlatformId::Twitch)
-    }
-
-    fn condition_display(&self, _: &TriggerConfig) -> UserText {
-        messages::CONDITION_ANY_PROFILE_CHANGE.into()
-    }
-
-    fn event_filter(&self) -> EventFilter {
-        EventFilter {
-            source: Some(EventSource::Twitch),
-            kind_prefix: Some(event_kinds::USER_UPDATE.to_owned()),
-        }
-    }
-
-    fn matches_trigger(&self, _config: &TriggerConfig, _event: &Event) -> bool {
-        true
-    }
-
-    fn variables(&self) -> Option<TriggerVariables> {
-        Some(
-            TriggerVariables::new()
-                .actor(twitch_actor(ActorRole::Principal), updated_user_identity)
-                .event_specific(
-                    DeclaredVariable {
-                        name: "user.description".to_owned(),
-                        kind: VariantKind::String,
-                        label: "User bio".to_owned(),
-                        synthesis: None,
-                    },
-                    |event| {
-                        Variant::String(payload_read::nested_text(
-                            event,
-                            user_fields::USER,
-                            user_fields::USER_DESCRIPTION,
-                        ))
-                    },
-                )
-                .legacy(
-                    "user.id",
-                    "User ID",
-                    CanonicalVariable::actor(ActorRole::Principal, ActorSlot::Id),
-                )
-                .legacy(
-                    "user.login",
-                    "User login",
-                    CanonicalVariable::actor(ActorRole::Principal, ActorSlot::Login),
-                )
-                .legacy(
-                    "user.display_name",
-                    "User display name",
-                    CanonicalVariable::actor(ActorRole::Principal, ActorSlot::Name),
-                ),
-        )
-    }
-
-    fn actors(&self) -> ActorDeclaration {
-        ActorDeclaration::principal()
-    }
+fn condition_display(_: &TriggerConfig) -> UserText {
+    messages::CONDITION_ANY_PROFILE_CHANGE.into()
 }
+
+fn variables() -> Option<TriggerVariables> {
+    Some(
+        TriggerVariables::new()
+            .actor(twitch_actor(ActorRole::Principal), updated_user_identity)
+            .event_specific(
+                DeclaredVariable {
+                    name: "user.description".to_owned(),
+                    kind: VariantKind::String,
+                    label: "User bio".to_owned(),
+                    synthesis: None,
+                },
+                |event| {
+                    Variant::String(payload_read::nested_text(
+                        event,
+                        user_fields::USER,
+                        user_fields::USER_DESCRIPTION,
+                    ))
+                },
+            )
+            .legacy(
+                "user.id",
+                "User ID",
+                CanonicalVariable::actor(ActorRole::Principal, ActorSlot::Id),
+            )
+            .legacy(
+                "user.login",
+                "User login",
+                CanonicalVariable::actor(ActorRole::Principal, ActorSlot::Login),
+            )
+            .legacy(
+                "user.display_name",
+                "User display name",
+                CanonicalVariable::actor(ActorRole::Principal, ActorSlot::Name),
+            ),
+    )
+}
+
+pub(super) const SPEC: TwitchTriggerSpec = TwitchTriggerSpec {
+    id: trigger_ids::USER_UPDATE,
+    category: TriggerCategory::Users,
+    label: "User profile updated",
+    summary: "Fires when the authenticated user changes their profile description or display name",
+    search_text: "twitch user update profile description display name account changed",
+    icon: "user-pen",
+    kind: event_kinds::USER_UPDATE,
+    actors: ActorDeclaration::principal(),
+    variables,
+    condition_display,
+    ..TwitchTriggerSpec::BASE
+};
 
 fn updated_user_identity(event: &Event) -> ActorIdentity {
     payload_read::identity(
@@ -110,6 +78,8 @@ fn updated_user_identity(event: &Event) -> ActorIdentity {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use forge_events::EventSource;
+    use forge_registry::TriggerKindDescriptor;
     use forge_types::ArgStack;
     use serde_json::json;
 
@@ -136,7 +106,7 @@ mod tests {
             },
         }));
 
-        let stack = UserUpdateDescriptor.build_arg_stack(&event);
+        let stack = SPEC.build_arg_stack(&event);
 
         expect_string(&stack, "user.id", "1337");
         expect_string(&stack, "user.login", "thestreamer");
@@ -146,7 +116,7 @@ mod tests {
 
     #[test]
     fn build_arg_stack_on_empty_payload_yields_blank_fields_without_panic() {
-        let stack = UserUpdateDescriptor.build_arg_stack(&event_with(json!({})));
+        let stack = SPEC.build_arg_stack(&event_with(json!({})));
 
         for key in [
             "user.id",
@@ -172,7 +142,7 @@ mod tests {
             },
         }));
 
-        let stack = UserUpdateDescriptor.build_arg_stack(&event);
+        let stack = SPEC.build_arg_stack(&event);
 
         for (key, value) in stack.snapshot() {
             assert!(
@@ -187,7 +157,7 @@ mod tests {
 
     #[test]
     fn event_filter_targets_twitch_user_update_kind() {
-        let filter = UserUpdateDescriptor.event_filter();
+        let filter = SPEC.event_filter();
         assert_eq!(filter.source, Some(EventSource::Twitch));
         assert_eq!(filter.kind_prefix.as_deref(), Some("twitch.user.update"));
     }

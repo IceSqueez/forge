@@ -13,7 +13,10 @@ use forge_emulator::fakes::vtube::{
 use forge_events::{Event, EventPublisher};
 use forge_storage::{CredentialId, CredentialsRepo};
 use forge_types::Variant;
-use forge_vtube::{VTUBE_CREDENTIAL_ID, VTubeClient, VTubeSink, probe_connection};
+use forge_vtube::{
+    AngleRelativeTo, FadeMode, ItemLoad, ItemMove, ItemPin, ItemPlacement, SizeRelativeTo,
+    VTUBE_CREDENTIAL_ID, VTubeClient, VTubeSink, VertexPinType, probe_connection,
+};
 use futures_util::{SinkExt, StreamExt};
 use serde_json::{Value, json};
 use tokio::net::TcpStream;
@@ -287,7 +290,16 @@ async fn every_request_forge_sub_actions_send_is_answered_without_an_error() {
     let sink: &dyn VTubeSink = &*forge.client;
 
     let item = sink
-        .load_item(STAR, Some(0.1), Some(0.2), None, None, None, None, true)
+        .load_item(&ItemLoad {
+            file_name: STAR,
+            placement: ItemPlacement {
+                x: Some(0.1),
+                y: Some(0.2),
+                ..ItemPlacement::default()
+            },
+            fade_time: None,
+            unload_on_disconnect: true,
+        })
         .await
         .unwrap();
     let Variant::Object(item) = item else {
@@ -312,9 +324,17 @@ async fn every_request_forge_sub_actions_send_is_answered_without_an_error() {
         ),
         (
             "move item",
-            sink.move_item(&instance, Some(0.3), None, None, None, None, 0.5, "linear")
-                .await
-                .map(drop),
+            sink.move_item(&ItemMove {
+                item_instance_id: &instance,
+                placement: ItemPlacement {
+                    x: Some(0.3),
+                    ..ItemPlacement::default()
+                },
+                time_in_seconds: 0.5,
+                fade_mode: FadeMode::Linear,
+            })
+            .await
+            .map(drop),
         ),
         ("current model", sink.get_current_model().await.map(drop)),
         ("hotkeys", sink.get_hotkeys().await.map(drop)),
@@ -323,17 +343,17 @@ async fn every_request_forge_sub_actions_send_is_answered_without_an_error() {
         ("items", sink.get_items().await.map(drop)),
         (
             "pin",
-            sink.pin_item(
-                &instance,
-                true,
-                "RelativeToModel",
-                "RelativeToWorld",
-                "Center",
-                "",
-                "",
-                0.0,
-                0.3,
-            )
+            sink.pin_item(&ItemPin {
+                item_instance_id: &instance,
+                pin: true,
+                angle_relative_to: AngleRelativeTo::Model,
+                size_relative_to: SizeRelativeTo::World,
+                vertex_pin_type: VertexPinType::Center,
+                model_id: "",
+                art_mesh_id: "",
+                angle: 0.0,
+                size: 0.3,
+            })
             .await
             .map(drop),
         ),
@@ -372,9 +392,14 @@ async fn forge_lookups_read_back_the_state_the_fake_holds() {
     let fake = start().await;
     let forge = connected_forge(&fake).await;
     let sink: &dyn VTubeSink = &*forge.client;
-    sink.load_item(STAR, None, None, None, None, None, None, false)
-        .await
-        .unwrap();
+    sink.load_item(&ItemLoad {
+        file_name: STAR,
+        placement: ItemPlacement::default(),
+        fade_time: None,
+        unload_on_disconnect: false,
+    })
+    .await
+    .unwrap();
 
     let hotkeys = sink.get_hotkeys().await.unwrap();
     let items = sink.get_items().await.unwrap();

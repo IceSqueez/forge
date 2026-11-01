@@ -15,17 +15,99 @@ use crate::vocabulary::sub_action_ids;
 
 const CONFIG: ConfigSpec = ConfigSpec::new(&[&TARGET_LOGIN]);
 
-pub(crate) struct AddModeratorRunner {
+#[derive(Clone, Copy)]
+struct RoleGrantSpec {
+    id: &'static str,
+    label: &'static str,
+    summary: &'static str,
+    search_text: &'static str,
+    icon: &'static str,
+    method: HelixMethod,
+    path: &'static str,
+}
+
+const ADD_VIP: RoleGrantSpec = RoleGrantSpec {
+    id: sub_action_ids::MODERATION_ADD_VIP,
+    label: "Add VIP",
+    summary: "Grants VIP status to a user in the channel.",
+    search_text: "twitch moderation add vip grant role channel",
+    icon: "star-plus",
+    method: HelixMethod::Post,
+    path: "/helix/channels/vips",
+};
+
+const REMOVE_VIP: RoleGrantSpec = RoleGrantSpec {
+    id: sub_action_ids::MODERATION_REMOVE_VIP,
+    label: "Remove VIP",
+    summary: "Revokes VIP status from a user in the channel.",
+    search_text: "twitch moderation remove vip revoke unvip channel",
+    icon: "star-minus",
+    method: HelixMethod::Delete,
+    path: "/helix/channels/vips",
+};
+
+const ADD_MODERATOR: RoleGrantSpec = RoleGrantSpec {
+    id: sub_action_ids::MODERATION_ADD_MODERATOR,
+    label: "Add Moderator",
+    summary: "Grants moderator status to a user in the channel.",
+    search_text: "twitch moderation add moderator grant mod role",
+    icon: "shield-plus",
+    method: HelixMethod::Post,
+    path: "/helix/moderation/moderators",
+};
+
+const REMOVE_MODERATOR: RoleGrantSpec = RoleGrantSpec {
+    id: sub_action_ids::MODERATION_REMOVE_MODERATOR,
+    label: "Remove Moderator",
+    summary: "Revokes moderator status from a user in the channel.",
+    search_text: "twitch moderation remove moderator revoke unmod role",
+    icon: "shield-minus",
+    method: HelixMethod::Delete,
+    path: "/helix/moderation/moderators",
+};
+
+pub(crate) struct RoleGrantRunner {
+    spec: RoleGrantSpec,
     transport: Arc<dyn HelixTransport>,
     identity: Arc<SelfIdentity>,
 }
 
-impl AddModeratorRunner {
-    pub(crate) fn new(transport: Arc<dyn HelixTransport>, identity: Arc<SelfIdentity>) -> Self {
+impl RoleGrantRunner {
+    fn new(
+        spec: RoleGrantSpec,
+        transport: Arc<dyn HelixTransport>,
+        identity: Arc<SelfIdentity>,
+    ) -> Self {
         Self {
+            spec,
             transport,
             identity,
         }
+    }
+
+    pub(crate) fn add_vip(transport: Arc<dyn HelixTransport>, identity: Arc<SelfIdentity>) -> Self {
+        Self::new(ADD_VIP, transport, identity)
+    }
+
+    pub(crate) fn remove_vip(
+        transport: Arc<dyn HelixTransport>,
+        identity: Arc<SelfIdentity>,
+    ) -> Self {
+        Self::new(REMOVE_VIP, transport, identity)
+    }
+
+    pub(crate) fn add_moderator(
+        transport: Arc<dyn HelixTransport>,
+        identity: Arc<SelfIdentity>,
+    ) -> Self {
+        Self::new(ADD_MODERATOR, transport, identity)
+    }
+
+    pub(crate) fn remove_moderator(
+        transport: Arc<dyn HelixTransport>,
+        identity: Arc<SelfIdentity>,
+    ) -> Self {
+        Self::new(REMOVE_MODERATOR, transport, identity)
     }
 
     async fn apply(&self, target_login: &str) -> SubActionOutcome {
@@ -37,7 +119,7 @@ impl AddModeratorRunner {
             Ok(id) => id,
             Err(e) => return step_failure::failed(&e),
         };
-        let request = HelixRequest::new(HelixMethod::Post, "/helix/moderation/moderators")
+        let request = HelixRequest::new(self.spec.method, self.spec.path)
             .query("broadcaster_id", broadcaster_id)
             .query("user_id", user_id);
         step_failure::outcome(&self.transport.execute(request).await)
@@ -45,9 +127,9 @@ impl AddModeratorRunner {
 }
 
 #[async_trait]
-impl SubActionRunner for AddModeratorRunner {
+impl SubActionRunner for RoleGrantRunner {
     fn id(&self) -> &str {
-        sub_action_ids::MODERATION_ADD_MODERATOR
+        self.spec.id
     }
 
     fn category(&self) -> SubActionCategory {
@@ -55,19 +137,19 @@ impl SubActionRunner for AddModeratorRunner {
     }
 
     fn label(&self) -> &str {
-        "Add Moderator"
+        self.spec.label
     }
 
     fn summary(&self) -> &str {
-        "Grants moderator status to a user in the channel."
+        self.spec.summary
     }
 
     fn search_text(&self) -> &str {
-        "twitch moderation add moderator grant mod role"
+        self.spec.search_text
     }
 
     fn icon_name(&self) -> &str {
-        "shield-plus"
+        self.spec.icon
     }
 
     fn config_spec(&self) -> Option<ConfigSpec> {
@@ -97,9 +179,6 @@ mod tests {
     use super::*;
     use crate::error::TwitchError;
     use crate::helix::HelixMethod;
-    use crate::sub_actions::add_vip::AddVipRunner;
-    use crate::sub_actions::remove_moderator::RemoveModeratorRunner;
-    use crate::sub_actions::remove_vip::RemoveVipRunner;
     use crate::sub_actions::test_support::{
         MockTransport, SELF_USER_ID, TOKEN_SENTINEL, assert_request_refused, make_ctx,
         users_fixture,
@@ -107,8 +186,8 @@ mod tests {
 
     fn runner_with(
         responses: Vec<Result<serde_json::Value, TwitchError>>,
-    ) -> (Arc<MockTransport>, AddModeratorRunner) {
-        crate::sub_actions::test_support::runner_with(responses, AddModeratorRunner::new)
+    ) -> (Arc<MockTransport>, RoleGrantRunner) {
+        crate::sub_actions::test_support::runner_with(responses, RoleGrantRunner::add_moderator)
     }
 
     fn login_config(target: &str) -> SubActionConfig {
@@ -147,7 +226,7 @@ mod tests {
         let cases: Vec<Case> = vec![
             Case {
                 label: "add_moderator",
-                runner: Box::new(AddModeratorRunner::new(
+                runner: Box::new(RoleGrantRunner::add_moderator(
                     Arc::clone(&t_add_mod) as Arc<dyn HelixTransport>,
                     identity(),
                 )),
@@ -157,7 +236,7 @@ mod tests {
             },
             Case {
                 label: "remove_moderator",
-                runner: Box::new(RemoveModeratorRunner::new(
+                runner: Box::new(RoleGrantRunner::remove_moderator(
                     Arc::clone(&t_rem_mod) as Arc<dyn HelixTransport>,
                     identity(),
                 )),
@@ -167,7 +246,7 @@ mod tests {
             },
             Case {
                 label: "add_vip",
-                runner: Box::new(AddVipRunner::new(
+                runner: Box::new(RoleGrantRunner::add_vip(
                     Arc::clone(&t_add_vip) as Arc<dyn HelixTransport>,
                     identity(),
                 )),
@@ -177,7 +256,7 @@ mod tests {
             },
             Case {
                 label: "remove_vip",
-                runner: Box::new(RemoveVipRunner::new(
+                runner: Box::new(RoleGrantRunner::remove_vip(
                     Arc::clone(&t_rem_vip) as Arc<dyn HelixTransport>,
                     identity(),
                 )),

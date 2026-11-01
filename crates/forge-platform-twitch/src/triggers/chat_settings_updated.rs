@@ -1,173 +1,81 @@
+use super::spec::{TwitchTriggerSpec, Variable, table_variables};
 use crate::vocabulary::event_kinds;
 use crate::vocabulary::trigger_ids;
-use forge_events::{Event, EventSource};
-use forge_registry::{
-    ActorDeclaration, EventFilter, KindPlatformContract, TriggerCategory, TriggerKindDescriptor,
-};
-use forge_types::{
-    ArgStack, DeclaredVariable, PlatformId, SynthesisHint, TriggerConfig, VariableSchema, Variant,
-    VariantKind,
-};
+use forge_registry::TriggerVariables;
+use forge_registry::{ActorDeclaration, TriggerCategory};
 
 use crate::vocabulary::fields::chat_mod as chat_mod_fields;
 
-pub(crate) struct ChatSettingsUpdatedDescriptor;
+const VARIABLES: &[Variable] = &[
+    Variable::nested_flag(
+        "settings.emote_mode",
+        "Emote-only mode",
+        chat_mod_fields::SETTINGS,
+        chat_mod_fields::EMOTE_MODE,
+    ),
+    Variable::nested_flag(
+        "settings.follower_mode",
+        "Follower-only mode",
+        chat_mod_fields::SETTINGS,
+        chat_mod_fields::FOLLOWER_MODE,
+    ),
+    Variable::nested_flag(
+        "settings.slow_mode",
+        "Slow mode",
+        chat_mod_fields::SETTINGS,
+        chat_mod_fields::SLOW_MODE,
+    ),
+    Variable::nested_flag(
+        "settings.subscriber_mode",
+        "Subscriber-only mode",
+        chat_mod_fields::SETTINGS,
+        chat_mod_fields::SUBSCRIBER_MODE,
+    ),
+    Variable::nested_flag(
+        "settings.unique_chat_mode",
+        "Unique chat mode",
+        chat_mod_fields::SETTINGS,
+        chat_mod_fields::UNIQUE_CHAT_MODE,
+    ),
+    Variable::nested_int(
+        "settings.slow_mode_wait_time_seconds",
+        "Slow mode wait (seconds)",
+        chat_mod_fields::SETTINGS,
+        chat_mod_fields::SLOW_MODE_WAIT_TIME_SECONDS,
+    )
+    .bounded(0, 120),
+    Variable::nested_int(
+        "settings.follower_mode_duration_minutes",
+        "Follower mode duration (minutes)",
+        chat_mod_fields::SETTINGS,
+        chat_mod_fields::FOLLOWER_MODE_DURATION_MINUTES,
+    )
+    .bounded(0, 10080),
+];
 
-impl TriggerKindDescriptor for ChatSettingsUpdatedDescriptor {
-    fn id(&self) -> &str {
-        trigger_ids::CHANNEL_CHAT_SETTINGS_UPDATED
-    }
-
-    fn category(&self) -> TriggerCategory {
-        TriggerCategory::Chat
-    }
-
-    fn label(&self) -> &str {
-        "Chat settings updated"
-    }
-
-    fn summary(&self) -> &str {
-        "Fires when a broadcaster's chat settings change (emote-only, follower-only, slow mode, sub-only, unique-chat)"
-    }
-
-    fn search_text(&self) -> &str {
-        "twitch chat settings emote follower slow subscriber unique mode updated"
-    }
-
-    fn icon_name(&self) -> &str {
-        "settings"
-    }
-
-    fn platform_contract(&self) -> KindPlatformContract {
-        KindPlatformContract::PlatformSpecific(PlatformId::Twitch)
-    }
-
-    fn event_filter(&self) -> EventFilter {
-        EventFilter {
-            source: Some(EventSource::Twitch),
-            kind_prefix: Some(event_kinds::CHANNEL_CHAT_SETTINGS_UPDATE.to_owned()),
-        }
-    }
-
-    fn matches_trigger(&self, _config: &TriggerConfig, _event: &Event) -> bool {
-        true
-    }
-
-    fn actors(&self) -> ActorDeclaration {
-        ActorDeclaration::Actorless
-    }
-
-    fn build_arg_stack(&self, event: &Event) -> ArgStack {
-        let settings = event.payload.get(chat_mod_fields::SETTINGS);
-
-        let emote_mode = settings
-            .and_then(|s| s.get(chat_mod_fields::EMOTE_MODE))
-            .and_then(|v| v.as_bool())
-            .unwrap_or(false);
-        let follower_mode = settings
-            .and_then(|s| s.get(chat_mod_fields::FOLLOWER_MODE))
-            .and_then(|v| v.as_bool())
-            .unwrap_or(false);
-        let slow_mode = settings
-            .and_then(|s| s.get(chat_mod_fields::SLOW_MODE))
-            .and_then(|v| v.as_bool())
-            .unwrap_or(false);
-        let subscriber_mode = settings
-            .and_then(|s| s.get(chat_mod_fields::SUBSCRIBER_MODE))
-            .and_then(|v| v.as_bool())
-            .unwrap_or(false);
-        let unique_chat_mode = settings
-            .and_then(|s| s.get(chat_mod_fields::UNIQUE_CHAT_MODE))
-            .and_then(|v| v.as_bool())
-            .unwrap_or(false);
-        let slow_mode_wait_time_seconds = settings
-            .and_then(|s| s.get(chat_mod_fields::SLOW_MODE_WAIT_TIME_SECONDS))
-            .and_then(|v| v.as_i64())
-            .unwrap_or(0);
-        let follower_mode_duration_minutes = settings
-            .and_then(|s| s.get(chat_mod_fields::FOLLOWER_MODE_DURATION_MINUTES))
-            .and_then(|v| v.as_i64())
-            .unwrap_or(0);
-
-        ArgStack::new()
-            .set("settings.emote_mode".to_owned(), Variant::Bool(emote_mode))
-            .set(
-                "settings.follower_mode".to_owned(),
-                Variant::Bool(follower_mode),
-            )
-            .set("settings.slow_mode".to_owned(), Variant::Bool(slow_mode))
-            .set(
-                "settings.subscriber_mode".to_owned(),
-                Variant::Bool(subscriber_mode),
-            )
-            .set(
-                "settings.unique_chat_mode".to_owned(),
-                Variant::Bool(unique_chat_mode),
-            )
-            .set(
-                "settings.slow_mode_wait_time_seconds".to_owned(),
-                Variant::Int(slow_mode_wait_time_seconds),
-            )
-            .set(
-                "settings.follower_mode_duration_minutes".to_owned(),
-                Variant::Int(follower_mode_duration_minutes),
-            )
-    }
-    fn output_schema(&self) -> Option<VariableSchema> {
-        Some({
-            VariableSchema {
-                variables: vec![
-                    DeclaredVariable {
-                        name: "settings.emote_mode".to_owned(),
-                        kind: VariantKind::Bool,
-                        label: "Emote-only mode".to_owned(),
-                        synthesis: None,
-                    },
-                    DeclaredVariable {
-                        name: "settings.follower_mode".to_owned(),
-                        kind: VariantKind::Bool,
-                        label: "Follower-only mode".to_owned(),
-                        synthesis: None,
-                    },
-                    DeclaredVariable {
-                        name: "settings.slow_mode".to_owned(),
-                        kind: VariantKind::Bool,
-                        label: "Slow mode".to_owned(),
-                        synthesis: None,
-                    },
-                    DeclaredVariable {
-                        name: "settings.subscriber_mode".to_owned(),
-                        kind: VariantKind::Bool,
-                        label: "Subscriber-only mode".to_owned(),
-                        synthesis: None,
-                    },
-                    DeclaredVariable {
-                        name: "settings.unique_chat_mode".to_owned(),
-                        kind: VariantKind::Bool,
-                        label: "Unique chat mode".to_owned(),
-                        synthesis: None,
-                    },
-                    DeclaredVariable {
-                        name: "settings.slow_mode_wait_time_seconds".to_owned(),
-                        kind: VariantKind::Int,
-                        label: "Slow mode wait (seconds)".to_owned(),
-                        synthesis: Some(SynthesisHint::BoundedInt { min: 0, max: 120 }),
-                    },
-                    DeclaredVariable {
-                        name: "settings.follower_mode_duration_minutes".to_owned(),
-                        kind: VariantKind::Int,
-                        label: "Follower mode duration (minutes)".to_owned(),
-                        synthesis: Some(SynthesisHint::BoundedInt { min: 0, max: 10080 }),
-                    },
-                ],
-            }
-        })
-    }
+fn variables() -> Option<TriggerVariables> {
+    Some(table_variables(VARIABLES))
 }
+
+pub(super) const SPEC: TwitchTriggerSpec = TwitchTriggerSpec {
+    id: trigger_ids::CHANNEL_CHAT_SETTINGS_UPDATED,
+    category: TriggerCategory::Chat,
+    label: "Chat settings updated",
+    summary: "Fires when a broadcaster's chat settings change (emote-only, follower-only, slow mode, sub-only, unique-chat)",
+    search_text: "twitch chat settings emote follower slow subscriber unique mode updated",
+    icon: "settings",
+    kind: event_kinds::CHANNEL_CHAT_SETTINGS_UPDATE,
+    actors: ActorDeclaration::Actorless,
+    variables,
+    ..TwitchTriggerSpec::BASE
+};
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use forge_events::{Event, EventSource};
+    use forge_registry::TriggerKindDescriptor;
+    use forge_types::Variant;
 
     fn settings_event() -> Event {
         Event::new(
@@ -189,7 +97,7 @@ mod tests {
 
     #[test]
     fn event_filter_targets_chat_settings_update_kind_from_twitch() {
-        let filter = ChatSettingsUpdatedDescriptor.event_filter();
+        let filter = SPEC.event_filter();
         assert_eq!(filter.source, Some(EventSource::Twitch));
         assert_eq!(
             filter.kind_prefix.as_deref(),
@@ -199,7 +107,7 @@ mod tests {
 
     #[test]
     fn build_arg_stack_marshals_mode_flags_as_bool_and_durations_as_int() {
-        let stack = ChatSettingsUpdatedDescriptor.build_arg_stack(&settings_event());
+        let stack = SPEC.build_arg_stack(&settings_event());
         for (key, expected) in [
             ("settings.emote_mode", true),
             ("settings.follower_mode", false),

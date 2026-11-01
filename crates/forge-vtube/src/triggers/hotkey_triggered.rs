@@ -1,107 +1,43 @@
-use forge_events::{Event, EventSource};
-use forge_registry::{EventFilter, KindPlatformContract, TriggerCategory, TriggerKindDescriptor};
-use forge_types::{
-    ArgStack, DeclaredVariable, TriggerConfig, UserText, VariableSchema, Variant, VariantKind,
+use forge_events::EventSource;
+use forge_registry::TriggerVariables;
+use forge_registry::{
+    EventTriggerSpec, EventVariable, TriggerCondition, TriggerMatcher, event_variables,
+    no_config_fields,
 };
 
 use crate::vocabulary::fields::hotkey as fields;
 use crate::vocabulary::messages;
 use crate::vocabulary::{event_kinds, trigger_ids, variables};
 
-pub(crate) struct HotkeyTriggeredDescriptor;
+const VARIABLES: &[EventVariable] = &[
+    EventVariable::text(variables::hotkey::NAME, "Hotkey name", fields::HOTKEY_NAME),
+    EventVariable::text(variables::hotkey::ID, "Hotkey ID", fields::HOTKEY_ID),
+];
 
-impl TriggerKindDescriptor for HotkeyTriggeredDescriptor {
-    fn id(&self) -> &str {
-        trigger_ids::HOTKEY_TRIGGERED
-    }
-
-    fn category(&self) -> TriggerCategory {
-        TriggerCategory::Integration
-    }
-
-    fn label(&self) -> &str {
-        "VTube Studio hotkey triggered"
-    }
-
-    fn summary(&self) -> &str {
-        "Fires when a VTube Studio hotkey is activated."
-    }
-
-    fn search_text(&self) -> &str {
-        "vtube hotkey triggered activated shortcut"
-    }
-
-    fn icon_name(&self) -> &str {
-        "zap"
-    }
-
-    fn platform_contract(&self) -> KindPlatformContract {
-        KindPlatformContract::Universal
-    }
-
-    fn condition_display(&self, _: &TriggerConfig) -> UserText {
-        messages::CONDITION_ANY_HOTKEY.into()
-    }
-
-    fn event_filter(&self) -> EventFilter {
-        EventFilter {
-            source: Some(EventSource::VTube),
-            kind_prefix: Some(event_kinds::HOTKEY_PREFIX.to_owned()),
-        }
-    }
-
-    fn matches_trigger(&self, _config: &TriggerConfig, event: &Event) -> bool {
-        event.kind == event_kinds::HOTKEY_TRIGGERED
-    }
-
-    fn build_arg_stack(&self, event: &Event) -> ArgStack {
-        let mut stack = ArgStack::new();
-        if let Some(name) = event
-            .payload
-            .get(fields::HOTKEY_NAME)
-            .and_then(|v| v.as_str())
-        {
-            stack = stack.set(
-                variables::hotkey::NAME.to_owned(),
-                Variant::String(name.to_owned()),
-            );
-        }
-        if let Some(id) = event
-            .payload
-            .get(fields::HOTKEY_ID)
-            .and_then(|v| v.as_str())
-        {
-            stack = stack.set(
-                variables::hotkey::ID.to_owned(),
-                Variant::String(id.to_owned()),
-            );
-        }
-        stack
-    }
-
-    fn output_schema(&self) -> Option<VariableSchema> {
-        Some(VariableSchema {
-            variables: vec![
-                DeclaredVariable {
-                    name: variables::hotkey::NAME.to_owned(),
-                    kind: VariantKind::String,
-                    label: "Hotkey name".to_owned(),
-                    synthesis: None,
-                },
-                DeclaredVariable {
-                    name: variables::hotkey::ID.to_owned(),
-                    kind: VariantKind::String,
-                    label: "Hotkey ID".to_owned(),
-                    synthesis: None,
-                },
-            ],
-        })
-    }
+fn variables() -> Option<TriggerVariables> {
+    event_variables(VARIABLES)
 }
+
+pub(crate) const HOTKEY_TRIGGERED: EventTriggerSpec = EventTriggerSpec {
+    id: trigger_ids::HOTKEY_TRIGGERED,
+    source: EventSource::VTube,
+    label: "VTube Studio hotkey triggered",
+    summary: "Fires when a VTube Studio hotkey is activated.",
+    search_text: "vtube hotkey triggered activated shortcut",
+    icon: "zap",
+    prefix: event_kinds::HOTKEY_PREFIX,
+    matcher: TriggerMatcher::Kind(event_kinds::HOTKEY_TRIGGERED),
+    condition: TriggerCondition::Fixed(messages::CONDITION_ANY_HOTKEY),
+    config_fields: no_config_fields,
+    variables,
+};
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use forge_events::Event;
+    use forge_registry::TriggerKindDescriptor;
+    use forge_types::{TriggerConfig, Variant};
     use serde_json::json;
 
     fn event(kind: &str, payload: serde_json::Value) -> Event {
@@ -110,7 +46,7 @@ mod tests {
 
     #[test]
     fn matches_only_the_exact_triggered_kind() {
-        let d = HotkeyTriggeredDescriptor;
+        let d = HOTKEY_TRIGGERED;
         let cfg = TriggerConfig::new();
         assert!(d.matches_trigger(&cfg, &event("vtube.hotkey.triggered", json!({}))));
         assert!(!d.matches_trigger(&cfg, &event("vtube.model.loaded", json!({}))));
@@ -118,7 +54,7 @@ mod tests {
 
     #[test]
     fn build_arg_stack_maps_present_payload_keys() {
-        let d = HotkeyTriggeredDescriptor;
+        let d = HOTKEY_TRIGGERED;
         let stack = d.build_arg_stack(&event(
             "vtube.hotkey.triggered",
             json!({ "hotkey_name": "Wave", "hotkey_id": "hk-7" }),
@@ -135,7 +71,7 @@ mod tests {
 
     #[test]
     fn build_arg_stack_omits_missing_payload_keys() {
-        let d = HotkeyTriggeredDescriptor;
+        let d = HOTKEY_TRIGGERED;
         let stack = d.build_arg_stack(&event(
             "vtube.hotkey.triggered",
             json!({ "hotkey_id": "hk-7" }),

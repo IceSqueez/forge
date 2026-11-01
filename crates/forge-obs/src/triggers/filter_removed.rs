@@ -1,119 +1,32 @@
-use forge_events::{Event, EventSource};
-use forge_registry::{EventFilter, KindPlatformContract, TriggerCategory, TriggerKindDescriptor};
-use forge_types::{
-    ArgStack, DeclaredVariable, TriggerConfig, UserText, VariableSchema, Variant, VariantKind,
-};
+use super::families;
+use forge_events::EventSource;
+use forge_registry::{EventTriggerSpec, TriggerCondition, TriggerMatcher, no_config_fields};
 
-use crate::vocabulary::fields::filter as fields;
 use crate::vocabulary::messages;
-use crate::vocabulary::{event_kinds, trigger_ids, variables};
+use crate::vocabulary::{event_kinds, trigger_ids};
 
-pub(crate) struct FilterRemovedDescriptor;
-
-impl TriggerKindDescriptor for FilterRemovedDescriptor {
-    fn id(&self) -> &str {
-        trigger_ids::FILTER_REMOVED
-    }
-
-    fn category(&self) -> TriggerCategory {
-        TriggerCategory::Integration
-    }
-
-    fn label(&self) -> &str {
-        "OBS filter removed"
-    }
-
-    fn summary(&self) -> &str {
-        "Fires when a filter is removed from an OBS source."
-    }
-
-    fn search_text(&self) -> &str {
-        "obs filter removed deleted source"
-    }
-
-    fn icon_name(&self) -> &str {
-        "filter-x"
-    }
-
-    fn platform_contract(&self) -> KindPlatformContract {
-        KindPlatformContract::Universal
-    }
-
-    fn condition_display(&self, _: &TriggerConfig) -> UserText {
-        messages::CONDITION_ANY_FILTER_REMOVED.into()
-    }
-
-    fn event_filter(&self) -> EventFilter {
-        EventFilter {
-            source: Some(EventSource::Obs),
-            kind_prefix: Some(event_kinds::FILTER_PREFIX.to_owned()),
-        }
-    }
-
-    fn matches_trigger(&self, _config: &TriggerConfig, event: &Event) -> bool {
-        event.kind == event_kinds::FILTER_REMOVED
-    }
-
-    fn build_arg_stack(&self, event: &Event) -> ArgStack {
-        build_filter_source_arg_stack(event)
-    }
-
-    fn output_schema(&self) -> Option<VariableSchema> {
-        Some(VariableSchema {
-            variables: filter_source_variables(),
-        })
-    }
-}
-
-pub(crate) fn filter_source_variables() -> Vec<DeclaredVariable> {
-    vec![
-        DeclaredVariable {
-            name: variables::source::NAME.to_owned(),
-            kind: VariantKind::String,
-            label: "Source name".to_owned(),
-            synthesis: None,
-        },
-        DeclaredVariable {
-            name: variables::filter::NAME.to_owned(),
-            kind: VariantKind::String,
-            label: "Filter name".to_owned(),
-            synthesis: None,
-        },
-    ]
-}
-
-pub(crate) fn build_filter_source_arg_stack(event: &Event) -> ArgStack {
-    let mut stack = ArgStack::new();
-    if let Some(name) = event
-        .payload
-        .get(fields::SOURCE_NAME)
-        .and_then(|v| v.as_str())
-    {
-        stack = stack.set(
-            variables::source::NAME.to_owned(),
-            Variant::String(name.to_owned()),
-        );
-    }
-    if let Some(name) = event
-        .payload
-        .get(fields::FILTER_NAME)
-        .and_then(|v| v.as_str())
-    {
-        stack = stack.set(
-            variables::filter::NAME.to_owned(),
-            Variant::String(name.to_owned()),
-        );
-    }
-    stack
-}
+pub(crate) const FILTER_REMOVED: EventTriggerSpec = EventTriggerSpec {
+    id: trigger_ids::FILTER_REMOVED,
+    source: EventSource::Obs,
+    label: "OBS filter removed",
+    summary: "Fires when a filter is removed from an OBS source.",
+    search_text: "obs filter removed deleted source",
+    icon: "filter-x",
+    prefix: event_kinds::FILTER_PREFIX,
+    matcher: TriggerMatcher::Kind(event_kinds::FILTER_REMOVED),
+    condition: TriggerCondition::Fixed(messages::CONDITION_ANY_FILTER_REMOVED),
+    config_fields: no_config_fields,
+    variables: families::filter_source_variables,
+};
 
 #[cfg(test)]
 mod tests {
-    use super::super::{
-        FilterCreatedDescriptor, FilterEnabledChangedDescriptor, FilterRemovedDescriptor,
-    };
-    use super::*;
+    use super::super::filter_created::FILTER_CREATED;
+    use super::super::filter_enabled_changed::FILTER_ENABLED_CHANGED;
+    use super::super::filter_removed::FILTER_REMOVED;
+    use forge_events::{Event, EventSource};
     use forge_registry::TriggerKindDescriptor;
+    use forge_types::Variant;
     use serde_json::json;
     use std::collections::BTreeMap;
 
@@ -127,12 +40,9 @@ mod tests {
     fn each_filter_descriptor_matches_only_its_own_kind() {
         let cfg = BTreeMap::new();
         let descriptors: [(&str, &dyn TriggerKindDescriptor); 3] = [
-            ("obs.filter.created", &FilterCreatedDescriptor),
-            ("obs.filter.removed", &FilterRemovedDescriptor),
-            (
-                "obs.filter.enabled_changed",
-                &FilterEnabledChangedDescriptor,
-            ),
+            ("obs.filter.created", &FILTER_CREATED),
+            ("obs.filter.removed", &FILTER_REMOVED),
+            ("obs.filter.enabled_changed", &FILTER_ENABLED_CHANGED),
         ];
         for (own_kind, descriptor) in descriptors {
             for kind in ALL_FILTER_KINDS {
@@ -149,11 +59,8 @@ mod tests {
     #[test]
     fn filter_descriptors_reject_non_filter_kind() {
         let cfg = BTreeMap::new();
-        let descriptors: [&dyn TriggerKindDescriptor; 3] = [
-            &FilterCreatedDescriptor,
-            &FilterRemovedDescriptor,
-            &FilterEnabledChangedDescriptor,
-        ];
+        let descriptors: [&dyn TriggerKindDescriptor; 3] =
+            [&FILTER_CREATED, &FILTER_REMOVED, &FILTER_ENABLED_CHANGED];
         let event = Event::new(EventSource::Obs, "obs.scene.changed", json!({}));
         for descriptor in descriptors {
             assert!(!descriptor.matches_trigger(&cfg, &event));
@@ -167,7 +74,7 @@ mod tests {
             "obs.filter.removed",
             json!({ "source_name": "Mic", "filter_name": "Noise Gate" }),
         );
-        let stack = build_filter_source_arg_stack(&event);
+        let stack = FILTER_REMOVED.build_arg_stack(&event);
         assert_eq!(
             stack.get("obs.source.name"),
             Some(&Variant::String("Mic".to_owned())),
@@ -181,7 +88,7 @@ mod tests {
     #[test]
     fn filter_source_arg_stack_omits_keys_when_payload_fields_absent() {
         let event = Event::new(EventSource::Obs, "obs.filter.removed", json!({}));
-        let stack = build_filter_source_arg_stack(&event);
+        let stack = FILTER_REMOVED.build_arg_stack(&event);
         assert!(stack.get("obs.source.name").is_none());
         assert!(stack.get("obs.filter.name").is_none());
     }

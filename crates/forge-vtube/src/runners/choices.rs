@@ -1,7 +1,7 @@
 use forge_registry::ConfigChoice;
 
 #[derive(Clone, Copy)]
-pub(crate) enum FadeMode {
+pub enum FadeMode {
     Linear,
     EaseIn,
     EaseOut,
@@ -34,7 +34,7 @@ impl ConfigChoice for FadeMode {
 }
 
 #[derive(Clone, Copy)]
-pub(crate) enum AngleRelativeTo {
+pub enum AngleRelativeTo {
     World,
     CurrentItemRotation,
     Model,
@@ -61,7 +61,7 @@ impl ConfigChoice for AngleRelativeTo {
 }
 
 #[derive(Clone, Copy)]
-pub(crate) enum SizeRelativeTo {
+pub enum SizeRelativeTo {
     World,
     CurrentItemSize,
 }
@@ -76,7 +76,7 @@ impl ConfigChoice for SizeRelativeTo {
 }
 
 #[derive(Clone, Copy)]
-pub(crate) enum VertexPinType {
+pub enum VertexPinType {
     Center,
     Random,
 }

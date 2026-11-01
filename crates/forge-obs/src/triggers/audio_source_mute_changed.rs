@@ -1,147 +1,37 @@
-use forge_events::{Event, EventSource};
-use forge_registry::{
-    EventFilter, FormField, KindPlatformContract, SubActionConfigExt, TriggerCategory,
-    TriggerKindDescriptor,
+use super::audio_source;
+use super::families;
+use forge_events::EventSource;
+use forge_registry::{EventTriggerSpec, TriggerCondition, TriggerMatcher};
+
+use crate::vocabulary::{event_kinds, trigger_ids};
+
+pub(crate) const AUDIO_SOURCE_MUTE_CHANGED: EventTriggerSpec = EventTriggerSpec {
+    id: trigger_ids::AUDIO_SOURCE_MUTE_CHANGED,
+    source: EventSource::Obs,
+    label: "OBS audio source mute changed",
+    summary: "Fires when an OBS input source is muted or unmuted.",
+    search_text: "obs audio mute unmute source input microphone",
+    icon: "microphone-off",
+    prefix: event_kinds::AUDIO_PREFIX,
+    matcher: TriggerMatcher::KindWhere(
+        event_kinds::AUDIO_SOURCE_MUTE_CHANGED,
+        audio_source::source_name_matches,
+    ),
+    condition: TriggerCondition::FromConfig(audio_source::condition_display),
+    config_fields: audio_source::config_fields,
+    variables: families::source_mute_variables,
 };
-use forge_types::{
-    ArgStack, DeclaredVariable, TriggerConfig, UserText, VariableSchema, Variant, VariantKind,
-};
-
-use crate::vocabulary::fields::audio as fields;
-use crate::vocabulary::messages;
-use crate::vocabulary::{event_kinds, picker_keys, trigger_ids, variables};
-
-pub(crate) struct AudioSourceMuteChangedDescriptor;
-
-impl TriggerKindDescriptor for AudioSourceMuteChangedDescriptor {
-    fn id(&self) -> &str {
-        trigger_ids::AUDIO_SOURCE_MUTE_CHANGED
-    }
-
-    fn category(&self) -> TriggerCategory {
-        TriggerCategory::Integration
-    }
-
-    fn label(&self) -> &str {
-        "OBS audio source mute changed"
-    }
-
-    fn summary(&self) -> &str {
-        "Fires when an OBS input source is muted or unmuted."
-    }
-
-    fn search_text(&self) -> &str {
-        "obs audio mute unmute source input microphone"
-    }
-
-    fn icon_name(&self) -> &str {
-        "microphone-off"
-    }
-
-    fn platform_contract(&self) -> KindPlatformContract {
-        KindPlatformContract::Universal
-    }
-
-    fn config_fields(&self) -> Vec<FormField> {
-        vec![FormField::Optional {
-            key: "source_name",
-            label: "Source name (leave empty to match any)",
-            inner: Box::new(FormField::DynamicSelect {
-                key: "source_name",
-                label: "Source name",
-                options_key: picker_keys::AUDIO_INPUT_NAMES,
-            }),
-        }]
-    }
-
-    fn condition_display(&self, config: &TriggerConfig) -> UserText {
-        match config.str_nonempty("source_name") {
-            Some(s) => messages::condition_source(s).into(),
-            None => messages::CONDITION_ANY_SOURCE.into(),
-        }
-    }
-
-    fn event_filter(&self) -> EventFilter {
-        EventFilter {
-            source: Some(EventSource::Obs),
-            kind_prefix: Some(event_kinds::AUDIO_PREFIX.to_owned()),
-        }
-    }
-
-    fn matches_trigger(&self, config: &TriggerConfig, event: &Event) -> bool {
-        if event.kind != event_kinds::AUDIO_SOURCE_MUTE_CHANGED {
-            return false;
-        }
-        source_name_matches(config, event)
-    }
-
-    fn build_arg_stack(&self, event: &Event) -> ArgStack {
-        build_mute_arg_stack(event)
-    }
-
-    fn output_schema(&self) -> Option<VariableSchema> {
-        Some(VariableSchema {
-            variables: vec![
-                DeclaredVariable {
-                    name: variables::source::NAME.to_owned(),
-                    kind: VariantKind::String,
-                    label: "Source name".to_owned(),
-                    synthesis: None,
-                },
-                DeclaredVariable {
-                    name: variables::source::IS_MUTED.to_owned(),
-                    kind: VariantKind::Bool,
-                    label: "Source muted".to_owned(),
-                    synthesis: None,
-                },
-            ],
-        })
-    }
-}
-
-pub(crate) fn build_mute_arg_stack(event: &Event) -> ArgStack {
-    let mut stack = ArgStack::new();
-    if let Some(name) = event
-        .payload
-        .get(fields::SOURCE_NAME)
-        .and_then(|v| v.as_str())
-    {
-        stack = stack.set(
-            variables::source::NAME.to_owned(),
-            Variant::String(name.to_owned()),
-        );
-    }
-    if let Some(muted) = event
-        .payload
-        .get(fields::IS_MUTED)
-        .and_then(|v| v.as_bool())
-    {
-        stack = stack.set(variables::source::IS_MUTED.to_owned(), Variant::Bool(muted));
-    }
-    stack
-}
-
-pub(crate) fn source_name_matches(config: &TriggerConfig, event: &Event) -> bool {
-    match config.str_nonempty("source_name") {
-        Some(s) => {
-            event
-                .payload
-                .get(fields::SOURCE_NAME)
-                .and_then(|v| v.as_str())
-                == Some(s)
-        }
-        None => true,
-    }
-}
 
 #[cfg(test)]
 mod tests {
-    use super::super::{
-        AudioSourceBalanceChangedDescriptor, AudioSourceMuteChangedDescriptor,
-        AudioSourceSyncOffsetChangedDescriptor, AudioSourceVolumeChangedDescriptor,
-    };
-    use super::*;
+    use super::super::audio_source_balance_changed::AUDIO_SOURCE_BALANCE_CHANGED;
+    use super::super::audio_source_mute_changed::AUDIO_SOURCE_MUTE_CHANGED;
+    use super::super::audio_source_sync_offset_changed::AUDIO_SOURCE_SYNC_OFFSET_CHANGED;
+    use super::super::audio_source_volume_changed::AUDIO_SOURCE_VOLUME_CHANGED;
+    use forge_events::Event;
+    use forge_events::EventSource;
     use forge_registry::TriggerKindDescriptor;
+    use forge_types::Variant;
     use serde_json::json;
     use std::collections::BTreeMap;
 
@@ -160,21 +50,18 @@ mod tests {
     fn each_audio_descriptor_matches_only_its_own_kind() {
         let cfg = BTreeMap::new();
         let descriptors: [(&str, &dyn TriggerKindDescriptor); 4] = [
-            (
-                "obs.audio.source_mute_changed",
-                &AudioSourceMuteChangedDescriptor,
-            ),
+            ("obs.audio.source_mute_changed", &AUDIO_SOURCE_MUTE_CHANGED),
             (
                 "obs.audio.source_volume_changed",
-                &AudioSourceVolumeChangedDescriptor,
+                &AUDIO_SOURCE_VOLUME_CHANGED,
             ),
             (
                 "obs.audio.source_balance_changed",
-                &AudioSourceBalanceChangedDescriptor,
+                &AUDIO_SOURCE_BALANCE_CHANGED,
             ),
             (
                 "obs.audio.source_sync_offset_changed",
-                &AudioSourceSyncOffsetChangedDescriptor,
+                &AUDIO_SOURCE_SYNC_OFFSET_CHANGED,
             ),
         ];
         for (own_kind, descriptor) in descriptors {
@@ -191,13 +78,13 @@ mod tests {
     #[test]
     fn audio_descriptor_rejects_non_audio_kind() {
         let event = Event::new(EventSource::Obs, "obs.scene.changed", json!({}));
-        assert!(!AudioSourceMuteChangedDescriptor.matches_trigger(&BTreeMap::new(), &event));
+        assert!(!AUDIO_SOURCE_MUTE_CHANGED.matches_trigger(&BTreeMap::new(), &event));
     }
 
     #[test]
     fn empty_filter_matches_any_source() {
         let cfg = BTreeMap::new();
-        assert!(AudioSourceMuteChangedDescriptor.matches_trigger(
+        assert!(AUDIO_SOURCE_MUTE_CHANGED.matches_trigger(
             &cfg,
             &audio_event("obs.audio.source_mute_changed", "Desktop")
         ));
@@ -208,7 +95,7 @@ mod tests {
         let mut cfg = BTreeMap::new();
         cfg.insert("source_name".to_owned(), Variant::String(String::new()));
         assert!(
-            AudioSourceMuteChangedDescriptor
+            AUDIO_SOURCE_MUTE_CHANGED
                 .matches_trigger(&cfg, &audio_event("obs.audio.source_mute_changed", "Mic"))
         );
     }
@@ -218,7 +105,7 @@ mod tests {
         let mut cfg = BTreeMap::new();
         cfg.insert("source_name".to_owned(), Variant::String("Mic".to_owned()));
         assert!(
-            AudioSourceMuteChangedDescriptor
+            AUDIO_SOURCE_MUTE_CHANGED
                 .matches_trigger(&cfg, &audio_event("obs.audio.source_mute_changed", "Mic"))
         );
     }
@@ -227,7 +114,7 @@ mod tests {
     fn configured_filter_rejects_when_source_name_differs() {
         let mut cfg = BTreeMap::new();
         cfg.insert("source_name".to_owned(), Variant::String("Mic".to_owned()));
-        assert!(!AudioSourceMuteChangedDescriptor.matches_trigger(
+        assert!(!AUDIO_SOURCE_MUTE_CHANGED.matches_trigger(
             &cfg,
             &audio_event("obs.audio.source_mute_changed", "Desktop")
         ));
@@ -238,7 +125,7 @@ mod tests {
         let mut cfg = BTreeMap::new();
         cfg.insert("source_name".to_owned(), Variant::String("Mic".to_owned()));
         let event = Event::new(EventSource::Obs, "obs.audio.source_mute_changed", json!({}));
-        assert!(!AudioSourceMuteChangedDescriptor.matches_trigger(&cfg, &event));
+        assert!(!AUDIO_SOURCE_MUTE_CHANGED.matches_trigger(&cfg, &event));
     }
 
     #[test]
@@ -248,7 +135,7 @@ mod tests {
             "obs.audio.source_mute_changed",
             json!({ "source_name": "Mic", "is_muted": true }),
         );
-        let stack = build_mute_arg_stack(&event);
+        let stack = AUDIO_SOURCE_MUTE_CHANGED.build_arg_stack(&event);
         assert_eq!(
             stack.get("obs.source.name"),
             Some(&Variant::String("Mic".to_owned())),
@@ -259,7 +146,7 @@ mod tests {
     #[test]
     fn mute_arg_stack_omits_keys_when_payload_fields_absent() {
         let event = Event::new(EventSource::Obs, "obs.audio.source_mute_changed", json!({}));
-        let stack = build_mute_arg_stack(&event);
+        let stack = AUDIO_SOURCE_MUTE_CHANGED.build_arg_stack(&event);
         assert!(stack.get("obs.source.name").is_none());
         assert!(stack.get("obs.source.is_muted").is_none());
     }

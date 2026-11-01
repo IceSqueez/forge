@@ -1,147 +1,59 @@
+use super::spec::{TwitchTriggerSpec, Variable, table_variables};
 use crate::vocabulary::event_kinds;
 use crate::vocabulary::trigger_ids;
-use forge_events::{Event, EventSource};
-use forge_registry::{
-    ActorDeclaration, EventFilter, KindPlatformContract, TriggerCategory, TriggerKindDescriptor,
-};
-use forge_types::{
-    ArgStack, DeclaredVariable, PlatformId, SynthesisHint, TriggerConfig, VariableSchema, Variant,
-    VariantKind,
-};
+use forge_registry::TriggerVariables;
+use forge_registry::{ActorDeclaration, TriggerCategory};
 
 use crate::vocabulary::fields::goal as fields;
 
-pub(crate) struct GoalProgressDescriptor;
+const VARIABLES: &[Variable] = &[
+    Variable::nested_text("goal.id", "Goal ID", fields::GOAL, fields::GOAL_ID),
+    Variable::nested_text("goal.type", "Goal type", fields::GOAL, fields::GOAL_TYPE),
+    Variable::nested_int(
+        "goal.current_amount",
+        "Current amount",
+        fields::GOAL,
+        fields::CURRENT_AMOUNT,
+    )
+    .bounded(0, super::MAX_SYNTHESIZED_COUNT),
+    Variable::nested_int(
+        "goal.target_amount",
+        "Target amount",
+        fields::GOAL,
+        fields::TARGET_AMOUNT,
+    )
+    .bounded(0, super::MAX_SYNTHESIZED_COUNT),
+    Variable::nested_flag(
+        "goal.is_synced",
+        "Synced on connect",
+        fields::GOAL,
+        fields::IS_SYNCED,
+    ),
+];
 
-impl TriggerKindDescriptor for GoalProgressDescriptor {
-    fn id(&self) -> &str {
-        trigger_ids::GOAL_PROGRESS
-    }
-
-    fn category(&self) -> TriggerCategory {
-        TriggerCategory::Goals
-    }
-
-    fn label(&self) -> &str {
-        "Goal progress"
-    }
-
-    fn summary(&self) -> &str {
-        "Fires when a creator goal receives a progress update"
-    }
-
-    fn search_text(&self) -> &str {
-        "twitch goal progress update follower subscription"
-    }
-
-    fn icon_name(&self) -> &str {
-        "flag"
-    }
-
-    fn platform_contract(&self) -> KindPlatformContract {
-        KindPlatformContract::PlatformSpecific(PlatformId::Twitch)
-    }
-
-    fn event_filter(&self) -> EventFilter {
-        EventFilter {
-            source: Some(EventSource::Twitch),
-            kind_prefix: Some(event_kinds::CHANNEL_GOAL_PROGRESS.to_owned()),
-        }
-    }
-
-    fn matches_trigger(&self, _config: &TriggerConfig, _event: &Event) -> bool {
-        true
-    }
-
-    fn actors(&self) -> ActorDeclaration {
-        ActorDeclaration::Actorless
-    }
-
-    fn build_arg_stack(&self, event: &Event) -> ArgStack {
-        let goal = event.payload.get(fields::GOAL);
-
-        let goal_id = goal
-            .and_then(|v| v.get(fields::GOAL_ID))
-            .and_then(|v| v.as_str())
-            .unwrap_or("")
-            .to_owned();
-        let goal_type = goal
-            .and_then(|v| v.get(fields::GOAL_TYPE))
-            .and_then(|v| v.as_str())
-            .unwrap_or("")
-            .to_owned();
-        let current_amount = goal
-            .and_then(|v| v.get(fields::CURRENT_AMOUNT))
-            .and_then(|v| v.as_i64())
-            .unwrap_or(0);
-        let target_amount = goal
-            .and_then(|v| v.get(fields::TARGET_AMOUNT))
-            .and_then(|v| v.as_i64())
-            .unwrap_or(0);
-        let is_synced = goal
-            .and_then(|v| v.get(fields::IS_SYNCED))
-            .and_then(|v| v.as_bool())
-            .unwrap_or(false);
-
-        ArgStack::new()
-            .set("goal.id".to_owned(), Variant::String(goal_id))
-            .set("goal.type".to_owned(), Variant::String(goal_type))
-            .set(
-                "goal.current_amount".to_owned(),
-                Variant::Int(current_amount),
-            )
-            .set("goal.target_amount".to_owned(), Variant::Int(target_amount))
-            .set("goal.is_synced".to_owned(), Variant::Bool(is_synced))
-    }
-    fn output_schema(&self) -> Option<VariableSchema> {
-        Some({
-            VariableSchema {
-                variables: vec![
-                    DeclaredVariable {
-                        name: "goal.id".to_owned(),
-                        kind: VariantKind::String,
-                        label: "Goal ID".to_owned(),
-                        synthesis: None,
-                    },
-                    DeclaredVariable {
-                        name: "goal.type".to_owned(),
-                        kind: VariantKind::String,
-                        label: "Goal type".to_owned(),
-                        synthesis: None,
-                    },
-                    DeclaredVariable {
-                        name: "goal.current_amount".to_owned(),
-                        kind: VariantKind::Int,
-                        label: "Current amount".to_owned(),
-                        synthesis: Some(SynthesisHint::BoundedInt {
-                            min: 0,
-                            max: super::MAX_SYNTHESIZED_COUNT,
-                        }),
-                    },
-                    DeclaredVariable {
-                        name: "goal.target_amount".to_owned(),
-                        kind: VariantKind::Int,
-                        label: "Target amount".to_owned(),
-                        synthesis: Some(SynthesisHint::BoundedInt {
-                            min: 0,
-                            max: super::MAX_SYNTHESIZED_COUNT,
-                        }),
-                    },
-                    DeclaredVariable {
-                        name: "goal.is_synced".to_owned(),
-                        kind: VariantKind::Bool,
-                        label: "Synced on connect".to_owned(),
-                        synthesis: None,
-                    },
-                ],
-            }
-        })
-    }
+fn variables() -> Option<TriggerVariables> {
+    Some(table_variables(VARIABLES))
 }
+
+pub(super) const SPEC: TwitchTriggerSpec = TwitchTriggerSpec {
+    id: trigger_ids::GOAL_PROGRESS,
+    category: TriggerCategory::Goals,
+    label: "Goal progress",
+    summary: "Fires when a creator goal receives a progress update",
+    search_text: "twitch goal progress update follower subscription",
+    icon: "flag",
+    kind: event_kinds::CHANNEL_GOAL_PROGRESS,
+    actors: ActorDeclaration::Actorless,
+    variables,
+    ..TwitchTriggerSpec::BASE
+};
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use forge_events::{Event, EventSource};
+    use forge_registry::TriggerKindDescriptor;
+    use forge_types::{Variant, VariantKind};
 
     fn goal_progress_event() -> Event {
         let payload = serde_json::json!({
@@ -157,7 +69,7 @@ mod tests {
 
     #[test]
     fn build_arg_stack_maps_progress_amounts_as_int() {
-        let stack = GoalProgressDescriptor.build_arg_stack(&goal_progress_event());
+        let stack = SPEC.build_arg_stack(&goal_progress_event());
         assert_eq!(
             stack.get("goal.id"),
             Some(&Variant::String("goal-2".to_owned()))
@@ -183,7 +95,7 @@ mod tests {
                 event.payload["goal"]["is_synced"] = flag;
             }
 
-            let stack = GoalProgressDescriptor.build_arg_stack(&event);
+            let stack = SPEC.build_arg_stack(&event);
 
             assert_eq!(
                 stack.get("goal.is_synced"),
@@ -207,14 +119,14 @@ mod tests {
 
     #[test]
     fn output_schema_declares_every_variable_the_arg_stack_sets_with_its_kind() {
-        let produced: Vec<(String, VariantKind)> = GoalProgressDescriptor
+        let produced: Vec<(String, VariantKind)> = SPEC
             .build_arg_stack(&goal_progress_event())
             .snapshot()
             .iter()
             .map(|(name, value)| (name.clone(), kind_of(value)))
             .collect();
 
-        let mut declared: Vec<(String, VariantKind)> = GoalProgressDescriptor
+        let mut declared: Vec<(String, VariantKind)> = SPEC
             .output_schema()
             .unwrap()
             .variables

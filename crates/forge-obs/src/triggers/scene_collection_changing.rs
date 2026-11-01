@@ -1,95 +1,50 @@
-use forge_events::{Event, EventSource};
-use forge_registry::{EventFilter, KindPlatformContract, TriggerCategory, TriggerKindDescriptor};
-use forge_types::{
-    ArgStack, DeclaredVariable, TriggerConfig, UserText, VariableSchema, Variant, VariantKind,
+use forge_events::EventSource;
+use forge_registry::TriggerVariables;
+use forge_registry::{
+    EventTriggerSpec, EventVariable, TriggerCondition, TriggerMatcher, event_variables,
+    no_config_fields,
 };
 
 use crate::vocabulary::fields::collection as fields;
 use crate::vocabulary::messages;
 use crate::vocabulary::{event_kinds, trigger_ids, variables};
 
-pub(crate) struct SceneCollectionChangingDescriptor;
+const VARIABLES: &[EventVariable] = &[EventVariable::text(
+    variables::collection::NAME,
+    "Scene collection name",
+    fields::COLLECTION_NAME,
+)];
 
-impl TriggerKindDescriptor for SceneCollectionChangingDescriptor {
-    fn id(&self) -> &str {
-        trigger_ids::COLLECTION_CHANGING
-    }
-
-    fn category(&self) -> TriggerCategory {
-        TriggerCategory::Integration
-    }
-
-    fn label(&self) -> &str {
-        "OBS scene collection changing"
-    }
-
-    fn summary(&self) -> &str {
-        "Fires when OBS begins switching to a different scene collection."
-    }
-
-    fn search_text(&self) -> &str {
-        "obs scene collection changing switching"
-    }
-
-    fn icon_name(&self) -> &str {
-        "stack-2"
-    }
-
-    fn platform_contract(&self) -> KindPlatformContract {
-        KindPlatformContract::Universal
-    }
-
-    fn condition_display(&self, _: &TriggerConfig) -> UserText {
-        messages::CONDITION_ANY_SCENE_COLLECTION.into()
-    }
-
-    fn event_filter(&self) -> EventFilter {
-        EventFilter {
-            source: Some(EventSource::Obs),
-            kind_prefix: Some(event_kinds::COLLECTION_PREFIX.to_owned()),
-        }
-    }
-
-    fn matches_trigger(&self, _config: &TriggerConfig, event: &Event) -> bool {
-        event.kind == event_kinds::COLLECTION_CHANGING
-    }
-
-    fn build_arg_stack(&self, event: &Event) -> ArgStack {
-        let mut stack = ArgStack::new();
-        if let Some(name) = event
-            .payload
-            .get(fields::COLLECTION_NAME)
-            .and_then(|v| v.as_str())
-        {
-            stack = stack.set(
-                variables::collection::NAME.to_owned(),
-                Variant::String(name.to_owned()),
-            );
-        }
-        stack
-    }
-
-    fn output_schema(&self) -> Option<VariableSchema> {
-        Some(VariableSchema {
-            variables: vec![DeclaredVariable {
-                name: variables::collection::NAME.to_owned(),
-                kind: VariantKind::String,
-                label: "Scene collection name".to_owned(),
-                synthesis: None,
-            }],
-        })
-    }
+fn variables() -> Option<TriggerVariables> {
+    event_variables(VARIABLES)
 }
+
+pub(crate) const SCENE_COLLECTION_CHANGING: EventTriggerSpec = EventTriggerSpec {
+    id: trigger_ids::COLLECTION_CHANGING,
+    source: EventSource::Obs,
+    label: "OBS scene collection changing",
+    summary: "Fires when OBS begins switching to a different scene collection.",
+    search_text: "obs scene collection changing switching",
+    icon: "stack-2",
+    prefix: event_kinds::COLLECTION_PREFIX,
+    matcher: TriggerMatcher::Kind(event_kinds::COLLECTION_CHANGING),
+    condition: TriggerCondition::Fixed(messages::CONDITION_ANY_SCENE_COLLECTION),
+    config_fields: no_config_fields,
+    variables,
+};
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use forge_events::{Event, EventSource};
+    use forge_registry::TriggerKindDescriptor;
+    use forge_types::Variant;
     use serde_json::json;
     use std::collections::BTreeMap;
 
     #[test]
     fn matches_collection_changing_kind() {
-        let d = SceneCollectionChangingDescriptor;
+        let d = SCENE_COLLECTION_CHANGING;
         let event = Event::new(
             EventSource::Obs,
             "obs.collection.changing",
@@ -100,7 +55,7 @@ mod tests {
 
     #[test]
     fn does_not_match_collection_changed_kind() {
-        let d = SceneCollectionChangingDescriptor;
+        let d = SCENE_COLLECTION_CHANGING;
         let event = Event::new(
             EventSource::Obs,
             "obs.collection.changed",
@@ -111,7 +66,7 @@ mod tests {
 
     #[test]
     fn build_arg_stack_maps_name_to_collection() {
-        let d = SceneCollectionChangingDescriptor;
+        let d = SCENE_COLLECTION_CHANGING;
         let event = Event::new(
             EventSource::Obs,
             "obs.collection.changing",
@@ -125,7 +80,7 @@ mod tests {
 
     #[test]
     fn build_arg_stack_omits_collection_when_name_missing() {
-        let d = SceneCollectionChangingDescriptor;
+        let d = SCENE_COLLECTION_CHANGING;
         let event = Event::new(EventSource::Obs, "obs.collection.changing", json!({}));
         assert_eq!(d.build_arg_stack(&event).get("obs.collection"), None);
     }

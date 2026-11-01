@@ -1,116 +1,56 @@
+use super::spec::{TwitchTriggerSpec, Variable, table_variables};
 use crate::vocabulary::event_kinds;
 use crate::vocabulary::trigger_ids;
-use forge_events::{Event, EventSource};
-use forge_registry::{
-    ActorDeclaration, EventFilter, KindPlatformContract, TriggerCategory, TriggerKindDescriptor,
-};
-use forge_types::{
-    ArgStack, DeclaredVariable, PlatformId, TriggerConfig, VariableSchema, Variant, VariantKind,
-};
+use forge_registry::TriggerVariables;
+use forge_registry::{ActorDeclaration, TriggerCategory};
 
 use crate::vocabulary::fields::prediction as fields;
 
-pub(crate) struct PredictionLockedDescriptor;
+const VARIABLES: &[Variable] = &[
+    Variable::nested_text(
+        "prediction.id",
+        "Prediction ID",
+        fields::PREDICTION,
+        fields::PREDICTION_ID,
+    ),
+    Variable::nested_text(
+        "prediction.title",
+        "Prediction title",
+        fields::PREDICTION,
+        fields::PREDICTION_TITLE,
+    ),
+    Variable::nested_timestamp(
+        "prediction.locked_at",
+        "Locked at",
+        fields::PREDICTION,
+        fields::LOCKED_AT,
+    ),
+];
 
-impl TriggerKindDescriptor for PredictionLockedDescriptor {
-    fn id(&self) -> &str {
-        trigger_ids::PREDICTION_LOCKED
-    }
-
-    fn category(&self) -> TriggerCategory {
-        TriggerCategory::Predictions
-    }
-
-    fn label(&self) -> &str {
-        "Prediction locked"
-    }
-
-    fn summary(&self) -> &str {
-        "Fires when a prediction is locked and no more points can be placed"
-    }
-
-    fn search_text(&self) -> &str {
-        "twitch prediction locked closed outcome"
-    }
-
-    fn icon_name(&self) -> &str {
-        "chart-bar"
-    }
-
-    fn platform_contract(&self) -> KindPlatformContract {
-        KindPlatformContract::PlatformSpecific(PlatformId::Twitch)
-    }
-
-    fn event_filter(&self) -> EventFilter {
-        EventFilter {
-            source: Some(EventSource::Twitch),
-            kind_prefix: Some(event_kinds::CHANNEL_PREDICTION_LOCK.to_owned()),
-        }
-    }
-
-    fn matches_trigger(&self, _config: &TriggerConfig, _event: &Event) -> bool {
-        true
-    }
-
-    fn actors(&self) -> ActorDeclaration {
-        ActorDeclaration::Actorless
-    }
-
-    fn build_arg_stack(&self, event: &Event) -> ArgStack {
-        let prediction = event.payload.get(fields::PREDICTION);
-
-        let prediction_id = prediction
-            .and_then(|v| v.get(fields::PREDICTION_ID))
-            .and_then(|v| v.as_str())
-            .unwrap_or("")
-            .to_owned();
-        let title = prediction
-            .and_then(|v| v.get(fields::PREDICTION_TITLE))
-            .and_then(|v| v.as_str())
-            .unwrap_or("")
-            .to_owned();
-        let locked_at = prediction
-            .and_then(|v| v.get(fields::LOCKED_AT))
-            .and_then(|v| v.as_str())
-            .and_then(crate::timestamp::variant);
-
-        let stack = ArgStack::new()
-            .set("prediction.id".to_owned(), Variant::String(prediction_id))
-            .set("prediction.title".to_owned(), Variant::String(title));
-        crate::timestamp::set(stack, "prediction.locked_at", locked_at)
-    }
-    fn output_schema(&self) -> Option<VariableSchema> {
-        Some({
-            VariableSchema {
-                variables: vec![
-                    DeclaredVariable {
-                        name: "prediction.id".to_owned(),
-                        kind: VariantKind::String,
-                        label: "Prediction ID".to_owned(),
-                        synthesis: None,
-                    },
-                    DeclaredVariable {
-                        name: "prediction.title".to_owned(),
-                        kind: VariantKind::String,
-                        label: "Prediction title".to_owned(),
-                        synthesis: None,
-                    },
-                    DeclaredVariable {
-                        name: "prediction.locked_at".to_owned(),
-                        kind: VariantKind::Datetime,
-                        label: "Locked at".to_owned(),
-                        synthesis: None,
-                    },
-                ],
-            }
-        })
-    }
+fn variables() -> Option<TriggerVariables> {
+    Some(table_variables(VARIABLES))
 }
+
+pub(super) const SPEC: TwitchTriggerSpec = TwitchTriggerSpec {
+    id: trigger_ids::PREDICTION_LOCKED,
+    category: TriggerCategory::Predictions,
+    label: "Prediction locked",
+    summary: "Fires when a prediction is locked and no more points can be placed",
+    search_text: "twitch prediction locked closed outcome",
+    icon: "chart-bar",
+    kind: event_kinds::CHANNEL_PREDICTION_LOCK,
+    actors: ActorDeclaration::Actorless,
+    variables,
+    ..TwitchTriggerSpec::BASE
+};
 
 #[cfg(test)]
 mod tests {
     use super::*;
     use crate::timestamp::tests::instant;
+    use forge_events::{Event, EventSource};
+    use forge_registry::TriggerKindDescriptor;
+    use forge_types::Variant;
 
     fn prediction_lock_event() -> Event {
         let payload = serde_json::json!({
@@ -129,7 +69,7 @@ mod tests {
 
     #[test]
     fn event_filter_targets_prediction_lock_topic_from_twitch() {
-        let filter = PredictionLockedDescriptor.event_filter();
+        let filter = SPEC.event_filter();
         assert_eq!(filter.source, Some(EventSource::Twitch));
         assert_eq!(
             filter.kind_prefix.as_deref(),
@@ -139,7 +79,7 @@ mod tests {
 
     #[test]
     fn build_arg_stack_maps_prediction_id_title_and_locked_at() {
-        let stack = PredictionLockedDescriptor.build_arg_stack(&prediction_lock_event());
+        let stack = SPEC.build_arg_stack(&prediction_lock_event());
         assert_eq!(
             stack.get("prediction.id"),
             Some(&Variant::String("pred-3".to_owned()))

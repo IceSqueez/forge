@@ -1,3 +1,4 @@
+mod audio_source;
 mod audio_source_balance_changed;
 mod audio_source_mute_changed;
 mod audio_source_sync_offset_changed;
@@ -6,11 +7,11 @@ mod collection_list_changed;
 mod connection_auth_failed;
 mod connection_connected;
 mod connection_disconnected;
+mod families;
 mod filter_created;
 mod filter_enabled_changed;
 mod filter_removed;
 mod lifecycle;
-mod output_lifecycle;
 mod profile_current_changed;
 mod profile_list_changed;
 mod record_file_changed;
@@ -39,98 +40,66 @@ mod virtualcam_started;
 mod virtualcam_status_changed;
 mod virtualcam_stopped;
 
-pub(crate) use audio_source_balance_changed::AudioSourceBalanceChangedDescriptor;
-pub(crate) use audio_source_mute_changed::AudioSourceMuteChangedDescriptor;
-pub(crate) use audio_source_sync_offset_changed::AudioSourceSyncOffsetChangedDescriptor;
-pub(crate) use audio_source_volume_changed::AudioSourceVolumeChangedDescriptor;
-pub(crate) use collection_list_changed::CollectionListChangedDescriptor;
-pub(crate) use connection_auth_failed::ConnectionAuthFailedDescriptor;
-pub(crate) use connection_connected::ConnectionConnectedDescriptor;
-pub(crate) use connection_disconnected::ConnectionDisconnectedDescriptor;
-pub(crate) use filter_created::FilterCreatedDescriptor;
-pub(crate) use filter_enabled_changed::FilterEnabledChangedDescriptor;
-pub(crate) use filter_removed::FilterRemovedDescriptor;
-pub(crate) use profile_current_changed::ProfileCurrentChangedDescriptor;
-pub(crate) use profile_list_changed::ProfileListChangedDescriptor;
-pub(crate) use record_file_changed::RecordFileChangedDescriptor;
-pub(crate) use record_starting::RecordStartingDescriptor;
-pub(crate) use record_status_changed::RecordStatusChangedDescriptor;
-pub(crate) use scene_collection_changed::SceneCollectionChangedDescriptor;
-pub(crate) use scene_collection_changing::SceneCollectionChangingDescriptor;
-pub(crate) use scene_created::SceneCreatedDescriptor;
-pub(crate) use scene_current_changed::SceneCurrentChangedDescriptor;
-pub(crate) use scene_list_changed::SceneListChangedDescriptor;
-pub(crate) use scene_preview_changed::ScenePreviewChangedDescriptor;
-pub(crate) use scene_removed::SceneRemovedDescriptor;
-pub(crate) use scene_renamed::SceneRenamedDescriptor;
-pub(crate) use source_input_created::SourceInputCreatedDescriptor;
-pub(crate) use source_input_removed::SourceInputRemovedDescriptor;
-pub(crate) use source_input_renamed::SourceInputRenamedDescriptor;
-pub(crate) use source_scene_item_created::SourceSceneItemCreatedDescriptor;
-pub(crate) use source_scene_item_lock_changed::SourceSceneItemLockChangedDescriptor;
-pub(crate) use source_scene_item_removed::SourceSceneItemRemovedDescriptor;
-pub(crate) use source_scene_item_visibility_changed::SourceSceneItemVisibilityChangedDescriptor;
-pub(crate) use stream_starting::StreamStartingDescriptor;
-pub(crate) use stream_status_changed::StreamStatusChangedDescriptor;
-pub(crate) use studio_enabled::StudioEnabledDescriptor;
-pub(crate) use transition_started::TransitionStartedDescriptor;
-pub(crate) use virtualcam_started::VirtualcamStartedDescriptor;
-pub(crate) use virtualcam_status_changed::VirtualcamStatusChangedDescriptor;
-pub(crate) use virtualcam_stopped::VirtualcamStoppedDescriptor;
-
+use forge_registry::EventTriggerSpec;
 use forge_registry::{RegistryError, TriggerRegistry};
+
+const TRIGGERS: &[&EventTriggerSpec] = &[
+    &connection_auth_failed::CONNECTION_AUTH_FAILED,
+    &connection_connected::CONNECTION_CONNECTED,
+    &connection_disconnected::CONNECTION_DISCONNECTED,
+    &scene_current_changed::SCENE_CURRENT_CHANGED,
+    &scene_created::SCENE_CREATED,
+    &scene_removed::SCENE_REMOVED,
+    &scene_renamed::SCENE_RENAMED,
+    &audio_source_mute_changed::AUDIO_SOURCE_MUTE_CHANGED,
+    &audio_source_volume_changed::AUDIO_SOURCE_VOLUME_CHANGED,
+    &audio_source_balance_changed::AUDIO_SOURCE_BALANCE_CHANGED,
+    &audio_source_sync_offset_changed::AUDIO_SOURCE_SYNC_OFFSET_CHANGED,
+    &scene_preview_changed::SCENE_PREVIEW_CHANGED,
+    &scene_list_changed::SCENE_LIST_CHANGED,
+    &scene_collection_changing::SCENE_COLLECTION_CHANGING,
+    &scene_collection_changed::SCENE_COLLECTION_CHANGED,
+    &collection_list_changed::COLLECTION_LIST_CHANGED,
+    &profile_current_changed::PROFILE_CURRENT_CHANGED,
+    &profile_list_changed::PROFILE_LIST_CHANGED,
+    &stream_starting::STREAM_STARTING,
+    &lifecycle::STREAMING_STARTED,
+    &lifecycle::STREAMING_STOPPING,
+    &lifecycle::STREAMING_STOPPED,
+    &stream_status_changed::STREAM_STATUS_CHANGED,
+    &record_starting::RECORD_STARTING,
+    &lifecycle::RECORDING_STARTED,
+    &lifecycle::RECORDING_STOPPING,
+    &lifecycle::RECORDING_STOPPED,
+    &lifecycle::RECORDING_PAUSED,
+    &lifecycle::RECORDING_RESUMED,
+    &record_file_changed::RECORD_FILE_CHANGED,
+    &record_status_changed::RECORD_STATUS_CHANGED,
+    &source_input_created::SOURCE_INPUT_CREATED,
+    &source_input_removed::SOURCE_INPUT_REMOVED,
+    &source_input_renamed::SOURCE_INPUT_RENAMED,
+    &source_scene_item_created::SOURCE_SCENE_ITEM_CREATED,
+    &source_scene_item_removed::SOURCE_SCENE_ITEM_REMOVED,
+    &source_scene_item_lock_changed::SOURCE_SCENE_ITEM_LOCK_CHANGED,
+    &source_scene_item_visibility_changed::SOURCE_SCENE_ITEM_VISIBILITY_CHANGED,
+    &studio_enabled::STUDIO_ENABLED,
+    &lifecycle::STUDIO_DISABLED,
+    &transition_started::TRANSITION_STARTED,
+    &lifecycle::TRANSITION_ENDED,
+    &lifecycle::TRANSITION_VIDEO_ENDED,
+    &filter_created::FILTER_CREATED,
+    &filter_removed::FILTER_REMOVED,
+    &filter_enabled_changed::FILTER_ENABLED_CHANGED,
+    &virtualcam_started::VIRTUALCAM_STARTED,
+    &virtualcam_stopped::VIRTUALCAM_STOPPED,
+    &virtualcam_status_changed::VIRTUALCAM_STATUS_CHANGED,
+];
 
 pub fn register_obs_triggers(reg: &mut TriggerRegistry) -> Result<(), RegistryError> {
     let mut reg = reg.owned_by(crate::OBS_INTEGRATION.id);
-    reg.register(Box::new(ConnectionAuthFailedDescriptor))?;
-    reg.register(Box::new(ConnectionConnectedDescriptor))?;
-    reg.register(Box::new(ConnectionDisconnectedDescriptor))?;
-    reg.register(Box::new(SceneCurrentChangedDescriptor))?;
-    reg.register(Box::new(SceneCreatedDescriptor))?;
-    reg.register(Box::new(SceneRemovedDescriptor))?;
-    reg.register(Box::new(SceneRenamedDescriptor))?;
-    reg.register(Box::new(AudioSourceMuteChangedDescriptor))?;
-    reg.register(Box::new(AudioSourceVolumeChangedDescriptor))?;
-    reg.register(Box::new(AudioSourceBalanceChangedDescriptor))?;
-    reg.register(Box::new(AudioSourceSyncOffsetChangedDescriptor))?;
-    reg.register(Box::new(ScenePreviewChangedDescriptor))?;
-    reg.register(Box::new(SceneListChangedDescriptor))?;
-    reg.register(Box::new(SceneCollectionChangingDescriptor))?;
-    reg.register(Box::new(SceneCollectionChangedDescriptor))?;
-    reg.register(Box::new(CollectionListChangedDescriptor))?;
-    reg.register(Box::new(ProfileCurrentChangedDescriptor))?;
-    reg.register(Box::new(ProfileListChangedDescriptor))?;
-    reg.register(Box::new(StreamStartingDescriptor))?;
-    reg.register(Box::new(lifecycle::STREAMING_STARTED))?;
-    reg.register(Box::new(lifecycle::STREAMING_STOPPING))?;
-    reg.register(Box::new(lifecycle::STREAMING_STOPPED))?;
-    reg.register(Box::new(StreamStatusChangedDescriptor))?;
-    reg.register(Box::new(RecordStartingDescriptor))?;
-    reg.register(Box::new(lifecycle::RECORDING_STARTED))?;
-    reg.register(Box::new(lifecycle::RECORDING_STOPPING))?;
-    reg.register(Box::new(lifecycle::RECORDING_STOPPED))?;
-    reg.register(Box::new(lifecycle::RECORDING_PAUSED))?;
-    reg.register(Box::new(lifecycle::RECORDING_RESUMED))?;
-    reg.register(Box::new(RecordFileChangedDescriptor))?;
-    reg.register(Box::new(RecordStatusChangedDescriptor))?;
-    reg.register(Box::new(SourceInputCreatedDescriptor))?;
-    reg.register(Box::new(SourceInputRemovedDescriptor))?;
-    reg.register(Box::new(SourceInputRenamedDescriptor))?;
-    reg.register(Box::new(SourceSceneItemCreatedDescriptor))?;
-    reg.register(Box::new(SourceSceneItemRemovedDescriptor))?;
-    reg.register(Box::new(SourceSceneItemLockChangedDescriptor))?;
-    reg.register(Box::new(SourceSceneItemVisibilityChangedDescriptor))?;
-    reg.register(Box::new(StudioEnabledDescriptor))?;
-    reg.register(Box::new(lifecycle::STUDIO_DISABLED))?;
-    reg.register(Box::new(TransitionStartedDescriptor))?;
-    reg.register(Box::new(lifecycle::TRANSITION_ENDED))?;
-    reg.register(Box::new(lifecycle::TRANSITION_VIDEO_ENDED))?;
-    reg.register(Box::new(FilterCreatedDescriptor))?;
-    reg.register(Box::new(FilterRemovedDescriptor))?;
-    reg.register(Box::new(FilterEnabledChangedDescriptor))?;
-    reg.register(Box::new(VirtualcamStartedDescriptor))?;
-    reg.register(Box::new(VirtualcamStoppedDescriptor))?;
-    reg.register(Box::new(VirtualcamStatusChangedDescriptor))?;
+    for spec in TRIGGERS {
+        reg.register(Box::new((*spec).clone()))?;
+    }
     Ok(())
 }
 

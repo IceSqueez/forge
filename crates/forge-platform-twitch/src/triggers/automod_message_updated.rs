@@ -1,164 +1,139 @@
+use super::spec::TwitchTriggerSpec;
 use crate::vocabulary::trigger_ids;
 use crate::vocabulary::{event_kinds, messages};
-use forge_events::{Event, EventSource};
+use forge_events::Event;
 use forge_registry::{
-    ActorDeclaration, ActorIdentity, ActorRole, EventFilter, FormField, KindPlatformContract,
-    SubActionConfigExt, TriggerCategory, TriggerKindDescriptor, TriggerVariables,
+    ActorDeclaration, ActorIdentity, ActorRole, FormField, SubActionConfigExt, TriggerCategory,
+    TriggerVariables,
 };
-use forge_types::{DeclaredVariable, PlatformId, TriggerConfig, UserText, Variant, VariantKind};
+use forge_types::{DeclaredVariable, TriggerConfig, UserText, Variant, VariantKind};
 
 use super::payload_read::{self, twitch_actor};
 use crate::vocabulary::fields::automod as automod_fields;
 
-pub(crate) struct AutomodMessageUpdatedDescriptor;
+fn default_config() -> TriggerConfig {
+    let mut cfg = TriggerConfig::new();
+    cfg.insert(
+        "status_filter".to_owned(),
+        Variant::String("any".to_owned()),
+    );
+    cfg
+}
 
-impl TriggerKindDescriptor for AutomodMessageUpdatedDescriptor {
-    fn id(&self) -> &str {
-        trigger_ids::AUTOMOD_MESSAGE_UPDATED
-    }
+fn config_fields() -> Vec<FormField> {
+    vec![FormField::Select {
+        key: "status_filter",
+        label: "Decision status",
+        options: &["any", "approved", "denied", "expired"],
+    }]
+}
 
-    fn category(&self) -> TriggerCategory {
-        TriggerCategory::Moderation
-    }
-
-    fn label(&self) -> &str {
-        "AutoMod message decision updated"
-    }
-
-    fn summary(&self) -> &str {
-        "Fires when a moderator approves, denies, or allows a held AutoMod message to expire"
-    }
-
-    fn search_text(&self) -> &str {
-        "twitch automod message approved denied expired moderator held decision status"
-    }
-
-    fn icon_name(&self) -> &str {
-        "shield"
-    }
-
-    fn platform_contract(&self) -> KindPlatformContract {
-        KindPlatformContract::PlatformSpecific(PlatformId::Twitch)
-    }
-
-    fn default_config(&self) -> TriggerConfig {
-        let mut cfg = TriggerConfig::new();
-        cfg.insert(
-            "status_filter".to_owned(),
-            Variant::String("any".to_owned()),
-        );
-        cfg
-    }
-
-    fn config_fields(&self) -> Vec<FormField> {
-        vec![FormField::Select {
-            key: "status_filter",
-            label: "Decision status",
-            options: &["any", "approved", "denied", "expired"],
-        }]
-    }
-
-    fn condition_display(&self, config: &TriggerConfig) -> UserText {
-        match config.get("status_filter").and_then(Variant::as_str) {
-            None | Some("any") => messages::CONDITION_ANY_STATUS.into(),
-            Some(status) => messages::condition_status(status).into(),
-        }
-    }
-
-    fn event_filter(&self) -> EventFilter {
-        EventFilter {
-            source: Some(EventSource::Twitch),
-            kind_prefix: Some(event_kinds::AUTOMOD_MESSAGE_UPDATE.to_owned()),
-        }
-    }
-
-    fn matches_trigger(&self, config: &TriggerConfig, event: &Event) -> bool {
-        let filter = config.str("status_filter").unwrap_or("any");
-
-        if filter == "any" {
-            return true;
-        }
-
-        let event_status = event
-            .payload
-            .get(automod_fields::AUTOMOD)
-            .and_then(|a| a.get(automod_fields::STATUS))
-            .and_then(|v| v.as_str())
-            .unwrap_or("");
-
-        event_status.to_lowercase() == filter
-    }
-
-    fn variables(&self) -> Option<TriggerVariables> {
-        Some(
-            TriggerVariables::new()
-                .actor(twitch_actor(ActorRole::Principal), updated_author_identity)
-                .actor(
-                    twitch_actor(ActorRole::Moderator),
-                    automod_moderator_identity,
-                )
-                .message_text(|event| payload_read::text(event, automod_fields::MESSAGE_TEXT))
-                .event_specific(
-                    DeclaredVariable {
-                        name: "automod.message_id".to_owned(),
-                        kind: VariantKind::String,
-                        label: "Automod message ID".to_owned(),
-                        synthesis: None,
-                    },
-                    |event| {
-                        Variant::String(payload_read::nested_text(
-                            event,
-                            automod_fields::AUTOMOD,
-                            automod_fields::MESSAGE_ID,
-                        ))
-                    },
-                )
-                .event_specific(
-                    DeclaredVariable {
-                        name: "automod.status".to_owned(),
-                        kind: VariantKind::String,
-                        label: "Automod status".to_owned(),
-                        synthesis: None,
-                    },
-                    |event| {
-                        Variant::String(payload_read::nested_text(
-                            event,
-                            automod_fields::AUTOMOD,
-                            automod_fields::STATUS,
-                        ))
-                    },
-                )
-                .event_specific(
-                    DeclaredVariable {
-                        name: "automod.reason".to_owned(),
-                        kind: VariantKind::String,
-                        label: "Hold reason".to_owned(),
-                        synthesis: None,
-                    },
-                    |event| Variant::String(payload_read::text(event, automod_fields::REASON)),
-                )
-                .event_specific(
-                    DeclaredVariable {
-                        name: "automod.terms_found".to_owned(),
-                        kind: VariantKind::Array,
-                        label: "Blocked term IDs".to_owned(),
-                        synthesis: None,
-                    },
-                    |event| {
-                        payload_read::nested_text_list(
-                            event,
-                            automod_fields::BLOCKED_TERM,
-                            automod_fields::TERMS_FOUND,
-                        )
-                    },
-                ),
-        )
-    }
-
-    fn actors(&self) -> ActorDeclaration {
-        ActorDeclaration::Actors(&[ActorRole::Moderator])
+fn condition_display(config: &TriggerConfig) -> UserText {
+    match config.get("status_filter").and_then(Variant::as_str) {
+        None | Some("any") => messages::CONDITION_ANY_STATUS.into(),
+        Some(status) => messages::condition_status(status).into(),
     }
 }
+
+fn matches(config: &TriggerConfig, event: &Event) -> bool {
+    let filter = config.str("status_filter").unwrap_or("any");
+
+    if filter == "any" {
+        return true;
+    }
+
+    let event_status = event
+        .payload
+        .get(automod_fields::AUTOMOD)
+        .and_then(|a| a.get(automod_fields::STATUS))
+        .and_then(|v| v.as_str())
+        .unwrap_or("");
+
+    event_status.to_lowercase() == filter
+}
+
+fn variables() -> Option<TriggerVariables> {
+    Some(
+        TriggerVariables::new()
+            .actor(twitch_actor(ActorRole::Principal), updated_author_identity)
+            .actor(
+                twitch_actor(ActorRole::Moderator),
+                automod_moderator_identity,
+            )
+            .message_text(|event| payload_read::text(event, automod_fields::MESSAGE_TEXT))
+            .event_specific(
+                DeclaredVariable {
+                    name: "automod.message_id".to_owned(),
+                    kind: VariantKind::String,
+                    label: "Automod message ID".to_owned(),
+                    synthesis: None,
+                },
+                |event| {
+                    Variant::String(payload_read::nested_text(
+                        event,
+                        automod_fields::AUTOMOD,
+                        automod_fields::MESSAGE_ID,
+                    ))
+                },
+            )
+            .event_specific(
+                DeclaredVariable {
+                    name: "automod.status".to_owned(),
+                    kind: VariantKind::String,
+                    label: "Automod status".to_owned(),
+                    synthesis: None,
+                },
+                |event| {
+                    Variant::String(payload_read::nested_text(
+                        event,
+                        automod_fields::AUTOMOD,
+                        automod_fields::STATUS,
+                    ))
+                },
+            )
+            .event_specific(
+                DeclaredVariable {
+                    name: "automod.reason".to_owned(),
+                    kind: VariantKind::String,
+                    label: "Hold reason".to_owned(),
+                    synthesis: None,
+                },
+                |event| Variant::String(payload_read::text(event, automod_fields::REASON)),
+            )
+            .event_specific(
+                DeclaredVariable {
+                    name: "automod.terms_found".to_owned(),
+                    kind: VariantKind::Array,
+                    label: "Blocked term IDs".to_owned(),
+                    synthesis: None,
+                },
+                |event| {
+                    payload_read::nested_text_list(
+                        event,
+                        automod_fields::BLOCKED_TERM,
+                        automod_fields::TERMS_FOUND,
+                    )
+                },
+            ),
+    )
+}
+
+pub(super) const SPEC: TwitchTriggerSpec = TwitchTriggerSpec {
+    id: trigger_ids::AUTOMOD_MESSAGE_UPDATED,
+    category: TriggerCategory::Moderation,
+    label: "AutoMod message decision updated",
+    summary: "Fires when a moderator approves, denies, or allows a held AutoMod message to expire",
+    search_text: "twitch automod message approved denied expired moderator held decision status",
+    icon: "shield",
+    kind: event_kinds::AUTOMOD_MESSAGE_UPDATE,
+    actors: ActorDeclaration::Actors(&[ActorRole::Moderator]),
+    variables,
+    matches,
+    default_config,
+    config_fields,
+    condition_display,
+    ..TwitchTriggerSpec::BASE
+};
 
 fn updated_author_identity(event: &Event) -> ActorIdentity {
     payload_read::identity(
@@ -181,6 +156,8 @@ fn automod_moderator_identity(event: &Event) -> ActorIdentity {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use forge_events::EventSource;
+    use forge_registry::TriggerKindDescriptor;
 
     fn message_event(status: &str) -> Event {
         Event::new(
@@ -215,7 +192,7 @@ mod tests {
 
     #[test]
     fn event_filter_targets_automod_message_update_kind_from_twitch() {
-        let filter = AutomodMessageUpdatedDescriptor.event_filter();
+        let filter = SPEC.event_filter();
         assert_eq!(filter.source, Some(EventSource::Twitch));
         assert_eq!(
             filter.kind_prefix.as_deref(),
@@ -234,7 +211,7 @@ mod tests {
         ] {
             let cfg = config_with_filter(filter);
             assert_eq!(
-                AutomodMessageUpdatedDescriptor.matches_trigger(&cfg, &event),
+                SPEC.matches_trigger(&cfg, &event),
                 expected,
                 "filter {filter:?} against Title-Case status \"Approved\""
             );
@@ -245,12 +222,12 @@ mod tests {
     fn missing_status_filter_config_defaults_to_any_and_fires() {
         let event = message_event("Denied");
         let cfg = TriggerConfig::new();
-        assert!(AutomodMessageUpdatedDescriptor.matches_trigger(&cfg, &event));
+        assert!(SPEC.matches_trigger(&cfg, &event));
     }
 
     #[test]
     fn build_arg_stack_exposes_status_and_message_id_chaining_vars() {
-        let stack = AutomodMessageUpdatedDescriptor.build_arg_stack(&message_event("Approved"));
+        let stack = SPEC.build_arg_stack(&message_event("Approved"));
         assert_eq!(
             stack.get("automod.message_id"),
             Some(&Variant::String("msg-77".to_owned()))
@@ -285,7 +262,7 @@ mod tests {
             (blocked, "blocked_term", vec!["term-1", "term-2"]),
             (message_event("Approved"), "", vec![]),
         ] {
-            let stack = AutomodMessageUpdatedDescriptor.build_arg_stack(&event);
+            let stack = SPEC.build_arg_stack(&event);
             assert_eq!(
                 stack.get("automod.reason"),
                 Some(&Variant::String(reason.to_owned())),

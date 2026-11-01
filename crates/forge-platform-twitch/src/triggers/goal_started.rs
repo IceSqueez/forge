@@ -1,160 +1,73 @@
+use super::spec::{TwitchTriggerSpec, Variable, table_variables};
 use crate::vocabulary::event_kinds;
 use crate::vocabulary::trigger_ids;
-use forge_events::{Event, EventSource};
-use forge_registry::{
-    ActorDeclaration, EventFilter, KindPlatformContract, TriggerCategory, TriggerKindDescriptor,
-};
-use forge_types::{
-    ArgStack, DeclaredVariable, PlatformId, SynthesisHint, TriggerConfig, VariableSchema, Variant,
-    VariantKind,
-};
+use forge_registry::TriggerVariables;
+use forge_registry::{ActorDeclaration, TriggerCategory};
+use forge_types::SynthesisHint;
 
 use crate::vocabulary::fields::goal as fields;
 
-pub(crate) struct GoalStartedDescriptor;
+const VARIABLES: &[Variable] = &[
+    Variable::nested_text("goal.id", "Goal ID", fields::GOAL, fields::GOAL_ID),
+    Variable::nested_text("goal.type", "Goal type", fields::GOAL, fields::GOAL_TYPE),
+    Variable::nested_text(
+        "goal.description",
+        "Goal description",
+        fields::GOAL,
+        fields::DESCRIPTION,
+    ),
+    Variable::nested_int(
+        "goal.current_amount",
+        "Current amount",
+        fields::GOAL,
+        fields::CURRENT_AMOUNT,
+    )
+    .synthesis(SynthesisHint::BoundedInt {
+        min: 0,
+        max: super::MAX_SYNTHESIZED_COUNT,
+    }),
+    Variable::nested_int(
+        "goal.target_amount",
+        "Target amount",
+        fields::GOAL,
+        fields::TARGET_AMOUNT,
+    )
+    .synthesis(SynthesisHint::BoundedInt {
+        min: 0,
+        max: super::MAX_SYNTHESIZED_COUNT,
+    }),
+    Variable::nested_timestamp(
+        "goal.started_at",
+        "Started at",
+        fields::GOAL,
+        fields::STARTED_AT,
+    ),
+];
 
-impl TriggerKindDescriptor for GoalStartedDescriptor {
-    fn id(&self) -> &str {
-        trigger_ids::GOAL_STARTED
-    }
-
-    fn category(&self) -> TriggerCategory {
-        TriggerCategory::Goals
-    }
-
-    fn label(&self) -> &str {
-        "Goal started"
-    }
-
-    fn summary(&self) -> &str {
-        "Fires when a creator goal begins on the broadcaster's channel"
-    }
-
-    fn search_text(&self) -> &str {
-        "twitch goal started begin follower subscription"
-    }
-
-    fn icon_name(&self) -> &str {
-        "flag"
-    }
-
-    fn platform_contract(&self) -> KindPlatformContract {
-        KindPlatformContract::PlatformSpecific(PlatformId::Twitch)
-    }
-
-    fn event_filter(&self) -> EventFilter {
-        EventFilter {
-            source: Some(EventSource::Twitch),
-            kind_prefix: Some(event_kinds::CHANNEL_GOAL_BEGIN.to_owned()),
-        }
-    }
-
-    fn matches_trigger(&self, _config: &TriggerConfig, _event: &Event) -> bool {
-        true
-    }
-
-    fn actors(&self) -> ActorDeclaration {
-        ActorDeclaration::Actorless
-    }
-
-    fn build_arg_stack(&self, event: &Event) -> ArgStack {
-        let goal = event.payload.get(fields::GOAL);
-
-        let goal_id = goal
-            .and_then(|v| v.get(fields::GOAL_ID))
-            .and_then(|v| v.as_str())
-            .unwrap_or("")
-            .to_owned();
-        let goal_type = goal
-            .and_then(|v| v.get(fields::GOAL_TYPE))
-            .and_then(|v| v.as_str())
-            .unwrap_or("")
-            .to_owned();
-        let description = goal
-            .and_then(|v| v.get(fields::DESCRIPTION))
-            .and_then(|v| v.as_str())
-            .unwrap_or("")
-            .to_owned();
-        let current_amount = goal
-            .and_then(|v| v.get(fields::CURRENT_AMOUNT))
-            .and_then(|v| v.as_i64())
-            .unwrap_or(0);
-        let target_amount = goal
-            .and_then(|v| v.get(fields::TARGET_AMOUNT))
-            .and_then(|v| v.as_i64())
-            .unwrap_or(0);
-        let started_at = goal
-            .and_then(|v| v.get(fields::STARTED_AT))
-            .and_then(|v| v.as_str())
-            .and_then(crate::timestamp::variant);
-
-        let stack = ArgStack::new()
-            .set("goal.id".to_owned(), Variant::String(goal_id))
-            .set("goal.type".to_owned(), Variant::String(goal_type))
-            .set("goal.description".to_owned(), Variant::String(description))
-            .set(
-                "goal.current_amount".to_owned(),
-                Variant::Int(current_amount),
-            )
-            .set("goal.target_amount".to_owned(), Variant::Int(target_amount));
-        crate::timestamp::set(stack, "goal.started_at", started_at)
-    }
-    fn output_schema(&self) -> Option<VariableSchema> {
-        Some({
-            VariableSchema {
-                variables: vec![
-                    DeclaredVariable {
-                        name: "goal.id".to_owned(),
-                        kind: VariantKind::String,
-                        label: "Goal ID".to_owned(),
-                        synthesis: None,
-                    },
-                    DeclaredVariable {
-                        name: "goal.type".to_owned(),
-                        kind: VariantKind::String,
-                        label: "Goal type".to_owned(),
-                        synthesis: None,
-                    },
-                    DeclaredVariable {
-                        name: "goal.description".to_owned(),
-                        kind: VariantKind::String,
-                        label: "Goal description".to_owned(),
-                        synthesis: None,
-                    },
-                    DeclaredVariable {
-                        name: "goal.current_amount".to_owned(),
-                        kind: VariantKind::Int,
-                        label: "Current amount".to_owned(),
-                        synthesis: Some(SynthesisHint::BoundedInt {
-                            min: 0,
-                            max: super::MAX_SYNTHESIZED_COUNT,
-                        }),
-                    },
-                    DeclaredVariable {
-                        name: "goal.target_amount".to_owned(),
-                        kind: VariantKind::Int,
-                        label: "Target amount".to_owned(),
-                        synthesis: Some(SynthesisHint::BoundedInt {
-                            min: 0,
-                            max: super::MAX_SYNTHESIZED_COUNT,
-                        }),
-                    },
-                    DeclaredVariable {
-                        name: "goal.started_at".to_owned(),
-                        kind: VariantKind::Datetime,
-                        label: "Started at".to_owned(),
-                        synthesis: None,
-                    },
-                ],
-            }
-        })
-    }
+fn variables() -> Option<TriggerVariables> {
+    Some(table_variables(VARIABLES))
 }
+
+pub(super) const SPEC: TwitchTriggerSpec = TwitchTriggerSpec {
+    id: trigger_ids::GOAL_STARTED,
+    category: TriggerCategory::Goals,
+    label: "Goal started",
+    summary: "Fires when a creator goal begins on the broadcaster's channel",
+    search_text: "twitch goal started begin follower subscription",
+    icon: "flag",
+    kind: event_kinds::CHANNEL_GOAL_BEGIN,
+    actors: ActorDeclaration::Actorless,
+    variables,
+    ..TwitchTriggerSpec::BASE
+};
 
 #[cfg(test)]
 mod tests {
     use super::*;
     use crate::timestamp::tests::instant;
+    use forge_events::{Event, EventSource};
+    use forge_registry::TriggerKindDescriptor;
+    use forge_types::Variant;
 
     fn goal_begin_event() -> Event {
         let payload = serde_json::json!({
@@ -172,7 +85,7 @@ mod tests {
 
     #[test]
     fn event_filter_targets_goal_begin_topic_from_twitch() {
-        let filter = GoalStartedDescriptor.event_filter();
+        let filter = SPEC.event_filter();
         assert_eq!(filter.source, Some(EventSource::Twitch));
         assert_eq!(
             filter.kind_prefix.as_deref(),
@@ -182,7 +95,7 @@ mod tests {
 
     #[test]
     fn build_arg_stack_maps_amounts_as_int_and_metadata_as_string() {
-        let stack = GoalStartedDescriptor.build_arg_stack(&goal_begin_event());
+        let stack = SPEC.build_arg_stack(&goal_begin_event());
         assert_eq!(
             stack.get("goal.id"),
             Some(&Variant::String("goal-1".to_owned()))

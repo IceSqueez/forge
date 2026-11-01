@@ -22,6 +22,7 @@ mod chat_command;
 mod chat_message;
 mod chat_message_deleted;
 mod chat_settings_updated;
+mod families;
 mod goal_ended;
 mod goal_progress;
 mod goal_started;
@@ -55,6 +56,7 @@ mod shield_mode_ended;
 mod shield_mode_started;
 mod shoutout_received;
 mod shoutout_sent;
+mod spec;
 mod stream_offline;
 mod stream_online;
 mod support_cheer;
@@ -76,149 +78,86 @@ use forge_registry::{RegistryError, TriggerRegistry};
 const HYPE_TRAIN_LEVEL_MAX: i64 = 20;
 const MAX_SYNTHESIZED_COUNT: i64 = 1_000_000;
 
-use ad_break_started::AdBreakStartedDescriptor;
-use automatic_reward_redeemed::AutomaticRewardRedeemedDescriptor;
-use automod_message_held::AutomodMessageHeldDescriptor;
-use automod_message_updated::AutomodMessageUpdatedDescriptor;
-use automod_settings_updated::AutomodSettingsUpdatedDescriptor;
-use automod_terms_updated::AutomodTermsUpdatedDescriptor;
-use channel_ban::ChannelBanDescriptor;
-use channel_follow::ChannelFollowDescriptor;
-use channel_points_redemption::ChannelPointsRedemptionDescriptor;
-use channel_raid_received::ChannelRaidReceivedDescriptor;
-use channel_timeout::ChannelTimeoutDescriptor;
-use channel_unban::ChannelUnbanDescriptor;
-use channel_updated::ChannelUpdatedDescriptor;
-use charity_donation::CharityDonationDescriptor;
-use charity_progress::CharityProgressDescriptor;
-use charity_started::CharityStartedDescriptor;
-use charity_stopped::CharityStoppedDescriptor;
-use chat_cheer_message::ChatCheerMessageDescriptor;
-use chat_cleared::ChatClearedDescriptor;
-use chat_command::ChatCommandDescriptor;
-use chat_message::ChatMessageDescriptor;
-use chat_message_deleted::ChatMessageDeletedDescriptor;
-use chat_settings_updated::ChatSettingsUpdatedDescriptor;
-use goal_ended::GoalEndedDescriptor;
-use goal_progress::GoalProgressDescriptor;
-use goal_started::GoalStartedDescriptor;
-use guest_star_guest_updated::GuestStarGuestUpdatedDescriptor;
-use guest_star_session_began::GuestStarSessionBeganDescriptor;
-use guest_star_session_ended::GuestStarSessionEndedDescriptor;
-use guest_star_settings_updated::GuestStarSettingsUpdatedDescriptor;
-use hype_train_ended::HypeTrainEndedDescriptor;
-use hype_train_progress::HypeTrainProgressDescriptor;
-use hype_train_started::HypeTrainStartedDescriptor;
-use moderator_added::ModeratorAddedDescriptor;
-use moderator_removed::ModeratorRemovedDescriptor;
-use poll_ended::PollEndedDescriptor;
-use poll_progress::PollProgressDescriptor;
-use poll_started::PollStartedDescriptor;
-use prediction_ended::PredictionEndedDescriptor;
-use prediction_locked::PredictionLockedDescriptor;
-use prediction_progress::PredictionProgressDescriptor;
-use prediction_started::PredictionStartedDescriptor;
-use raid_sent::RaidSentDescriptor;
-use redemption_updated::RedemptionUpdatedDescriptor;
-use reward_added::RewardAddedDescriptor;
-use reward_removed::RewardRemovedDescriptor;
-use reward_updated::RewardUpdatedDescriptor;
-use shared_chat_message::SharedChatMessageDescriptor;
-use shared_chat_session_began::SharedChatSessionBeganDescriptor;
-use shared_chat_session_ended::SharedChatSessionEndedDescriptor;
-use shared_chat_session_updated::SharedChatSessionUpdatedDescriptor;
-use shield_mode_ended::ShieldModeEndedDescriptor;
-use shield_mode_started::ShieldModeStartedDescriptor;
-use shoutout_received::ShoutoutReceivedDescriptor;
-use shoutout_sent::ShoutoutSentDescriptor;
-use stream_offline::StreamOfflineDescriptor;
-use stream_online::StreamOnlineDescriptor;
-use support_cheer::SupportCheerDescriptor;
-use support_gift_sub::SupportGiftSubDescriptor;
-use support_resubscriber::SupportResubscriberDescriptor;
-use support_subscriber::SupportSubscriberDescriptor;
-use suspicious_user_message::SuspiciousUserMessageDescriptor;
-use unban_request_created::UnbanRequestCreatedDescriptor;
-use unban_request_resolved::UnbanRequestResolvedDescriptor;
-use user_update::UserUpdateDescriptor;
-use vip_added::VipAddedDescriptor;
-use vip_removed::VipRemovedDescriptor;
-use warning_acknowledged::WarningAcknowledgedDescriptor;
-use warning_sent::WarningSentDescriptor;
-use whisper_received::WhisperReceivedDescriptor;
+use spec::TwitchTriggerSpec;
+
+const TRIGGERS: &[TwitchTriggerSpec] = &[
+    channel_ban::SPEC,
+    channel_timeout::SPEC,
+    channel_unban::SPEC,
+    chat_command::SPEC,
+    chat_message::SPEC,
+    chat_cheer_message::SPEC,
+    shared_chat_message::SPEC,
+    chat_message_deleted::SPEC,
+    chat_cleared::SPEC,
+    support_subscriber::SPEC,
+    support_resubscriber::SPEC,
+    support_gift_sub::SPEC,
+    support_cheer::SPEC,
+    channel_raid_received::SPEC,
+    raid_sent::SPEC,
+    channel_follow::SPEC,
+    channel_points_redemption::SPEC,
+    stream_online::SPEC,
+    stream_offline::SPEC,
+    hype_train_started::SPEC,
+    hype_train_progress::SPEC,
+    hype_train_ended::SPEC,
+    charity_donation::SPEC,
+    charity_started::SPEC,
+    charity_progress::SPEC,
+    charity_stopped::SPEC,
+    moderator_added::SPEC,
+    moderator_removed::SPEC,
+    unban_request_created::SPEC,
+    unban_request_resolved::SPEC,
+    user_update::SPEC,
+    vip_added::SPEC,
+    vip_removed::SPEC,
+    shield_mode_started::SPEC,
+    shield_mode_ended::SPEC,
+    shoutout_sent::SPEC,
+    shoutout_received::SPEC,
+    suspicious_user_message::SPEC,
+    warning_acknowledged::SPEC,
+    warning_sent::SPEC,
+    poll_started::SPEC,
+    poll_progress::SPEC,
+    poll_ended::SPEC,
+    prediction_started::SPEC,
+    prediction_progress::SPEC,
+    prediction_locked::SPEC,
+    prediction_ended::SPEC,
+    goal_started::SPEC,
+    goal_progress::SPEC,
+    goal_ended::SPEC,
+    reward_added::SPEC,
+    reward_updated::SPEC,
+    reward_removed::SPEC,
+    redemption_updated::SPEC,
+    automod_message_held::SPEC,
+    automod_settings_updated::SPEC,
+    automod_terms_updated::SPEC,
+    automod_message_updated::SPEC,
+    chat_settings_updated::SPEC,
+    guest_star_session_began::SPEC,
+    guest_star_session_ended::SPEC,
+    guest_star_settings_updated::SPEC,
+    guest_star_guest_updated::SPEC,
+    shared_chat_session_began::SPEC,
+    shared_chat_session_updated::SPEC,
+    shared_chat_session_ended::SPEC,
+    channel_updated::SPEC,
+    ad_break_started::SPEC,
+    automatic_reward_redeemed::SPEC,
+    whisper_received::SPEC,
+];
 
 pub fn register_twitch_triggers(reg: &mut TriggerRegistry) -> Result<(), RegistryError> {
     let mut reg = reg.owned_by(crate::TWITCH_INTEGRATION.id);
-    reg.register(Box::new(ChannelBanDescriptor))?;
-    reg.register(Box::new(ChannelTimeoutDescriptor))?;
-    reg.register(Box::new(ChannelUnbanDescriptor))?;
-    reg.register(Box::new(ChatCommandDescriptor))?;
-    reg.register(Box::new(ChatMessageDescriptor))?;
-    reg.register(Box::new(ChatCheerMessageDescriptor))?;
-    reg.register(Box::new(SharedChatMessageDescriptor))?;
-    reg.register(Box::new(ChatMessageDeletedDescriptor))?;
-    reg.register(Box::new(ChatClearedDescriptor))?;
-    reg.register(Box::new(SupportSubscriberDescriptor))?;
-    reg.register(Box::new(SupportResubscriberDescriptor))?;
-    reg.register(Box::new(SupportGiftSubDescriptor))?;
-    reg.register(Box::new(SupportCheerDescriptor))?;
-    reg.register(Box::new(ChannelRaidReceivedDescriptor))?;
-    reg.register(Box::new(RaidSentDescriptor))?;
-    reg.register(Box::new(ChannelFollowDescriptor))?;
-    reg.register(Box::new(ChannelPointsRedemptionDescriptor))?;
-    reg.register(Box::new(StreamOnlineDescriptor))?;
-    reg.register(Box::new(StreamOfflineDescriptor))?;
-    reg.register(Box::new(HypeTrainStartedDescriptor))?;
-    reg.register(Box::new(HypeTrainProgressDescriptor))?;
-    reg.register(Box::new(HypeTrainEndedDescriptor))?;
-    reg.register(Box::new(CharityDonationDescriptor))?;
-    reg.register(Box::new(CharityStartedDescriptor))?;
-    reg.register(Box::new(CharityProgressDescriptor))?;
-    reg.register(Box::new(CharityStoppedDescriptor))?;
-    reg.register(Box::new(ModeratorAddedDescriptor))?;
-    reg.register(Box::new(ModeratorRemovedDescriptor))?;
-    reg.register(Box::new(UnbanRequestCreatedDescriptor))?;
-    reg.register(Box::new(UnbanRequestResolvedDescriptor))?;
-    reg.register(Box::new(UserUpdateDescriptor))?;
-    reg.register(Box::new(VipAddedDescriptor))?;
-    reg.register(Box::new(VipRemovedDescriptor))?;
-    reg.register(Box::new(ShieldModeStartedDescriptor))?;
-    reg.register(Box::new(ShieldModeEndedDescriptor))?;
-    reg.register(Box::new(ShoutoutSentDescriptor))?;
-    reg.register(Box::new(ShoutoutReceivedDescriptor))?;
-    reg.register(Box::new(SuspiciousUserMessageDescriptor))?;
-    reg.register(Box::new(WarningAcknowledgedDescriptor))?;
-    reg.register(Box::new(WarningSentDescriptor))?;
-    reg.register(Box::new(PollStartedDescriptor))?;
-    reg.register(Box::new(PollProgressDescriptor))?;
-    reg.register(Box::new(PollEndedDescriptor))?;
-    reg.register(Box::new(PredictionStartedDescriptor))?;
-    reg.register(Box::new(PredictionProgressDescriptor))?;
-    reg.register(Box::new(PredictionLockedDescriptor))?;
-    reg.register(Box::new(PredictionEndedDescriptor))?;
-    reg.register(Box::new(GoalStartedDescriptor))?;
-    reg.register(Box::new(GoalProgressDescriptor))?;
-    reg.register(Box::new(GoalEndedDescriptor))?;
-    reg.register(Box::new(RewardAddedDescriptor))?;
-    reg.register(Box::new(RewardUpdatedDescriptor))?;
-    reg.register(Box::new(RewardRemovedDescriptor))?;
-    reg.register(Box::new(RedemptionUpdatedDescriptor))?;
-    reg.register(Box::new(AutomodMessageHeldDescriptor))?;
-    reg.register(Box::new(AutomodSettingsUpdatedDescriptor))?;
-    reg.register(Box::new(AutomodTermsUpdatedDescriptor))?;
-    reg.register(Box::new(AutomodMessageUpdatedDescriptor))?;
-    reg.register(Box::new(ChatSettingsUpdatedDescriptor))?;
-    reg.register(Box::new(GuestStarSessionBeganDescriptor))?;
-    reg.register(Box::new(GuestStarSessionEndedDescriptor))?;
-    reg.register(Box::new(GuestStarSettingsUpdatedDescriptor))?;
-    reg.register(Box::new(GuestStarGuestUpdatedDescriptor))?;
-    reg.register(Box::new(SharedChatSessionBeganDescriptor))?;
-    reg.register(Box::new(SharedChatSessionUpdatedDescriptor))?;
-    reg.register(Box::new(SharedChatSessionEndedDescriptor))?;
-    reg.register(Box::new(ChannelUpdatedDescriptor))?;
-    reg.register(Box::new(AdBreakStartedDescriptor))?;
-    reg.register(Box::new(AutomaticRewardRedeemedDescriptor))?;
-    reg.register(Box::new(WhisperReceivedDescriptor))?;
+    for spec in TRIGGERS {
+        reg.register(Box::new(*spec))?;
+    }
     Ok(())
 }
 
@@ -232,14 +171,14 @@ mod tests {
 
     #[test]
     fn the_hype_level_form_accepts_every_level_the_variable_hints_can_produce() {
-        let form_max = match HypeTrainProgressDescriptor.config_fields().as_slice() {
+        let form_max = match hype_train_progress::SPEC.config_fields().as_slice() {
             [forge_registry::FormField::Integer { max, .. }] => *max,
             other => panic!("expected one integer field, got {} fields", other.len()),
         };
         let descriptors: [&dyn TriggerKindDescriptor; 3] = [
-            &HypeTrainStartedDescriptor,
-            &HypeTrainProgressDescriptor,
-            &HypeTrainEndedDescriptor,
+            &hype_train_started::SPEC,
+            &hype_train_progress::SPEC,
+            &hype_train_ended::SPEC,
         ];
 
         for descriptor in descriptors {

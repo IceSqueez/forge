@@ -1,116 +1,89 @@
+use super::spec::TwitchTriggerSpec;
 use crate::vocabulary::event_kinds;
 use crate::vocabulary::trigger_ids;
-use forge_events::{Event, EventSource};
+use forge_events::Event;
 use forge_registry::{
-    ActorDeclaration, COMMAND_CASE_SENSITIVE_KEY, COMMAND_PHRASE_KEY, ChatTriggerFamily,
-    EventFilter, FormField, KindPlatformContract, SubActionConfigExt, TriggerCategory,
-    TriggerKindDescriptor, TriggerVariables, command_phrase_matches,
+    ActorDeclaration, COMMAND_CASE_SENSITIVE_KEY, COMMAND_PHRASE_KEY, ChatTriggerFamily, FormField,
+    SubActionConfigExt, TriggerCategory, TriggerVariables, command_phrase_matches,
 };
-use forge_types::{PlatformId, TriggerConfig, UserText, Variant};
+use forge_types::{TriggerConfig, UserText, Variant};
 
 use super::chat_arg_stack::{base_chat_variables, chat_message_text};
 use crate::vocabulary::fields::chat as fields;
 
-pub(crate) struct ChatCommandDescriptor;
-
-impl TriggerKindDescriptor for ChatCommandDescriptor {
-    fn id(&self) -> &str {
-        trigger_ids::CHAT_COMMAND
-    }
-
-    fn category(&self) -> TriggerCategory {
-        TriggerCategory::Chat
-    }
-
-    fn label(&self) -> &str {
-        "Chat command"
-    }
-
-    fn summary(&self) -> &str {
-        "Fires when a chat message matches a command phrase"
-    }
-
-    fn search_text(&self) -> &str {
-        "twitch chat command trigger phrase prefix"
-    }
-
-    fn icon_name(&self) -> &str {
-        "terminal-2"
-    }
-
-    fn platform_contract(&self) -> KindPlatformContract {
-        KindPlatformContract::PlatformSpecific(PlatformId::Twitch)
-    }
-
-    fn default_config(&self) -> TriggerConfig {
-        let mut cfg = TriggerConfig::new();
-        cfg.insert(
-            COMMAND_PHRASE_KEY.to_owned(),
-            Variant::String("!command".to_owned()),
-        );
-        cfg.insert(COMMAND_CASE_SENSITIVE_KEY.to_owned(), Variant::Bool(false));
-        cfg
-    }
-
-    fn config_fields(&self) -> Vec<FormField> {
-        vec![
-            FormField::Text {
-                key: COMMAND_PHRASE_KEY,
-                label: "Command phrase",
-                placeholder: "!command",
-            },
-            FormField::Toggle {
-                key: COMMAND_CASE_SENSITIVE_KEY,
-                label: "Case sensitive",
-            },
-        ]
-    }
-
-    fn condition_display(&self, config: &TriggerConfig) -> UserText {
-        forge_registry::chat_command_condition(config)
-    }
-
-    fn event_filter(&self) -> EventFilter {
-        EventFilter {
-            source: Some(EventSource::Twitch),
-            kind_prefix: Some(event_kinds::CHANNEL_CHAT_MESSAGE.to_owned()),
-        }
-    }
-
-    fn matches_trigger(&self, config: &TriggerConfig, event: &Event) -> bool {
-        let phrase = config.str(COMMAND_PHRASE_KEY).unwrap_or("");
-
-        if phrase.is_empty() {
-            return false;
-        }
-
-        let case_sensitive = config.bool(COMMAND_CASE_SENSITIVE_KEY).unwrap_or(false);
-
-        let message = event
-            .payload
-            .get(fields::MESSAGE)
-            .and_then(|v| v.as_str())
-            .unwrap_or("");
-
-        command_phrase_matches(message, phrase, case_sensitive)
-    }
-
-    fn variables(&self) -> Option<TriggerVariables> {
-        Some(base_chat_variables().command_line(chat_message_text))
-    }
-
-    fn actors(&self) -> ActorDeclaration {
-        ActorDeclaration::principal()
-    }
-
-    fn chat_trigger_family(&self) -> Option<ChatTriggerFamily> {
-        Some(ChatTriggerFamily::Command)
-    }
+fn default_config() -> TriggerConfig {
+    let mut cfg = TriggerConfig::new();
+    cfg.insert(
+        COMMAND_PHRASE_KEY.to_owned(),
+        Variant::String("!command".to_owned()),
+    );
+    cfg.insert(COMMAND_CASE_SENSITIVE_KEY.to_owned(), Variant::Bool(false));
+    cfg
 }
+
+fn config_fields() -> Vec<FormField> {
+    vec![
+        FormField::Text {
+            key: COMMAND_PHRASE_KEY,
+            label: "Command phrase",
+            placeholder: "!command",
+        },
+        FormField::Toggle {
+            key: COMMAND_CASE_SENSITIVE_KEY,
+            label: "Case sensitive",
+        },
+    ]
+}
+
+fn condition_display(config: &TriggerConfig) -> UserText {
+    forge_registry::chat_command_condition(config)
+}
+
+fn matches(config: &TriggerConfig, event: &Event) -> bool {
+    let phrase = config.str(COMMAND_PHRASE_KEY).unwrap_or("");
+
+    if phrase.is_empty() {
+        return false;
+    }
+
+    let case_sensitive = config.bool(COMMAND_CASE_SENSITIVE_KEY).unwrap_or(false);
+
+    let message = event
+        .payload
+        .get(fields::MESSAGE)
+        .and_then(|v| v.as_str())
+        .unwrap_or("");
+
+    command_phrase_matches(message, phrase, case_sensitive)
+}
+
+fn variables() -> Option<TriggerVariables> {
+    Some(base_chat_variables().command_line(chat_message_text))
+}
+
+pub(super) const SPEC: TwitchTriggerSpec = TwitchTriggerSpec {
+    id: trigger_ids::CHAT_COMMAND,
+    category: TriggerCategory::Chat,
+    label: "Chat command",
+    summary: "Fires when a chat message matches a command phrase",
+    search_text: "twitch chat command trigger phrase prefix",
+    icon: "terminal-2",
+    kind: event_kinds::CHANNEL_CHAT_MESSAGE,
+    actors: ActorDeclaration::principal(),
+    variables,
+    matches,
+    default_config,
+    config_fields,
+    condition_display,
+    chat_family: Some(ChatTriggerFamily::Command),
+    ..TwitchTriggerSpec::BASE
+};
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use forge_events::EventSource;
+    use forge_registry::TriggerKindDescriptor;
 
     fn make_config(phrase: &str, case_sensitive: bool) -> TriggerConfig {
         let mut config = TriggerConfig::new();
@@ -147,7 +120,7 @@ mod tests {
             Variant::String("!quote".to_owned()),
         );
         assert_ne!(
-            ChatCommandDescriptor.condition_display(&cfg),
+            SPEC.condition_display(&cfg),
             forge_registry::any_condition()
         );
     }
@@ -156,37 +129,37 @@ mod tests {
     fn matches_case_insensitive_prefix() {
         let cfg = make_config("!quote", false);
         let event = chat_event("!Quote something");
-        assert!(ChatCommandDescriptor.matches_trigger(&cfg, &event));
+        assert!(SPEC.matches_trigger(&cfg, &event));
     }
 
     #[test]
     fn matches_exact_prefix_case_sensitive() {
         let cfg = make_config("!quote", true);
-        assert!(ChatCommandDescriptor.matches_trigger(&cfg, &chat_event("!quote arg")));
-        assert!(!ChatCommandDescriptor.matches_trigger(&cfg, &chat_event("!Quote arg")));
+        assert!(SPEC.matches_trigger(&cfg, &chat_event("!quote arg")));
+        assert!(!SPEC.matches_trigger(&cfg, &chat_event("!Quote arg")));
     }
 
     #[test]
     fn does_not_match_non_prefix() {
         let cfg = make_config("!quote", false);
-        assert!(!ChatCommandDescriptor.matches_trigger(&cfg, &chat_event("hello !quote")));
+        assert!(!SPEC.matches_trigger(&cfg, &chat_event("hello !quote")));
     }
 
     #[test]
     fn a_phrase_does_not_match_a_longer_command_sharing_its_prefix() {
         let cfg = make_config("!so", false);
-        assert!(!ChatCommandDescriptor.matches_trigger(&cfg, &chat_event("!sound on")));
+        assert!(!SPEC.matches_trigger(&cfg, &chat_event("!sound on")));
     }
 
     #[test]
     fn empty_phrase_never_matches() {
         let cfg = make_config("", false);
-        assert!(!ChatCommandDescriptor.matches_trigger(&cfg, &chat_event("!anything")));
+        assert!(!SPEC.matches_trigger(&cfg, &chat_event("!anything")));
     }
 
     #[test]
     fn output_schema_declares_message_text_as_its_first_message_hinted_variable() {
-        let schema = ChatCommandDescriptor.output_schema().unwrap();
+        let schema = SPEC.output_schema().unwrap();
 
         let first_message_hinted = schema
             .variables
@@ -199,7 +172,7 @@ mod tests {
 
     #[test]
     fn build_arg_stack_includes_base_chat_args() {
-        let stack = ChatCommandDescriptor.build_arg_stack(&chat_event("!quote hello"));
+        let stack = SPEC.build_arg_stack(&chat_event("!quote hello"));
         assert_eq!(
             stack.get("message_text"),
             Some(&Variant::String("!quote hello".to_owned()))

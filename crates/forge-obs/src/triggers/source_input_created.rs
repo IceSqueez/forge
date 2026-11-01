@@ -1,112 +1,46 @@
-use forge_events::{Event, EventSource};
-use forge_registry::{EventFilter, KindPlatformContract, TriggerCategory, TriggerKindDescriptor};
-use forge_types::{
-    ArgStack, DeclaredVariable, TriggerConfig, UserText, VariableSchema, Variant, VariantKind,
+use forge_events::EventSource;
+use forge_registry::TriggerVariables;
+use forge_registry::{
+    EventTriggerSpec, EventVariable, TriggerCondition, TriggerMatcher, event_variables,
+    no_config_fields,
 };
 
 use crate::vocabulary::fields::source as fields;
 use crate::vocabulary::messages;
 use crate::vocabulary::{event_kinds, trigger_ids, variables};
 
-pub(crate) struct SourceInputCreatedDescriptor;
+const VARIABLES: &[EventVariable] = &[
+    EventVariable::text(variables::source::NAME, "Source name", fields::SOURCE_NAME),
+    EventVariable::text(variables::source::KIND, "Source kind", fields::SOURCE_KIND),
+];
 
-impl TriggerKindDescriptor for SourceInputCreatedDescriptor {
-    fn id(&self) -> &str {
-        trigger_ids::SOURCE_INPUT_CREATED
-    }
-
-    fn category(&self) -> TriggerCategory {
-        TriggerCategory::Integration
-    }
-
-    fn label(&self) -> &str {
-        "OBS input source created"
-    }
-
-    fn summary(&self) -> &str {
-        "Fires when a new input source is added to OBS."
-    }
-
-    fn search_text(&self) -> &str {
-        "obs input source created added new"
-    }
-
-    fn icon_name(&self) -> &str {
-        "plus-circle"
-    }
-
-    fn platform_contract(&self) -> KindPlatformContract {
-        KindPlatformContract::Universal
-    }
-
-    fn condition_display(&self, _: &TriggerConfig) -> UserText {
-        messages::CONDITION_ANY_INPUT_CREATED.into()
-    }
-
-    fn event_filter(&self) -> EventFilter {
-        EventFilter {
-            source: Some(EventSource::Obs),
-            kind_prefix: Some(event_kinds::SOURCE_PREFIX.to_owned()),
-        }
-    }
-
-    fn matches_trigger(&self, _config: &TriggerConfig, event: &Event) -> bool {
-        event.kind == event_kinds::SOURCE_INPUT_CREATED
-    }
-
-    fn build_arg_stack(&self, event: &Event) -> ArgStack {
-        let mut stack = ArgStack::new();
-        if let Some(name) = event
-            .payload
-            .get(fields::SOURCE_NAME)
-            .and_then(|v| v.as_str())
-        {
-            stack = stack.set(
-                variables::source::NAME.to_owned(),
-                Variant::String(name.to_owned()),
-            );
-        }
-        if let Some(kind) = event
-            .payload
-            .get(fields::SOURCE_KIND)
-            .and_then(|v| v.as_str())
-        {
-            stack = stack.set(
-                variables::source::KIND.to_owned(),
-                Variant::String(kind.to_owned()),
-            );
-        }
-        stack
-    }
-
-    fn output_schema(&self) -> Option<VariableSchema> {
-        Some(VariableSchema {
-            variables: vec![
-                DeclaredVariable {
-                    name: variables::source::NAME.to_owned(),
-                    kind: VariantKind::String,
-                    label: "Source name".to_owned(),
-                    synthesis: None,
-                },
-                DeclaredVariable {
-                    name: variables::source::KIND.to_owned(),
-                    kind: VariantKind::String,
-                    label: "Source kind".to_owned(),
-                    synthesis: None,
-                },
-            ],
-        })
-    }
+fn variables() -> Option<TriggerVariables> {
+    event_variables(VARIABLES)
 }
+
+pub(crate) const SOURCE_INPUT_CREATED: EventTriggerSpec = EventTriggerSpec {
+    id: trigger_ids::SOURCE_INPUT_CREATED,
+    source: EventSource::Obs,
+    label: "OBS input source created",
+    summary: "Fires when a new input source is added to OBS.",
+    search_text: "obs input source created added new",
+    icon: "plus-circle",
+    prefix: event_kinds::SOURCE_PREFIX,
+    matcher: TriggerMatcher::Kind(event_kinds::SOURCE_INPUT_CREATED),
+    condition: TriggerCondition::Fixed(messages::CONDITION_ANY_INPUT_CREATED),
+    config_fields: no_config_fields,
+    variables,
+};
 
 #[cfg(test)]
 mod tests {
-    use super::super::{
-        SourceInputCreatedDescriptor, SourceInputRemovedDescriptor, SourceInputRenamedDescriptor,
-        SourceSceneItemVisibilityChangedDescriptor,
-    };
-    use super::*;
+    use super::super::source_input_created::SOURCE_INPUT_CREATED;
+    use super::super::source_input_removed::SOURCE_INPUT_REMOVED;
+    use super::super::source_input_renamed::SOURCE_INPUT_RENAMED;
+    use super::super::source_scene_item_visibility_changed::SOURCE_SCENE_ITEM_VISIBILITY_CHANGED;
+    use forge_events::{Event, EventSource};
     use forge_registry::TriggerKindDescriptor;
+    use forge_types::Variant;
     use serde_json::json;
     use std::collections::BTreeMap;
 
@@ -121,12 +55,12 @@ mod tests {
     fn each_source_descriptor_matches_only_its_own_kind() {
         let cfg = BTreeMap::new();
         let descriptors: [(&str, &dyn TriggerKindDescriptor); 4] = [
-            ("obs.source.input_created", &SourceInputCreatedDescriptor),
-            ("obs.source.input_removed", &SourceInputRemovedDescriptor),
-            ("obs.source.input_renamed", &SourceInputRenamedDescriptor),
+            ("obs.source.input_created", &SOURCE_INPUT_CREATED),
+            ("obs.source.input_removed", &SOURCE_INPUT_REMOVED),
+            ("obs.source.input_renamed", &SOURCE_INPUT_RENAMED),
             (
                 "obs.source.visibility_changed",
-                &SourceSceneItemVisibilityChangedDescriptor,
+                &SOURCE_SCENE_ITEM_VISIBILITY_CHANGED,
             ),
         ];
         for (own_kind, descriptor) in descriptors {
@@ -144,7 +78,7 @@ mod tests {
     #[test]
     fn source_descriptor_rejects_non_source_kind() {
         let event = Event::new(EventSource::Obs, "obs.scene.changed", json!({}));
-        assert!(!SourceInputCreatedDescriptor.matches_trigger(&BTreeMap::new(), &event));
+        assert!(!SOURCE_INPUT_CREATED.matches_trigger(&BTreeMap::new(), &event));
     }
 
     #[test]
@@ -154,7 +88,7 @@ mod tests {
             "obs.source.input_created",
             json!({ "source_name": "Mic", "source_kind": "wasapi_input_capture" }),
         );
-        let stack = SourceInputCreatedDescriptor.build_arg_stack(&event);
+        let stack = SOURCE_INPUT_CREATED.build_arg_stack(&event);
         assert_eq!(
             stack.get("obs.source.name"),
             Some(&Variant::String("Mic".to_owned())),
@@ -168,7 +102,7 @@ mod tests {
     #[test]
     fn input_created_arg_stack_omits_keys_when_payload_fields_absent() {
         let event = Event::new(EventSource::Obs, "obs.source.input_created", json!({}));
-        let stack = SourceInputCreatedDescriptor.build_arg_stack(&event);
+        let stack = SOURCE_INPUT_CREATED.build_arg_stack(&event);
         assert!(stack.get("obs.source.name").is_none());
         assert!(stack.get("obs.source.kind").is_none());
     }

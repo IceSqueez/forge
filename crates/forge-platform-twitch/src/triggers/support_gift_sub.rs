@@ -1,82 +1,48 @@
+use super::spec::TwitchTriggerSpec;
 use crate::vocabulary::event_kinds;
 use crate::vocabulary::trigger_ids;
-use forge_events::{Event, EventSource};
+use forge_events::Event;
 use forge_registry::{
-    ActorDeclaration, ActorIdentity, ActorRole, CanonicalCount, EventFilter, KindPlatformContract,
-    TriggerCategory, TriggerKindDescriptor, TriggerVariables,
+    ActorDeclaration, ActorIdentity, ActorRole, CanonicalCount, TriggerCategory, TriggerVariables,
 };
-use forge_types::{DeclaredVariable, PlatformId, TriggerConfig, Variant, VariantKind};
+use forge_types::{DeclaredVariable, Variant, VariantKind};
 
 use super::payload_read::{self, twitch_actor};
 use crate::vocabulary::fields::support as fields;
 
-pub(crate) struct SupportGiftSubDescriptor;
-
-impl TriggerKindDescriptor for SupportGiftSubDescriptor {
-    fn id(&self) -> &str {
-        trigger_ids::SUPPORT_GIFT_SUB
-    }
-
-    fn category(&self) -> TriggerCategory {
-        TriggerCategory::Subscriptions
-    }
-
-    fn label(&self) -> &str {
-        "Gift subscription"
-    }
-
-    fn summary(&self) -> &str {
-        "Fires when a user gifts one or more subscriptions"
-    }
-
-    fn search_text(&self) -> &str {
-        "twitch gift sub gifted subscription gifter"
-    }
-
-    fn icon_name(&self) -> &str {
-        "gift"
-    }
-
-    fn platform_contract(&self) -> KindPlatformContract {
-        KindPlatformContract::PlatformSpecific(PlatformId::Twitch)
-    }
-
-    fn event_filter(&self) -> EventFilter {
-        EventFilter {
-            source: Some(EventSource::Twitch),
-            kind_prefix: Some(event_kinds::CHANNEL_SUBSCRIPTION_GIFT.to_owned()),
-        }
-    }
-
-    fn matches_trigger(&self, _config: &TriggerConfig, _event: &Event) -> bool {
-        true
-    }
-
-    fn variables(&self) -> Option<TriggerVariables> {
-        Some(
-            TriggerVariables::new()
-                .actor(twitch_actor(ActorRole::Principal), gifter_identity)
-                .actor(twitch_actor(ActorRole::Gifter), gifter_identity)
-                .count(CanonicalCount::GiftCount, |event| {
-                    payload_read::number(event, fields::GIFT_TOTAL)
-                })
-                .sub_tier(|event| payload_read::text(event, fields::TIER))
-                .event_specific(
-                    DeclaredVariable {
-                        name: "gifter_is_anonymous".to_owned(),
-                        kind: VariantKind::Bool,
-                        label: "Anonymous gifter".to_owned(),
-                        synthesis: None,
-                    },
-                    |event| Variant::Bool(payload_read::flag(event, fields::IS_ANONYMOUS)),
-                ),
-        )
-    }
-
-    fn actors(&self) -> ActorDeclaration {
-        ActorDeclaration::Actors(&[ActorRole::Gifter])
-    }
+fn variables() -> Option<TriggerVariables> {
+    Some(
+        TriggerVariables::new()
+            .actor(twitch_actor(ActorRole::Principal), gifter_identity)
+            .actor(twitch_actor(ActorRole::Gifter), gifter_identity)
+            .count(CanonicalCount::GiftCount, |event| {
+                payload_read::number(event, fields::GIFT_TOTAL)
+            })
+            .sub_tier(|event| payload_read::text(event, fields::TIER))
+            .event_specific(
+                DeclaredVariable {
+                    name: "gifter_is_anonymous".to_owned(),
+                    kind: VariantKind::Bool,
+                    label: "Anonymous gifter".to_owned(),
+                    synthesis: None,
+                },
+                |event| Variant::Bool(payload_read::flag(event, fields::IS_ANONYMOUS)),
+            ),
+    )
 }
+
+pub(super) const SPEC: TwitchTriggerSpec = TwitchTriggerSpec {
+    id: trigger_ids::SUPPORT_GIFT_SUB,
+    category: TriggerCategory::Subscriptions,
+    label: "Gift subscription",
+    summary: "Fires when a user gifts one or more subscriptions",
+    search_text: "twitch gift sub gifted subscription gifter",
+    icon: "gift",
+    kind: event_kinds::CHANNEL_SUBSCRIPTION_GIFT,
+    actors: ActorDeclaration::Actors(&[ActorRole::Gifter]),
+    variables,
+    ..TwitchTriggerSpec::BASE
+};
 
 fn gifter_identity(event: &Event) -> ActorIdentity {
     payload_read::identity(
@@ -90,6 +56,9 @@ fn gifter_identity(event: &Event) -> ActorIdentity {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use forge_events::EventSource;
+    use forge_registry::TriggerKindDescriptor;
+    use forge_types::TriggerConfig;
 
     fn gift_event(gift_total: serde_json::Value) -> Event {
         Event::new(
@@ -114,14 +83,12 @@ mod tests {
 
     #[test]
     fn always_matches() {
-        assert!(
-            SupportGiftSubDescriptor.matches_trigger(&TriggerConfig::new(), &as_twitch_sends_it())
-        );
+        assert!(SPEC.matches_trigger(&TriggerConfig::new(), &as_twitch_sends_it()));
     }
 
     #[test]
     fn a_gift_sub_publishes_the_gifter_as_both_the_principal_and_the_gifter_role() {
-        let stack = SupportGiftSubDescriptor.build_arg_stack(&as_twitch_sends_it());
+        let stack = SPEC.build_arg_stack(&as_twitch_sends_it());
         for (name, value) in [
             ("user_id", "333"),
             ("user_name", "GenerousViewer"),
@@ -154,9 +121,7 @@ mod tests {
         ] {
             let event = gift_event(wire_total.clone());
             assert_eq!(
-                SupportGiftSubDescriptor
-                    .build_arg_stack(&event)
-                    .get("gift_count"),
+                SPEC.build_arg_stack(&event).get("gift_count"),
                 Some(&Variant::Int(expected)),
                 "wire total {wire_total}"
             );
@@ -165,7 +130,7 @@ mod tests {
 
     #[test]
     fn a_gift_sub_declares_the_gifter_and_the_total_but_no_recipient_variables() {
-        let declared: Vec<String> = SupportGiftSubDescriptor
+        let declared: Vec<String> = SPEC
             .variables()
             .unwrap()
             .declarations()
@@ -179,7 +144,7 @@ mod tests {
             declared.iter().all(|d| !d.starts_with("recipient_")),
             "{declared:?}"
         );
-        let stack = SupportGiftSubDescriptor.build_arg_stack(&as_twitch_sends_it());
+        let stack = SPEC.build_arg_stack(&as_twitch_sends_it());
         assert_eq!(stack.get("recipient_id"), None);
     }
 }

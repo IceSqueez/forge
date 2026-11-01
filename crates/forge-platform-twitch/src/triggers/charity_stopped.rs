@@ -1,74 +1,32 @@
+use super::spec::TwitchTriggerSpec;
 use crate::vocabulary::event_kinds;
 use crate::vocabulary::trigger_ids;
-use forge_events::{Event, EventSource};
-use forge_registry::{
-    ActorDeclaration, EventFilter, KindPlatformContract, TriggerCategory, TriggerKindDescriptor,
+use forge_registry::{ActorDeclaration, TriggerCategory};
+
+use super::families;
+
+pub(super) const SPEC: TwitchTriggerSpec = TwitchTriggerSpec {
+    id: trigger_ids::SUPPORT_CHARITY_STOPPED,
+    category: TriggerCategory::Charity,
+    label: "Charity campaign stopped",
+    summary: "Fires when the broadcaster ends a charity campaign",
+    search_text: "twitch charity campaign stop end finish",
+    icon: "heart",
+    kind: event_kinds::CHANNEL_CHARITY_CAMPAIGN_STOP,
+    actors: ActorDeclaration::Actorless,
+    variables: families::charity_variables,
+    ..TwitchTriggerSpec::BASE
 };
-use forge_types::{ArgStack, PlatformId, TriggerConfig, VariableSchema};
-
-use super::charity_started::{build_charity_lifecycle_arg_stack, build_charity_lifecycle_schema};
-
-pub(crate) struct CharityStoppedDescriptor;
-
-impl TriggerKindDescriptor for CharityStoppedDescriptor {
-    fn id(&self) -> &str {
-        trigger_ids::SUPPORT_CHARITY_STOPPED
-    }
-
-    fn category(&self) -> TriggerCategory {
-        TriggerCategory::Charity
-    }
-
-    fn label(&self) -> &str {
-        "Charity campaign stopped"
-    }
-
-    fn summary(&self) -> &str {
-        "Fires when the broadcaster ends a charity campaign"
-    }
-
-    fn search_text(&self) -> &str {
-        "twitch charity campaign stop end finish"
-    }
-
-    fn icon_name(&self) -> &str {
-        "heart"
-    }
-
-    fn platform_contract(&self) -> KindPlatformContract {
-        KindPlatformContract::PlatformSpecific(PlatformId::Twitch)
-    }
-
-    fn event_filter(&self) -> EventFilter {
-        EventFilter {
-            source: Some(EventSource::Twitch),
-            kind_prefix: Some(event_kinds::CHANNEL_CHARITY_CAMPAIGN_STOP.to_owned()),
-        }
-    }
-
-    fn matches_trigger(&self, _config: &TriggerConfig, _event: &Event) -> bool {
-        true
-    }
-
-    fn actors(&self) -> ActorDeclaration {
-        ActorDeclaration::Actorless
-    }
-
-    fn build_arg_stack(&self, event: &Event) -> ArgStack {
-        build_charity_lifecycle_arg_stack(event)
-    }
-    fn output_schema(&self) -> Option<VariableSchema> {
-        Some(build_charity_lifecycle_schema())
-    }
-}
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use forge_events::EventSource;
+    use forge_registry::TriggerKindDescriptor;
 
     #[test]
     fn event_filter_targets_stop_topic_on_twitch_source() {
-        let filter = CharityStoppedDescriptor.event_filter();
+        let filter = SPEC.event_filter();
         assert_eq!(filter.source, Some(EventSource::Twitch));
         assert_eq!(
             filter.kind_prefix.as_deref(),

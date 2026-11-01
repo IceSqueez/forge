@@ -1,118 +1,92 @@
+use super::spec::TwitchTriggerSpec;
 use crate::vocabulary::trigger_ids;
 use crate::vocabulary::{event_kinds, messages};
-use forge_events::{Event, EventSource};
+use forge_events::Event;
 use forge_registry::{
-    ActorDeclaration, ActorIdentity, ActorRole, CanonicalCount, CanonicalVariable, EventFilter,
-    FormField, KindPlatformContract, SubActionConfigExt, TriggerCategory, TriggerKindDescriptor,
-    TriggerVariables,
+    ActorDeclaration, ActorIdentity, ActorRole, CanonicalCount, CanonicalVariable, FormField,
+    SubActionConfigExt, TriggerCategory, TriggerVariables,
 };
-use forge_types::{DeclaredVariable, PlatformId, TriggerConfig, UserText, Variant, VariantKind};
+use forge_types::{DeclaredVariable, TriggerConfig, UserText, Variant, VariantKind};
 
 use super::payload_read::{self, twitch_actor};
 use crate::vocabulary::fields::support as fields;
 
-pub(crate) struct SupportCheerDescriptor;
-
-impl TriggerKindDescriptor for SupportCheerDescriptor {
-    fn id(&self) -> &str {
-        trigger_ids::SUPPORT_CHEER
-    }
-
-    fn category(&self) -> TriggerCategory {
-        TriggerCategory::Bits
-    }
-
-    fn label(&self) -> &str {
-        "Cheer"
-    }
-
-    fn summary(&self) -> &str {
-        "Fires on a bits cheer event"
-    }
-
-    fn search_text(&self) -> &str {
-        "twitch cheer bits donation anonymous"
-    }
-
-    fn icon_name(&self) -> &str {
-        "diamond"
-    }
-
-    fn platform_contract(&self) -> KindPlatformContract {
-        KindPlatformContract::PlatformSpecific(PlatformId::Twitch)
-    }
-
-    fn default_config(&self) -> TriggerConfig {
-        let mut cfg = TriggerConfig::new();
-        cfg.insert("min_bits".to_owned(), Variant::Int(0));
-        cfg
-    }
-
-    fn config_fields(&self) -> Vec<FormField> {
-        vec![FormField::Integer {
-            key: "min_bits",
-            label: "Minimum bits",
-            min: 0,
-            max: i64::MAX,
-        }]
-    }
-
-    fn condition_display(&self, config: &TriggerConfig) -> UserText {
-        let min_bits = match config.get("min_bits") {
-            Some(Variant::Int(n)) => *n,
-            _ => 0,
-        };
-        messages::condition_bits_at_least(min_bits).into()
-    }
-
-    fn event_filter(&self) -> EventFilter {
-        EventFilter {
-            source: Some(EventSource::Twitch),
-            kind_prefix: Some(event_kinds::CHANNEL_CHEER.to_owned()),
-        }
-    }
-
-    fn matches_trigger(&self, config: &TriggerConfig, event: &Event) -> bool {
-        let min_bits = config.int("min_bits").unwrap_or(0);
-
-        let bits = event
-            .payload
-            .get(fields::BITS)
-            .and_then(|v| v.as_i64())
-            .unwrap_or(0);
-
-        bits >= min_bits
-    }
-
-    fn variables(&self) -> Option<TriggerVariables> {
-        Some(
-            TriggerVariables::new()
-                .actor(twitch_actor(ActorRole::Principal), cheerer_identity)
-                .message_text(cheer_message)
-                .count(CanonicalCount::BitsAmount, |event| {
-                    payload_read::number(event, fields::BITS)
-                })
-                .event_specific(
-                    DeclaredVariable {
-                        name: "cheer_is_anonymous".to_owned(),
-                        kind: VariantKind::Bool,
-                        label: "Anonymous cheer".to_owned(),
-                        synthesis: None,
-                    },
-                    |event| Variant::Bool(payload_read::flag(event, fields::IS_ANONYMOUS)),
-                )
-                .legacy(
-                    "cheer_message",
-                    "Cheer message",
-                    CanonicalVariable::MessageText,
-                ),
-        )
-    }
-
-    fn actors(&self) -> ActorDeclaration {
-        ActorDeclaration::principal()
-    }
+fn default_config() -> TriggerConfig {
+    let mut cfg = TriggerConfig::new();
+    cfg.insert("min_bits".to_owned(), Variant::Int(0));
+    cfg
 }
+
+fn config_fields() -> Vec<FormField> {
+    vec![FormField::Integer {
+        key: "min_bits",
+        label: "Minimum bits",
+        min: 0,
+        max: i64::MAX,
+    }]
+}
+
+fn condition_display(config: &TriggerConfig) -> UserText {
+    let min_bits = match config.get("min_bits") {
+        Some(Variant::Int(n)) => *n,
+        _ => 0,
+    };
+    messages::condition_bits_at_least(min_bits).into()
+}
+
+fn matches(config: &TriggerConfig, event: &Event) -> bool {
+    let min_bits = config.int("min_bits").unwrap_or(0);
+
+    let bits = event
+        .payload
+        .get(fields::BITS)
+        .and_then(|v| v.as_i64())
+        .unwrap_or(0);
+
+    bits >= min_bits
+}
+
+fn variables() -> Option<TriggerVariables> {
+    Some(
+        TriggerVariables::new()
+            .actor(twitch_actor(ActorRole::Principal), cheerer_identity)
+            .message_text(cheer_message)
+            .count(CanonicalCount::BitsAmount, |event| {
+                payload_read::number(event, fields::BITS)
+            })
+            .event_specific(
+                DeclaredVariable {
+                    name: "cheer_is_anonymous".to_owned(),
+                    kind: VariantKind::Bool,
+                    label: "Anonymous cheer".to_owned(),
+                    synthesis: None,
+                },
+                |event| Variant::Bool(payload_read::flag(event, fields::IS_ANONYMOUS)),
+            )
+            .legacy(
+                "cheer_message",
+                "Cheer message",
+                CanonicalVariable::MessageText,
+            ),
+    )
+}
+
+pub(super) const SPEC: TwitchTriggerSpec = TwitchTriggerSpec {
+    id: trigger_ids::SUPPORT_CHEER,
+    category: TriggerCategory::Bits,
+    label: "Cheer",
+    summary: "Fires on a bits cheer event",
+    search_text: "twitch cheer bits donation anonymous",
+    icon: "diamond",
+    kind: event_kinds::CHANNEL_CHEER,
+    actors: ActorDeclaration::principal(),
+    variables,
+    matches,
+    default_config,
+    config_fields,
+    condition_display,
+    ..TwitchTriggerSpec::BASE
+};
 
 fn cheerer_identity(event: &Event) -> ActorIdentity {
     payload_read::identity(
@@ -130,6 +104,8 @@ fn cheer_message(event: &Event) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use forge_events::EventSource;
+    use forge_registry::TriggerKindDescriptor;
 
     fn make_config(min_bits: i64) -> TriggerConfig {
         let mut config = TriggerConfig::new();
@@ -155,7 +131,7 @@ mod tests {
         let mut cfg = TriggerConfig::new();
         cfg.insert("min_bits".to_owned(), Variant::Int(100));
         assert_eq!(
-            SupportCheerDescriptor.condition_display(&cfg),
+            SPEC.condition_display(&cfg),
             messages::condition_bits_at_least(100).into()
         );
     }
@@ -163,25 +139,25 @@ mod tests {
     #[test]
     fn matches_when_bits_meet_threshold() {
         let cfg = make_config(100);
-        assert!(SupportCheerDescriptor.matches_trigger(&cfg, &cheer_event(100)));
-        assert!(SupportCheerDescriptor.matches_trigger(&cfg, &cheer_event(500)));
+        assert!(SPEC.matches_trigger(&cfg, &cheer_event(100)));
+        assert!(SPEC.matches_trigger(&cfg, &cheer_event(500)));
     }
 
     #[test]
     fn does_not_match_below_threshold() {
         let cfg = make_config(100);
-        assert!(!SupportCheerDescriptor.matches_trigger(&cfg, &cheer_event(50)));
+        assert!(!SPEC.matches_trigger(&cfg, &cheer_event(50)));
     }
 
     #[test]
     fn min_bits_zero_always_matches() {
         let cfg = make_config(0);
-        assert!(SupportCheerDescriptor.matches_trigger(&cfg, &cheer_event(1)));
+        assert!(SPEC.matches_trigger(&cfg, &cheer_event(1)));
     }
 
     #[test]
     fn a_cheer_publishes_the_canonical_actor_block_the_bits_and_the_cheer_message() {
-        let stack = SupportCheerDescriptor.build_arg_stack(&cheer_event(200));
+        let stack = SPEC.build_arg_stack(&cheer_event(200));
         for (name, value) in [
             ("user_id", "555"),
             ("user_name", "Cheerer"),

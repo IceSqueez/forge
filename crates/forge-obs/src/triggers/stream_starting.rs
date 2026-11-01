@@ -1,102 +1,31 @@
-use forge_events::{Event, EventSource};
-use forge_registry::{EventFilter, KindPlatformContract, TriggerCategory, TriggerKindDescriptor};
-use forge_types::{
-    ArgStack, DeclaredVariable, TriggerConfig, UserText, VariableSchema, VariantKind,
-};
+use super::families;
+use forge_events::EventSource;
+use forge_registry::{EventTriggerSpec, TriggerCondition, TriggerMatcher, no_config_fields};
 
-use super::output_lifecycle::output_arg_stack;
-use crate::vocabulary::fields::streaming as fields;
 use crate::vocabulary::messages;
-use crate::vocabulary::{event_kinds, trigger_ids, variables};
+use crate::vocabulary::{event_kinds, trigger_ids};
 
-pub(crate) struct StreamStartingDescriptor;
-
-impl TriggerKindDescriptor for StreamStartingDescriptor {
-    fn id(&self) -> &str {
-        trigger_ids::STREAMING_STARTING
-    }
-
-    fn category(&self) -> TriggerCategory {
-        TriggerCategory::Integration
-    }
-
-    fn label(&self) -> &str {
-        "OBS stream starting"
-    }
-
-    fn summary(&self) -> &str {
-        "Fires when OBS begins the stream start sequence (before output is active)."
-    }
-
-    fn search_text(&self) -> &str {
-        "obs stream starting go live begin"
-    }
-
-    fn icon_name(&self) -> &str {
-        "broadcast"
-    }
-
-    fn platform_contract(&self) -> KindPlatformContract {
-        KindPlatformContract::Universal
-    }
-
-    fn condition_display(&self, _: &TriggerConfig) -> UserText {
-        messages::CONDITION_STREAM_STARTING.into()
-    }
-
-    fn event_filter(&self) -> EventFilter {
-        EventFilter {
-            source: Some(EventSource::Obs),
-            kind_prefix: Some(event_kinds::STREAMING_PREFIX.to_owned()),
-        }
-    }
-
-    fn matches_trigger(&self, _config: &TriggerConfig, event: &Event) -> bool {
-        event.kind == event_kinds::STREAMING_STARTING
-    }
-
-    fn build_arg_stack(&self, event: &Event) -> ArgStack {
-        build_stream_arg_stack(event)
-    }
-
-    fn output_schema(&self) -> Option<VariableSchema> {
-        Some(VariableSchema {
-            variables: stream_variables(),
-        })
-    }
-}
-
-pub(crate) fn stream_variables() -> Vec<DeclaredVariable> {
-    vec![
-        DeclaredVariable {
-            name: variables::streaming::OUTPUT_STATE.to_owned(),
-            kind: VariantKind::String,
-            label: "Streaming output state".to_owned(),
-            synthesis: None,
-        },
-        DeclaredVariable {
-            name: variables::streaming::IS_ACTIVE.to_owned(),
-            kind: VariantKind::Bool,
-            label: "Streaming active".to_owned(),
-            synthesis: None,
-        },
-    ]
-}
-
-pub(crate) fn build_stream_arg_stack(event: &Event) -> ArgStack {
-    output_arg_stack(
-        event,
-        fields::IS_ACTIVE,
-        variables::streaming::OUTPUT_STATE,
-        variables::streaming::IS_ACTIVE,
-    )
-}
+pub(crate) const STREAM_STARTING: EventTriggerSpec = EventTriggerSpec {
+    id: trigger_ids::STREAMING_STARTING,
+    source: EventSource::Obs,
+    label: "OBS stream starting",
+    summary: "Fires when OBS begins the stream start sequence (before output is active).",
+    search_text: "obs stream starting go live begin",
+    icon: "broadcast",
+    prefix: event_kinds::STREAMING_PREFIX,
+    matcher: TriggerMatcher::Kind(event_kinds::STREAMING_STARTING),
+    condition: TriggerCondition::Fixed(messages::CONDITION_STREAM_STARTING),
+    config_fields: no_config_fields,
+    variables: families::stream_variables,
+};
 
 #[cfg(test)]
 mod tests {
     use super::super::lifecycle;
-    use super::super::{StreamStartingDescriptor, StreamStatusChangedDescriptor};
-    use super::*;
+    use super::super::stream_starting::STREAM_STARTING;
+    use super::super::stream_status_changed::STREAM_STATUS_CHANGED;
+    use forge_events::{Event, EventSource};
+    use forge_registry::TriggerKindDescriptor;
     use forge_types::Variant;
     use serde_json::json;
     use std::collections::BTreeMap;
@@ -117,7 +46,7 @@ mod tests {
     #[test]
     fn each_specific_descriptor_matches_only_its_own_kind() {
         let descriptors: [(&str, &dyn TriggerKindDescriptor); 4] = [
-            ("obs.streaming.starting", &StreamStartingDescriptor),
+            ("obs.streaming.starting", &STREAM_STARTING),
             ("obs.streaming.started", &lifecycle::STREAMING_STARTED),
             ("obs.streaming.stopping", &lifecycle::STREAMING_STOPPING),
             ("obs.streaming.stopped", &lifecycle::STREAMING_STOPPED),
@@ -140,7 +69,7 @@ mod tests {
         let cfg = BTreeMap::new();
         for kind in ALL_STREAMING_KINDS {
             assert!(
-                StreamStatusChangedDescriptor.matches_trigger(&cfg, &stream_event(kind, true)),
+                STREAM_STATUS_CHANGED.matches_trigger(&cfg, &stream_event(kind, true)),
                 "omnibus should match {kind}",
             );
         }
@@ -149,12 +78,12 @@ mod tests {
     #[test]
     fn omnibus_rejects_non_streaming_kind() {
         let event = Event::new(EventSource::Obs, "obs.scene.changed", json!({}));
-        assert!(!StreamStatusChangedDescriptor.matches_trigger(&BTreeMap::new(), &event));
+        assert!(!STREAM_STATUS_CHANGED.matches_trigger(&BTreeMap::new(), &event));
     }
 
     #[test]
     fn build_arg_stack_takes_the_state_from_the_kind_and_is_active_from_the_payload() {
-        let stack = build_stream_arg_stack(&stream_event("obs.streaming.stopped", false));
+        let stack = STREAM_STARTING.build_arg_stack(&stream_event("obs.streaming.stopped", false));
         assert_eq!(
             stack.get("obs.stream.output_state"),
             Some(&Variant::String("stopped".to_owned())),
@@ -168,7 +97,7 @@ mod tests {
     #[test]
     fn build_arg_stack_derives_output_state_from_kind_when_payload_empty() {
         let event = Event::new(EventSource::Obs, "obs.streaming.started", json!({}));
-        let stack = build_stream_arg_stack(&event);
+        let stack = STREAM_STARTING.build_arg_stack(&event);
         assert_eq!(
             stack.get("obs.stream.output_state"),
             Some(&Variant::String("started".to_owned())),

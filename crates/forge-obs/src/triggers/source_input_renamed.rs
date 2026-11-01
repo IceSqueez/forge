@@ -1,108 +1,51 @@
-use forge_events::{Event, EventSource};
-use forge_registry::{EventFilter, KindPlatformContract, TriggerCategory, TriggerKindDescriptor};
-use forge_types::{
-    ArgStack, DeclaredVariable, TriggerConfig, UserText, VariableSchema, Variant, VariantKind,
+use forge_events::EventSource;
+use forge_registry::TriggerVariables;
+use forge_registry::{
+    EventTriggerSpec, EventVariable, TriggerCondition, TriggerMatcher, event_variables,
+    no_config_fields,
 };
 
 use crate::vocabulary::fields::source as fields;
 use crate::vocabulary::messages;
 use crate::vocabulary::{event_kinds, trigger_ids, variables};
 
-pub(crate) struct SourceInputRenamedDescriptor;
+const VARIABLES: &[EventVariable] = &[
+    EventVariable::text(
+        variables::source::NAME_OLD,
+        "Old source name",
+        fields::SOURCE_NAME_OLD,
+    ),
+    EventVariable::text(
+        variables::source::NAME_NEW,
+        "New source name",
+        fields::SOURCE_NAME_NEW,
+    ),
+];
 
-impl TriggerKindDescriptor for SourceInputRenamedDescriptor {
-    fn id(&self) -> &str {
-        trigger_ids::SOURCE_INPUT_RENAMED
-    }
-
-    fn category(&self) -> TriggerCategory {
-        TriggerCategory::Integration
-    }
-
-    fn label(&self) -> &str {
-        "OBS input source renamed"
-    }
-
-    fn summary(&self) -> &str {
-        "Fires when an input source is renamed in OBS."
-    }
-
-    fn search_text(&self) -> &str {
-        "obs input source renamed name changed"
-    }
-
-    fn icon_name(&self) -> &str {
-        "pencil"
-    }
-
-    fn platform_contract(&self) -> KindPlatformContract {
-        KindPlatformContract::Universal
-    }
-
-    fn condition_display(&self, _: &TriggerConfig) -> UserText {
-        messages::CONDITION_ANY_INPUT_RENAMED.into()
-    }
-
-    fn event_filter(&self) -> EventFilter {
-        EventFilter {
-            source: Some(EventSource::Obs),
-            kind_prefix: Some(event_kinds::SOURCE_PREFIX.to_owned()),
-        }
-    }
-
-    fn matches_trigger(&self, _config: &TriggerConfig, event: &Event) -> bool {
-        event.kind == event_kinds::SOURCE_INPUT_RENAMED
-    }
-
-    fn build_arg_stack(&self, event: &Event) -> ArgStack {
-        let mut stack = ArgStack::new();
-        if let Some(name) = event
-            .payload
-            .get(fields::SOURCE_NAME_OLD)
-            .and_then(|v| v.as_str())
-        {
-            stack = stack.set(
-                variables::source::NAME_OLD.to_owned(),
-                Variant::String(name.to_owned()),
-            );
-        }
-        if let Some(name) = event
-            .payload
-            .get(fields::SOURCE_NAME_NEW)
-            .and_then(|v| v.as_str())
-        {
-            stack = stack.set(
-                variables::source::NAME_NEW.to_owned(),
-                Variant::String(name.to_owned()),
-            );
-        }
-        stack
-    }
-
-    fn output_schema(&self) -> Option<VariableSchema> {
-        Some(VariableSchema {
-            variables: vec![
-                DeclaredVariable {
-                    name: variables::source::NAME_OLD.to_owned(),
-                    kind: VariantKind::String,
-                    label: "Old source name".to_owned(),
-                    synthesis: None,
-                },
-                DeclaredVariable {
-                    name: variables::source::NAME_NEW.to_owned(),
-                    kind: VariantKind::String,
-                    label: "New source name".to_owned(),
-                    synthesis: None,
-                },
-            ],
-        })
-    }
+fn variables() -> Option<TriggerVariables> {
+    event_variables(VARIABLES)
 }
+
+pub(crate) const SOURCE_INPUT_RENAMED: EventTriggerSpec = EventTriggerSpec {
+    id: trigger_ids::SOURCE_INPUT_RENAMED,
+    source: EventSource::Obs,
+    label: "OBS input source renamed",
+    summary: "Fires when an input source is renamed in OBS.",
+    search_text: "obs input source renamed name changed",
+    icon: "pencil",
+    prefix: event_kinds::SOURCE_PREFIX,
+    matcher: TriggerMatcher::Kind(event_kinds::SOURCE_INPUT_RENAMED),
+    condition: TriggerCondition::Fixed(messages::CONDITION_ANY_INPUT_RENAMED),
+    config_fields: no_config_fields,
+    variables,
+};
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use forge_events::{Event, EventSource};
     use forge_registry::TriggerKindDescriptor;
+    use forge_types::Variant;
     use serde_json::json;
 
     #[test]
@@ -112,7 +55,7 @@ mod tests {
             "obs.source.input_renamed",
             json!({ "source_name_old": "Cam", "source_name_new": "Webcam" }),
         );
-        let stack = SourceInputRenamedDescriptor.build_arg_stack(&event);
+        let stack = SOURCE_INPUT_RENAMED.build_arg_stack(&event);
         assert_eq!(
             stack.get("obs.source.name_old"),
             Some(&Variant::String("Cam".to_owned())),
@@ -130,7 +73,7 @@ mod tests {
             "obs.source.input_renamed",
             json!({ "source_name_new": "Webcam" }),
         );
-        let stack = SourceInputRenamedDescriptor.build_arg_stack(&event);
+        let stack = SOURCE_INPUT_RENAMED.build_arg_stack(&event);
         assert!(stack.get("obs.source.name_old").is_none());
         assert_eq!(
             stack.get("obs.source.name_new"),
@@ -141,7 +84,7 @@ mod tests {
     #[test]
     fn input_renamed_arg_stack_omits_both_keys_when_payload_empty() {
         let event = Event::new(EventSource::Obs, "obs.source.input_renamed", json!({}));
-        let stack = SourceInputRenamedDescriptor.build_arg_stack(&event);
+        let stack = SOURCE_INPUT_RENAMED.build_arg_stack(&event);
         assert!(stack.get("obs.source.name_old").is_none());
         assert!(stack.get("obs.source.name_new").is_none());
     }

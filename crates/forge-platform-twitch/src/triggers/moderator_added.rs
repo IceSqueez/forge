@@ -1,69 +1,30 @@
+use super::spec::TwitchTriggerSpec;
 use crate::vocabulary::event_kinds;
 use crate::vocabulary::trigger_ids;
-use forge_events::{Event, EventSource};
+use forge_events::Event;
 use forge_registry::{
-    ActorDeclaration, ActorIdentity, ActorRole, EventFilter, KindPlatformContract, TriggerCategory,
-    TriggerKindDescriptor, TriggerVariables,
+    ActorDeclaration, ActorIdentity, ActorRole, TriggerCategory, TriggerVariables,
 };
-use forge_types::PlatformId;
-use forge_types::TriggerConfig;
 
 use super::payload_read::{self, twitch_actor};
 use crate::vocabulary::fields::moderator as moderator_fields;
 
-pub(crate) struct ModeratorAddedDescriptor;
-
-impl TriggerKindDescriptor for ModeratorAddedDescriptor {
-    fn id(&self) -> &str {
-        trigger_ids::CHANNEL_MODERATOR_ADDED
-    }
-
-    fn category(&self) -> TriggerCategory {
-        TriggerCategory::Moderation
-    }
-
-    fn label(&self) -> &str {
-        "Moderator added"
-    }
-
-    fn summary(&self) -> &str {
-        "Fires when a viewer is granted moderator status in the channel"
-    }
-
-    fn search_text(&self) -> &str {
-        "twitch moderator mod added promoted moderation"
-    }
-
-    fn icon_name(&self) -> &str {
-        "shield-check"
-    }
-
-    fn platform_contract(&self) -> KindPlatformContract {
-        KindPlatformContract::PlatformSpecific(PlatformId::Twitch)
-    }
-
-    fn event_filter(&self) -> EventFilter {
-        EventFilter {
-            source: Some(EventSource::Twitch),
-            kind_prefix: Some(event_kinds::CHANNEL_MODERATOR_ADD.to_owned()),
-        }
-    }
-
-    fn matches_trigger(&self, _config: &TriggerConfig, _event: &Event) -> bool {
-        true
-    }
-
-    fn variables(&self) -> Option<TriggerVariables> {
-        Some(
-            TriggerVariables::new()
-                .actor(twitch_actor(ActorRole::Principal), affected_user_identity),
-        )
-    }
-
-    fn actors(&self) -> ActorDeclaration {
-        ActorDeclaration::principal()
-    }
+fn variables() -> Option<TriggerVariables> {
+    Some(TriggerVariables::new().actor(twitch_actor(ActorRole::Principal), affected_user_identity))
 }
+
+pub(super) const SPEC: TwitchTriggerSpec = TwitchTriggerSpec {
+    id: trigger_ids::CHANNEL_MODERATOR_ADDED,
+    category: TriggerCategory::Moderation,
+    label: "Moderator added",
+    summary: "Fires when a viewer is granted moderator status in the channel",
+    search_text: "twitch moderator mod added promoted moderation",
+    icon: "shield-check",
+    kind: event_kinds::CHANNEL_MODERATOR_ADD,
+    actors: ActorDeclaration::principal(),
+    variables,
+    ..TwitchTriggerSpec::BASE
+};
 
 fn affected_user_identity(event: &Event) -> ActorIdentity {
     payload_read::identity(
@@ -77,6 +38,8 @@ fn affected_user_identity(event: &Event) -> ActorIdentity {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use forge_events::EventSource;
+    use forge_registry::TriggerKindDescriptor;
     use forge_types::Variant;
 
     fn moderator_add_event() -> Event {
@@ -88,7 +51,7 @@ mod tests {
 
     #[test]
     fn event_filter_targets_moderator_add_topic_from_twitch() {
-        let filter = ModeratorAddedDescriptor.event_filter();
+        let filter = SPEC.event_filter();
         assert_eq!(filter.source, Some(EventSource::Twitch));
         assert_eq!(
             filter.kind_prefix.as_deref(),
@@ -98,7 +61,7 @@ mod tests {
 
     #[test]
     fn build_arg_stack_maps_user_fields_from_nested_payload() {
-        let stack = ModeratorAddedDescriptor.build_arg_stack(&moderator_add_event());
+        let stack = SPEC.build_arg_stack(&moderator_add_event());
         assert_eq!(
             stack.get("user_login"),
             Some(&Variant::String("viewer_one".to_owned()))

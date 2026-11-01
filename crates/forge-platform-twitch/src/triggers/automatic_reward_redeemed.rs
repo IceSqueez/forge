@@ -1,120 +1,82 @@
+use super::spec::TwitchTriggerSpec;
 use crate::vocabulary::event_kinds;
 use crate::vocabulary::trigger_ids;
-use forge_events::{Event, EventSource};
+use forge_events::Event;
 use forge_registry::{
-    ActorDeclaration, ActorIdentity, ActorRole, EventFilter, KindPlatformContract, TriggerCategory,
-    TriggerKindDescriptor, TriggerVariables,
+    ActorDeclaration, ActorIdentity, ActorRole, TriggerCategory, TriggerVariables,
 };
-use forge_types::{
-    DeclaredVariable, PlatformId, SynthesisHint, TriggerConfig, Variant, VariantKind,
-};
+use forge_types::{DeclaredVariable, SynthesisHint, Variant, VariantKind};
 
 use super::payload_read::{self, twitch_actor};
 use crate::vocabulary::fields::automatic_reward as automatic_reward_fields;
 
-pub(crate) struct AutomaticRewardRedeemedDescriptor;
-
-impl TriggerKindDescriptor for AutomaticRewardRedeemedDescriptor {
-    fn id(&self) -> &str {
-        trigger_ids::CHANNEL_POINTS_AUTOMATIC_REWARD_REDEEMED
-    }
-
-    fn category(&self) -> TriggerCategory {
-        TriggerCategory::ChannelPoints
-    }
-
-    fn label(&self) -> &str {
-        "Automatic reward redeemed"
-    }
-
-    fn summary(&self) -> &str {
-        "Fires when a viewer redeems a built-in automatic channel point reward"
-    }
-
-    fn search_text(&self) -> &str {
-        "twitch channel points automatic reward redeemed built-in highlight message"
-    }
-
-    fn icon_name(&self) -> &str {
-        "star"
-    }
-
-    fn platform_contract(&self) -> KindPlatformContract {
-        KindPlatformContract::PlatformSpecific(PlatformId::Twitch)
-    }
-
-    fn event_filter(&self) -> EventFilter {
-        EventFilter {
-            source: Some(EventSource::Twitch),
-            kind_prefix: Some(
-                event_kinds::CHANNEL_CHANNEL_POINTS_AUTOMATIC_REWARD_REDEMPTION_ADD.to_owned(),
+fn variables() -> Option<TriggerVariables> {
+    Some(
+        TriggerVariables::new()
+            .actor(twitch_actor(ActorRole::Principal), redeemer_identity)
+            .event_specific(
+                DeclaredVariable {
+                    name: "redemption.id".to_owned(),
+                    kind: VariantKind::String,
+                    label: "Redemption ID".to_owned(),
+                    synthesis: None,
+                },
+                |event| {
+                    Variant::String(payload_read::nested_text(
+                        event,
+                        automatic_reward_fields::REDEMPTION,
+                        automatic_reward_fields::REDEMPTION_ID,
+                    ))
+                },
+            )
+            .event_specific(
+                DeclaredVariable {
+                    name: "reward.type".to_owned(),
+                    kind: VariantKind::String,
+                    label: "Reward type".to_owned(),
+                    synthesis: None,
+                },
+                |event| {
+                    Variant::String(payload_read::nested_text(
+                        event,
+                        automatic_reward_fields::REWARD,
+                        automatic_reward_fields::REWARD_TYPE,
+                    ))
+                },
+            )
+            .event_specific(
+                DeclaredVariable {
+                    name: "reward.cost".to_owned(),
+                    kind: VariantKind::Int,
+                    label: "Reward cost".to_owned(),
+                    synthesis: Some(SynthesisHint::BoundedInt {
+                        min: 0,
+                        max: super::MAX_SYNTHESIZED_COUNT,
+                    }),
+                },
+                |event| {
+                    Variant::Int(payload_read::nested_number(
+                        event,
+                        automatic_reward_fields::REWARD,
+                        automatic_reward_fields::REWARD_COST,
+                    ))
+                },
             ),
-        }
-    }
-
-    fn matches_trigger(&self, _config: &TriggerConfig, _event: &Event) -> bool {
-        true
-    }
-
-    fn variables(&self) -> Option<TriggerVariables> {
-        Some(
-            TriggerVariables::new()
-                .actor(twitch_actor(ActorRole::Principal), redeemer_identity)
-                .event_specific(
-                    DeclaredVariable {
-                        name: "redemption.id".to_owned(),
-                        kind: VariantKind::String,
-                        label: "Redemption ID".to_owned(),
-                        synthesis: None,
-                    },
-                    |event| {
-                        Variant::String(payload_read::nested_text(
-                            event,
-                            automatic_reward_fields::REDEMPTION,
-                            automatic_reward_fields::REDEMPTION_ID,
-                        ))
-                    },
-                )
-                .event_specific(
-                    DeclaredVariable {
-                        name: "reward.type".to_owned(),
-                        kind: VariantKind::String,
-                        label: "Reward type".to_owned(),
-                        synthesis: None,
-                    },
-                    |event| {
-                        Variant::String(payload_read::nested_text(
-                            event,
-                            automatic_reward_fields::REWARD,
-                            automatic_reward_fields::REWARD_TYPE,
-                        ))
-                    },
-                )
-                .event_specific(
-                    DeclaredVariable {
-                        name: "reward.cost".to_owned(),
-                        kind: VariantKind::Int,
-                        label: "Reward cost".to_owned(),
-                        synthesis: Some(SynthesisHint::BoundedInt {
-                            min: 0,
-                            max: super::MAX_SYNTHESIZED_COUNT,
-                        }),
-                    },
-                    |event| {
-                        Variant::Int(payload_read::nested_number(
-                            event,
-                            automatic_reward_fields::REWARD,
-                            automatic_reward_fields::REWARD_COST,
-                        ))
-                    },
-                ),
-        )
-    }
-
-    fn actors(&self) -> ActorDeclaration {
-        ActorDeclaration::principal()
-    }
+    )
 }
+
+pub(super) const SPEC: TwitchTriggerSpec = TwitchTriggerSpec {
+    id: trigger_ids::CHANNEL_POINTS_AUTOMATIC_REWARD_REDEEMED,
+    category: TriggerCategory::ChannelPoints,
+    label: "Automatic reward redeemed",
+    summary: "Fires when a viewer redeems a built-in automatic channel point reward",
+    search_text: "twitch channel points automatic reward redeemed built-in highlight message",
+    icon: "star",
+    kind: event_kinds::CHANNEL_CHANNEL_POINTS_AUTOMATIC_REWARD_REDEMPTION_ADD,
+    actors: ActorDeclaration::principal(),
+    variables,
+    ..TwitchTriggerSpec::BASE
+};
 
 fn redeemer_identity(event: &Event) -> ActorIdentity {
     payload_read::identity(
@@ -128,6 +90,8 @@ fn redeemer_identity(event: &Event) -> ActorIdentity {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use forge_events::EventSource;
+    use forge_registry::TriggerKindDescriptor;
 
     fn automatic_reward_event() -> Event {
         let payload = serde_json::json!({
@@ -144,7 +108,7 @@ mod tests {
 
     #[test]
     fn event_filter_targets_automatic_reward_topic_from_twitch() {
-        let filter = AutomaticRewardRedeemedDescriptor.event_filter();
+        let filter = SPEC.event_filter();
         assert_eq!(filter.source, Some(EventSource::Twitch));
         assert_eq!(
             filter.kind_prefix.as_deref(),
@@ -154,7 +118,7 @@ mod tests {
 
     #[test]
     fn build_arg_stack_types_reward_cost_as_int_and_maps_identity_fields() {
-        let stack = AutomaticRewardRedeemedDescriptor.build_arg_stack(&automatic_reward_event());
+        let stack = SPEC.build_arg_stack(&automatic_reward_event());
         assert_eq!(stack.get("reward.cost"), Some(&Variant::Int(300)));
         assert_eq!(
             stack.get("reward.type"),
@@ -181,7 +145,7 @@ mod tests {
             "channel.channel_points_automatic_reward_redemption",
             serde_json::json!({}),
         );
-        let stack = AutomaticRewardRedeemedDescriptor.build_arg_stack(&event);
+        let stack = SPEC.build_arg_stack(&event);
         assert_eq!(stack.get("reward.cost"), Some(&Variant::Int(0)));
     }
 }

@@ -1,123 +1,48 @@
-use forge_events::{Event, EventSource};
-use forge_registry::{EventFilter, KindPlatformContract, TriggerCategory, TriggerKindDescriptor};
-use forge_types::{
-    ArgStack, DeclaredVariable, TriggerConfig, UserText, VariableSchema, Variant, VariantKind,
+use forge_events::EventSource;
+use forge_registry::TriggerVariables;
+use forge_registry::{
+    EventTriggerSpec, EventVariable, TriggerCondition, TriggerMatcher, event_variables,
+    no_config_fields,
 };
 
 use crate::vocabulary::fields::source as fields;
 use crate::vocabulary::messages;
 use crate::vocabulary::{event_kinds, trigger_ids, variables};
 
-pub(crate) struct SourceSceneItemVisibilityChangedDescriptor;
+const VARIABLES: &[EventVariable] = &[
+    EventVariable::text(variables::scene::NAME, "Scene name", fields::SCENE_NAME),
+    EventVariable::text(variables::source::NAME, "Source name", fields::SOURCE_NAME),
+    EventVariable::flag(
+        variables::source::IS_VISIBLE,
+        "Source visible",
+        fields::IS_VISIBLE,
+    ),
+];
 
-impl TriggerKindDescriptor for SourceSceneItemVisibilityChangedDescriptor {
-    fn id(&self) -> &str {
-        trigger_ids::SOURCE_VISIBILITY_CHANGED
-    }
-
-    fn category(&self) -> TriggerCategory {
-        TriggerCategory::Integration
-    }
-
-    fn label(&self) -> &str {
-        "OBS scene item visibility changed"
-    }
-
-    fn summary(&self) -> &str {
-        "Fires when a scene item's visibility is toggled in OBS."
-    }
-
-    fn search_text(&self) -> &str {
-        "obs source scene item visible hidden show hide visibility"
-    }
-
-    fn icon_name(&self) -> &str {
-        "eye"
-    }
-
-    fn platform_contract(&self) -> KindPlatformContract {
-        KindPlatformContract::Universal
-    }
-
-    fn condition_display(&self, _: &TriggerConfig) -> UserText {
-        messages::CONDITION_ANY_SCENE_ITEM_VISIBILITY_CHANGE.into()
-    }
-
-    fn event_filter(&self) -> EventFilter {
-        EventFilter {
-            source: Some(EventSource::Obs),
-            kind_prefix: Some(event_kinds::SOURCE_PREFIX.to_owned()),
-        }
-    }
-
-    fn matches_trigger(&self, _config: &TriggerConfig, event: &Event) -> bool {
-        event.kind == event_kinds::SOURCE_VISIBILITY_CHANGED
-    }
-
-    fn build_arg_stack(&self, event: &Event) -> ArgStack {
-        let mut stack = ArgStack::new();
-        if let Some(scene) = event
-            .payload
-            .get(fields::SCENE_NAME)
-            .and_then(|v| v.as_str())
-        {
-            stack = stack.set(
-                variables::scene::NAME.to_owned(),
-                Variant::String(scene.to_owned()),
-            );
-        }
-        if let Some(source) = event
-            .payload
-            .get(fields::SOURCE_NAME)
-            .and_then(|v| v.as_str())
-        {
-            stack = stack.set(
-                variables::source::NAME.to_owned(),
-                Variant::String(source.to_owned()),
-            );
-        }
-        if let Some(visible) = event
-            .payload
-            .get(fields::IS_VISIBLE)
-            .and_then(|v| v.as_bool())
-        {
-            stack = stack.set(
-                variables::source::IS_VISIBLE.to_owned(),
-                Variant::Bool(visible),
-            );
-        }
-        stack
-    }
-
-    fn output_schema(&self) -> Option<VariableSchema> {
-        Some(VariableSchema {
-            variables: vec![
-                DeclaredVariable {
-                    name: variables::scene::NAME.to_owned(),
-                    kind: VariantKind::String,
-                    label: "Scene name".to_owned(),
-                    synthesis: None,
-                },
-                DeclaredVariable {
-                    name: variables::source::NAME.to_owned(),
-                    kind: VariantKind::String,
-                    label: "Source name".to_owned(),
-                    synthesis: None,
-                },
-                DeclaredVariable {
-                    name: variables::source::IS_VISIBLE.to_owned(),
-                    kind: VariantKind::Bool,
-                    label: "Source visible".to_owned(),
-                    synthesis: None,
-                },
-            ],
-        })
-    }
+fn variables() -> Option<TriggerVariables> {
+    event_variables(VARIABLES)
 }
+
+pub(crate) const SOURCE_SCENE_ITEM_VISIBILITY_CHANGED: EventTriggerSpec = EventTriggerSpec {
+    id: trigger_ids::SOURCE_VISIBILITY_CHANGED,
+    source: EventSource::Obs,
+    label: "OBS scene item visibility changed",
+    summary: "Fires when a scene item's visibility is toggled in OBS.",
+    search_text: "obs source scene item visible hidden show hide visibility",
+    icon: "eye",
+    prefix: event_kinds::SOURCE_PREFIX,
+    matcher: TriggerMatcher::Kind(event_kinds::SOURCE_VISIBILITY_CHANGED),
+    condition: TriggerCondition::Fixed(messages::CONDITION_ANY_SCENE_ITEM_VISIBILITY_CHANGE),
+    config_fields: no_config_fields,
+    variables,
+};
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use forge_events::{Event, EventSource};
+    use forge_registry::TriggerKindDescriptor;
+    use forge_types::Variant;
     use serde_json::json;
 
     #[test]
@@ -127,7 +52,7 @@ mod tests {
             "obs.source.visibility_changed",
             json!({ "scene_name": "Main", "source_name": "Cam", "is_visible": true }),
         );
-        let stack = SourceSceneItemVisibilityChangedDescriptor.build_arg_stack(&event);
+        let stack = SOURCE_SCENE_ITEM_VISIBILITY_CHANGED.build_arg_stack(&event);
         assert_eq!(
             stack.get("obs.scene.name"),
             Some(&Variant::String("Main".to_owned())),
@@ -149,7 +74,7 @@ mod tests {
             "obs.source.visibility_changed",
             json!({ "scene_name": "Main", "source_name": "Cam", "is_visible": false }),
         );
-        let stack = SourceSceneItemVisibilityChangedDescriptor.build_arg_stack(&event);
+        let stack = SOURCE_SCENE_ITEM_VISIBILITY_CHANGED.build_arg_stack(&event);
         assert_eq!(
             stack.get("obs.source.is_visible"),
             Some(&Variant::Bool(false)),
@@ -159,7 +84,7 @@ mod tests {
     #[test]
     fn visibility_arg_stack_omits_keys_when_payload_fields_absent() {
         let event = Event::new(EventSource::Obs, "obs.source.visibility_changed", json!({}));
-        let stack = SourceSceneItemVisibilityChangedDescriptor.build_arg_stack(&event);
+        let stack = SOURCE_SCENE_ITEM_VISIBILITY_CHANGED.build_arg_stack(&event);
         assert!(stack.get("obs.scene.name").is_none());
         assert!(stack.get("obs.source.name").is_none());
         assert!(stack.get("obs.source.is_visible").is_none());

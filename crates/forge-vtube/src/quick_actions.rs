@@ -47,29 +47,16 @@ impl Group {
         };
         QuickActionGroup::new(label, icon, accent)
     }
-}
 
-#[expect(
-    clippy::too_many_arguments,
-    reason = "each argument is one field of the quick-action template"
-)]
-fn quick_action(
-    label: MessageCode,
-    icon: &str,
-    accent: QuickActionAccent,
-    enabled: bool,
-    group: Group,
-    destructive: bool,
-    kind_id: &str,
-    config: BTreeMap<String, Variant>,
-    fields: Vec<QuickActionField>,
-) -> QuickAction {
-    QuickAction::new(label, icon, accent, kind_id)
-        .enabled_if(enabled)
-        .in_group(group.badge())
-        .destructive_if(destructive)
-        .with_config(config)
-        .with_fields(fields)
+    fn action(
+        self,
+        label: MessageCode,
+        icon: &str,
+        accent: QuickActionAccent,
+        kind_id: &str,
+    ) -> QuickAction {
+        QuickAction::new(label, icon, accent, kind_id).in_group(self.badge())
+    }
 }
 
 impl QuickActions for VTubeClient {
@@ -77,207 +64,181 @@ impl QuickActions for VTubeClient {
         let connected = self.connection_state().is_connected();
 
         vec![
-            quick_action(
-                labels::SET_EXPRESSION,
-                "mood-smile",
-                QuickActionAccent::AccentPinkLight,
-                connected,
-                Group::Expressions,
-                false,
-                sub_action_ids::EXPRESSION_SET,
-                BTreeMap::new(),
-                vec![
+            Group::Expressions
+                .action(
+                    labels::SET_EXPRESSION,
+                    "mood-smile",
+                    QuickActionAccent::AccentPinkLight,
+                    sub_action_ids::EXPRESSION_SET,
+                )
+                .enabled_if(connected)
+                .with_fields(vec![
                     QuickActionField::option_list(
                         EXPRESSION_FIELD,
                         labels::EXPRESSION,
                         EXPRESSION_LIST,
                     )
                     .required(),
-                ],
-            ),
-            quick_action(
-                labels::TOGGLE_EXPRESSION,
-                "toggle-left",
-                QuickActionAccent::Warning,
-                connected,
-                Group::Expressions,
-                false,
-                sub_action_ids::EXPRESSION_SET,
-                config([(config_keys::ACTIVE, Variant::Bool(false))]),
-                vec![
+                ]),
+            Group::Expressions
+                .action(
+                    labels::TOGGLE_EXPRESSION,
+                    "toggle-left",
+                    QuickActionAccent::Warning,
+                    sub_action_ids::EXPRESSION_SET,
+                )
+                .enabled_if(connected)
+                .with_config(config([(config_keys::ACTIVE, Variant::Bool(false))]))
+                .with_fields(vec![
                     QuickActionField::option_list(
                         EXPRESSION_FIELD,
                         labels::EXPRESSION,
                         EXPRESSION_LIST,
                     )
                     .required(),
-                ],
-            ),
-            quick_action(
-                labels::RESET_TO_IDLE,
-                "refresh",
-                QuickActionAccent::Info,
-                connected,
-                Group::Expressions,
-                false,
-                sub_action_ids::RESET_TO_IDLE,
-                BTreeMap::new(),
-                Vec::new(),
-            ),
-            quick_action(
-                labels::TRIGGER_HOTKEY,
-                "keyboard",
-                QuickActionAccent::Brand,
-                connected,
-                Group::HotkeysAnimation,
-                false,
-                sub_action_ids::HOTKEY_TRIGGER,
-                BTreeMap::new(),
-                vec![
+                ]),
+            Group::Expressions
+                .action(
+                    labels::RESET_TO_IDLE,
+                    "refresh",
+                    QuickActionAccent::Info,
+                    sub_action_ids::RESET_TO_IDLE,
+                )
+                .enabled_if(connected),
+            Group::HotkeysAnimation
+                .action(
+                    labels::TRIGGER_HOTKEY,
+                    "keyboard",
+                    QuickActionAccent::Brand,
+                    sub_action_ids::HOTKEY_TRIGGER,
+                )
+                .enabled_if(connected)
+                .with_fields(vec![
                     QuickActionField::option_list(HOTKEY_FIELD, labels::HOTKEY, HOTKEY_LIST)
                         .required(),
-                ],
-            ),
-            quick_action(
-                labels::PLAY_ANIMATION,
-                "run",
-                QuickActionAccent::Success,
-                connected,
-                Group::HotkeysAnimation,
-                false,
-                sub_action_ids::HOTKEY_TRIGGER,
-                BTreeMap::new(),
-                vec![
+                ]),
+            Group::HotkeysAnimation
+                .action(
+                    labels::PLAY_ANIMATION,
+                    "run",
+                    QuickActionAccent::Success,
+                    sub_action_ids::HOTKEY_TRIGGER,
+                )
+                .enabled_if(connected)
+                .with_fields(vec![
                     QuickActionField::option_list(HOTKEY_FIELD, labels::HOTKEY, HOTKEY_LIST)
                         .required(),
-                ],
-            ),
-            quick_action(
-                labels::THROW_ITEM,
-                "photo",
-                QuickActionAccent::Info,
-                connected,
-                Group::Items,
-                false,
-                sub_action_ids::ITEM_THROW,
-                BTreeMap::new(),
-                vec![
+                ]),
+            Group::Items
+                .action(
+                    labels::THROW_ITEM,
+                    "photo",
+                    QuickActionAccent::Info,
+                    sub_action_ids::ITEM_THROW,
+                )
+                .enabled_if(connected)
+                .with_fields(vec![
                     QuickActionField::option_list(
                         ITEM_FILE_FIELD,
                         labels::ITEM_FILE,
                         ITEM_FILE_LIST,
                     )
                     .required(),
-                ],
-            ),
-            quick_action(
-                labels::PIN_ITEM_TO_MODEL,
-                "pin",
-                QuickActionAccent::Warning,
-                connected,
-                Group::Items,
-                false,
-                sub_action_ids::ITEM_PIN,
-                BTreeMap::new(),
-                vec![
+                ]),
+            Group::Items
+                .action(
+                    labels::PIN_ITEM_TO_MODEL,
+                    "pin",
+                    QuickActionAccent::Warning,
+                    sub_action_ids::ITEM_PIN,
+                )
+                .enabled_if(connected)
+                .with_fields(vec![
                     QuickActionField::option_list(
                         ITEM_INSTANCE_FIELD,
                         labels::ITEM,
                         ITEM_INSTANCE_LIST,
                     )
                     .required(),
-                ],
-            ),
-            quick_action(
-                labels::LOAD_ITEM,
-                "plus",
-                QuickActionAccent::Success,
-                connected,
-                Group::Items,
-                false,
-                sub_action_ids::ITEM_LOAD,
-                BTreeMap::new(),
-                vec![
+                ]),
+            Group::Items
+                .action(
+                    labels::LOAD_ITEM,
+                    "plus",
+                    QuickActionAccent::Success,
+                    sub_action_ids::ITEM_LOAD,
+                )
+                .enabled_if(connected)
+                .with_fields(vec![
                     QuickActionField::option_list(
                         ITEM_FILE_FIELD,
                         labels::ITEM_FILE,
                         ITEM_FILE_LIST,
                     )
                     .required(),
-                ],
-            ),
-            quick_action(
-                labels::REMOVE_ALL_ITEMS,
-                "trash",
-                QuickActionAccent::Danger,
-                connected,
-                Group::Items,
-                true,
-                sub_action_ids::ITEM_UNLOAD_ALL,
-                BTreeMap::new(),
-                Vec::new(),
-            ),
-            quick_action(
-                labels::LOAD_MODEL,
-                "user-square",
-                QuickActionAccent::Bits,
-                connected,
-                Group::ModelScene,
-                false,
-                sub_action_ids::MODEL_LOAD,
-                BTreeMap::new(),
-                vec![
+                ]),
+            Group::Items
+                .action(
+                    labels::REMOVE_ALL_ITEMS,
+                    "trash",
+                    QuickActionAccent::Danger,
+                    sub_action_ids::ITEM_UNLOAD_ALL,
+                )
+                .enabled_if(connected)
+                .destructive_if(true),
+            Group::ModelScene
+                .action(
+                    labels::LOAD_MODEL,
+                    "user-square",
+                    QuickActionAccent::Bits,
+                    sub_action_ids::MODEL_LOAD,
+                )
+                .enabled_if(connected)
+                .with_fields(vec![
                     QuickActionField::option_list(MODEL_FIELD, labels::MODEL, MODEL_LIST)
                         .required(),
-                ],
-            ),
-            quick_action(
-                labels::MOVE_SCALE_MODEL,
-                "arrows-move",
-                QuickActionAccent::Info,
-                connected,
-                Group::ModelScene,
-                false,
-                sub_action_ids::MODEL_MOVE,
-                config([
+                ]),
+            Group::ModelScene
+                .action(
+                    labels::MOVE_SCALE_MODEL,
+                    "arrows-move",
+                    QuickActionAccent::Info,
+                    sub_action_ids::MODEL_MOVE,
+                )
+                .enabled_if(connected)
+                .with_config(config([
                     (config_keys::X, Variant::Float(0.0)),
                     (config_keys::Y, Variant::Float(0.0)),
                     (config_keys::ROTATION, Variant::Float(0.0)),
                     (config_keys::SIZE, Variant::Float(0.0)),
                     (config_keys::DURATION, Variant::Float(0.3)),
-                ]),
-                Vec::new(),
-            ),
-            quick_action(
-                labels::COLOR_TINT_OVERLAY,
-                "color-swatch",
-                QuickActionAccent::Warning,
-                connected,
-                Group::ModelScene,
-                false,
-                sub_action_ids::MODEL_TINT,
-                config([
+                ])),
+            Group::ModelScene
+                .action(
+                    labels::COLOR_TINT_OVERLAY,
+                    "color-swatch",
+                    QuickActionAccent::Warning,
+                    sub_action_ids::MODEL_TINT,
+                )
+                .enabled_if(connected)
+                .with_config(config([
                     (config_keys::COLOR_R, Variant::Int(203)),
                     (config_keys::COLOR_G, Variant::Int(166)),
                     (config_keys::COLOR_B, Variant::Int(247)),
-                ]),
-                Vec::new(),
-            ),
-            quick_action(
-                labels::TOGGLE_PHYSICS,
-                "wind",
-                QuickActionAccent::Success,
-                connected,
-                Group::ModelScene,
-                false,
-                sub_action_ids::MODEL_SET_PHYSICS,
-                BTreeMap::new(),
-                vec![QuickActionField::toggle(
+                ])),
+            Group::ModelScene
+                .action(
+                    labels::TOGGLE_PHYSICS,
+                    "wind",
+                    QuickActionAccent::Success,
+                    sub_action_ids::MODEL_SET_PHYSICS,
+                )
+                .enabled_if(connected)
+                .with_fields(vec![QuickActionField::toggle(
                     config_keys::ENABLED,
                     labels::ENABLED,
                     true,
-                )],
-            ),
+                )]),
         ]
     }
 }

@@ -1,114 +1,57 @@
-use forge_events::{Event, EventSource};
-use forge_registry::{EventFilter, KindPlatformContract, TriggerCategory, TriggerKindDescriptor};
-use forge_types::{
-    ArgStack, DeclaredVariable, TriggerConfig, UserText, VariableSchema, Variant, VariantKind,
+use forge_events::EventSource;
+use forge_registry::TriggerVariables;
+use forge_registry::{
+    EventTriggerSpec, EventVariable, TriggerCondition, TriggerMatcher, event_variables,
+    no_config_fields,
 };
 
 use crate::vocabulary::fields::scene as fields;
 use crate::vocabulary::messages;
 use crate::vocabulary::{event_kinds, trigger_ids, variables};
 
-pub(crate) struct SceneRenamedDescriptor;
+const VARIABLES: &[EventVariable] = &[
+    EventVariable::text(
+        variables::scene::NAME_OLD,
+        "Old scene name",
+        fields::SCENE_NAME_OLD,
+    ),
+    EventVariable::text(
+        variables::scene::NAME_NEW,
+        "New scene name",
+        fields::SCENE_NAME_NEW,
+    ),
+];
 
-impl TriggerKindDescriptor for SceneRenamedDescriptor {
-    fn id(&self) -> &str {
-        trigger_ids::SCENE_RENAMED
-    }
-
-    fn category(&self) -> TriggerCategory {
-        TriggerCategory::Integration
-    }
-
-    fn label(&self) -> &str {
-        "OBS scene renamed"
-    }
-
-    fn summary(&self) -> &str {
-        "Fires when a scene is renamed in OBS."
-    }
-
-    fn search_text(&self) -> &str {
-        "obs scene renamed name changed"
-    }
-
-    fn icon_name(&self) -> &str {
-        "layout-grid"
-    }
-
-    fn platform_contract(&self) -> KindPlatformContract {
-        KindPlatformContract::Universal
-    }
-
-    fn condition_display(&self, _: &TriggerConfig) -> UserText {
-        messages::CONDITION_ANY_SCENE_RENAMED.into()
-    }
-
-    fn event_filter(&self) -> EventFilter {
-        EventFilter {
-            source: Some(EventSource::Obs),
-            kind_prefix: Some(event_kinds::SCENE_PREFIX.to_owned()),
-        }
-    }
-
-    fn matches_trigger(&self, _config: &TriggerConfig, event: &Event) -> bool {
-        event.kind == event_kinds::SCENE_RENAMED
-    }
-
-    fn build_arg_stack(&self, event: &Event) -> ArgStack {
-        let mut stack = ArgStack::new();
-        if let Some(old) = event
-            .payload
-            .get(fields::SCENE_NAME_OLD)
-            .and_then(|v| v.as_str())
-        {
-            stack = stack.set(
-                variables::scene::NAME_OLD.to_owned(),
-                Variant::String(old.to_owned()),
-            );
-        }
-        if let Some(new) = event
-            .payload
-            .get(fields::SCENE_NAME_NEW)
-            .and_then(|v| v.as_str())
-        {
-            stack = stack.set(
-                variables::scene::NAME_NEW.to_owned(),
-                Variant::String(new.to_owned()),
-            );
-        }
-        stack
-    }
-
-    fn output_schema(&self) -> Option<VariableSchema> {
-        Some(VariableSchema {
-            variables: vec![
-                DeclaredVariable {
-                    name: variables::scene::NAME_OLD.to_owned(),
-                    kind: VariantKind::String,
-                    label: "Old scene name".to_owned(),
-                    synthesis: None,
-                },
-                DeclaredVariable {
-                    name: variables::scene::NAME_NEW.to_owned(),
-                    kind: VariantKind::String,
-                    label: "New scene name".to_owned(),
-                    synthesis: None,
-                },
-            ],
-        })
-    }
+fn variables() -> Option<TriggerVariables> {
+    event_variables(VARIABLES)
 }
+
+pub(crate) const SCENE_RENAMED: EventTriggerSpec = EventTriggerSpec {
+    id: trigger_ids::SCENE_RENAMED,
+    source: EventSource::Obs,
+    label: "OBS scene renamed",
+    summary: "Fires when a scene is renamed in OBS.",
+    search_text: "obs scene renamed name changed",
+    icon: "layout-grid",
+    prefix: event_kinds::SCENE_PREFIX,
+    matcher: TriggerMatcher::Kind(event_kinds::SCENE_RENAMED),
+    condition: TriggerCondition::Fixed(messages::CONDITION_ANY_SCENE_RENAMED),
+    config_fields: no_config_fields,
+    variables,
+};
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use forge_events::{Event, EventSource};
     use forge_registry::TriggerKindDescriptor;
+    use forge_types::Variant;
     use serde_json::json;
     use std::collections::BTreeMap;
 
     #[test]
     fn matches_only_scene_renamed_kind_within_scene_family() {
-        let d = SceneRenamedDescriptor;
+        let d = SCENE_RENAMED;
         let cfg = BTreeMap::new();
         assert!(d.matches_trigger(
             &cfg,
@@ -135,7 +78,7 @@ mod tests {
             "obs.scene.renamed",
             json!({ "scene_name_old": "Old", "scene_name_new": "New" }),
         );
-        let stack = SceneRenamedDescriptor.build_arg_stack(&event);
+        let stack = SCENE_RENAMED.build_arg_stack(&event);
         assert_eq!(
             stack.get("obs.scene.name_old"),
             Some(&Variant::String("Old".to_owned())),
@@ -153,7 +96,7 @@ mod tests {
             "obs.scene.renamed",
             json!({ "scene_name_new": "New" }),
         );
-        let stack = SceneRenamedDescriptor.build_arg_stack(&event);
+        let stack = SCENE_RENAMED.build_arg_stack(&event);
         assert!(stack.get("obs.scene.name_old").is_none());
         assert_eq!(
             stack.get("obs.scene.name_new"),

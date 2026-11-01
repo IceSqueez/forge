@@ -1,4 +1,4 @@
-mod choices;
+pub(crate) mod choices;
 mod expression_set;
 mod fields;
 mod hold_registry;

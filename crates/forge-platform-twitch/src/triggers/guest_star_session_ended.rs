@@ -1,106 +1,50 @@
+use super::spec::{TwitchTriggerSpec, Variable, table_variables};
 use crate::vocabulary::event_kinds;
 use crate::vocabulary::trigger_ids;
-use forge_events::{Event, EventSource};
-use forge_registry::{
-    ActorDeclaration, EventFilter, KindPlatformContract, TriggerCategory, TriggerKindDescriptor,
-};
-use forge_types::{
-    ArgStack, DeclaredVariable, PlatformId, TriggerConfig, VariableSchema, Variant, VariantKind,
-};
+use forge_registry::TriggerVariables;
+use forge_registry::{ActorDeclaration, TriggerCategory};
 
 use crate::vocabulary::fields::guest_star as guest_star_fields;
 
-pub(crate) struct GuestStarSessionEndedDescriptor;
+const VARIABLES: &[Variable] = &[
+    Variable::nested_text(
+        "guest_star.session_id",
+        "Guest Star session ID",
+        guest_star_fields::SESSION,
+        guest_star_fields::SESSION_ID,
+    ),
+    Variable::nested_timestamp(
+        "guest_star.ended_at",
+        "Session ended at",
+        guest_star_fields::SESSION,
+        guest_star_fields::SESSION_ENDED_AT,
+    ),
+];
 
-impl TriggerKindDescriptor for GuestStarSessionEndedDescriptor {
-    fn id(&self) -> &str {
-        trigger_ids::GUEST_STAR_SESSION_ENDED
-    }
-
-    fn category(&self) -> TriggerCategory {
-        TriggerCategory::Streams
-    }
-
-    fn label(&self) -> &str {
-        "Guest Star session ended"
-    }
-
-    fn summary(&self) -> &str {
-        "Fires when a running Guest Star session ends"
-    }
-
-    fn search_text(&self) -> &str {
-        "twitch guest star session ended stopped host"
-    }
-
-    fn icon_name(&self) -> &str {
-        "star"
-    }
-
-    fn platform_contract(&self) -> KindPlatformContract {
-        KindPlatformContract::PlatformSpecific(PlatformId::Twitch)
-    }
-
-    fn event_filter(&self) -> EventFilter {
-        EventFilter {
-            source: Some(EventSource::Twitch),
-            kind_prefix: Some(event_kinds::CHANNEL_GUEST_STAR_SESSION_END.to_owned()),
-        }
-    }
-
-    fn matches_trigger(&self, _config: &TriggerConfig, _event: &Event) -> bool {
-        true
-    }
-
-    fn actors(&self) -> ActorDeclaration {
-        ActorDeclaration::Actorless
-    }
-
-    fn build_arg_stack(&self, event: &Event) -> ArgStack {
-        let session = event.payload.get(guest_star_fields::SESSION);
-
-        let session_id = session
-            .and_then(|s| s.get(guest_star_fields::SESSION_ID))
-            .and_then(|v| v.as_str())
-            .unwrap_or("")
-            .to_owned();
-        let ended_at = session
-            .and_then(|s| s.get(guest_star_fields::SESSION_ENDED_AT))
-            .and_then(|v| v.as_str())
-            .and_then(crate::timestamp::variant);
-
-        let stack = ArgStack::new().set(
-            "guest_star.session_id".to_owned(),
-            Variant::String(session_id),
-        );
-        crate::timestamp::set(stack, "guest_star.ended_at", ended_at)
-    }
-    fn output_schema(&self) -> Option<VariableSchema> {
-        Some({
-            VariableSchema {
-                variables: vec![
-                    DeclaredVariable {
-                        name: "guest_star.session_id".to_owned(),
-                        kind: VariantKind::String,
-                        label: "Guest Star session ID".to_owned(),
-                        synthesis: None,
-                    },
-                    DeclaredVariable {
-                        name: "guest_star.ended_at".to_owned(),
-                        kind: VariantKind::Datetime,
-                        label: "Session ended at".to_owned(),
-                        synthesis: None,
-                    },
-                ],
-            }
-        })
-    }
+fn variables() -> Option<TriggerVariables> {
+    Some(table_variables(VARIABLES))
 }
+
+pub(super) const SPEC: TwitchTriggerSpec = TwitchTriggerSpec {
+    id: trigger_ids::GUEST_STAR_SESSION_ENDED,
+    category: TriggerCategory::Streams,
+    label: "Guest Star session ended",
+    summary: "Fires when a running Guest Star session ends",
+    search_text: "twitch guest star session ended stopped host",
+    icon: "star",
+    kind: event_kinds::CHANNEL_GUEST_STAR_SESSION_END,
+    actors: ActorDeclaration::Actorless,
+    variables,
+    ..TwitchTriggerSpec::BASE
+};
 
 #[cfg(test)]
 mod tests {
     use super::*;
     use crate::timestamp::tests::instant;
+    use forge_events::{Event, EventSource};
+    use forge_registry::TriggerKindDescriptor;
+    use forge_types::Variant;
 
     fn end_event() -> Event {
         Event::new(
@@ -114,7 +58,7 @@ mod tests {
 
     #[test]
     fn event_filter_targets_session_end_kind_from_twitch() {
-        let filter = GuestStarSessionEndedDescriptor.event_filter();
+        let filter = SPEC.event_filter();
         assert_eq!(filter.source, Some(EventSource::Twitch));
         assert_eq!(
             filter.kind_prefix.as_deref(),
@@ -124,7 +68,7 @@ mod tests {
 
     #[test]
     fn build_arg_stack_exposes_session_id_chaining_var_and_ended_at() {
-        let stack = GuestStarSessionEndedDescriptor.build_arg_stack(&end_event());
+        let stack = SPEC.build_arg_stack(&end_event());
         assert_eq!(
             stack.get("guest_star.session_id"),
             Some(&Variant::String("sess-42".to_owned()))

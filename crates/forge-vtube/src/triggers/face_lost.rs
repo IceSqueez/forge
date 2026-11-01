@@ -1,107 +1,30 @@
-use forge_events::{Event, EventSource};
-use forge_registry::{EventFilter, KindPlatformContract, TriggerCategory, TriggerKindDescriptor};
-use forge_types::{
-    ArgStack, DeclaredVariable, TriggerConfig, UserText, VariableSchema, Variant, VariantKind,
-};
+use super::families;
+use forge_events::EventSource;
+use forge_registry::{EventTriggerSpec, TriggerCondition, TriggerMatcher, no_config_fields};
 
-use crate::vocabulary::fields::tracking as fields;
 use crate::vocabulary::messages;
-use crate::vocabulary::{event_kinds, trigger_ids, variables};
+use crate::vocabulary::{event_kinds, trigger_ids};
 
-pub(crate) struct FaceLostDescriptor;
-
-impl TriggerKindDescriptor for FaceLostDescriptor {
-    fn id(&self) -> &str {
-        trigger_ids::TRACKING_FACE_LOST
-    }
-
-    fn category(&self) -> TriggerCategory {
-        TriggerCategory::Integration
-    }
-
-    fn label(&self) -> &str {
-        "VTube Studio face lost"
-    }
-
-    fn summary(&self) -> &str {
-        "Fires when VTube Studio stops tracking a face."
-    }
-
-    fn search_text(&self) -> &str {
-        "vtube tracking face lost out of frame webcam"
-    }
-
-    fn icon_name(&self) -> &str {
-        "eye-off"
-    }
-
-    fn platform_contract(&self) -> KindPlatformContract {
-        KindPlatformContract::Universal
-    }
-
-    fn condition_display(&self, _: &TriggerConfig) -> UserText {
-        messages::CONDITION_FACE_LOST.into()
-    }
-
-    fn event_filter(&self) -> EventFilter {
-        EventFilter {
-            source: Some(EventSource::VTube),
-            kind_prefix: Some(event_kinds::TRACKING_PREFIX.to_owned()),
-        }
-    }
-
-    fn matches_trigger(&self, _config: &TriggerConfig, event: &Event) -> bool {
-        event.kind == event_kinds::TRACKING_FACE_LOST
-    }
-
-    fn build_arg_stack(&self, event: &Event) -> ArgStack {
-        let mut stack = ArgStack::new();
-        if let Some(left) = event
-            .payload
-            .get(fields::IS_LEFT_HAND_FOUND)
-            .and_then(|v| v.as_bool())
-        {
-            stack = stack.set(
-                variables::tracking::IS_LEFT_HAND_FOUND.to_owned(),
-                Variant::Bool(left),
-            );
-        }
-        if let Some(right) = event
-            .payload
-            .get(fields::IS_RIGHT_HAND_FOUND)
-            .and_then(|v| v.as_bool())
-        {
-            stack = stack.set(
-                variables::tracking::IS_RIGHT_HAND_FOUND.to_owned(),
-                Variant::Bool(right),
-            );
-        }
-        stack
-    }
-
-    fn output_schema(&self) -> Option<VariableSchema> {
-        Some(VariableSchema {
-            variables: vec![
-                DeclaredVariable {
-                    name: variables::tracking::IS_LEFT_HAND_FOUND.to_owned(),
-                    kind: VariantKind::Bool,
-                    label: "Left hand tracked".to_owned(),
-                    synthesis: None,
-                },
-                DeclaredVariable {
-                    name: variables::tracking::IS_RIGHT_HAND_FOUND.to_owned(),
-                    kind: VariantKind::Bool,
-                    label: "Right hand tracked".to_owned(),
-                    synthesis: None,
-                },
-            ],
-        })
-    }
-}
+pub(crate) const FACE_LOST: EventTriggerSpec = EventTriggerSpec {
+    id: trigger_ids::TRACKING_FACE_LOST,
+    source: EventSource::VTube,
+    label: "VTube Studio face lost",
+    summary: "Fires when VTube Studio stops tracking a face.",
+    search_text: "vtube tracking face lost out of frame webcam",
+    icon: "eye-off",
+    prefix: event_kinds::TRACKING_PREFIX,
+    matcher: TriggerMatcher::Kind(event_kinds::TRACKING_FACE_LOST),
+    condition: TriggerCondition::Fixed(messages::CONDITION_FACE_LOST),
+    config_fields: no_config_fields,
+    variables: families::tracking_variables,
+};
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use forge_events::Event;
+    use forge_registry::TriggerKindDescriptor;
+    use forge_types::{TriggerConfig, Variant};
     use serde_json::json;
 
     fn event(kind: &str, payload: serde_json::Value) -> Event {
@@ -110,7 +33,7 @@ mod tests {
 
     #[test]
     fn matches_only_the_exact_face_lost_kind() {
-        let d = FaceLostDescriptor;
+        let d = FACE_LOST;
         let cfg = TriggerConfig::new();
         assert!(d.matches_trigger(&cfg, &event("vtube.tracking.face_lost", json!({}))));
         assert!(!d.matches_trigger(&cfg, &event("vtube.tracking.face_found", json!({}))));
@@ -119,7 +42,7 @@ mod tests {
 
     #[test]
     fn build_arg_stack_maps_hand_bools_distinguishing_false_from_absent() {
-        let d = FaceLostDescriptor;
+        let d = FACE_LOST;
         for (payload, left, right) in [
             (
                 json!({ "is_left_hand_found": true, "is_right_hand_found": false }),

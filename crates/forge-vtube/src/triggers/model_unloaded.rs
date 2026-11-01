@@ -1,103 +1,30 @@
-use forge_events::{Event, EventSource};
-use forge_registry::{EventFilter, KindPlatformContract, TriggerCategory, TriggerKindDescriptor};
-use forge_types::{
-    ArgStack, DeclaredVariable, TriggerConfig, UserText, VariableSchema, Variant, VariantKind,
-};
+use super::families;
+use forge_events::EventSource;
+use forge_registry::{EventTriggerSpec, TriggerCondition, TriggerMatcher, no_config_fields};
 
-use crate::vocabulary::fields::model as fields;
 use crate::vocabulary::messages;
-use crate::vocabulary::{event_kinds, trigger_ids, variables};
+use crate::vocabulary::{event_kinds, trigger_ids};
 
-pub(crate) struct ModelUnloadedDescriptor;
-
-impl TriggerKindDescriptor for ModelUnloadedDescriptor {
-    fn id(&self) -> &str {
-        trigger_ids::MODEL_UNLOADED
-    }
-
-    fn category(&self) -> TriggerCategory {
-        TriggerCategory::Integration
-    }
-
-    fn label(&self) -> &str {
-        "VTube Studio model unloaded"
-    }
-
-    fn summary(&self) -> &str {
-        "Fires when a VTube Studio model is unloaded."
-    }
-
-    fn search_text(&self) -> &str {
-        "vtube model unloaded removed avatar"
-    }
-
-    fn icon_name(&self) -> &str {
-        "user-minus"
-    }
-
-    fn platform_contract(&self) -> KindPlatformContract {
-        KindPlatformContract::Universal
-    }
-
-    fn condition_display(&self, _: &TriggerConfig) -> UserText {
-        messages::CONDITION_ANY_MODEL.into()
-    }
-
-    fn event_filter(&self) -> EventFilter {
-        EventFilter {
-            source: Some(EventSource::VTube),
-            kind_prefix: Some(event_kinds::MODEL_PREFIX.to_owned()),
-        }
-    }
-
-    fn matches_trigger(&self, _config: &TriggerConfig, event: &Event) -> bool {
-        event.kind == event_kinds::MODEL_UNLOADED
-    }
-
-    fn build_arg_stack(&self, event: &Event) -> ArgStack {
-        let mut stack = ArgStack::new();
-        if let Some(name) = event
-            .payload
-            .get(fields::MODEL_NAME)
-            .and_then(|v| v.as_str())
-        {
-            stack = stack.set(
-                variables::model::NAME.to_owned(),
-                Variant::String(name.to_owned()),
-            );
-        }
-        if let Some(id) = event.payload.get(fields::MODEL_ID).and_then(|v| v.as_str()) {
-            stack = stack.set(
-                variables::model::ID.to_owned(),
-                Variant::String(id.to_owned()),
-            );
-        }
-        stack
-    }
-
-    fn output_schema(&self) -> Option<VariableSchema> {
-        Some(VariableSchema {
-            variables: vec![
-                DeclaredVariable {
-                    name: variables::model::NAME.to_owned(),
-                    kind: VariantKind::String,
-                    label: "Model name".to_owned(),
-                    synthesis: None,
-                },
-                DeclaredVariable {
-                    name: variables::model::ID.to_owned(),
-                    kind: VariantKind::String,
-                    label: "Model ID".to_owned(),
-                    synthesis: None,
-                },
-            ],
-        })
-    }
-}
+pub(crate) const MODEL_UNLOADED: EventTriggerSpec = EventTriggerSpec {
+    id: trigger_ids::MODEL_UNLOADED,
+    source: EventSource::VTube,
+    label: "VTube Studio model unloaded",
+    summary: "Fires when a VTube Studio model is unloaded.",
+    search_text: "vtube model unloaded removed avatar",
+    icon: "user-minus",
+    prefix: event_kinds::MODEL_PREFIX,
+    matcher: TriggerMatcher::Kind(event_kinds::MODEL_UNLOADED),
+    condition: TriggerCondition::Fixed(messages::CONDITION_ANY_MODEL),
+    config_fields: no_config_fields,
+    variables: families::model_variables,
+};
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use forge_events::Event;
+    use forge_registry::TriggerKindDescriptor;
+    use forge_types::{TriggerConfig, Variant};
     use serde_json::json;
 
     fn event(kind: &str, payload: serde_json::Value) -> Event {
@@ -106,7 +33,7 @@ mod tests {
 
     #[test]
     fn matches_only_the_exact_unloaded_kind() {
-        let d = ModelUnloadedDescriptor;
+        let d = MODEL_UNLOADED;
         let cfg = TriggerConfig::new();
         assert!(d.matches_trigger(&cfg, &event("vtube.model.unloaded", json!({}))));
         assert!(!d.matches_trigger(&cfg, &event("vtube.model.loaded", json!({}))));
@@ -115,7 +42,7 @@ mod tests {
 
     #[test]
     fn build_arg_stack_maps_present_payload_keys() {
-        let d = ModelUnloadedDescriptor;
+        let d = MODEL_UNLOADED;
         let stack = d.build_arg_stack(&event(
             "vtube.model.unloaded",
             json!({ "model_name": "Aria", "model_id": "m-42" }),
@@ -132,7 +59,7 @@ mod tests {
 
     #[test]
     fn build_arg_stack_omits_missing_payload_keys() {
-        let d = ModelUnloadedDescriptor;
+        let d = MODEL_UNLOADED;
         let stack = d.build_arg_stack(&event(
             "vtube.model.unloaded",
             json!({ "model_id": "m-42" }),

@@ -1,183 +1,56 @@
+use super::families::build_choices_variant;
+use super::spec::{TwitchTriggerSpec, Variable, table_variables};
 use crate::vocabulary::event_kinds;
 use crate::vocabulary::trigger_ids;
-use forge_events::{Event, EventSource};
-use forge_registry::{
-    ActorDeclaration, EventFilter, KindPlatformContract, TriggerCategory, TriggerKindDescriptor,
-};
-use forge_types::{
-    ArgStack, DeclaredVariable, PlatformId, TriggerConfig, VariableSchema, Variant, VariantKind,
-};
+use forge_registry::TriggerVariables;
+use forge_registry::{ActorDeclaration, TriggerCategory};
+use forge_types::VariantKind;
 
 use crate::vocabulary::fields::poll as fields;
 
-pub(crate) struct PollStartedDescriptor;
+const VARIABLES: &[Variable] = &[
+    Variable::nested_text("poll.id", "Poll ID", fields::POLL, fields::POLL_ID),
+    Variable::nested_text("poll.title", "Poll title", fields::POLL, fields::POLL_TITLE),
+    Variable::nested_timestamp(
+        "poll.started_at",
+        "Started at",
+        fields::POLL,
+        fields::STARTED_AT,
+    ),
+    Variable::nested_timestamp("poll.ends_at", "Ends at", fields::POLL, fields::ENDS_AT),
+    Variable::custom(
+        "poll.choices",
+        VariantKind::Array,
+        "Poll choices",
+        build_choices_variant,
+    ),
+];
 
-impl TriggerKindDescriptor for PollStartedDescriptor {
-    fn id(&self) -> &str {
-        trigger_ids::POLL_STARTED
-    }
-
-    fn category(&self) -> TriggerCategory {
-        TriggerCategory::Polls
-    }
-
-    fn label(&self) -> &str {
-        "Poll started"
-    }
-
-    fn summary(&self) -> &str {
-        "Fires when a poll begins on the broadcaster's channel"
-    }
-
-    fn search_text(&self) -> &str {
-        "twitch poll started begin vote"
-    }
-
-    fn icon_name(&self) -> &str {
-        "chart-bar"
-    }
-
-    fn platform_contract(&self) -> KindPlatformContract {
-        KindPlatformContract::PlatformSpecific(PlatformId::Twitch)
-    }
-
-    fn event_filter(&self) -> EventFilter {
-        EventFilter {
-            source: Some(EventSource::Twitch),
-            kind_prefix: Some(event_kinds::CHANNEL_POLL_BEGIN.to_owned()),
-        }
-    }
-
-    fn matches_trigger(&self, _config: &TriggerConfig, _event: &Event) -> bool {
-        true
-    }
-
-    fn actors(&self) -> ActorDeclaration {
-        ActorDeclaration::Actorless
-    }
-
-    fn build_arg_stack(&self, event: &Event) -> ArgStack {
-        let poll = event.payload.get(fields::POLL);
-
-        let poll_id = poll
-            .and_then(|v| v.get(fields::POLL_ID))
-            .and_then(|v| v.as_str())
-            .unwrap_or("")
-            .to_owned();
-        let title = poll
-            .and_then(|v| v.get(fields::POLL_TITLE))
-            .and_then(|v| v.as_str())
-            .unwrap_or("")
-            .to_owned();
-        let started_at = poll
-            .and_then(|v| v.get(fields::STARTED_AT))
-            .and_then(|v| v.as_str())
-            .and_then(crate::timestamp::variant);
-        let ends_at = poll
-            .and_then(|v| v.get(fields::ENDS_AT))
-            .and_then(|v| v.as_str())
-            .and_then(crate::timestamp::variant);
-        let choices = build_choices_variant(event);
-
-        let stack = ArgStack::new()
-            .set("poll.id".to_owned(), Variant::String(poll_id))
-            .set("poll.title".to_owned(), Variant::String(title))
-            .set("poll.choices".to_owned(), choices);
-        let stack = crate::timestamp::set(stack, "poll.started_at", started_at);
-        crate::timestamp::set(stack, "poll.ends_at", ends_at)
-    }
-    fn output_schema(&self) -> Option<VariableSchema> {
-        Some({
-            VariableSchema {
-                variables: vec![
-                    DeclaredVariable {
-                        name: "poll.id".to_owned(),
-                        kind: VariantKind::String,
-                        label: "Poll ID".to_owned(),
-                        synthesis: None,
-                    },
-                    DeclaredVariable {
-                        name: "poll.title".to_owned(),
-                        kind: VariantKind::String,
-                        label: "Poll title".to_owned(),
-                        synthesis: None,
-                    },
-                    DeclaredVariable {
-                        name: "poll.started_at".to_owned(),
-                        kind: VariantKind::Datetime,
-                        label: "Started at".to_owned(),
-                        synthesis: None,
-                    },
-                    DeclaredVariable {
-                        name: "poll.ends_at".to_owned(),
-                        kind: VariantKind::Datetime,
-                        label: "Ends at".to_owned(),
-                        synthesis: None,
-                    },
-                    DeclaredVariable {
-                        name: "poll.choices".to_owned(),
-                        kind: VariantKind::Array,
-                        label: "Poll choices".to_owned(),
-                        synthesis: None,
-                    },
-                ],
-            }
-        })
-    }
+fn variables() -> Option<TriggerVariables> {
+    Some(table_variables(VARIABLES))
 }
 
-pub(crate) fn build_choices_variant(event: &Event) -> Variant {
-    let choices = event
-        .payload
-        .get(fields::CHOICES)
-        .and_then(|v| v.as_array())
-        .cloned()
-        .unwrap_or_default();
-
-    Variant::Array(
-        choices
-            .iter()
-            .map(|choice| {
-                let mut obj = std::collections::BTreeMap::new();
-                obj.insert(
-                    "id".to_owned(),
-                    Variant::String(
-                        choice
-                            .get(fields::CHOICE_ID)
-                            .and_then(|v| v.as_str())
-                            .unwrap_or("")
-                            .to_owned(),
-                    ),
-                );
-                obj.insert(
-                    "title".to_owned(),
-                    Variant::String(
-                        choice
-                            .get(fields::CHOICE_TITLE)
-                            .and_then(|v| v.as_str())
-                            .unwrap_or("")
-                            .to_owned(),
-                    ),
-                );
-                obj.insert(
-                    "votes".to_owned(),
-                    Variant::Int(
-                        choice
-                            .get(fields::CHOICE_VOTES)
-                            .and_then(|v| v.as_i64())
-                            .unwrap_or(0),
-                    ),
-                );
-                Variant::Object(obj)
-            })
-            .collect(),
-    )
-}
+pub(super) const SPEC: TwitchTriggerSpec = TwitchTriggerSpec {
+    id: trigger_ids::POLL_STARTED,
+    category: TriggerCategory::Polls,
+    label: "Poll started",
+    summary: "Fires when a poll begins on the broadcaster's channel",
+    search_text: "twitch poll started begin vote",
+    icon: "chart-bar",
+    kind: event_kinds::CHANNEL_POLL_BEGIN,
+    actors: ActorDeclaration::Actorless,
+    variables,
+    ..TwitchTriggerSpec::BASE
+};
 
 #[cfg(test)]
 mod tests {
     use super::*;
     use crate::timestamp::tests::instant;
+    use forge_events::Event;
+    use forge_events::EventSource;
+    use forge_registry::TriggerKindDescriptor;
+    use forge_types::Variant;
 
     fn poll_begin_event() -> Event {
         let payload = serde_json::json!({
@@ -193,7 +66,7 @@ mod tests {
 
     #[test]
     fn event_filter_targets_poll_begin_topic_from_twitch() {
-        let filter = PollStartedDescriptor.event_filter();
+        let filter = SPEC.event_filter();
         assert_eq!(filter.source, Some(EventSource::Twitch));
         assert_eq!(
             filter.kind_prefix.as_deref(),
@@ -203,7 +76,7 @@ mod tests {
 
     #[test]
     fn build_arg_stack_maps_poll_id_title_and_timing_fields() {
-        let stack = PollStartedDescriptor.build_arg_stack(&poll_begin_event());
+        let stack = SPEC.build_arg_stack(&poll_begin_event());
         assert_eq!(
             stack.get("poll.id"),
             Some(&Variant::String("poll-1".to_owned()))

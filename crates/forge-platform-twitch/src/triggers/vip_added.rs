@@ -1,69 +1,30 @@
+use super::spec::TwitchTriggerSpec;
 use crate::vocabulary::event_kinds;
 use crate::vocabulary::trigger_ids;
-use forge_events::{Event, EventSource};
+use forge_events::Event;
 use forge_registry::{
-    ActorDeclaration, ActorIdentity, ActorRole, EventFilter, KindPlatformContract, TriggerCategory,
-    TriggerKindDescriptor, TriggerVariables,
+    ActorDeclaration, ActorIdentity, ActorRole, TriggerCategory, TriggerVariables,
 };
-use forge_types::PlatformId;
-use forge_types::TriggerConfig;
 
 use super::payload_read::{self, twitch_actor};
 use crate::vocabulary::fields::vip as vip_fields;
 
-pub(crate) struct VipAddedDescriptor;
-
-impl TriggerKindDescriptor for VipAddedDescriptor {
-    fn id(&self) -> &str {
-        trigger_ids::CHANNEL_VIP_ADDED
-    }
-
-    fn category(&self) -> TriggerCategory {
-        TriggerCategory::Moderation
-    }
-
-    fn label(&self) -> &str {
-        "VIP added"
-    }
-
-    fn summary(&self) -> &str {
-        "Fires when a viewer is granted VIP status in the channel"
-    }
-
-    fn search_text(&self) -> &str {
-        "twitch vip added granted diamond moderation"
-    }
-
-    fn icon_name(&self) -> &str {
-        "diamond"
-    }
-
-    fn platform_contract(&self) -> KindPlatformContract {
-        KindPlatformContract::PlatformSpecific(PlatformId::Twitch)
-    }
-
-    fn event_filter(&self) -> EventFilter {
-        EventFilter {
-            source: Some(EventSource::Twitch),
-            kind_prefix: Some(event_kinds::CHANNEL_VIP_ADD.to_owned()),
-        }
-    }
-
-    fn matches_trigger(&self, _config: &TriggerConfig, _event: &Event) -> bool {
-        true
-    }
-
-    fn variables(&self) -> Option<TriggerVariables> {
-        Some(
-            TriggerVariables::new()
-                .actor(twitch_actor(ActorRole::Principal), affected_user_identity),
-        )
-    }
-
-    fn actors(&self) -> ActorDeclaration {
-        ActorDeclaration::principal()
-    }
+fn variables() -> Option<TriggerVariables> {
+    Some(TriggerVariables::new().actor(twitch_actor(ActorRole::Principal), affected_user_identity))
 }
+
+pub(super) const SPEC: TwitchTriggerSpec = TwitchTriggerSpec {
+    id: trigger_ids::CHANNEL_VIP_ADDED,
+    category: TriggerCategory::Moderation,
+    label: "VIP added",
+    summary: "Fires when a viewer is granted VIP status in the channel",
+    search_text: "twitch vip added granted diamond moderation",
+    icon: "diamond",
+    kind: event_kinds::CHANNEL_VIP_ADD,
+    actors: ActorDeclaration::principal(),
+    variables,
+    ..TwitchTriggerSpec::BASE
+};
 
 fn affected_user_identity(event: &Event) -> ActorIdentity {
     payload_read::identity(
@@ -77,11 +38,13 @@ fn affected_user_identity(event: &Event) -> ActorIdentity {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use forge_events::EventSource;
+    use forge_registry::TriggerKindDescriptor;
     use forge_types::Variant;
 
     #[test]
     fn event_filter_targets_vip_add_topic_from_twitch() {
-        let filter = VipAddedDescriptor.event_filter();
+        let filter = SPEC.event_filter();
         assert_eq!(filter.source, Some(EventSource::Twitch));
         assert_eq!(
             filter.kind_prefix.as_deref(),
@@ -95,7 +58,7 @@ mod tests {
             "user": { "id": "555", "login": "new_vip", "display_name": "NewVip" },
         });
         let event = Event::new(EventSource::Twitch, "twitch.channel.vip.add", payload);
-        let stack = VipAddedDescriptor.build_arg_stack(&event);
+        let stack = SPEC.build_arg_stack(&event);
         assert_eq!(
             stack.get("user_id"),
             Some(&Variant::String("555".to_owned()))
@@ -117,7 +80,7 @@ mod tests {
             "channel.vip.add",
             serde_json::json!({}),
         );
-        let stack = VipAddedDescriptor.build_arg_stack(&event);
+        let stack = SPEC.build_arg_stack(&event);
         for key in ["user_id", "user_login", "user_name"] {
             assert_eq!(
                 stack.get(key),

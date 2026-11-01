@@ -1,122 +1,33 @@
-use forge_events::{Event, EventSource};
-use forge_registry::{EventFilter, KindPlatformContract, TriggerCategory, TriggerKindDescriptor};
-use forge_types::{
-    ArgStack, DeclaredVariable, TriggerConfig, UserText, VariableSchema, Variant, VariantKind,
-};
+use super::families;
+use forge_events::EventSource;
+use forge_registry::{EventTriggerSpec, TriggerCondition, TriggerMatcher, no_config_fields};
 
-use super::output_lifecycle::output_arg_stack;
-use crate::vocabulary::fields::recording as fields;
 use crate::vocabulary::messages;
-use crate::vocabulary::{event_kinds, trigger_ids, variables};
+use crate::vocabulary::{event_kinds, trigger_ids};
 
-pub(crate) struct RecordStartingDescriptor;
-
-impl TriggerKindDescriptor for RecordStartingDescriptor {
-    fn id(&self) -> &str {
-        trigger_ids::RECORDING_STARTING
-    }
-
-    fn category(&self) -> TriggerCategory {
-        TriggerCategory::Integration
-    }
-
-    fn label(&self) -> &str {
-        "OBS recording starting"
-    }
-
-    fn summary(&self) -> &str {
-        "Fires when OBS begins the recording start sequence (before output is active)."
-    }
-
-    fn search_text(&self) -> &str {
-        "obs recording starting begin capture"
-    }
-
-    fn icon_name(&self) -> &str {
-        "record"
-    }
-
-    fn platform_contract(&self) -> KindPlatformContract {
-        KindPlatformContract::Universal
-    }
-
-    fn condition_display(&self, _: &TriggerConfig) -> UserText {
-        messages::CONDITION_RECORDING_STARTING.into()
-    }
-
-    fn event_filter(&self) -> EventFilter {
-        EventFilter {
-            source: Some(EventSource::Obs),
-            kind_prefix: Some(event_kinds::RECORDING_PREFIX.to_owned()),
-        }
-    }
-
-    fn matches_trigger(&self, _config: &TriggerConfig, event: &Event) -> bool {
-        event.kind == event_kinds::RECORDING_STARTING
-    }
-
-    fn build_arg_stack(&self, event: &Event) -> ArgStack {
-        build_record_arg_stack(event)
-    }
-
-    fn output_schema(&self) -> Option<VariableSchema> {
-        Some(VariableSchema {
-            variables: record_variables(),
-        })
-    }
-}
-
-pub(crate) fn record_variables() -> Vec<DeclaredVariable> {
-    vec![
-        DeclaredVariable {
-            name: variables::recording::OUTPUT_STATE.to_owned(),
-            kind: VariantKind::String,
-            label: "Recording output state".to_owned(),
-            synthesis: None,
-        },
-        DeclaredVariable {
-            name: variables::recording::IS_ACTIVE.to_owned(),
-            kind: VariantKind::Bool,
-            label: "Recording active".to_owned(),
-            synthesis: None,
-        },
-        DeclaredVariable {
-            name: variables::recording::OUTPUT_PATH.to_owned(),
-            kind: VariantKind::String,
-            label: "Recording file path".to_owned(),
-            synthesis: None,
-        },
-    ]
-}
-
-pub(crate) fn build_record_arg_stack(event: &Event) -> ArgStack {
-    let mut stack = output_arg_stack(
-        event,
-        fields::IS_ACTIVE,
-        variables::recording::OUTPUT_STATE,
-        variables::recording::IS_ACTIVE,
-    );
-    if let Some(p) = event
-        .payload
-        .get(fields::OUTPUT_PATH)
-        .and_then(|v| v.as_str())
-    {
-        stack = stack.set(
-            variables::recording::OUTPUT_PATH.to_owned(),
-            Variant::String(p.to_owned()),
-        );
-    }
-    stack
-}
+pub(crate) const RECORD_STARTING: EventTriggerSpec = EventTriggerSpec {
+    id: trigger_ids::RECORDING_STARTING,
+    source: EventSource::Obs,
+    label: "OBS recording starting",
+    summary: "Fires when OBS begins the recording start sequence (before output is active).",
+    search_text: "obs recording starting begin capture",
+    icon: "record",
+    prefix: event_kinds::RECORDING_PREFIX,
+    matcher: TriggerMatcher::Kind(event_kinds::RECORDING_STARTING),
+    condition: TriggerCondition::Fixed(messages::CONDITION_RECORDING_STARTING),
+    config_fields: no_config_fields,
+    variables: families::record_variables,
+};
 
 #[cfg(test)]
 mod tests {
     use super::super::lifecycle;
-    use super::super::{
-        RecordFileChangedDescriptor, RecordStartingDescriptor, RecordStatusChangedDescriptor,
-    };
-    use super::*;
+    use super::super::record_file_changed::RECORD_FILE_CHANGED;
+    use super::super::record_starting::RECORD_STARTING;
+    use super::super::record_status_changed::RECORD_STATUS_CHANGED;
+    use forge_events::{Event, EventSource};
     use forge_registry::TriggerKindDescriptor;
+    use forge_types::Variant;
     use serde_json::json;
     use std::collections::BTreeMap;
 
@@ -140,7 +51,7 @@ mod tests {
     #[test]
     fn each_specific_descriptor_matches_only_its_own_kind() {
         let descriptors: [(&str, &dyn TriggerKindDescriptor); 6] = [
-            ("obs.recording.starting", &RecordStartingDescriptor),
+            ("obs.recording.starting", &RECORD_STARTING),
             ("obs.recording.started", &lifecycle::RECORDING_STARTED),
             ("obs.recording.stopping", &lifecycle::RECORDING_STOPPING),
             ("obs.recording.stopped", &lifecycle::RECORDING_STOPPED),
@@ -168,7 +79,7 @@ mod tests {
         let cfg = BTreeMap::new();
         for kind in ALL_LIFECYCLE_KINDS {
             assert!(
-                RecordStatusChangedDescriptor.matches_trigger(&cfg, &record_event(kind)),
+                RECORD_STATUS_CHANGED.matches_trigger(&cfg, &record_event(kind)),
                 "omnibus should match {kind}",
             );
         }
@@ -176,7 +87,7 @@ mod tests {
 
     #[test]
     fn omnibus_rejects_file_changed() {
-        assert!(!RecordStatusChangedDescriptor.matches_trigger(
+        assert!(!RECORD_STATUS_CHANGED.matches_trigger(
             &BTreeMap::new(),
             &record_event("obs.recording.file_changed")
         ),);
@@ -185,19 +96,18 @@ mod tests {
     #[test]
     fn omnibus_rejects_non_recording_kind() {
         let event = Event::new(EventSource::Obs, "obs.scene.changed", json!({}));
-        assert!(!RecordStatusChangedDescriptor.matches_trigger(&BTreeMap::new(), &event));
+        assert!(!RECORD_STATUS_CHANGED.matches_trigger(&BTreeMap::new(), &event));
     }
 
     #[test]
     fn file_changed_descriptor_matches_only_file_changed() {
         let cfg = BTreeMap::new();
         assert!(
-            RecordFileChangedDescriptor
-                .matches_trigger(&cfg, &record_event("obs.recording.file_changed")),
+            RECORD_FILE_CHANGED.matches_trigger(&cfg, &record_event("obs.recording.file_changed")),
         );
         for kind in ALL_LIFECYCLE_KINDS {
             assert!(
-                !RecordFileChangedDescriptor.matches_trigger(&cfg, &record_event(kind)),
+                !RECORD_FILE_CHANGED.matches_trigger(&cfg, &record_event(kind)),
                 "file_changed descriptor wrongly matched {kind}",
             );
         }
@@ -210,7 +120,7 @@ mod tests {
             "obs.recording.started",
             json!({ "is_active": true, "output_path": "/rec/a.mkv" }),
         );
-        let stack = build_record_arg_stack(&event);
+        let stack = RECORD_STARTING.build_arg_stack(&event);
         assert_eq!(
             stack.get("obs.record.output_state"),
             Some(&Variant::String("started".to_owned())),
@@ -228,7 +138,7 @@ mod tests {
     #[test]
     fn build_arg_stack_derives_output_state_from_kind_when_payload_empty() {
         let event = Event::new(EventSource::Obs, "obs.recording.started", json!({}));
-        let stack = build_record_arg_stack(&event);
+        let stack = RECORD_STARTING.build_arg_stack(&event);
         assert_eq!(
             stack.get("obs.record.output_state"),
             Some(&Variant::String("started".to_owned())),
@@ -244,7 +154,7 @@ mod tests {
             "obs.recording.file_changed",
             json!({ "output_path": "/rec/part2.mkv" }),
         );
-        let stack = RecordFileChangedDescriptor.build_arg_stack(&event);
+        let stack = RECORD_FILE_CHANGED.build_arg_stack(&event);
         assert_eq!(
             stack.get("obs.record.output_path"),
             Some(&Variant::String("/rec/part2.mkv".to_owned())),
@@ -254,7 +164,7 @@ mod tests {
     #[test]
     fn file_changed_arg_stack_omits_path_when_absent() {
         let event = Event::new(EventSource::Obs, "obs.recording.file_changed", json!({}));
-        let stack = RecordFileChangedDescriptor.build_arg_stack(&event);
+        let stack = RECORD_FILE_CHANGED.build_arg_stack(&event);
         assert!(stack.get("obs.record.output_path").is_none());
     }
 }

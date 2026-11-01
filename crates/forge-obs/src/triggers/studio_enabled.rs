@@ -1,91 +1,30 @@
-use forge_events::{Event, EventSource};
-use forge_registry::{EventFilter, KindPlatformContract, TriggerCategory, TriggerKindDescriptor};
-use forge_types::{
-    ArgStack, DeclaredVariable, TriggerConfig, UserText, VariableSchema, Variant, VariantKind,
+use super::families;
+use forge_events::EventSource;
+use forge_registry::{EventTriggerSpec, TriggerCondition, TriggerMatcher, no_config_fields};
+
+use crate::vocabulary::{event_kinds, messages, trigger_ids};
+
+pub(crate) const STUDIO_ENABLED: EventTriggerSpec = EventTriggerSpec {
+    id: trigger_ids::STUDIO_ENABLED,
+    source: EventSource::Obs,
+    label: "OBS Studio Mode enabled",
+    summary: "Fires when OBS Studio Mode is turned on.",
+    search_text: "obs studio mode enabled on preview program",
+    icon: "layout-columns",
+    prefix: event_kinds::STUDIO_PREFIX,
+    matcher: TriggerMatcher::Kind(event_kinds::STUDIO_ENABLED),
+    condition: TriggerCondition::Fixed(messages::CONDITION_STUDIO_MODE_ENABLED),
+    config_fields: no_config_fields,
+    variables: families::studio_variables,
 };
-
-use crate::vocabulary::{event_kinds, messages, trigger_ids, variables};
-
-pub(crate) struct StudioEnabledDescriptor;
-
-impl TriggerKindDescriptor for StudioEnabledDescriptor {
-    fn id(&self) -> &str {
-        trigger_ids::STUDIO_ENABLED
-    }
-
-    fn category(&self) -> TriggerCategory {
-        TriggerCategory::Integration
-    }
-
-    fn label(&self) -> &str {
-        "OBS Studio Mode enabled"
-    }
-
-    fn summary(&self) -> &str {
-        "Fires when OBS Studio Mode is turned on."
-    }
-
-    fn search_text(&self) -> &str {
-        "obs studio mode enabled on preview program"
-    }
-
-    fn icon_name(&self) -> &str {
-        "layout-columns"
-    }
-
-    fn platform_contract(&self) -> KindPlatformContract {
-        KindPlatformContract::Universal
-    }
-
-    fn condition_display(&self, _: &TriggerConfig) -> UserText {
-        messages::CONDITION_STUDIO_MODE_ENABLED.into()
-    }
-
-    fn event_filter(&self) -> EventFilter {
-        EventFilter {
-            source: Some(EventSource::Obs),
-            kind_prefix: Some(event_kinds::STUDIO_PREFIX.to_owned()),
-        }
-    }
-
-    fn matches_trigger(&self, _config: &TriggerConfig, event: &Event) -> bool {
-        event.kind == event_kinds::STUDIO_ENABLED
-    }
-
-    fn build_arg_stack(&self, event: &Event) -> ArgStack {
-        build_studio_arg_stack(event)
-    }
-
-    fn output_schema(&self) -> Option<VariableSchema> {
-        Some(VariableSchema {
-            variables: studio_variables(),
-        })
-    }
-}
-
-pub(crate) fn studio_variables() -> Vec<DeclaredVariable> {
-    vec![DeclaredVariable {
-        name: variables::studio::ENABLED.to_owned(),
-        kind: VariantKind::Bool,
-        label: "Studio mode enabled".to_owned(),
-        synthesis: None,
-    }]
-}
-
-pub(crate) fn build_studio_arg_stack(event: &Event) -> ArgStack {
-    let mut stack = ArgStack::new();
-    stack = stack.set(
-        variables::studio::ENABLED.to_owned(),
-        Variant::Bool(event.kind == event_kinds::STUDIO_ENABLED),
-    );
-    stack
-}
 
 #[cfg(test)]
 mod tests {
-    use super::super::StudioEnabledDescriptor;
     use super::super::lifecycle;
-    use super::*;
+    use super::super::studio_enabled::STUDIO_ENABLED;
+    use forge_events::{Event, EventSource};
+    use forge_registry::TriggerKindDescriptor;
+    use forge_types::Variant;
     use serde_json::json;
     use std::collections::BTreeMap;
 
@@ -97,7 +36,7 @@ mod tests {
     fn each_studio_descriptor_matches_only_its_own_kind() {
         let cfg = BTreeMap::new();
         let descriptors: [(&str, &dyn TriggerKindDescriptor); 2] = [
-            ("obs.studio.enabled", &StudioEnabledDescriptor),
+            ("obs.studio.enabled", &STUDIO_ENABLED),
             ("obs.studio.disabled", &lifecycle::STUDIO_DISABLED),
         ];
         let kinds = ["obs.studio.enabled", "obs.studio.disabled"];
@@ -116,7 +55,7 @@ mod tests {
     fn studio_descriptor_rejects_non_studio_kind() {
         let event = Event::new(EventSource::Obs, "obs.scene.changed", json!({}));
         let cfg = BTreeMap::new();
-        assert!(!StudioEnabledDescriptor.matches_trigger(&cfg, &event));
+        assert!(!STUDIO_ENABLED.matches_trigger(&cfg, &event));
         assert!(!lifecycle::STUDIO_DISABLED.matches_trigger(&cfg, &event));
     }
 
@@ -124,7 +63,7 @@ mod tests {
     fn arg_stack_derives_enabled_flag_from_kind_with_empty_payload() {
         for (kind, expected) in [("obs.studio.enabled", true), ("obs.studio.disabled", false)] {
             let event = Event::new(EventSource::Obs, kind, json!({}));
-            let stack = build_studio_arg_stack(&event);
+            let stack = STUDIO_ENABLED.build_arg_stack(&event);
             assert_eq!(
                 stack.get("obs.studio.enabled"),
                 Some(&Variant::Bool(expected)),

@@ -1,143 +1,68 @@
+use super::spec::{TwitchTriggerSpec, Variable, table_variables};
 use crate::vocabulary::event_kinds;
 use crate::vocabulary::trigger_ids;
-use forge_events::{Event, EventSource};
-use forge_registry::{
-    ActorDeclaration, EventFilter, KindPlatformContract, TriggerCategory, TriggerKindDescriptor,
-};
-use forge_types::{
-    ArgStack, DeclaredVariable, PlatformId, TriggerConfig, VariableSchema, Variant, VariantKind,
-};
+use forge_registry::TriggerVariables;
+use forge_registry::{ActorDeclaration, TriggerCategory};
 
 use crate::vocabulary::fields::prediction as fields;
 
-pub(crate) struct PredictionEndedDescriptor;
+const VARIABLES: &[Variable] = &[
+    Variable::nested_text(
+        "prediction.id",
+        "Prediction ID",
+        fields::PREDICTION,
+        fields::PREDICTION_ID,
+    ),
+    Variable::nested_text(
+        "prediction.title",
+        "Prediction title",
+        fields::PREDICTION,
+        fields::PREDICTION_TITLE,
+    ),
+    Variable::nested_text(
+        "prediction.winning_outcome_id",
+        "Winning outcome ID",
+        fields::PREDICTION,
+        fields::WINNING_OUTCOME_ID,
+    ),
+    Variable::nested_text(
+        "prediction.status",
+        "Prediction status",
+        fields::PREDICTION,
+        fields::STATUS,
+    ),
+    Variable::nested_timestamp(
+        "prediction.ended_at",
+        "Ended at",
+        fields::PREDICTION,
+        fields::ENDED_AT,
+    ),
+];
 
-impl TriggerKindDescriptor for PredictionEndedDescriptor {
-    fn id(&self) -> &str {
-        trigger_ids::PREDICTION_ENDED
-    }
-
-    fn category(&self) -> TriggerCategory {
-        TriggerCategory::Predictions
-    }
-
-    fn label(&self) -> &str {
-        "Prediction ended"
-    }
-
-    fn summary(&self) -> &str {
-        "Fires when a prediction resolves or is canceled"
-    }
-
-    fn search_text(&self) -> &str {
-        "twitch prediction ended resolved canceled winner outcome"
-    }
-
-    fn icon_name(&self) -> &str {
-        "chart-bar"
-    }
-
-    fn platform_contract(&self) -> KindPlatformContract {
-        KindPlatformContract::PlatformSpecific(PlatformId::Twitch)
-    }
-
-    fn event_filter(&self) -> EventFilter {
-        EventFilter {
-            source: Some(EventSource::Twitch),
-            kind_prefix: Some(event_kinds::CHANNEL_PREDICTION_END.to_owned()),
-        }
-    }
-
-    fn matches_trigger(&self, _config: &TriggerConfig, _event: &Event) -> bool {
-        true
-    }
-
-    fn actors(&self) -> ActorDeclaration {
-        ActorDeclaration::Actorless
-    }
-
-    fn build_arg_stack(&self, event: &Event) -> ArgStack {
-        let prediction = event.payload.get(fields::PREDICTION);
-
-        let prediction_id = prediction
-            .and_then(|v| v.get(fields::PREDICTION_ID))
-            .and_then(|v| v.as_str())
-            .unwrap_or("")
-            .to_owned();
-        let title = prediction
-            .and_then(|v| v.get(fields::PREDICTION_TITLE))
-            .and_then(|v| v.as_str())
-            .unwrap_or("")
-            .to_owned();
-        let winning_outcome_id = prediction
-            .and_then(|v| v.get(fields::WINNING_OUTCOME_ID))
-            .and_then(|v| v.as_str())
-            .unwrap_or("")
-            .to_owned();
-        let status = prediction
-            .and_then(|v| v.get(fields::STATUS))
-            .and_then(|v| v.as_str())
-            .unwrap_or("")
-            .to_owned();
-        let ended_at = prediction
-            .and_then(|v| v.get(fields::ENDED_AT))
-            .and_then(|v| v.as_str())
-            .and_then(crate::timestamp::variant);
-
-        let stack = ArgStack::new()
-            .set("prediction.id".to_owned(), Variant::String(prediction_id))
-            .set("prediction.title".to_owned(), Variant::String(title))
-            .set(
-                "prediction.winning_outcome_id".to_owned(),
-                Variant::String(winning_outcome_id),
-            )
-            .set("prediction.status".to_owned(), Variant::String(status));
-        crate::timestamp::set(stack, "prediction.ended_at", ended_at)
-    }
-    fn output_schema(&self) -> Option<VariableSchema> {
-        Some({
-            VariableSchema {
-                variables: vec![
-                    DeclaredVariable {
-                        name: "prediction.id".to_owned(),
-                        kind: VariantKind::String,
-                        label: "Prediction ID".to_owned(),
-                        synthesis: None,
-                    },
-                    DeclaredVariable {
-                        name: "prediction.title".to_owned(),
-                        kind: VariantKind::String,
-                        label: "Prediction title".to_owned(),
-                        synthesis: None,
-                    },
-                    DeclaredVariable {
-                        name: "prediction.winning_outcome_id".to_owned(),
-                        kind: VariantKind::String,
-                        label: "Winning outcome ID".to_owned(),
-                        synthesis: None,
-                    },
-                    DeclaredVariable {
-                        name: "prediction.status".to_owned(),
-                        kind: VariantKind::String,
-                        label: "Prediction status".to_owned(),
-                        synthesis: None,
-                    },
-                    DeclaredVariable {
-                        name: "prediction.ended_at".to_owned(),
-                        kind: VariantKind::Datetime,
-                        label: "Ended at".to_owned(),
-                        synthesis: None,
-                    },
-                ],
-            }
-        })
-    }
+fn variables() -> Option<TriggerVariables> {
+    Some(table_variables(VARIABLES))
 }
+
+pub(super) const SPEC: TwitchTriggerSpec = TwitchTriggerSpec {
+    id: trigger_ids::PREDICTION_ENDED,
+    category: TriggerCategory::Predictions,
+    label: "Prediction ended",
+    summary: "Fires when a prediction resolves or is canceled",
+    search_text: "twitch prediction ended resolved canceled winner outcome",
+    icon: "chart-bar",
+    kind: event_kinds::CHANNEL_PREDICTION_END,
+    actors: ActorDeclaration::Actorless,
+    variables,
+    ..TwitchTriggerSpec::BASE
+};
 
 #[cfg(test)]
 mod tests {
     use super::*;
     use crate::timestamp::tests::instant;
+    use forge_events::{Event, EventSource};
+    use forge_registry::TriggerKindDescriptor;
+    use forge_types::Variant;
 
     fn prediction_end_event() -> Event {
         let payload = serde_json::json!({
@@ -158,7 +83,7 @@ mod tests {
 
     #[test]
     fn event_filter_targets_prediction_end_topic_from_twitch() {
-        let filter = PredictionEndedDescriptor.event_filter();
+        let filter = SPEC.event_filter();
         assert_eq!(filter.source, Some(EventSource::Twitch));
         assert_eq!(
             filter.kind_prefix.as_deref(),
@@ -168,7 +93,7 @@ mod tests {
 
     #[test]
     fn build_arg_stack_carries_winning_outcome_and_status_fields() {
-        let stack = PredictionEndedDescriptor.build_arg_stack(&prediction_end_event());
+        let stack = SPEC.build_arg_stack(&prediction_end_event());
         assert_eq!(
             stack.get("prediction.winning_outcome_id"),
             Some(&Variant::String("outcome-42".to_owned()))

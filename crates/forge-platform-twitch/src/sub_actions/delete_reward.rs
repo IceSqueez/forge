@@ -7,7 +7,7 @@ use forge_registry::{
 };
 use forge_types::{ArgStack, SubActionOutcome, SubActionTelemetry};
 
-use super::enable_reward::{REWARD_CONFIG, REWARD_ID};
+use super::reward_toggle::{REWARD_CONFIG, REWARD_ID};
 use crate::account::identity::SelfIdentity;
 use crate::custom_rewards::delete_request;
 use crate::helix::HelixTransport;

@@ -2,6 +2,7 @@ use std::time::SystemTime;
 
 use forge_storage::{CredentialId, CredentialsRepo, StorageError};
 use forge_types::OAuthToken;
+use serde::{Deserialize, Serialize};
 
 use crate::auth::TwitchAuthBundle;
 
@@ -15,6 +16,18 @@ pub struct StoredCredential {
     pub user_id: String,
     pub login: String,
     pub expires_at: Option<SystemTime>,
+}
+
+#[derive(Serialize, Deserialize)]
+struct CredentialRow {
+    access_token: String,
+    #[serde(default)]
+    expires_at_unix: Option<serde_json::Number>,
+    #[serde(default)]
+    login: String,
+    #[serde(default)]
+    refresh_token: Option<String>,
+    user_id: String,
 }
 
 pub async fn store(
@@ -51,20 +64,23 @@ pub(crate) async fn store_credential_at(
     credential_id: &str,
     cred: &StoredCredential,
 ) -> Result<(), StorageError> {
-    let expires_at_unix: Option<i64> = cred.expires_at.and_then(|t| {
-        t.duration_since(std::time::UNIX_EPOCH)
-            .ok()
-            .map(|d| i64::try_from(d.as_secs()).unwrap_or(i64::MAX))
-    });
-    let bundle = serde_json::json!({
-        "access_token": cred.access_token.expose(),
-        "refresh_token": cred.refresh_token.as_ref().map(OAuthToken::expose),
-        "user_id": cred.user_id,
-        "login": cred.login,
-        "expires_at_unix": expires_at_unix,
-    });
+    let row = CredentialRow {
+        access_token: cred.access_token.expose().to_owned(),
+        expires_at_unix: cred
+            .expires_at
+            .and_then(|t| {
+                t.duration_since(std::time::UNIX_EPOCH)
+                    .ok()
+                    .map(|d| i64::try_from(d.as_secs()).unwrap_or(i64::MAX))
+            })
+            .map(serde_json::Number::from),
+        login: cred.login.clone(),
+        refresh_token: cred.refresh_token.as_ref().map(|t| t.expose().to_owned()),
+        user_id: cred.user_id.clone(),
+    };
+    let bundle = serde_json::to_string(&row)?;
     creds
-        .store(&CredentialId::new(credential_id), &bundle.to_string())
+        .store(&CredentialId::new(credential_id), &bundle)
         .await
 }
 
@@ -79,31 +95,18 @@ pub(crate) async fn load_at(
     let Some(json) = creds.load(&CredentialId::new(credential_id)).await? else {
         return Ok(None);
     };
-    let bundle: serde_json::Value = serde_json::from_str(&json)?;
-    let access_token = OAuthToken::new(
-        bundle["access_token"]
-            .as_str()
-            .ok_or_else(|| StorageError::Parse("missing access_token in twitch credential".into()))?
-            .to_owned(),
-    );
-    let refresh_token = bundle["refresh_token"]
-        .as_str()
-        .map(|s| OAuthToken::new(s.to_owned()));
-    let user_id = bundle["user_id"]
-        .as_str()
-        .ok_or_else(|| StorageError::Parse("missing user_id in twitch credential".into()))?
-        .to_owned();
-    let login = bundle["login"].as_str().unwrap_or_default().to_owned();
-    let expires_at = bundle["expires_at_unix"]
-        .as_i64()
+    let row: CredentialRow = serde_json::from_str(&json)?;
+    let expires_at = row
+        .expires_at_unix
+        .and_then(|number| number.as_i64())
         .and_then(|secs| u64::try_from(secs).ok())
         .filter(|secs| *secs > 0)
         .and_then(|secs| std::time::UNIX_EPOCH.checked_add(std::time::Duration::from_secs(secs)));
     Ok(Some(StoredCredential {
-        access_token,
-        refresh_token,
-        user_id,
-        login,
+        access_token: OAuthToken::new(row.access_token),
+        refresh_token: row.refresh_token.map(OAuthToken::new),
+        user_id: row.user_id,
+        login: row.login,
         expires_at,
     }))
 }

@@ -1,182 +1,111 @@
+use super::spec::{TwitchTriggerSpec, Variable, table_variables};
 use crate::vocabulary::trigger_ids;
 use crate::vocabulary::{event_kinds, messages};
-use forge_events::{Event, EventSource};
-use forge_registry::{
-    ActorDeclaration, EventFilter, FormField, KindPlatformContract, SubActionConfigExt,
-    TriggerCategory, TriggerKindDescriptor,
-};
-use forge_types::{
-    ArgStack, DeclaredVariable, PlatformId, SynthesisHint, TriggerConfig, UserText, VariableSchema,
-    Variant, VariantKind,
-};
+use forge_events::Event;
+use forge_registry::TriggerVariables;
+use forge_registry::{ActorDeclaration, FormField, SubActionConfigExt, TriggerCategory};
+use forge_types::{SynthesisHint, TriggerConfig, UserText, Variant};
 
 use crate::vocabulary::fields::hype_train as fields;
 
-pub(crate) struct HypeTrainProgressDescriptor;
-
-impl TriggerKindDescriptor for HypeTrainProgressDescriptor {
-    fn id(&self) -> &str {
-        trigger_ids::SUPPORT_HYPE_TRAIN_PROGRESS
-    }
-
-    fn category(&self) -> TriggerCategory {
-        TriggerCategory::Hype
-    }
-
-    fn label(&self) -> &str {
-        "Hype Train progress"
-    }
-
-    fn summary(&self) -> &str {
-        "Fires on each Hype Train progress update at or above the configured level"
-    }
-
-    fn search_text(&self) -> &str {
-        "twitch hype train progress level update"
-    }
-
-    fn icon_name(&self) -> &str {
-        "train"
-    }
-
-    fn platform_contract(&self) -> KindPlatformContract {
-        KindPlatformContract::PlatformSpecific(PlatformId::Twitch)
-    }
-
-    fn default_config(&self) -> TriggerConfig {
-        let mut cfg = TriggerConfig::new();
-        cfg.insert("min_level".to_owned(), Variant::Int(1));
-        cfg
-    }
-
-    fn config_fields(&self) -> Vec<FormField> {
-        vec![FormField::Integer {
-            key: "min_level",
-            label: "Minimum level",
-            min: 1,
-            max: super::HYPE_TRAIN_LEVEL_MAX,
-        }]
-    }
-
-    fn condition_display(&self, config: &TriggerConfig) -> UserText {
-        let min = match config.get("min_level") {
-            Some(Variant::Int(n)) => *n,
-            _ => 1,
-        };
-        messages::condition_level_at_least(min).into()
-    }
-
-    fn event_filter(&self) -> EventFilter {
-        EventFilter {
-            source: Some(EventSource::Twitch),
-            kind_prefix: Some(event_kinds::CHANNEL_HYPE_TRAIN_PROGRESS.to_owned()),
-        }
-    }
-
-    fn matches_trigger(&self, config: &TriggerConfig, event: &Event) -> bool {
-        let min_level = config.int("min_level").unwrap_or(1);
-
-        let level = event
-            .payload
-            .get(fields::HYPE)
-            .and_then(|h| h.get(fields::LEVEL))
-            .and_then(|v| v.as_i64())
-            .unwrap_or(0);
-
-        level >= min_level
-    }
-
-    fn actors(&self) -> ActorDeclaration {
-        ActorDeclaration::Actorless
-    }
-
-    fn build_arg_stack(&self, event: &Event) -> ArgStack {
-        let hype = event.payload.get(fields::HYPE);
-
-        let id = hype
-            .and_then(|h| h.get(fields::HYPE_ID))
-            .and_then(|v| v.as_str())
-            .unwrap_or_default()
-            .to_owned();
-        let level = hype
-            .and_then(|h| h.get(fields::LEVEL))
-            .and_then(|v| v.as_i64())
-            .unwrap_or(0);
-        let goal = hype
-            .and_then(|h| h.get(fields::GOAL))
-            .and_then(|v| v.as_i64())
-            .unwrap_or(0);
-        let progress = hype
-            .and_then(|h| h.get(fields::PROGRESS))
-            .and_then(|v| v.as_i64())
-            .unwrap_or(0);
-        let total = hype
-            .and_then(|h| h.get(fields::TOTAL))
-            .and_then(|v| v.as_i64())
-            .unwrap_or(0);
-
-        ArgStack::new()
-            .set("hype.id".to_owned(), Variant::String(id))
-            .set("hype.level".to_owned(), Variant::Int(level))
-            .set("hype.goal".to_owned(), Variant::Int(goal))
-            .set("hype.progress".to_owned(), Variant::Int(progress))
-            .set("hype.total".to_owned(), Variant::Int(total))
-    }
-    fn output_schema(&self) -> Option<VariableSchema> {
-        Some({
-            VariableSchema {
-                variables: vec![
-                    DeclaredVariable {
-                        name: "hype.id".to_owned(),
-                        kind: VariantKind::String,
-                        label: "Hype Train ID".to_owned(),
-                        synthesis: None,
-                    },
-                    DeclaredVariable {
-                        name: "hype.level".to_owned(),
-                        kind: VariantKind::Int,
-                        label: "Hype Train level".to_owned(),
-                        synthesis: Some(SynthesisHint::BoundedInt {
-                            min: 1,
-                            max: super::HYPE_TRAIN_LEVEL_MAX,
-                        }),
-                    },
-                    DeclaredVariable {
-                        name: "hype.goal".to_owned(),
-                        kind: VariantKind::Int,
-                        label: "Level goal".to_owned(),
-                        synthesis: Some(SynthesisHint::BoundedInt {
-                            min: 0,
-                            max: super::MAX_SYNTHESIZED_COUNT,
-                        }),
-                    },
-                    DeclaredVariable {
-                        name: "hype.progress".to_owned(),
-                        kind: VariantKind::Int,
-                        label: "Current progress".to_owned(),
-                        synthesis: Some(SynthesisHint::BoundedInt {
-                            min: 0,
-                            max: super::MAX_SYNTHESIZED_COUNT,
-                        }),
-                    },
-                    DeclaredVariable {
-                        name: "hype.total".to_owned(),
-                        kind: VariantKind::Int,
-                        label: "Total points".to_owned(),
-                        synthesis: Some(SynthesisHint::BoundedInt {
-                            min: 0,
-                            max: super::MAX_SYNTHESIZED_COUNT,
-                        }),
-                    },
-                ],
-            }
-        })
-    }
+fn default_config() -> TriggerConfig {
+    let mut cfg = TriggerConfig::new();
+    cfg.insert("min_level".to_owned(), Variant::Int(1));
+    cfg
 }
+
+fn config_fields() -> Vec<FormField> {
+    vec![FormField::Integer {
+        key: "min_level",
+        label: "Minimum level",
+        min: 1,
+        max: super::HYPE_TRAIN_LEVEL_MAX,
+    }]
+}
+
+fn condition_display(config: &TriggerConfig) -> UserText {
+    let min = match config.get("min_level") {
+        Some(Variant::Int(n)) => *n,
+        _ => 1,
+    };
+    messages::condition_level_at_least(min).into()
+}
+
+fn matches(config: &TriggerConfig, event: &Event) -> bool {
+    let min_level = config.int("min_level").unwrap_or(1);
+
+    let level = event
+        .payload
+        .get(fields::HYPE)
+        .and_then(|h| h.get(fields::LEVEL))
+        .and_then(|v| v.as_i64())
+        .unwrap_or(0);
+
+    level >= min_level
+}
+
+const VARIABLES: &[Variable] = &[
+    Variable::nested_text("hype.id", "Hype Train ID", fields::HYPE, fields::HYPE_ID),
+    Variable::nested_int(
+        "hype.level",
+        "Hype Train level",
+        fields::HYPE,
+        fields::LEVEL,
+    )
+    .synthesis(SynthesisHint::BoundedInt {
+        min: 1,
+        max: super::HYPE_TRAIN_LEVEL_MAX,
+    }),
+    Variable::nested_int("hype.goal", "Level goal", fields::HYPE, fields::GOAL).synthesis(
+        SynthesisHint::BoundedInt {
+            min: 0,
+            max: super::MAX_SYNTHESIZED_COUNT,
+        },
+    ),
+    Variable::nested_int(
+        "hype.progress",
+        "Current progress",
+        fields::HYPE,
+        fields::PROGRESS,
+    )
+    .synthesis(SynthesisHint::BoundedInt {
+        min: 0,
+        max: super::MAX_SYNTHESIZED_COUNT,
+    }),
+    Variable::nested_int("hype.total", "Total points", fields::HYPE, fields::TOTAL).synthesis(
+        SynthesisHint::BoundedInt {
+            min: 0,
+            max: super::MAX_SYNTHESIZED_COUNT,
+        },
+    ),
+];
+
+fn variables() -> Option<TriggerVariables> {
+    Some(table_variables(VARIABLES))
+}
+
+pub(super) const SPEC: TwitchTriggerSpec = TwitchTriggerSpec {
+    id: trigger_ids::SUPPORT_HYPE_TRAIN_PROGRESS,
+    category: TriggerCategory::Hype,
+    label: "Hype Train progress",
+    summary: "Fires on each Hype Train progress update at or above the configured level",
+    search_text: "twitch hype train progress level update",
+    icon: "train",
+    kind: event_kinds::CHANNEL_HYPE_TRAIN_PROGRESS,
+    actors: ActorDeclaration::Actorless,
+    variables,
+    matches,
+    default_config,
+    config_fields,
+    condition_display,
+    ..TwitchTriggerSpec::BASE
+};
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use forge_events::EventSource;
+    use forge_registry::TriggerKindDescriptor;
 
     fn progress_event(level: i64) -> Event {
         let payload = serde_json::json!({
@@ -203,7 +132,7 @@ mod tests {
 
     #[test]
     fn event_filter_targets_hype_train_progress_on_twitch() {
-        let filter = HypeTrainProgressDescriptor.event_filter();
+        let filter = SPEC.event_filter();
         assert_eq!(filter.source, Some(EventSource::Twitch));
         assert_eq!(
             filter.kind_prefix.as_deref(),
@@ -224,7 +153,7 @@ mod tests {
         ];
         for (name, cfg, expected) in cases {
             assert_eq!(
-                HypeTrainProgressDescriptor.matches_trigger(&cfg, &progress_event(3)),
+                SPEC.matches_trigger(&cfg, &progress_event(3)),
                 expected,
                 "case: {name}"
             );
@@ -233,13 +162,13 @@ mod tests {
 
     #[test]
     fn matches_trigger_uses_default_min_level_of_one_when_config_absent() {
-        let cfg = HypeTrainProgressDescriptor.default_config();
-        assert!(HypeTrainProgressDescriptor.matches_trigger(&cfg, &progress_event(3)));
+        let cfg = SPEC.default_config();
+        assert!(SPEC.matches_trigger(&cfg, &progress_event(3)));
     }
 
     #[test]
     fn build_arg_stack_maps_all_vars_with_int_progress_fields() {
-        let stack = HypeTrainProgressDescriptor.build_arg_stack(&progress_event(3));
+        let stack = SPEC.build_arg_stack(&progress_event(3));
         assert_eq!(
             stack.get("hype.id"),
             Some(&Variant::String("ht-3".to_owned()))

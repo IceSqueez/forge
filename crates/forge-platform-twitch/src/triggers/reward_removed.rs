@@ -1,143 +1,29 @@
+use super::families;
+use super::spec::TwitchTriggerSpec;
 use crate::vocabulary::event_kinds;
 use crate::vocabulary::trigger_ids;
-use forge_events::{Event, EventSource};
-use forge_registry::{
-    ActorDeclaration, EventFilter, KindPlatformContract, TriggerCategory, TriggerKindDescriptor,
+use forge_registry::{ActorDeclaration, TriggerCategory};
+
+pub(super) const SPEC: TwitchTriggerSpec = TwitchTriggerSpec {
+    id: trigger_ids::CHANNEL_POINTS_REWARD_REMOVED,
+    category: TriggerCategory::ChannelPoints,
+    label: "Channel point reward removed",
+    summary: "Fires when a channel point reward is deleted from the broadcaster's channel",
+    search_text: "twitch channel points reward removed deleted",
+    icon: "star",
+    kind: event_kinds::CHANNEL_CHANNEL_POINTS_CUSTOM_REWARD_REMOVE,
+    actors: ActorDeclaration::Actorless,
+    variables: families::reward_variables,
+    ..TwitchTriggerSpec::BASE
 };
-use forge_types::{
-    ArgStack, DeclaredVariable, PlatformId, SynthesisHint, TriggerConfig, VariableSchema, Variant,
-    VariantKind,
-};
-
-use crate::vocabulary::fields::reward as fields;
-
-pub(crate) struct RewardRemovedDescriptor;
-
-impl TriggerKindDescriptor for RewardRemovedDescriptor {
-    fn id(&self) -> &str {
-        trigger_ids::CHANNEL_POINTS_REWARD_REMOVED
-    }
-
-    fn category(&self) -> TriggerCategory {
-        TriggerCategory::ChannelPoints
-    }
-
-    fn label(&self) -> &str {
-        "Channel point reward removed"
-    }
-
-    fn summary(&self) -> &str {
-        "Fires when a channel point reward is deleted from the broadcaster's channel"
-    }
-
-    fn search_text(&self) -> &str {
-        "twitch channel points reward removed deleted"
-    }
-
-    fn icon_name(&self) -> &str {
-        "star"
-    }
-
-    fn platform_contract(&self) -> KindPlatformContract {
-        KindPlatformContract::PlatformSpecific(PlatformId::Twitch)
-    }
-
-    fn event_filter(&self) -> EventFilter {
-        EventFilter {
-            source: Some(EventSource::Twitch),
-            kind_prefix: Some(event_kinds::CHANNEL_CHANNEL_POINTS_CUSTOM_REWARD_REMOVE.to_owned()),
-        }
-    }
-
-    fn matches_trigger(&self, _config: &TriggerConfig, _event: &Event) -> bool {
-        true
-    }
-
-    fn actors(&self) -> ActorDeclaration {
-        ActorDeclaration::Actorless
-    }
-
-    fn build_arg_stack(&self, event: &Event) -> ArgStack {
-        let reward = event.payload.get(fields::REWARD);
-
-        let reward_id = reward
-            .and_then(|r| r.get(fields::REWARD_ID))
-            .and_then(|v| v.as_str())
-            .unwrap_or("")
-            .to_owned();
-        let title = reward
-            .and_then(|r| r.get(fields::REWARD_TITLE))
-            .and_then(|v| v.as_str())
-            .unwrap_or("")
-            .to_owned();
-        let cost = reward
-            .and_then(|r| r.get(fields::REWARD_COST))
-            .and_then(|v| v.as_i64())
-            .unwrap_or(0);
-        let prompt = reward
-            .and_then(|r| r.get(fields::REWARD_PROMPT))
-            .and_then(|v| v.as_str())
-            .unwrap_or("")
-            .to_owned();
-        let is_enabled = reward
-            .and_then(|r| r.get(fields::REWARD_IS_ENABLED))
-            .and_then(|v| v.as_bool())
-            .unwrap_or(false);
-
-        ArgStack::new()
-            .set("reward.id".to_owned(), Variant::String(reward_id))
-            .set("reward.title".to_owned(), Variant::String(title))
-            .set("reward.cost".to_owned(), Variant::Int(cost))
-            .set("reward.prompt".to_owned(), Variant::String(prompt))
-            .set("reward.is_enabled".to_owned(), Variant::Bool(is_enabled))
-    }
-    fn output_schema(&self) -> Option<VariableSchema> {
-        Some({
-            VariableSchema {
-                variables: vec![
-                    DeclaredVariable {
-                        name: "reward.id".to_owned(),
-                        kind: VariantKind::String,
-                        label: "Reward ID".to_owned(),
-                        synthesis: None,
-                    },
-                    DeclaredVariable {
-                        name: "reward.title".to_owned(),
-                        kind: VariantKind::String,
-                        label: "Reward title".to_owned(),
-                        synthesis: None,
-                    },
-                    DeclaredVariable {
-                        name: "reward.cost".to_owned(),
-                        kind: VariantKind::Int,
-                        label: "Reward cost".to_owned(),
-                        synthesis: Some(SynthesisHint::BoundedInt {
-                            min: 0,
-                            max: super::MAX_SYNTHESIZED_COUNT,
-                        }),
-                    },
-                    DeclaredVariable {
-                        name: "reward.prompt".to_owned(),
-                        kind: VariantKind::String,
-                        label: "Reward prompt".to_owned(),
-                        synthesis: None,
-                    },
-                    DeclaredVariable {
-                        name: "reward.is_enabled".to_owned(),
-                        kind: VariantKind::Bool,
-                        label: "Reward enabled".to_owned(),
-                        synthesis: None,
-                    },
-                ],
-            }
-        })
-    }
-}
 
 #[cfg(test)]
 mod tests {
 
     use super::*;
+    use forge_events::{Event, EventSource};
+    use forge_registry::TriggerKindDescriptor;
+    use forge_types::Variant;
 
     fn reward_event() -> Event {
         Event::new(
@@ -157,7 +43,7 @@ mod tests {
 
     #[test]
     fn event_filter_targets_reward_remove_kind_from_twitch() {
-        let filter = RewardRemovedDescriptor.event_filter();
+        let filter = SPEC.event_filter();
         assert_eq!(filter.source, Some(EventSource::Twitch));
         assert_eq!(
             filter.kind_prefix.as_deref(),
@@ -167,7 +53,7 @@ mod tests {
 
     #[test]
     fn build_arg_stack_marshals_cost_as_int_and_is_enabled_as_bool() {
-        let stack = RewardRemovedDescriptor.build_arg_stack(&reward_event());
+        let stack = SPEC.build_arg_stack(&reward_event());
         assert_eq!(
             stack.get("reward.id"),
             Some(&Variant::String("reward-7".to_owned()))

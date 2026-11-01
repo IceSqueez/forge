@@ -1,100 +1,50 @@
-use forge_events::{Event, EventSource};
-use forge_registry::{EventFilter, KindPlatformContract, TriggerCategory, TriggerKindDescriptor};
-use forge_types::{
-    ArgStack, DeclaredVariable, TriggerConfig, UserText, VariableSchema, Variant, VariantKind,
+use forge_events::EventSource;
+use forge_registry::TriggerVariables;
+use forge_registry::{
+    EventTriggerSpec, EventVariable, TriggerCondition, TriggerMatcher, event_variables,
+    no_config_fields,
 };
 
 use crate::vocabulary::fields::scene as fields;
 use crate::vocabulary::messages;
 use crate::vocabulary::{event_kinds, trigger_ids, variables};
 
-pub(crate) struct SceneListChangedDescriptor;
+const VARIABLES: &[EventVariable] = &[EventVariable::text_list(
+    variables::scene::ALL_NAMES,
+    "All scene names",
+    fields::ALL_NAMES,
+)];
 
-impl TriggerKindDescriptor for SceneListChangedDescriptor {
-    fn id(&self) -> &str {
-        trigger_ids::SCENE_LIST_CHANGED
-    }
-
-    fn category(&self) -> TriggerCategory {
-        TriggerCategory::Integration
-    }
-
-    fn label(&self) -> &str {
-        "OBS scene list changed"
-    }
-
-    fn summary(&self) -> &str {
-        "Fires when scenes are added, removed, or reordered in OBS."
-    }
-
-    fn search_text(&self) -> &str {
-        "obs scene list changed added removed reordered"
-    }
-
-    fn icon_name(&self) -> &str {
-        "layout-grid"
-    }
-
-    fn platform_contract(&self) -> KindPlatformContract {
-        KindPlatformContract::Universal
-    }
-
-    fn condition_display(&self, _: &TriggerConfig) -> UserText {
-        messages::CONDITION_ANY_SCENE_LIST_CHANGE.into()
-    }
-
-    fn event_filter(&self) -> EventFilter {
-        EventFilter {
-            source: Some(EventSource::Obs),
-            kind_prefix: Some(event_kinds::SCENE_PREFIX.to_owned()),
-        }
-    }
-
-    fn matches_trigger(&self, _config: &TriggerConfig, event: &Event) -> bool {
-        event.kind == event_kinds::SCENE_LIST_CHANGED
-    }
-
-    fn build_arg_stack(&self, event: &Event) -> ArgStack {
-        let mut stack = ArgStack::new();
-        if let Some(names) = event
-            .payload
-            .get(fields::ALL_NAMES)
-            .and_then(|v| v.as_array())
-        {
-            let scenes: Vec<Variant> = names
-                .iter()
-                .filter_map(|v| v.as_str())
-                .map(|s| Variant::String(s.to_owned()))
-                .collect();
-            stack = stack.set(
-                variables::scene::ALL_NAMES.to_owned(),
-                Variant::Array(scenes),
-            );
-        }
-        stack
-    }
-
-    fn output_schema(&self) -> Option<VariableSchema> {
-        Some(VariableSchema {
-            variables: vec![DeclaredVariable {
-                name: variables::scene::ALL_NAMES.to_owned(),
-                kind: VariantKind::Array,
-                label: "All scene names".to_owned(),
-                synthesis: None,
-            }],
-        })
-    }
+fn variables() -> Option<TriggerVariables> {
+    event_variables(VARIABLES)
 }
+
+pub(crate) const SCENE_LIST_CHANGED: EventTriggerSpec = EventTriggerSpec {
+    id: trigger_ids::SCENE_LIST_CHANGED,
+    source: EventSource::Obs,
+    label: "OBS scene list changed",
+    summary: "Fires when scenes are added, removed, or reordered in OBS.",
+    search_text: "obs scene list changed added removed reordered",
+    icon: "layout-grid",
+    prefix: event_kinds::SCENE_PREFIX,
+    matcher: TriggerMatcher::Kind(event_kinds::SCENE_LIST_CHANGED),
+    condition: TriggerCondition::Fixed(messages::CONDITION_ANY_SCENE_LIST_CHANGE),
+    config_fields: no_config_fields,
+    variables,
+};
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use forge_events::{Event, EventSource};
+    use forge_registry::TriggerKindDescriptor;
+    use forge_types::Variant;
     use serde_json::json;
     use std::collections::BTreeMap;
 
     #[test]
     fn matches_list_changed_kind() {
-        let d = SceneListChangedDescriptor;
+        let d = SCENE_LIST_CHANGED;
         let event = Event::new(
             EventSource::Obs,
             "obs.scene.list_changed",
@@ -105,14 +55,14 @@ mod tests {
 
     #[test]
     fn does_not_match_other_scene_kind() {
-        let d = SceneListChangedDescriptor;
+        let d = SCENE_LIST_CHANGED;
         let event = Event::new(EventSource::Obs, "obs.scene.changed", json!({}));
         assert!(!d.matches_trigger(&BTreeMap::new(), &event));
     }
 
     #[test]
     fn build_arg_stack_collects_all_names_into_string_array() {
-        let d = SceneListChangedDescriptor;
+        let d = SCENE_LIST_CHANGED;
         let event = Event::new(
             EventSource::Obs,
             "obs.scene.list_changed",
@@ -131,7 +81,7 @@ mod tests {
 
     #[test]
     fn build_arg_stack_skips_non_string_array_entries() {
-        let d = SceneListChangedDescriptor;
+        let d = SCENE_LIST_CHANGED;
         let event = Event::new(
             EventSource::Obs,
             "obs.scene.list_changed",
@@ -149,7 +99,7 @@ mod tests {
 
     #[test]
     fn build_arg_stack_omits_key_when_all_names_missing() {
-        let d = SceneListChangedDescriptor;
+        let d = SCENE_LIST_CHANGED;
         let event = Event::new(EventSource::Obs, "obs.scene.list_changed", json!({}));
         assert_eq!(d.build_arg_stack(&event).get("obs.scene_names"), None);
     }

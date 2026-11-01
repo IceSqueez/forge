@@ -1,110 +1,51 @@
+use super::spec::{TwitchTriggerSpec, Variable, table_variables};
 use crate::vocabulary::event_kinds;
 use crate::vocabulary::trigger_ids;
-use forge_events::{Event, EventSource};
-use forge_registry::{
-    ActorDeclaration, EventFilter, KindPlatformContract, TriggerCategory, TriggerKindDescriptor,
-};
-use forge_types::{
-    ArgStack, DeclaredVariable, PlatformId, SynthesisHint, TriggerConfig, VariableSchema, Variant,
-    VariantKind,
-};
+use forge_registry::TriggerVariables;
+use forge_registry::{ActorDeclaration, TriggerCategory};
+use forge_types::SynthesisHint;
 
 use crate::vocabulary::fields::chat_mod as chat_mod_fields;
 
-pub(crate) struct ChatClearedDescriptor;
+const VARIABLES: &[Variable] = &[
+    Variable::nested_text(
+        "broadcaster_login",
+        "Broadcaster login",
+        chat_mod_fields::BROADCASTER,
+        chat_mod_fields::BROADCASTER_LOGIN,
+    )
+    .synthesis(SynthesisHint::Username),
+    Variable::nested_text(
+        "broadcaster_id",
+        "Broadcaster ID",
+        chat_mod_fields::BROADCASTER,
+        chat_mod_fields::BROADCASTER_ID,
+    ),
+];
 
-impl TriggerKindDescriptor for ChatClearedDescriptor {
-    fn id(&self) -> &str {
-        trigger_ids::CHAT_CLEARED
-    }
-
-    fn category(&self) -> TriggerCategory {
-        TriggerCategory::Chat
-    }
-
-    fn label(&self) -> &str {
-        "Chat Cleared"
-    }
-
-    fn summary(&self) -> &str {
-        "Fires when all messages are cleared from the chat room"
-    }
-
-    fn search_text(&self) -> &str {
-        "twitch chat clear purge moderation all messages"
-    }
-
-    fn icon_name(&self) -> &str {
-        "eraser"
-    }
-
-    fn platform_contract(&self) -> KindPlatformContract {
-        KindPlatformContract::PlatformSpecific(PlatformId::Twitch)
-    }
-
-    fn event_filter(&self) -> EventFilter {
-        EventFilter {
-            source: Some(EventSource::Twitch),
-            kind_prefix: Some(event_kinds::CHANNEL_CHAT_CLEAR.to_owned()),
-        }
-    }
-
-    fn matches_trigger(&self, _config: &TriggerConfig, _event: &Event) -> bool {
-        true
-    }
-
-    fn actors(&self) -> ActorDeclaration {
-        ActorDeclaration::Actorless
-    }
-
-    fn build_arg_stack(&self, event: &Event) -> ArgStack {
-        let broadcaster_login = event
-            .payload
-            .get(chat_mod_fields::BROADCASTER)
-            .and_then(|b| b.get(chat_mod_fields::BROADCASTER_LOGIN))
-            .and_then(|v| v.as_str())
-            .unwrap_or("")
-            .to_owned();
-        let broadcaster_id = event
-            .payload
-            .get(chat_mod_fields::BROADCASTER)
-            .and_then(|b| b.get(chat_mod_fields::BROADCASTER_ID))
-            .and_then(|v| v.as_str())
-            .unwrap_or("")
-            .to_owned();
-
-        ArgStack::new()
-            .set(
-                "broadcaster_login".to_owned(),
-                Variant::String(broadcaster_login),
-            )
-            .set("broadcaster_id".to_owned(), Variant::String(broadcaster_id))
-    }
-    fn output_schema(&self) -> Option<VariableSchema> {
-        Some({
-            VariableSchema {
-                variables: vec![
-                    DeclaredVariable {
-                        name: "broadcaster_login".to_owned(),
-                        kind: VariantKind::String,
-                        label: "Broadcaster login".to_owned(),
-                        synthesis: Some(SynthesisHint::Username),
-                    },
-                    DeclaredVariable {
-                        name: "broadcaster_id".to_owned(),
-                        kind: VariantKind::String,
-                        label: "Broadcaster ID".to_owned(),
-                        synthesis: None,
-                    },
-                ],
-            }
-        })
-    }
+fn variables() -> Option<TriggerVariables> {
+    Some(table_variables(VARIABLES))
 }
+
+pub(super) const SPEC: TwitchTriggerSpec = TwitchTriggerSpec {
+    id: trigger_ids::CHAT_CLEARED,
+    category: TriggerCategory::Chat,
+    label: "Chat Cleared",
+    summary: "Fires when all messages are cleared from the chat room",
+    search_text: "twitch chat clear purge moderation all messages",
+    icon: "eraser",
+    kind: event_kinds::CHANNEL_CHAT_CLEAR,
+    actors: ActorDeclaration::Actorless,
+    variables,
+    ..TwitchTriggerSpec::BASE
+};
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use forge_events::{Event, EventSource};
+    use forge_registry::TriggerKindDescriptor;
+    use forge_types::Variant;
 
     fn chat_clear_event() -> Event {
         Event::new(
@@ -118,7 +59,7 @@ mod tests {
 
     #[test]
     fn event_filter_gates_on_chat_clear_kind_prefix() {
-        let filter = ChatClearedDescriptor.event_filter();
+        let filter = SPEC.event_filter();
         assert_eq!(
             filter.kind_prefix.as_deref(),
             Some("twitch.channel.chat.clear")
@@ -128,7 +69,7 @@ mod tests {
 
     #[test]
     fn build_arg_stack_maps_broadcaster_from_nested_payload() {
-        let stack = ChatClearedDescriptor.build_arg_stack(&chat_clear_event());
+        let stack = SPEC.build_arg_stack(&chat_clear_event());
         assert_eq!(
             stack.get("broadcaster_login"),
             Some(&Variant::String("host_channel".to_owned()))
@@ -146,7 +87,7 @@ mod tests {
             "channel.chat.clear",
             serde_json::json!({}),
         );
-        let stack = ChatClearedDescriptor.build_arg_stack(&event);
+        let stack = SPEC.build_arg_stack(&event);
         assert_eq!(
             stack.get("broadcaster_login"),
             Some(&Variant::String(String::new()))

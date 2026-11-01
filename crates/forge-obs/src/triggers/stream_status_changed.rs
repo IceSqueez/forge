@@ -1,64 +1,25 @@
-use forge_events::{Event, EventSource};
-use forge_registry::{EventFilter, KindPlatformContract, TriggerCategory, TriggerKindDescriptor};
-use forge_types::{ArgStack, TriggerConfig, UserText, VariableSchema};
-
-use super::stream_starting::{build_stream_arg_stack, stream_variables};
+use super::families;
+use forge_events::Event;
+use forge_events::EventSource;
+use forge_registry::{EventTriggerSpec, TriggerCondition, TriggerMatcher, no_config_fields};
+use forge_types::TriggerConfig;
 
 use crate::vocabulary::{event_kinds, messages, trigger_ids};
 
-pub(crate) struct StreamStatusChangedDescriptor;
-
-impl TriggerKindDescriptor for StreamStatusChangedDescriptor {
-    fn id(&self) -> &str {
-        trigger_ids::STREAMING_STATUS_CHANGED
-    }
-
-    fn category(&self) -> TriggerCategory {
-        TriggerCategory::Integration
-    }
-
-    fn label(&self) -> &str {
-        "OBS stream status changed"
-    }
-
-    fn summary(&self) -> &str {
-        "Fires on any stream output state transition (starting, started, stopping, stopped, reconnecting, reconnected)."
-    }
-
-    fn search_text(&self) -> &str {
-        "obs stream status changed any transition lifecycle"
-    }
-
-    fn icon_name(&self) -> &str {
-        "broadcast"
-    }
-
-    fn platform_contract(&self) -> KindPlatformContract {
-        KindPlatformContract::Universal
-    }
-
-    fn condition_display(&self, _: &TriggerConfig) -> UserText {
-        messages::CONDITION_ANY_STREAM_STATUS_CHANGE.into()
-    }
-
-    fn event_filter(&self) -> EventFilter {
-        EventFilter {
-            source: Some(EventSource::Obs),
-            kind_prefix: Some(event_kinds::STREAMING_PREFIX.to_owned()),
-        }
-    }
-
-    fn matches_trigger(&self, _config: &TriggerConfig, event: &Event) -> bool {
-        event.kind.starts_with(event_kinds::STREAMING_PREFIX)
-    }
-
-    fn build_arg_stack(&self, event: &Event) -> ArgStack {
-        build_stream_arg_stack(event)
-    }
-
-    fn output_schema(&self) -> Option<VariableSchema> {
-        Some(VariableSchema {
-            variables: stream_variables(),
-        })
-    }
+fn matches(_config: &TriggerConfig, event: &Event) -> bool {
+    event.kind.starts_with(event_kinds::STREAMING_PREFIX)
 }
+
+pub(crate) const STREAM_STATUS_CHANGED: EventTriggerSpec = EventTriggerSpec {
+    id: trigger_ids::STREAMING_STATUS_CHANGED,
+    source: EventSource::Obs,
+    label: "OBS stream status changed",
+    summary: "Fires on any stream output state transition (starting, started, stopping, stopped, reconnecting, reconnected).",
+    search_text: "obs stream status changed any transition lifecycle",
+    icon: "broadcast",
+    prefix: event_kinds::STREAMING_PREFIX,
+    matcher: TriggerMatcher::Custom(matches),
+    condition: TriggerCondition::Fixed(messages::CONDITION_ANY_STREAM_STATUS_CHANGE),
+    config_fields: no_config_fields,
+    variables: families::stream_variables,
+};

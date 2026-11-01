@@ -1,137 +1,58 @@
-use forge_events::{Event, EventSource};
+use super::audio_source;
+use forge_events::EventSource;
+use forge_registry::TriggerVariables;
 use forge_registry::{
-    EventFilter, FormField, KindPlatformContract, SubActionConfigExt, TriggerCategory,
-    TriggerKindDescriptor,
+    EventTriggerSpec, EventVariable, TriggerCondition, TriggerMatcher, event_variables,
 };
-use forge_types::{
-    ArgStack, DeclaredVariable, SynthesisHint, TriggerConfig, UserText, VariableSchema, Variant,
-    VariantKind,
-};
+use forge_types::SynthesisHint;
 
-use super::audio_source_mute_changed::source_name_matches;
 use crate::vocabulary::fields::audio as fields;
-use crate::vocabulary::messages;
-use crate::vocabulary::{event_kinds, picker_keys, trigger_ids, variables};
+use crate::vocabulary::{event_kinds, trigger_ids, variables};
 
 const SYNC_OFFSET_MIN_MS: i64 = -950;
 const SYNC_OFFSET_MAX_MS: i64 = 20_000;
 
-pub(crate) struct AudioSourceSyncOffsetChangedDescriptor;
+const VARIABLES: &[EventVariable] = &[
+    EventVariable::text(variables::source::NAME, "Source name", fields::SOURCE_NAME),
+    EventVariable::int(
+        variables::source::SYNC_OFFSET_MS,
+        "Sync offset (ms)",
+        fields::SYNC_OFFSET_MS,
+    )
+    .synthesis(SynthesisHint::BoundedInt {
+        min: SYNC_OFFSET_MIN_MS,
+        max: SYNC_OFFSET_MAX_MS,
+    }),
+];
 
-impl TriggerKindDescriptor for AudioSourceSyncOffsetChangedDescriptor {
-    fn id(&self) -> &str {
-        trigger_ids::AUDIO_SOURCE_SYNC_OFFSET_CHANGED
-    }
-
-    fn category(&self) -> TriggerCategory {
-        TriggerCategory::Integration
-    }
-
-    fn label(&self) -> &str {
-        "OBS audio source sync offset changed"
-    }
-
-    fn summary(&self) -> &str {
-        "Fires when the audio sync offset of an OBS input source changes."
-    }
-
-    fn search_text(&self) -> &str {
-        "obs audio sync offset delay source input milliseconds"
-    }
-
-    fn icon_name(&self) -> &str {
-        "timer"
-    }
-
-    fn platform_contract(&self) -> KindPlatformContract {
-        KindPlatformContract::Universal
-    }
-
-    fn config_fields(&self) -> Vec<FormField> {
-        vec![FormField::Optional {
-            key: "source_name",
-            label: "Source name (leave empty to match any)",
-            inner: Box::new(FormField::DynamicSelect {
-                key: "source_name",
-                label: "Source name",
-                options_key: picker_keys::AUDIO_INPUT_NAMES,
-            }),
-        }]
-    }
-
-    fn condition_display(&self, config: &TriggerConfig) -> UserText {
-        match config.str_nonempty("source_name") {
-            Some(s) => messages::condition_source(s).into(),
-            None => messages::CONDITION_ANY_SOURCE.into(),
-        }
-    }
-
-    fn event_filter(&self) -> EventFilter {
-        EventFilter {
-            source: Some(EventSource::Obs),
-            kind_prefix: Some(event_kinds::AUDIO_PREFIX.to_owned()),
-        }
-    }
-
-    fn matches_trigger(&self, config: &TriggerConfig, event: &Event) -> bool {
-        if event.kind != event_kinds::AUDIO_SOURCE_SYNC_OFFSET_CHANGED {
-            return false;
-        }
-        source_name_matches(config, event)
-    }
-
-    fn build_arg_stack(&self, event: &Event) -> ArgStack {
-        let mut stack = ArgStack::new();
-        if let Some(name) = event
-            .payload
-            .get(fields::SOURCE_NAME)
-            .and_then(|v| v.as_str())
-        {
-            stack = stack.set(
-                variables::source::NAME.to_owned(),
-                Variant::String(name.to_owned()),
-            );
-        }
-        if let Some(ms) = event
-            .payload
-            .get(fields::SYNC_OFFSET_MS)
-            .and_then(|v| v.as_i64())
-        {
-            stack = stack.set(
-                variables::source::SYNC_OFFSET_MS.to_owned(),
-                Variant::Int(ms),
-            );
-        }
-        stack
-    }
-
-    fn output_schema(&self) -> Option<VariableSchema> {
-        Some(VariableSchema {
-            variables: vec![
-                DeclaredVariable {
-                    name: variables::source::NAME.to_owned(),
-                    kind: VariantKind::String,
-                    label: "Source name".to_owned(),
-                    synthesis: None,
-                },
-                DeclaredVariable {
-                    name: variables::source::SYNC_OFFSET_MS.to_owned(),
-                    kind: VariantKind::Int,
-                    label: "Sync offset (ms)".to_owned(),
-                    synthesis: Some(SynthesisHint::BoundedInt {
-                        min: SYNC_OFFSET_MIN_MS,
-                        max: SYNC_OFFSET_MAX_MS,
-                    }),
-                },
-            ],
-        })
-    }
+fn variables() -> Option<TriggerVariables> {
+    event_variables(VARIABLES)
 }
+
+pub(crate) const AUDIO_SOURCE_SYNC_OFFSET_CHANGED: EventTriggerSpec = EventTriggerSpec {
+    id: trigger_ids::AUDIO_SOURCE_SYNC_OFFSET_CHANGED,
+    source: EventSource::Obs,
+    label: "OBS audio source sync offset changed",
+    summary: "Fires when the audio sync offset of an OBS input source changes.",
+    search_text: "obs audio sync offset delay source input milliseconds",
+    icon: "timer",
+    prefix: event_kinds::AUDIO_PREFIX,
+    matcher: TriggerMatcher::KindWhere(
+        event_kinds::AUDIO_SOURCE_SYNC_OFFSET_CHANGED,
+        audio_source::source_name_matches,
+    ),
+    condition: TriggerCondition::FromConfig(audio_source::condition_display),
+    config_fields: audio_source::config_fields,
+    variables,
+};
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use forge_events::Event;
+    use forge_events::EventSource;
     use forge_registry::TriggerKindDescriptor;
+    use forge_types::Variant;
     use serde_json::json;
 
     #[test]
@@ -141,7 +62,7 @@ mod tests {
             "obs.audio.source_sync_offset_changed",
             json!({ "source_name": "Mic", "sync_offset_ms": -120 }),
         );
-        let stack = AudioSourceSyncOffsetChangedDescriptor.build_arg_stack(&event);
+        let stack = AUDIO_SOURCE_SYNC_OFFSET_CHANGED.build_arg_stack(&event);
         assert_eq!(
             stack.get("obs.source.name"),
             Some(&Variant::String("Mic".to_owned())),
@@ -159,7 +80,7 @@ mod tests {
             "obs.audio.source_sync_offset_changed",
             json!({}),
         );
-        let stack = AudioSourceSyncOffsetChangedDescriptor.build_arg_stack(&event);
+        let stack = AUDIO_SOURCE_SYNC_OFFSET_CHANGED.build_arg_stack(&event);
         assert!(stack.get("obs.source.name").is_none());
         assert!(stack.get("obs.source.sync_offset_ms").is_none());
     }

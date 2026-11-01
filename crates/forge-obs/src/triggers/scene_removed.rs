@@ -1,96 +1,50 @@
-use forge_events::{Event, EventSource};
-use forge_registry::{EventFilter, KindPlatformContract, TriggerCategory, TriggerKindDescriptor};
-use forge_types::{
-    ArgStack, DeclaredVariable, TriggerConfig, UserText, VariableSchema, Variant, VariantKind,
+use forge_events::EventSource;
+use forge_registry::TriggerVariables;
+use forge_registry::{
+    EventTriggerSpec, EventVariable, TriggerCondition, TriggerMatcher, event_variables,
+    no_config_fields,
 };
 
 use crate::vocabulary::fields::scene as fields;
 use crate::vocabulary::messages;
 use crate::vocabulary::{event_kinds, trigger_ids, variables};
 
-pub(crate) struct SceneRemovedDescriptor;
+const VARIABLES: &[EventVariable] = &[EventVariable::text(
+    variables::scene::NAME,
+    "Scene name",
+    fields::SCENE_NAME,
+)];
 
-impl TriggerKindDescriptor for SceneRemovedDescriptor {
-    fn id(&self) -> &str {
-        trigger_ids::SCENE_REMOVED
-    }
-
-    fn category(&self) -> TriggerCategory {
-        TriggerCategory::Integration
-    }
-
-    fn label(&self) -> &str {
-        "OBS scene removed"
-    }
-
-    fn summary(&self) -> &str {
-        "Fires when a scene is deleted in OBS."
-    }
-
-    fn search_text(&self) -> &str {
-        "obs scene removed deleted"
-    }
-
-    fn icon_name(&self) -> &str {
-        "layout-grid"
-    }
-
-    fn platform_contract(&self) -> KindPlatformContract {
-        KindPlatformContract::Universal
-    }
-
-    fn condition_display(&self, _: &TriggerConfig) -> UserText {
-        messages::CONDITION_ANY_SCENE_REMOVED.into()
-    }
-
-    fn event_filter(&self) -> EventFilter {
-        EventFilter {
-            source: Some(EventSource::Obs),
-            kind_prefix: Some(event_kinds::SCENE_PREFIX.to_owned()),
-        }
-    }
-
-    fn matches_trigger(&self, _config: &TriggerConfig, event: &Event) -> bool {
-        event.kind == event_kinds::SCENE_REMOVED
-    }
-
-    fn build_arg_stack(&self, event: &Event) -> ArgStack {
-        let mut stack = ArgStack::new();
-        if let Some(name) = event
-            .payload
-            .get(fields::SCENE_NAME)
-            .and_then(|v| v.as_str())
-        {
-            stack = stack.set(
-                variables::scene::NAME.to_owned(),
-                Variant::String(name.to_owned()),
-            );
-        }
-        stack
-    }
-
-    fn output_schema(&self) -> Option<VariableSchema> {
-        Some(VariableSchema {
-            variables: vec![DeclaredVariable {
-                name: variables::scene::NAME.to_owned(),
-                kind: VariantKind::String,
-                label: "Scene name".to_owned(),
-                synthesis: None,
-            }],
-        })
-    }
+fn variables() -> Option<TriggerVariables> {
+    event_variables(VARIABLES)
 }
+
+pub(crate) const SCENE_REMOVED: EventTriggerSpec = EventTriggerSpec {
+    id: trigger_ids::SCENE_REMOVED,
+    source: EventSource::Obs,
+    label: "OBS scene removed",
+    summary: "Fires when a scene is deleted in OBS.",
+    search_text: "obs scene removed deleted",
+    icon: "layout-grid",
+    prefix: event_kinds::SCENE_PREFIX,
+    matcher: TriggerMatcher::Kind(event_kinds::SCENE_REMOVED),
+    condition: TriggerCondition::Fixed(messages::CONDITION_ANY_SCENE_REMOVED),
+    config_fields: no_config_fields,
+    variables,
+};
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use forge_events::{Event, EventSource};
     use forge_registry::TriggerKindDescriptor;
+    use forge_types::Variant;
     use serde_json::json;
     use std::collections::BTreeMap;
 
     #[test]
     fn matches_only_scene_removed_kind_within_scene_family() {
-        let d = SceneRemovedDescriptor;
+        let d = SCENE_REMOVED;
         let cfg = BTreeMap::new();
         assert!(d.matches_trigger(
             &cfg,
@@ -117,7 +71,7 @@ mod tests {
             "obs.scene.removed",
             json!({ "scene_name": "Intro" }),
         );
-        let stack = SceneRemovedDescriptor.build_arg_stack(&event);
+        let stack = SCENE_REMOVED.build_arg_stack(&event);
         assert_eq!(
             stack.get("obs.scene.name"),
             Some(&Variant::String("Intro".to_owned())),
@@ -127,7 +81,7 @@ mod tests {
     #[test]
     fn arg_stack_omits_name_when_payload_field_absent() {
         let event = Event::new(EventSource::Obs, "obs.scene.removed", json!({}));
-        let stack = SceneRemovedDescriptor.build_arg_stack(&event);
+        let stack = SCENE_REMOVED.build_arg_stack(&event);
         assert!(stack.get("obs.scene.name").is_none());
     }
 }

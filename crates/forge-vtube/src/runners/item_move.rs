@@ -3,8 +3,8 @@ use std::sync::Arc;
 use async_trait::async_trait;
 use forge_registry::SubActionConfig;
 use forge_registry::{
-    ChoiceField, ConfigChoice, ConfigProblem, ConfigSpec, IntegerField, OptionalField, RunContext,
-    StepTimer, SubActionCategory, SubActionRunner, TypedField, ValueBounds,
+    ChoiceField, ConfigProblem, ConfigSpec, IntegerField, OptionalField, RunContext, StepTimer,
+    SubActionCategory, SubActionRunner, TypedField, ValueBounds,
 };
 use forge_types::{ArgStack, SubActionTelemetry};
 
@@ -14,7 +14,7 @@ use crate::runners::fields::{
     optional_whole_number, read_non_empty,
 };
 use crate::runners::step_failure;
-use crate::sink::VTubeSink;
+use crate::sink::{ItemMove, ItemPlacement, VTubeSink};
 use crate::vocabulary::{config_keys, sub_action_ids};
 
 const ORDER: OptionalField<IntegerField> = optional_whole_number(
@@ -133,16 +133,18 @@ impl SubActionRunner for ItemMoveRunner {
         let outcome = step_failure::outcome(
             &self
                 .sink
-                .move_item(
-                    &target.item_instance_id,
-                    target.x,
-                    target.y,
-                    target.size,
-                    target.rotation,
-                    target.order,
-                    target.duration.unwrap_or(IMMEDIATE_SECONDS),
-                    target.fade_mode.wire_name(),
-                )
+                .move_item(&ItemMove {
+                    item_instance_id: &target.item_instance_id,
+                    placement: ItemPlacement {
+                        x: target.x,
+                        y: target.y,
+                        size: target.size,
+                        rotation: target.rotation,
+                        order: target.order,
+                    },
+                    time_in_seconds: target.duration.unwrap_or(IMMEDIATE_SECONDS),
+                    fade_mode: target.fade_mode,
+                })
                 .await,
         );
         (timer.finish(outcome), None)

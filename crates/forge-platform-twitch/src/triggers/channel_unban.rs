@@ -1,79 +1,42 @@
+use super::spec::TwitchTriggerSpec;
 use crate::vocabulary::event_kinds;
 use crate::vocabulary::trigger_ids;
-use forge_events::{Event, EventSource};
-use forge_registry::{
-    ActorDeclaration, ActorRole, EventFilter, KindPlatformContract, TriggerCategory,
-    TriggerKindDescriptor, TriggerVariables,
-};
-use forge_types::PlatformId;
-use forge_types::TriggerConfig;
+use forge_registry::{ActorDeclaration, ActorRole, TriggerCategory, TriggerVariables};
 
 use super::payload_read::{self, twitch_actor};
 
-pub(crate) struct ChannelUnbanDescriptor;
-
-impl TriggerKindDescriptor for ChannelUnbanDescriptor {
-    fn id(&self) -> &str {
-        trigger_ids::CHANNEL_UNBAN
-    }
-
-    fn category(&self) -> TriggerCategory {
-        TriggerCategory::Moderation
-    }
-
-    fn label(&self) -> &str {
-        "User unbanned"
-    }
-
-    fn summary(&self) -> &str {
-        "Fires when a viewer's ban or timeout is lifted"
-    }
-
-    fn search_text(&self) -> &str {
-        "twitch unban unbanned moderation pardon"
-    }
-
-    fn icon_name(&self) -> &str {
-        "check"
-    }
-
-    fn platform_contract(&self) -> KindPlatformContract {
-        KindPlatformContract::PlatformSpecific(PlatformId::Twitch)
-    }
-
-    fn event_filter(&self) -> EventFilter {
-        EventFilter {
-            source: Some(EventSource::Twitch),
-            kind_prefix: Some(event_kinds::CHANNEL_UNBAN.to_owned()),
-        }
-    }
-
-    fn matches_trigger(&self, _config: &TriggerConfig, _event: &Event) -> bool {
-        true
-    }
-
-    fn variables(&self) -> Option<TriggerVariables> {
-        Some(
-            TriggerVariables::new()
-                .actor(
-                    twitch_actor(ActorRole::Principal),
-                    payload_read::moderated_user_identity,
-                )
-                .actor(
-                    twitch_actor(ActorRole::Moderator),
-                    payload_read::acting_moderator_identity,
-                ),
-        )
-    }
-
-    fn actors(&self) -> ActorDeclaration {
-        ActorDeclaration::Actors(&[ActorRole::Moderator])
-    }
+fn variables() -> Option<TriggerVariables> {
+    Some(
+        TriggerVariables::new()
+            .actor(
+                twitch_actor(ActorRole::Principal),
+                payload_read::moderated_user_identity,
+            )
+            .actor(
+                twitch_actor(ActorRole::Moderator),
+                payload_read::acting_moderator_identity,
+            ),
+    )
 }
+
+pub(super) const SPEC: TwitchTriggerSpec = TwitchTriggerSpec {
+    id: trigger_ids::CHANNEL_UNBAN,
+    category: TriggerCategory::Moderation,
+    label: "User unbanned",
+    summary: "Fires when a viewer's ban or timeout is lifted",
+    search_text: "twitch unban unbanned moderation pardon",
+    icon: "check",
+    kind: event_kinds::CHANNEL_UNBAN,
+    actors: ActorDeclaration::Actors(&[ActorRole::Moderator]),
+    variables,
+    ..TwitchTriggerSpec::BASE
+};
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use forge_events::{Event, EventSource};
+    use forge_registry::TriggerKindDescriptor;
     use forge_types::Variant;
 
     fn unban_event() -> Event {
@@ -86,14 +49,14 @@ mod tests {
 
     #[test]
     fn event_filter_targets_channel_unban_topic_from_twitch() {
-        let filter = ChannelUnbanDescriptor.event_filter();
+        let filter = SPEC.event_filter();
         assert_eq!(filter.source, Some(EventSource::Twitch));
         assert_eq!(filter.kind_prefix.as_deref(), Some("twitch.channel.unban"));
     }
 
     #[test]
     fn build_arg_stack_exposes_user_and_moderator_without_ban_specific_vars() {
-        let stack = ChannelUnbanDescriptor.build_arg_stack(&unban_event());
+        let stack = SPEC.build_arg_stack(&unban_event());
         assert_eq!(
             stack.get("user_login"),
             Some(&Variant::String("viewer_one".to_owned()))

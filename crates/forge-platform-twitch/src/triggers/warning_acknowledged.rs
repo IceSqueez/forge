@@ -1,69 +1,30 @@
+use super::spec::TwitchTriggerSpec;
 use crate::vocabulary::event_kinds;
 use crate::vocabulary::trigger_ids;
-use forge_events::{Event, EventSource};
+use forge_events::Event;
 use forge_registry::{
-    ActorDeclaration, ActorIdentity, ActorRole, EventFilter, KindPlatformContract, TriggerCategory,
-    TriggerKindDescriptor, TriggerVariables,
+    ActorDeclaration, ActorIdentity, ActorRole, TriggerCategory, TriggerVariables,
 };
-use forge_types::PlatformId;
-use forge_types::TriggerConfig;
 
 use super::payload_read::{self, twitch_actor};
 use crate::vocabulary::fields::warning as warning_fields;
 
-pub(crate) struct WarningAcknowledgedDescriptor;
-
-impl TriggerKindDescriptor for WarningAcknowledgedDescriptor {
-    fn id(&self) -> &str {
-        trigger_ids::CHANNEL_WARNING_ACKNOWLEDGED
-    }
-
-    fn category(&self) -> TriggerCategory {
-        TriggerCategory::Moderation
-    }
-
-    fn label(&self) -> &str {
-        "Warning acknowledged"
-    }
-
-    fn summary(&self) -> &str {
-        "Fires when a user acknowledges a warning issued by a moderator"
-    }
-
-    fn search_text(&self) -> &str {
-        "twitch warning acknowledged user moderation"
-    }
-
-    fn icon_name(&self) -> &str {
-        "bell-check"
-    }
-
-    fn platform_contract(&self) -> KindPlatformContract {
-        KindPlatformContract::PlatformSpecific(PlatformId::Twitch)
-    }
-
-    fn event_filter(&self) -> EventFilter {
-        EventFilter {
-            source: Some(EventSource::Twitch),
-            kind_prefix: Some(event_kinds::CHANNEL_WARNING_ACKNOWLEDGE.to_owned()),
-        }
-    }
-
-    fn matches_trigger(&self, _config: &TriggerConfig, _event: &Event) -> bool {
-        true
-    }
-
-    fn variables(&self) -> Option<TriggerVariables> {
-        Some(
-            TriggerVariables::new()
-                .actor(twitch_actor(ActorRole::Principal), affected_user_identity),
-        )
-    }
-
-    fn actors(&self) -> ActorDeclaration {
-        ActorDeclaration::principal()
-    }
+fn variables() -> Option<TriggerVariables> {
+    Some(TriggerVariables::new().actor(twitch_actor(ActorRole::Principal), affected_user_identity))
 }
+
+pub(super) const SPEC: TwitchTriggerSpec = TwitchTriggerSpec {
+    id: trigger_ids::CHANNEL_WARNING_ACKNOWLEDGED,
+    category: TriggerCategory::Moderation,
+    label: "Warning acknowledged",
+    summary: "Fires when a user acknowledges a warning issued by a moderator",
+    search_text: "twitch warning acknowledged user moderation",
+    icon: "bell-check",
+    kind: event_kinds::CHANNEL_WARNING_ACKNOWLEDGE,
+    actors: ActorDeclaration::principal(),
+    variables,
+    ..TwitchTriggerSpec::BASE
+};
 
 fn affected_user_identity(event: &Event) -> ActorIdentity {
     payload_read::identity(
@@ -77,6 +38,8 @@ fn affected_user_identity(event: &Event) -> ActorIdentity {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use forge_events::EventSource;
+    use forge_registry::TriggerKindDescriptor;
     use forge_types::Variant;
 
     fn warning_acknowledged_event() -> Event {
@@ -92,7 +55,7 @@ mod tests {
 
     #[test]
     fn event_filter_targets_warning_acknowledge_topic_from_twitch() {
-        let filter = WarningAcknowledgedDescriptor.event_filter();
+        let filter = SPEC.event_filter();
         assert_eq!(filter.source, Some(EventSource::Twitch));
         assert_eq!(
             filter.kind_prefix.as_deref(),
@@ -102,7 +65,7 @@ mod tests {
 
     #[test]
     fn build_arg_stack_maps_user_fields_from_nested_payload() {
-        let stack = WarningAcknowledgedDescriptor.build_arg_stack(&warning_acknowledged_event());
+        let stack = SPEC.build_arg_stack(&warning_acknowledged_event());
         assert_eq!(
             stack.get("user_login"),
             Some(&Variant::String("warned_user".to_owned()))

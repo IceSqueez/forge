@@ -1,107 +1,30 @@
-use forge_events::{Event, EventSource};
-use forge_registry::{EventFilter, KindPlatformContract, TriggerCategory, TriggerKindDescriptor};
-use forge_types::{
-    ArgStack, DeclaredVariable, TriggerConfig, UserText, VariableSchema, Variant, VariantKind,
-};
+use super::families;
+use forge_events::EventSource;
+use forge_registry::{EventTriggerSpec, TriggerCondition, TriggerMatcher, no_config_fields};
 
-use crate::vocabulary::fields::item as fields;
 use crate::vocabulary::messages;
-use crate::vocabulary::{event_kinds, trigger_ids, variables};
+use crate::vocabulary::{event_kinds, trigger_ids};
 
-pub(crate) struct ItemAddedDescriptor;
-
-impl TriggerKindDescriptor for ItemAddedDescriptor {
-    fn id(&self) -> &str {
-        trigger_ids::ITEM_ADDED
-    }
-
-    fn category(&self) -> TriggerCategory {
-        TriggerCategory::Integration
-    }
-
-    fn label(&self) -> &str {
-        "VTube Studio item added"
-    }
-
-    fn summary(&self) -> &str {
-        "Fires when an item is loaded into the VTube Studio scene."
-    }
-
-    fn search_text(&self) -> &str {
-        "vtube item added loaded prop sticker"
-    }
-
-    fn icon_name(&self) -> &str {
-        "image"
-    }
-
-    fn platform_contract(&self) -> KindPlatformContract {
-        KindPlatformContract::Universal
-    }
-
-    fn condition_display(&self, _: &TriggerConfig) -> UserText {
-        messages::CONDITION_ANY_ITEM.into()
-    }
-
-    fn event_filter(&self) -> EventFilter {
-        EventFilter {
-            source: Some(EventSource::VTube),
-            kind_prefix: Some(event_kinds::ITEM_PREFIX.to_owned()),
-        }
-    }
-
-    fn matches_trigger(&self, _config: &TriggerConfig, event: &Event) -> bool {
-        event.kind == event_kinds::ITEM_ADDED
-    }
-
-    fn build_arg_stack(&self, event: &Event) -> ArgStack {
-        let mut stack = ArgStack::new();
-        if let Some(id) = event
-            .payload
-            .get(fields::ITEM_INSTANCE_ID)
-            .and_then(|v| v.as_str())
-        {
-            stack = stack.set(
-                variables::item::INSTANCE_ID.to_owned(),
-                Variant::String(id.to_owned()),
-            );
-        }
-        if let Some(file) = event
-            .payload
-            .get(fields::ITEM_FILE_NAME)
-            .and_then(|v| v.as_str())
-        {
-            stack = stack.set(
-                variables::item::FILE_NAME.to_owned(),
-                Variant::String(file.to_owned()),
-            );
-        }
-        stack
-    }
-
-    fn output_schema(&self) -> Option<VariableSchema> {
-        Some(VariableSchema {
-            variables: vec![
-                DeclaredVariable {
-                    name: variables::item::INSTANCE_ID.to_owned(),
-                    kind: VariantKind::String,
-                    label: "Item instance ID".to_owned(),
-                    synthesis: None,
-                },
-                DeclaredVariable {
-                    name: variables::item::FILE_NAME.to_owned(),
-                    kind: VariantKind::String,
-                    label: "Item file name".to_owned(),
-                    synthesis: None,
-                },
-            ],
-        })
-    }
-}
+pub(crate) const ITEM_ADDED: EventTriggerSpec = EventTriggerSpec {
+    id: trigger_ids::ITEM_ADDED,
+    source: EventSource::VTube,
+    label: "VTube Studio item added",
+    summary: "Fires when an item is loaded into the VTube Studio scene.",
+    search_text: "vtube item added loaded prop sticker",
+    icon: "image",
+    prefix: event_kinds::ITEM_PREFIX,
+    matcher: TriggerMatcher::Kind(event_kinds::ITEM_ADDED),
+    condition: TriggerCondition::Fixed(messages::CONDITION_ANY_ITEM),
+    config_fields: no_config_fields,
+    variables: families::item_variables,
+};
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use forge_events::Event;
+    use forge_registry::TriggerKindDescriptor;
+    use forge_types::{TriggerConfig, Variant};
     use serde_json::json;
 
     fn event(kind: &str, payload: serde_json::Value) -> Event {
@@ -110,7 +33,7 @@ mod tests {
 
     #[test]
     fn matches_only_the_exact_added_kind() {
-        let d = ItemAddedDescriptor;
+        let d = ITEM_ADDED;
         let cfg = TriggerConfig::new();
         assert!(d.matches_trigger(&cfg, &event("vtube.item.added", json!({}))));
         assert!(!d.matches_trigger(&cfg, &event("vtube.item.removed", json!({}))));
@@ -119,7 +42,7 @@ mod tests {
 
     #[test]
     fn build_arg_stack_maps_present_payload_keys() {
-        let d = ItemAddedDescriptor;
+        let d = ITEM_ADDED;
         let stack = d.build_arg_stack(&event(
             "vtube.item.added",
             json!({ "item_instance_id": "inst-7", "item_file_name": "hat.png" }),
@@ -136,7 +59,7 @@ mod tests {
 
     #[test]
     fn build_arg_stack_omits_missing_payload_keys() {
-        let d = ItemAddedDescriptor;
+        let d = ITEM_ADDED;
         let stack = d.build_arg_stack(&event(
             "vtube.item.added",
             json!({ "item_instance_id": "inst-7" }),

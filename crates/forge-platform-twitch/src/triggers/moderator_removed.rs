@@ -1,69 +1,30 @@
+use super::spec::TwitchTriggerSpec;
 use crate::vocabulary::event_kinds;
 use crate::vocabulary::trigger_ids;
-use forge_events::{Event, EventSource};
+use forge_events::Event;
 use forge_registry::{
-    ActorDeclaration, ActorIdentity, ActorRole, EventFilter, KindPlatformContract, TriggerCategory,
-    TriggerKindDescriptor, TriggerVariables,
+    ActorDeclaration, ActorIdentity, ActorRole, TriggerCategory, TriggerVariables,
 };
-use forge_types::PlatformId;
-use forge_types::TriggerConfig;
 
 use super::payload_read::{self, twitch_actor};
 use crate::vocabulary::fields::moderator as moderator_fields;
 
-pub(crate) struct ModeratorRemovedDescriptor;
-
-impl TriggerKindDescriptor for ModeratorRemovedDescriptor {
-    fn id(&self) -> &str {
-        trigger_ids::CHANNEL_MODERATOR_REMOVED
-    }
-
-    fn category(&self) -> TriggerCategory {
-        TriggerCategory::Moderation
-    }
-
-    fn label(&self) -> &str {
-        "Moderator removed"
-    }
-
-    fn summary(&self) -> &str {
-        "Fires when moderator status is revoked from a viewer"
-    }
-
-    fn search_text(&self) -> &str {
-        "twitch moderator mod removed unmodded demoted moderation"
-    }
-
-    fn icon_name(&self) -> &str {
-        "shield-x"
-    }
-
-    fn platform_contract(&self) -> KindPlatformContract {
-        KindPlatformContract::PlatformSpecific(PlatformId::Twitch)
-    }
-
-    fn event_filter(&self) -> EventFilter {
-        EventFilter {
-            source: Some(EventSource::Twitch),
-            kind_prefix: Some(event_kinds::CHANNEL_MODERATOR_REMOVE.to_owned()),
-        }
-    }
-
-    fn matches_trigger(&self, _config: &TriggerConfig, _event: &Event) -> bool {
-        true
-    }
-
-    fn variables(&self) -> Option<TriggerVariables> {
-        Some(
-            TriggerVariables::new()
-                .actor(twitch_actor(ActorRole::Principal), affected_user_identity),
-        )
-    }
-
-    fn actors(&self) -> ActorDeclaration {
-        ActorDeclaration::principal()
-    }
+fn variables() -> Option<TriggerVariables> {
+    Some(TriggerVariables::new().actor(twitch_actor(ActorRole::Principal), affected_user_identity))
 }
+
+pub(super) const SPEC: TwitchTriggerSpec = TwitchTriggerSpec {
+    id: trigger_ids::CHANNEL_MODERATOR_REMOVED,
+    category: TriggerCategory::Moderation,
+    label: "Moderator removed",
+    summary: "Fires when moderator status is revoked from a viewer",
+    search_text: "twitch moderator mod removed unmodded demoted moderation",
+    icon: "shield-x",
+    kind: event_kinds::CHANNEL_MODERATOR_REMOVE,
+    actors: ActorDeclaration::principal(),
+    variables,
+    ..TwitchTriggerSpec::BASE
+};
 
 fn affected_user_identity(event: &Event) -> ActorIdentity {
     payload_read::identity(
@@ -77,6 +38,8 @@ fn affected_user_identity(event: &Event) -> ActorIdentity {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use forge_events::EventSource;
+    use forge_registry::TriggerKindDescriptor;
     use forge_types::Variant;
 
     fn moderator_remove_event() -> Event {
@@ -92,7 +55,7 @@ mod tests {
 
     #[test]
     fn event_filter_targets_moderator_remove_topic_from_twitch() {
-        let filter = ModeratorRemovedDescriptor.event_filter();
+        let filter = SPEC.event_filter();
         assert_eq!(filter.source, Some(EventSource::Twitch));
         assert_eq!(
             filter.kind_prefix.as_deref(),
@@ -102,7 +65,7 @@ mod tests {
 
     #[test]
     fn build_arg_stack_maps_user_fields_from_nested_payload() {
-        let stack = ModeratorRemovedDescriptor.build_arg_stack(&moderator_remove_event());
+        let stack = SPEC.build_arg_stack(&moderator_remove_event());
         assert_eq!(
             stack.get("user_login"),
             Some(&Variant::String("ex_mod".to_owned()))

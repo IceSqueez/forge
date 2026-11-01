@@ -587,10 +587,7 @@ mod tests {
         MockCreds, MockTransport, SELF_USER_ID, TOKEN_SENTINEL, make_ctx,
     };
     use crate::sub_actions::test_support::{REQUEST_FAIL_KIND, observed_helix_at};
-    use crate::sub_actions::{
-        DeleteRewardRunner, DisableRewardRunner, EnableRewardRunner, PauseRewardRunner,
-        ResumeRewardRunner, UpdateRewardRunner,
-    };
+    use crate::sub_actions::{DeleteRewardRunner, RewardToggleRunner, UpdateRewardRunner};
     use crate::subscriptions::SubscriptionTracker;
     use forge_types::SubActionOutcome;
     use wiremock::matchers::path;
@@ -1331,16 +1328,16 @@ mod tests {
         type WriteCase = (&'static str, Option<(&'static str, bool)>, RunnerFactory);
         let cases: [WriteCase; 5] = [
             ("enable", Some((ENABLED_TOGGLE, true)), |t, i| {
-                Box::new(EnableRewardRunner::new(t, i))
+                Box::new(RewardToggleRunner::enable(t, i))
             }),
             ("disable", Some((ENABLED_TOGGLE, false)), |t, i| {
-                Box::new(DisableRewardRunner::new(t, i))
+                Box::new(RewardToggleRunner::disable(t, i))
             }),
             ("pause", Some((PAUSED_TOGGLE, true)), |t, i| {
-                Box::new(PauseRewardRunner::new(t, i))
+                Box::new(RewardToggleRunner::pause(t, i))
             }),
             ("resume", Some((PAUSED_TOGGLE, false)), |t, i| {
-                Box::new(ResumeRewardRunner::new(t, i))
+                Box::new(RewardToggleRunner::resume(t, i))
             }),
             ("delete", None, |t, i| {
                 Box::new(DeleteRewardRunner::new(t, i))
@@ -1465,7 +1462,7 @@ mod tests {
             fn(Arc<dyn HelixTransport>, Arc<SelfIdentity>) -> Box<dyn SubActionRunner>;
         let cases: [(&str, RunnerFactory); 3] = [
             ("update", |t, i| Box::new(UpdateRewardRunner::new(t, i))),
-            ("enable", |t, i| Box::new(EnableRewardRunner::new(t, i))),
+            ("enable", |t, i| Box::new(RewardToggleRunner::enable(t, i))),
             ("delete", |t, i| Box::new(DeleteRewardRunner::new(t, i))),
         ];
         let config = BTreeMap::from([

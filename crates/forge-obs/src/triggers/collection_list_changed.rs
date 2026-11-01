@@ -1,101 +1,50 @@
-use forge_events::{Event, EventSource};
-use forge_registry::{EventFilter, KindPlatformContract, TriggerCategory, TriggerKindDescriptor};
-use forge_types::{
-    ArgStack, DeclaredVariable, TriggerConfig, UserText, VariableSchema, Variant, VariantKind,
+use forge_events::EventSource;
+use forge_registry::TriggerVariables;
+use forge_registry::{
+    EventTriggerSpec, EventVariable, TriggerCondition, TriggerMatcher, event_variables,
+    no_config_fields,
 };
 
 use crate::vocabulary::fields::collection as fields;
 use crate::vocabulary::messages;
 use crate::vocabulary::{event_kinds, trigger_ids, variables};
 
-pub(crate) struct CollectionListChangedDescriptor;
+const VARIABLES: &[EventVariable] = &[EventVariable::text_list(
+    variables::collection::ALL_NAMES,
+    "All scene collection names",
+    fields::ALL_NAMES,
+)];
 
-impl TriggerKindDescriptor for CollectionListChangedDescriptor {
-    fn id(&self) -> &str {
-        trigger_ids::COLLECTION_LIST_CHANGED
-    }
-
-    fn category(&self) -> TriggerCategory {
-        TriggerCategory::Integration
-    }
-
-    fn label(&self) -> &str {
-        "OBS scene collection list changed"
-    }
-
-    fn summary(&self) -> &str {
-        "Fires when scene collections are added or removed in OBS."
-    }
-
-    fn search_text(&self) -> &str {
-        "obs scene collection list changed added removed"
-    }
-
-    fn icon_name(&self) -> &str {
-        "stack-2"
-    }
-
-    fn platform_contract(&self) -> KindPlatformContract {
-        KindPlatformContract::Universal
-    }
-
-    fn condition_display(&self, _: &TriggerConfig) -> UserText {
-        messages::CONDITION_ANY_COLLECTION_LIST_CHANGE.into()
-    }
-
-    fn event_filter(&self) -> EventFilter {
-        EventFilter {
-            source: Some(EventSource::Obs),
-            kind_prefix: Some(event_kinds::COLLECTION_PREFIX.to_owned()),
-        }
-    }
-
-    fn matches_trigger(&self, _config: &TriggerConfig, event: &Event) -> bool {
-        event.kind == event_kinds::COLLECTION_LIST_CHANGED
-    }
-
-    fn build_arg_stack(&self, event: &Event) -> ArgStack {
-        let mut stack = ArgStack::new();
-        if let Some(names) = event
-            .payload
-            .get(fields::ALL_NAMES)
-            .and_then(|v| v.as_array())
-        {
-            let collections: Vec<Variant> = names
-                .iter()
-                .filter_map(|v| v.as_str())
-                .map(|s| Variant::String(s.to_owned()))
-                .collect();
-            stack = stack.set(
-                variables::collection::ALL_NAMES.to_owned(),
-                Variant::Array(collections),
-            );
-        }
-        stack
-    }
-
-    fn output_schema(&self) -> Option<VariableSchema> {
-        Some(VariableSchema {
-            variables: vec![DeclaredVariable {
-                name: variables::collection::ALL_NAMES.to_owned(),
-                kind: VariantKind::Array,
-                label: "All scene collection names".to_owned(),
-                synthesis: None,
-            }],
-        })
-    }
+fn variables() -> Option<TriggerVariables> {
+    event_variables(VARIABLES)
 }
+
+pub(crate) const COLLECTION_LIST_CHANGED: EventTriggerSpec = EventTriggerSpec {
+    id: trigger_ids::COLLECTION_LIST_CHANGED,
+    source: EventSource::Obs,
+    label: "OBS scene collection list changed",
+    summary: "Fires when scene collections are added or removed in OBS.",
+    search_text: "obs scene collection list changed added removed",
+    icon: "stack-2",
+    prefix: event_kinds::COLLECTION_PREFIX,
+    matcher: TriggerMatcher::Kind(event_kinds::COLLECTION_LIST_CHANGED),
+    condition: TriggerCondition::Fixed(messages::CONDITION_ANY_COLLECTION_LIST_CHANGE),
+    config_fields: no_config_fields,
+    variables,
+};
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use forge_events::{Event, EventSource};
     use forge_registry::TriggerKindDescriptor;
+    use forge_types::Variant;
     use serde_json::json;
     use std::collections::BTreeMap;
 
     #[test]
     fn matches_list_changed_and_rejects_sibling_collection_kinds() {
-        let d = CollectionListChangedDescriptor;
+        let d = COLLECTION_LIST_CHANGED;
         let cfg = BTreeMap::new();
         assert!(d.matches_trigger(
             &cfg,
@@ -116,7 +65,7 @@ mod tests {
             "obs.collection.list_changed",
             json!({ "all_names": ["Main", "Alt"] }),
         );
-        let stack = CollectionListChangedDescriptor.build_arg_stack(&event);
+        let stack = COLLECTION_LIST_CHANGED.build_arg_stack(&event);
         assert_eq!(
             stack.get("obs.collection.all_names"),
             Some(&Variant::Array(vec![
@@ -133,7 +82,7 @@ mod tests {
             "obs.collection.list_changed",
             json!({ "all_names": ["Main", 7, null, "Alt"] }),
         );
-        let stack = CollectionListChangedDescriptor.build_arg_stack(&event);
+        let stack = COLLECTION_LIST_CHANGED.build_arg_stack(&event);
         assert_eq!(
             stack.get("obs.collection.all_names"),
             Some(&Variant::Array(vec![
@@ -146,7 +95,7 @@ mod tests {
     #[test]
     fn arg_stack_omits_key_when_all_names_absent() {
         let event = Event::new(EventSource::Obs, "obs.collection.list_changed", json!({}));
-        let stack = CollectionListChangedDescriptor.build_arg_stack(&event);
+        let stack = COLLECTION_LIST_CHANGED.build_arg_stack(&event);
         assert!(stack.get("obs.collection.all_names").is_none());
     }
 }

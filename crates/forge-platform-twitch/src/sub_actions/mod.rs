@@ -1,6 +1,4 @@
 mod add_blocked_term;
-mod add_moderator;
-mod add_vip;
 mod approve_automod_message;
 mod ban_user;
 mod cancel_prediction;
@@ -12,8 +10,6 @@ mod create_reward;
 mod delete_message;
 mod delete_reward;
 mod deny_automod_message;
-mod disable_reward;
-mod enable_reward;
 mod end_poll;
 mod fields;
 mod fulfill_redemption;
@@ -25,13 +21,11 @@ mod guest_star_invite;
 mod guest_star_remove_guest;
 mod guest_star_update_slot;
 mod lock_prediction;
-mod pause_reward;
 mod remove_blocked_term;
-mod remove_moderator;
-mod remove_vip;
 mod reply_chat;
 mod resolve_prediction;
-mod resume_reward;
+mod reward_toggle;
+mod role_grant;
 mod run_ad;
 mod send_announcement;
 mod send_shoutout;
@@ -53,7 +47,7 @@ mod warn_user;
 
 use std::sync::Arc;
 
-use forge_registry::{RegistryError, SubActionRegistry};
+use forge_registry::{RegistryError, SubActionRegistry, SubActionRunner};
 use forge_storage::CredentialsRepo;
 
 use crate::account::identity::SelfIdentity;
@@ -67,13 +61,18 @@ pub(crate) use start_poll::POLL_DURATION;
 pub(crate) use start_prediction::PREDICTION_WINDOW;
 pub(crate) use timeout_user::TIMEOUT_DURATION;
 
+pub(crate) use cancel_raid::CancelRaidRunner;
+pub(crate) use reply_chat::ReplyChatRunner;
+pub(crate) use send_announcement::SendAnnouncementRunner;
+pub(crate) use send_shoutout::SendShoutoutRunner;
+pub(crate) use send_whisper::SendWhisperRunner;
+pub(crate) use shield_mode::ShieldModeRunner;
+pub(crate) use start_raid::StartRaidRunner;
+
 pub(crate) use add_blocked_term::AddBlockedTermRunner;
-pub(crate) use add_moderator::AddModeratorRunner;
-pub(crate) use add_vip::AddVipRunner;
 pub(crate) use approve_automod_message::ApproveAutomodMessageRunner;
 pub(crate) use ban_user::BanUserRunner;
 pub(crate) use cancel_prediction::CancelPredictionRunner;
-pub(crate) use cancel_raid::CancelRaidRunner;
 pub(crate) use cancel_redemption::CancelRedemptionRunner;
 pub(crate) use clear_chat::ClearChatRunner;
 pub(crate) use create_marker::CreateMarkerRunner;
@@ -81,8 +80,6 @@ pub(crate) use create_reward::CreateRewardRunner;
 pub(crate) use delete_message::DeleteMessageRunner;
 pub(crate) use delete_reward::DeleteRewardRunner;
 pub(crate) use deny_automod_message::DenyAutomodMessageRunner;
-pub(crate) use disable_reward::DisableRewardRunner;
-pub(crate) use enable_reward::EnableRewardRunner;
 pub(crate) use end_poll::EndPollRunner;
 pub(crate) use fulfill_redemption::FulfillRedemptionRunner;
 pub(crate) use get_current_goal::GetCurrentGoalRunner;
@@ -92,23 +89,15 @@ pub(crate) use guest_star_invite::GuestStarInviteRunner;
 pub(crate) use guest_star_remove_guest::GuestStarRemoveGuestRunner;
 pub(crate) use guest_star_update_slot::GuestStarUpdateSlotRunner;
 pub(crate) use lock_prediction::LockPredictionRunner;
-pub(crate) use pause_reward::PauseRewardRunner;
 pub(crate) use remove_blocked_term::RemoveBlockedTermRunner;
-pub(crate) use remove_moderator::RemoveModeratorRunner;
-pub(crate) use remove_vip::RemoveVipRunner;
-pub(crate) use reply_chat::ReplyChatRunner;
 pub(crate) use resolve_prediction::ResolvePredictionRunner;
-pub(crate) use resume_reward::ResumeRewardRunner;
+pub(crate) use reward_toggle::RewardToggleRunner;
+pub(crate) use role_grant::RoleGrantRunner;
 pub(crate) use run_ad::RunAdRunner;
-pub(crate) use send_announcement::SendAnnouncementRunner;
-pub(crate) use send_shoutout::SendShoutoutRunner;
-pub(crate) use send_whisper::SendWhisperRunner;
 pub(crate) use set_mode::SetModeRunner;
-pub(crate) use shield_mode::ShieldModeRunner;
 pub(crate) use snooze_ad::SnoozeAdRunner;
 pub(crate) use start_poll::StartPollRunner;
 pub(crate) use start_prediction::StartPredictionRunner;
-pub(crate) use start_raid::StartRaidRunner;
 pub(crate) use timeout_user::TimeoutUserRunner;
 pub(crate) use unban_user::UnbanUserRunner;
 pub(crate) use update_automod_settings::UpdateAutomodSettingsRunner;
@@ -122,6 +111,54 @@ use crate::bot_account::TwitchBotAccount;
 use crate::cadence::CadenceLedger;
 use crate::helix::HelixTransport;
 use crate::lifecycle::TwitchLifecycle;
+
+type RunnerBuild = fn(Arc<dyn HelixTransport>, Arc<SelfIdentity>) -> Box<dyn SubActionRunner>;
+
+const PLAIN_RUNNERS: &[RunnerBuild] = &[
+    |transport, identity| Box::new(DeleteMessageRunner::new(transport, identity)),
+    |transport, identity| Box::new(ClearChatRunner::new(transport, identity)),
+    |transport, identity| Box::new(SetModeRunner::new(transport, identity)),
+    |transport, identity| Box::new(BanUserRunner::new(transport, identity)),
+    |transport, identity| Box::new(TimeoutUserRunner::new(transport, identity)),
+    |transport, identity| Box::new(UnbanUserRunner::new(transport, identity)),
+    |transport, identity| Box::new(WarnUserRunner::new(transport, identity)),
+    |transport, identity| Box::new(RoleGrantRunner::add_moderator(transport, identity)),
+    |transport, identity| Box::new(RoleGrantRunner::remove_moderator(transport, identity)),
+    |transport, identity| Box::new(RoleGrantRunner::add_vip(transport, identity)),
+    |transport, identity| Box::new(RoleGrantRunner::remove_vip(transport, identity)),
+    |transport, identity| Box::new(UpdateTitleRunner::new(transport, identity)),
+    |transport, identity| Box::new(UpdateCategoryRunner::new(transport, identity)),
+    |transport, identity| Box::new(UpdateTagsRunner::new(transport, identity)),
+    |transport, identity| Box::new(CreateMarkerRunner::new(transport, identity)),
+    |transport, identity| Box::new(RunAdRunner::new(transport, identity)),
+    |transport, identity| Box::new(SnoozeAdRunner::new(transport, identity)),
+    |transport, identity| Box::new(CreateRewardRunner::new(transport, identity)),
+    |transport, identity| Box::new(UpdateRewardRunner::new(transport, identity)),
+    |transport, identity| Box::new(RewardToggleRunner::enable(transport, identity)),
+    |transport, identity| Box::new(RewardToggleRunner::disable(transport, identity)),
+    |transport, identity| Box::new(RewardToggleRunner::pause(transport, identity)),
+    |transport, identity| Box::new(RewardToggleRunner::resume(transport, identity)),
+    |transport, identity| Box::new(DeleteRewardRunner::new(transport, identity)),
+    |transport, identity| Box::new(FulfillRedemptionRunner::new(transport, identity)),
+    |transport, identity| Box::new(CancelRedemptionRunner::new(transport, identity)),
+    |transport, identity| Box::new(StartPollRunner::new(transport, identity)),
+    |transport, identity| Box::new(EndPollRunner::new(transport, identity)),
+    |transport, identity| Box::new(StartPredictionRunner::new(transport, identity)),
+    |transport, identity| Box::new(LockPredictionRunner::new(transport, identity)),
+    |transport, identity| Box::new(CancelPredictionRunner::new(transport, identity)),
+    |transport, identity| Box::new(ResolvePredictionRunner::new(transport, identity)),
+    |transport, identity| Box::new(GetCurrentGoalRunner::new(transport, identity)),
+    |transport, identity| Box::new(ApproveAutomodMessageRunner::new(transport, identity)),
+    |transport, identity| Box::new(DenyAutomodMessageRunner::new(transport, identity)),
+    |transport, identity| Box::new(UpdateAutomodSettingsRunner::new(transport, identity)),
+    |transport, identity| Box::new(AddBlockedTermRunner::new(transport, identity)),
+    |transport, identity| Box::new(RemoveBlockedTermRunner::new(transport, identity)),
+    |transport, identity| Box::new(GuestStarInviteRunner::new(transport, identity)),
+    |transport, identity| Box::new(GuestStarAssignSlotRunner::new(transport, identity)),
+    |transport, identity| Box::new(GuestStarRemoveGuestRunner::new(transport, identity)),
+    |transport, identity| Box::new(GuestStarUpdateSlotRunner::new(transport, identity)),
+    |transport, identity| Box::new(GuestStarEndSessionRunner::new(transport, identity)),
+];
 
 pub fn register_twitch_sub_actions(
     reg: &mut SubActionRegistry,
@@ -138,50 +175,6 @@ pub fn register_twitch_sub_actions(
             .with_bot(bot.clone())
             .with_cadence(Arc::clone(&cadence)),
     ))?;
-    reg.register(Box::new(DeleteMessageRunner::new(
-        Arc::clone(&transport),
-        Arc::clone(&identity),
-    )))?;
-    reg.register(Box::new(ClearChatRunner::new(
-        Arc::clone(&transport),
-        Arc::clone(&identity),
-    )))?;
-    reg.register(Box::new(SetModeRunner::new(
-        Arc::clone(&transport),
-        Arc::clone(&identity),
-    )))?;
-    reg.register(Box::new(BanUserRunner::new(
-        Arc::clone(&transport),
-        Arc::clone(&identity),
-    )))?;
-    reg.register(Box::new(TimeoutUserRunner::new(
-        Arc::clone(&transport),
-        Arc::clone(&identity),
-    )))?;
-    reg.register(Box::new(UnbanUserRunner::new(
-        Arc::clone(&transport),
-        Arc::clone(&identity),
-    )))?;
-    reg.register(Box::new(WarnUserRunner::new(
-        Arc::clone(&transport),
-        Arc::clone(&identity),
-    )))?;
-    reg.register(Box::new(AddModeratorRunner::new(
-        Arc::clone(&transport),
-        Arc::clone(&identity),
-    )))?;
-    reg.register(Box::new(RemoveModeratorRunner::new(
-        Arc::clone(&transport),
-        Arc::clone(&identity),
-    )))?;
-    reg.register(Box::new(AddVipRunner::new(
-        Arc::clone(&transport),
-        Arc::clone(&identity),
-    )))?;
-    reg.register(Box::new(RemoveVipRunner::new(
-        Arc::clone(&transport),
-        Arc::clone(&identity),
-    )))?;
     reg.register(Box::new(ShieldModeRunner::on(
         Arc::clone(&transport),
         Arc::clone(&identity),
@@ -196,22 +189,6 @@ pub fn register_twitch_sub_actions(
     reg.register(Box::new(
         SendWhisperRunner::new(Arc::clone(&transport), Arc::clone(&identity)).with_bot(bot.clone()),
     ))?;
-    reg.register(Box::new(UpdateTitleRunner::new(
-        Arc::clone(&transport),
-        Arc::clone(&identity),
-    )))?;
-    reg.register(Box::new(UpdateCategoryRunner::new(
-        Arc::clone(&transport),
-        Arc::clone(&identity),
-    )))?;
-    reg.register(Box::new(UpdateTagsRunner::new(
-        Arc::clone(&transport),
-        Arc::clone(&identity),
-    )))?;
-    reg.register(Box::new(CreateMarkerRunner::new(
-        Arc::clone(&transport),
-        Arc::clone(&identity),
-    )))?;
     reg.register(Box::new(
         SendShoutoutRunner::new(Arc::clone(&transport), Arc::clone(&identity))
             .with_bot(bot.clone())
@@ -227,117 +204,9 @@ pub fn register_twitch_sub_actions(
         Arc::clone(&identity),
         lifecycle,
     )))?;
-    reg.register(Box::new(RunAdRunner::new(
-        Arc::clone(&transport),
-        Arc::clone(&identity),
-    )))?;
-    reg.register(Box::new(SnoozeAdRunner::new(
-        Arc::clone(&transport),
-        Arc::clone(&identity),
-    )))?;
-    reg.register(Box::new(CreateRewardRunner::new(
-        Arc::clone(&transport),
-        Arc::clone(&identity),
-    )))?;
-    reg.register(Box::new(UpdateRewardRunner::new(
-        Arc::clone(&transport),
-        Arc::clone(&identity),
-    )))?;
-    reg.register(Box::new(EnableRewardRunner::new(
-        Arc::clone(&transport),
-        Arc::clone(&identity),
-    )))?;
-    reg.register(Box::new(DisableRewardRunner::new(
-        Arc::clone(&transport),
-        Arc::clone(&identity),
-    )))?;
-    reg.register(Box::new(PauseRewardRunner::new(
-        Arc::clone(&transport),
-        Arc::clone(&identity),
-    )))?;
-    reg.register(Box::new(ResumeRewardRunner::new(
-        Arc::clone(&transport),
-        Arc::clone(&identity),
-    )))?;
-    reg.register(Box::new(DeleteRewardRunner::new(
-        Arc::clone(&transport),
-        Arc::clone(&identity),
-    )))?;
-    reg.register(Box::new(FulfillRedemptionRunner::new(
-        Arc::clone(&transport),
-        Arc::clone(&identity),
-    )))?;
-    reg.register(Box::new(CancelRedemptionRunner::new(
-        Arc::clone(&transport),
-        Arc::clone(&identity),
-    )))?;
-    reg.register(Box::new(StartPollRunner::new(
-        Arc::clone(&transport),
-        Arc::clone(&identity),
-    )))?;
-    reg.register(Box::new(EndPollRunner::new(
-        Arc::clone(&transport),
-        Arc::clone(&identity),
-    )))?;
-    reg.register(Box::new(StartPredictionRunner::new(
-        Arc::clone(&transport),
-        Arc::clone(&identity),
-    )))?;
-    reg.register(Box::new(LockPredictionRunner::new(
-        Arc::clone(&transport),
-        Arc::clone(&identity),
-    )))?;
-    reg.register(Box::new(CancelPredictionRunner::new(
-        Arc::clone(&transport),
-        Arc::clone(&identity),
-    )))?;
-    reg.register(Box::new(ResolvePredictionRunner::new(
-        Arc::clone(&transport),
-        Arc::clone(&identity),
-    )))?;
-    reg.register(Box::new(GetCurrentGoalRunner::new(
-        Arc::clone(&transport),
-        Arc::clone(&identity),
-    )))?;
-    reg.register(Box::new(ApproveAutomodMessageRunner::new(
-        Arc::clone(&transport),
-        Arc::clone(&identity),
-    )))?;
-    reg.register(Box::new(DenyAutomodMessageRunner::new(
-        Arc::clone(&transport),
-        Arc::clone(&identity),
-    )))?;
-    reg.register(Box::new(UpdateAutomodSettingsRunner::new(
-        Arc::clone(&transport),
-        Arc::clone(&identity),
-    )))?;
-    reg.register(Box::new(AddBlockedTermRunner::new(
-        Arc::clone(&transport),
-        Arc::clone(&identity),
-    )))?;
-    reg.register(Box::new(RemoveBlockedTermRunner::new(
-        Arc::clone(&transport),
-        Arc::clone(&identity),
-    )))?;
-    reg.register(Box::new(GuestStarInviteRunner::new(
-        Arc::clone(&transport),
-        Arc::clone(&identity),
-    )))?;
-    reg.register(Box::new(GuestStarAssignSlotRunner::new(
-        Arc::clone(&transport),
-        Arc::clone(&identity),
-    )))?;
-    reg.register(Box::new(GuestStarRemoveGuestRunner::new(
-        Arc::clone(&transport),
-        Arc::clone(&identity),
-    )))?;
-    reg.register(Box::new(GuestStarUpdateSlotRunner::new(
-        Arc::clone(&transport),
-        Arc::clone(&identity),
-    )))?;
-    reg.register(Box::new(GuestStarEndSessionRunner::new(
-        transport, identity,
-    )))?;
+    for build in PLAIN_RUNNERS {
+        reg.register(build(Arc::clone(&transport), Arc::clone(&identity)))?;
+    }
     Ok(())
 }
 

@@ -13,7 +13,7 @@ use crate::runners::fields::{
     read_non_empty,
 };
 use crate::runners::step_failure;
-use crate::sink::{VTubeSink, result_keys};
+use crate::sink::{ItemLoad, ItemPlacement, VTubeSink, result_keys};
 use crate::vocabulary::{config_keys, sub_action_ids, variables};
 
 const FADE_TIME: OptionalField<NumberField> =
@@ -122,16 +122,18 @@ impl SubActionRunner for ItemLoadRunner {
 
         match self
             .sink
-            .load_item(
-                &placement.file_name,
-                placement.x,
-                placement.y,
-                placement.size,
-                placement.rotation,
-                placement.fade_time,
-                placement.order,
-                placement.unload_on_disconnect,
-            )
+            .load_item(&ItemLoad {
+                file_name: &placement.file_name,
+                placement: ItemPlacement {
+                    x: placement.x,
+                    y: placement.y,
+                    size: placement.size,
+                    rotation: placement.rotation,
+                    order: placement.order,
+                },
+                fade_time: placement.fade_time,
+                unload_on_disconnect: placement.unload_on_disconnect,
+            })
             .await
         {
             Ok(variant) => {

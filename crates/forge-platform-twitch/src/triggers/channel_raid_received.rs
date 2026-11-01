@@ -1,94 +1,66 @@
+use super::spec::TwitchTriggerSpec;
 use crate::vocabulary::RaidDirection;
 use crate::vocabulary::event_kinds;
 use crate::vocabulary::trigger_ids;
-use forge_events::{Event, EventSource};
+use forge_events::Event;
 use forge_registry::{
     ActorDeclaration, ActorIdentity, ActorRole, ActorSlot, CanonicalCount, CanonicalVariable,
-    EventFilter, KindPlatformContract, TriggerCategory, TriggerKindDescriptor, TriggerVariables,
+    TriggerCategory, TriggerVariables,
 };
-use forge_types::{PlatformId, TriggerConfig};
+use forge_types::TriggerConfig;
 
 use super::payload_read::{self, twitch_actor};
 use crate::vocabulary::fields::raid as fields;
 
-pub(crate) struct ChannelRaidReceivedDescriptor;
-
-impl TriggerKindDescriptor for ChannelRaidReceivedDescriptor {
-    fn id(&self) -> &str {
-        trigger_ids::CHANNEL_RAID_RECEIVED
-    }
-
-    fn category(&self) -> TriggerCategory {
-        TriggerCategory::Raids
-    }
-
-    fn label(&self) -> &str {
-        "Raid received"
-    }
-
-    fn summary(&self) -> &str {
-        "Fires when another streamer raids your channel"
-    }
-
-    fn search_text(&self) -> &str {
-        "twitch raid incoming host viewers streamer"
-    }
-
-    fn icon_name(&self) -> &str {
-        "sword"
-    }
-
-    fn platform_contract(&self) -> KindPlatformContract {
-        KindPlatformContract::PlatformSpecific(PlatformId::Twitch)
-    }
-
-    fn event_filter(&self) -> EventFilter {
-        EventFilter {
-            source: Some(EventSource::Twitch),
-            kind_prefix: Some(event_kinds::CHANNEL_RAID.to_owned()),
-        }
-    }
-
-    fn matches_trigger(&self, _config: &TriggerConfig, event: &Event) -> bool {
-        event
-            .payload
-            .get(fields::DIRECTION)
-            .and_then(|v| v.as_str())
-            .is_some_and(|d| d == RaidDirection::Received.as_str())
-    }
-
-    fn variables(&self) -> Option<TriggerVariables> {
-        Some(
-            TriggerVariables::new()
-                .actor(twitch_actor(ActorRole::Principal), raider_identity)
-                .count(CanonicalCount::ViewerCount, raid_viewer_count)
-                .legacy(
-                    "raid_viewer_count",
-                    "Raid viewer count",
-                    CanonicalVariable::Count(CanonicalCount::ViewerCount),
-                )
-                .legacy(
-                    "raider_login",
-                    "Raider login",
-                    CanonicalVariable::actor(ActorRole::Principal, ActorSlot::Login),
-                )
-                .legacy(
-                    "raider_id",
-                    "Raider ID",
-                    CanonicalVariable::actor(ActorRole::Principal, ActorSlot::Id),
-                )
-                .legacy(
-                    "raider_display_name",
-                    "Raider display name",
-                    CanonicalVariable::actor(ActorRole::Principal, ActorSlot::Name),
-                ),
-        )
-    }
-
-    fn actors(&self) -> ActorDeclaration {
-        ActorDeclaration::principal()
-    }
+fn matches(_config: &TriggerConfig, event: &Event) -> bool {
+    event
+        .payload
+        .get(fields::DIRECTION)
+        .and_then(|v| v.as_str())
+        .is_some_and(|d| d == RaidDirection::Received.as_str())
 }
+
+fn variables() -> Option<TriggerVariables> {
+    Some(
+        TriggerVariables::new()
+            .actor(twitch_actor(ActorRole::Principal), raider_identity)
+            .count(CanonicalCount::ViewerCount, raid_viewer_count)
+            .legacy(
+                "raid_viewer_count",
+                "Raid viewer count",
+                CanonicalVariable::Count(CanonicalCount::ViewerCount),
+            )
+            .legacy(
+                "raider_login",
+                "Raider login",
+                CanonicalVariable::actor(ActorRole::Principal, ActorSlot::Login),
+            )
+            .legacy(
+                "raider_id",
+                "Raider ID",
+                CanonicalVariable::actor(ActorRole::Principal, ActorSlot::Id),
+            )
+            .legacy(
+                "raider_display_name",
+                "Raider display name",
+                CanonicalVariable::actor(ActorRole::Principal, ActorSlot::Name),
+            ),
+    )
+}
+
+pub(super) const SPEC: TwitchTriggerSpec = TwitchTriggerSpec {
+    id: trigger_ids::CHANNEL_RAID_RECEIVED,
+    category: TriggerCategory::Raids,
+    label: "Raid received",
+    summary: "Fires when another streamer raids your channel",
+    search_text: "twitch raid incoming host viewers streamer",
+    icon: "sword",
+    kind: event_kinds::CHANNEL_RAID,
+    actors: ActorDeclaration::principal(),
+    variables,
+    matches,
+    ..TwitchTriggerSpec::BASE
+};
 
 fn raider_identity(event: &Event) -> ActorIdentity {
     payload_read::identity(
@@ -106,7 +78,9 @@ fn raid_viewer_count(event: &Event) -> i64 {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::triggers::raid_sent::RaidSentDescriptor;
+    use crate::triggers::raid_sent::SPEC as RAID_SENT;
+    use forge_events::EventSource;
+    use forge_registry::TriggerKindDescriptor;
     use forge_types::Variant;
 
     fn raid_event(direction: &str, viewers: i64) -> Event {
@@ -136,21 +110,21 @@ mod tests {
 
         let received = raid_event("received", 100);
         assert!(
-            ChannelRaidReceivedDescriptor.matches_trigger(&cfg, &received),
+            SPEC.matches_trigger(&cfg, &received),
             "incoming raid must fire raid_received"
         );
         assert!(
-            !RaidSentDescriptor.matches_trigger(&cfg, &received),
+            !RAID_SENT.matches_trigger(&cfg, &received),
             "incoming raid must NOT fire raid_sent"
         );
 
         let sent = raid_event("sent", 100);
         assert!(
-            !ChannelRaidReceivedDescriptor.matches_trigger(&cfg, &sent),
+            !SPEC.matches_trigger(&cfg, &sent),
             "outgoing raid must NOT fire raid_received"
         );
         assert!(
-            RaidSentDescriptor.matches_trigger(&cfg, &sent),
+            RAID_SENT.matches_trigger(&cfg, &sent),
             "outgoing raid must fire raid_sent"
         );
     }
@@ -163,13 +137,13 @@ mod tests {
             "channel.raid",
             serde_json::json!({ "viewer_count": 5 }),
         );
-        assert!(!ChannelRaidReceivedDescriptor.matches_trigger(&cfg, &event));
-        assert!(!RaidSentDescriptor.matches_trigger(&cfg, &event));
+        assert!(!SPEC.matches_trigger(&cfg, &event));
+        assert!(!RAID_SENT.matches_trigger(&cfg, &event));
     }
 
     #[test]
     fn a_received_raid_publishes_the_raider_as_the_canonical_actor_and_counts_its_viewers() {
-        let stack = ChannelRaidReceivedDescriptor.build_arg_stack(&raid_event("received", 250));
+        let stack = SPEC.build_arg_stack(&raid_event("received", 250));
         for (name, value) in [
             ("user_id", "666"),
             ("user_name", "BigStreamer"),

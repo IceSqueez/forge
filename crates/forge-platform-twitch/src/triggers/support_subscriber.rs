@@ -1,78 +1,44 @@
+use super::spec::TwitchTriggerSpec;
 use crate::vocabulary::event_kinds;
 use crate::vocabulary::trigger_ids;
-use forge_events::{Event, EventSource};
+use forge_events::Event;
 use forge_registry::{
-    ActorDeclaration, ActorIdentity, ActorRole, EventFilter, KindPlatformContract, TriggerCategory,
-    TriggerKindDescriptor, TriggerVariables,
+    ActorDeclaration, ActorIdentity, ActorRole, TriggerCategory, TriggerVariables,
 };
-use forge_types::{DeclaredVariable, PlatformId, TriggerConfig, Variant, VariantKind};
+use forge_types::{DeclaredVariable, Variant, VariantKind};
 
 use super::payload_read::{self, twitch_actor};
 use crate::vocabulary::fields::support as fields;
 
-pub(crate) struct SupportSubscriberDescriptor;
-
-impl TriggerKindDescriptor for SupportSubscriberDescriptor {
-    fn id(&self) -> &str {
-        trigger_ids::SUPPORT_SUBSCRIBER
-    }
-
-    fn category(&self) -> TriggerCategory {
-        TriggerCategory::Subscriptions
-    }
-
-    fn label(&self) -> &str {
-        "New subscriber"
-    }
-
-    fn summary(&self) -> &str {
-        "Fires on a first-time channel subscription"
-    }
-
-    fn search_text(&self) -> &str {
-        "twitch subscribe subscriber new subscription tier"
-    }
-
-    fn icon_name(&self) -> &str {
-        "user-plus"
-    }
-
-    fn platform_contract(&self) -> KindPlatformContract {
-        KindPlatformContract::PlatformSpecific(PlatformId::Twitch)
-    }
-
-    fn event_filter(&self) -> EventFilter {
-        EventFilter {
-            source: Some(EventSource::Twitch),
-            kind_prefix: Some(event_kinds::CHANNEL_SUBSCRIBE.to_owned()),
-        }
-    }
-
-    fn matches_trigger(&self, _config: &TriggerConfig, _event: &Event) -> bool {
-        true
-    }
-
-    fn variables(&self) -> Option<TriggerVariables> {
-        Some(
-            TriggerVariables::new()
-                .actor(twitch_actor(ActorRole::Principal), subscriber_identity)
-                .sub_tier(|event| payload_read::text(event, fields::TIER))
-                .event_specific(
-                    DeclaredVariable {
-                        name: "sub_is_gift".to_owned(),
-                        kind: VariantKind::Bool,
-                        label: "Gifted subscription".to_owned(),
-                        synthesis: None,
-                    },
-                    |event| Variant::Bool(payload_read::flag(event, fields::IS_GIFT)),
-                ),
-        )
-    }
-
-    fn actors(&self) -> ActorDeclaration {
-        ActorDeclaration::principal()
-    }
+fn variables() -> Option<TriggerVariables> {
+    Some(
+        TriggerVariables::new()
+            .actor(twitch_actor(ActorRole::Principal), subscriber_identity)
+            .sub_tier(|event| payload_read::text(event, fields::TIER))
+            .event_specific(
+                DeclaredVariable {
+                    name: "sub_is_gift".to_owned(),
+                    kind: VariantKind::Bool,
+                    label: "Gifted subscription".to_owned(),
+                    synthesis: None,
+                },
+                |event| Variant::Bool(payload_read::flag(event, fields::IS_GIFT)),
+            ),
+    )
 }
+
+pub(super) const SPEC: TwitchTriggerSpec = TwitchTriggerSpec {
+    id: trigger_ids::SUPPORT_SUBSCRIBER,
+    category: TriggerCategory::Subscriptions,
+    label: "New subscriber",
+    summary: "Fires on a first-time channel subscription",
+    search_text: "twitch subscribe subscriber new subscription tier",
+    icon: "user-plus",
+    kind: event_kinds::CHANNEL_SUBSCRIBE,
+    actors: ActorDeclaration::principal(),
+    variables,
+    ..TwitchTriggerSpec::BASE
+};
 
 fn subscriber_identity(event: &Event) -> ActorIdentity {
     payload_read::identity(
@@ -86,6 +52,9 @@ fn subscriber_identity(event: &Event) -> ActorIdentity {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use forge_events::EventSource;
+    use forge_registry::TriggerKindDescriptor;
+    use forge_types::TriggerConfig;
 
     fn subscribe_event() -> Event {
         Event::new(
@@ -101,14 +70,12 @@ mod tests {
 
     #[test]
     fn always_matches() {
-        assert!(
-            SupportSubscriberDescriptor.matches_trigger(&TriggerConfig::new(), &subscribe_event())
-        );
+        assert!(SPEC.matches_trigger(&TriggerConfig::new(), &subscribe_event()));
     }
 
     #[test]
     fn a_new_subscriber_publishes_the_canonical_actor_block_and_the_platform_native_tier() {
-        let stack = SupportSubscriberDescriptor.build_arg_stack(&subscribe_event());
+        let stack = SPEC.build_arg_stack(&subscribe_event());
         for (name, value) in [
             ("user_id", "111"),
             ("user_name", "Newbie"),

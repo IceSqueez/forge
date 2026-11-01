@@ -16,6 +16,7 @@ mod descriptor;
 mod duration_bounds;
 mod error;
 mod event_filter;
+mod event_trigger;
 mod first_chatter;
 mod flow_kinds;
 mod form;
@@ -72,6 +73,10 @@ pub use duration_bounds::{
 };
 pub use error::RegistryError;
 pub use event_filter::{EventFilter, kind_matches_prefix};
+pub use event_trigger::{
+    EventTriggerSpec, EventVariable, TriggerCondition, TriggerMatcher, event_variables,
+    no_config_fields,
+};
 pub use first_chatter::{
     FIRST_CHATTERS_ONLY, admits_chatter, chat_message_condition, first_chatters_only_field,
 };

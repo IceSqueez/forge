@@ -1,192 +1,164 @@
+use super::spec::TwitchTriggerSpec;
 use crate::vocabulary::trigger_ids;
 use crate::vocabulary::{event_kinds, messages};
-use forge_events::{Event, EventSource};
+use forge_events::Event;
 use forge_registry::{
-    ActorDeclaration, ActorIdentity, ActorRole, ActorSlot, CanonicalVariable, EventFilter,
-    FormField, KindPlatformContract, SubActionConfigExt, TriggerCategory, TriggerKindDescriptor,
-    TriggerVariables,
+    ActorDeclaration, ActorIdentity, ActorRole, ActorSlot, CanonicalVariable, FormField,
+    SubActionConfigExt, TriggerCategory, TriggerVariables,
 };
-use forge_types::{
-    DeclaredVariable, PlatformId, SynthesisHint, TriggerConfig, UserText, Variant, VariantKind,
-};
+use forge_types::{DeclaredVariable, SynthesisHint, TriggerConfig, UserText, Variant, VariantKind};
 
 use super::payload_read::{self, twitch_actor};
 use crate::vocabulary::fields::charity as charity_fields;
 
-pub(crate) struct CharityDonationDescriptor;
+fn default_config() -> TriggerConfig {
+    let mut cfg = TriggerConfig::new();
+    cfg.insert("min_amount_cents".to_owned(), Variant::Int(0));
+    cfg
+}
 
-impl TriggerKindDescriptor for CharityDonationDescriptor {
-    fn id(&self) -> &str {
-        trigger_ids::SUPPORT_CHARITY_DONATION
-    }
+fn config_fields() -> Vec<FormField> {
+    vec![FormField::Integer {
+        key: "min_amount_cents",
+        label: "Minimum donation (cents)",
+        min: 0,
+        max: i64::MAX,
+    }]
+}
 
-    fn category(&self) -> TriggerCategory {
-        TriggerCategory::Charity
-    }
-
-    fn label(&self) -> &str {
-        "Charity donation"
-    }
-
-    fn summary(&self) -> &str {
-        "Fires when a viewer donates to the active charity campaign"
-    }
-
-    fn search_text(&self) -> &str {
-        "twitch charity donate donation campaign"
-    }
-
-    fn icon_name(&self) -> &str {
-        "heart"
-    }
-
-    fn platform_contract(&self) -> KindPlatformContract {
-        KindPlatformContract::PlatformSpecific(PlatformId::Twitch)
-    }
-
-    fn default_config(&self) -> TriggerConfig {
-        let mut cfg = TriggerConfig::new();
-        cfg.insert("min_amount_cents".to_owned(), Variant::Int(0));
-        cfg
-    }
-
-    fn config_fields(&self) -> Vec<FormField> {
-        vec![FormField::Integer {
-            key: "min_amount_cents",
-            label: "Minimum donation (cents)",
-            min: 0,
-            max: i64::MAX,
-        }]
-    }
-
-    fn condition_display(&self, config: &TriggerConfig) -> UserText {
-        let min = config.int("min_amount_cents").unwrap_or(0);
-        if min == 0 {
-            messages::CONDITION_ANY_AMOUNT.into()
-        } else {
-            messages::condition_amount_at_least(min).into()
-        }
-    }
-
-    fn event_filter(&self) -> EventFilter {
-        EventFilter {
-            source: Some(EventSource::Twitch),
-            kind_prefix: Some(event_kinds::CHANNEL_CHARITY_CAMPAIGN_DONATE.to_owned()),
-        }
-    }
-
-    fn matches_trigger(&self, config: &TriggerConfig, event: &Event) -> bool {
-        let min_amount_cents = config.int("min_amount_cents").unwrap_or(0);
-
-        let amount_cents = event
-            .payload
-            .get(charity_fields::CHARITY)
-            .and_then(|c| c.get(charity_fields::AMOUNT_CENTS))
-            .and_then(|v| v.as_i64())
-            .unwrap_or(0);
-
-        amount_cents >= min_amount_cents
-    }
-
-    fn variables(&self) -> Option<TriggerVariables> {
-        Some(
-            TriggerVariables::new()
-                .actor(twitch_actor(ActorRole::Principal), donor_identity)
-                .event_specific(
-                    DeclaredVariable {
-                        name: "charity.id".to_owned(),
-                        kind: VariantKind::String,
-                        label: "Charity campaign ID".to_owned(),
-                        synthesis: None,
-                    },
-                    |event| {
-                        Variant::String(payload_read::nested_text(
-                            event,
-                            charity_fields::CHARITY,
-                            charity_fields::CHARITY_ID,
-                        ))
-                    },
-                )
-                .event_specific(
-                    DeclaredVariable {
-                        name: "charity.name".to_owned(),
-                        kind: VariantKind::String,
-                        label: "Charity name".to_owned(),
-                        synthesis: None,
-                    },
-                    |event| {
-                        Variant::String(payload_read::nested_text(
-                            event,
-                            charity_fields::CHARITY,
-                            charity_fields::CHARITY_NAME,
-                        ))
-                    },
-                )
-                .event_specific(
-                    DeclaredVariable {
-                        name: "charity.amount_cents".to_owned(),
-                        kind: VariantKind::Int,
-                        label: "Donation amount (cents)".to_owned(),
-                        synthesis: Some(SynthesisHint::BoundedInt {
-                            min: 0,
-                            max: super::MAX_SYNTHESIZED_COUNT,
-                        }),
-                    },
-                    |event| {
-                        Variant::Int(payload_read::nested_number(
-                            event,
-                            charity_fields::CHARITY,
-                            charity_fields::AMOUNT_CENTS,
-                        ))
-                    },
-                )
-                .event_specific(
-                    DeclaredVariable {
-                        name: "charity.currency_code".to_owned(),
-                        kind: VariantKind::String,
-                        label: "Currency code".to_owned(),
-                        synthesis: None,
-                    },
-                    |event| {
-                        Variant::String(payload_read::nested_text(
-                            event,
-                            charity_fields::CHARITY,
-                            charity_fields::CURRENCY_CODE,
-                        ))
-                    },
-                )
-                .event_specific(
-                    DeclaredVariable {
-                        name: "charity.decimal_places".to_owned(),
-                        kind: VariantKind::Int,
-                        label: "Amount decimal places".to_owned(),
-                        synthesis: Some(SynthesisHint::BoundedInt { min: 0, max: 3 }),
-                    },
-                    |event| {
-                        Variant::Int(payload_read::nested_number(
-                            event,
-                            charity_fields::CHARITY,
-                            charity_fields::DECIMAL_PLACES,
-                        ))
-                    },
-                )
-                .legacy(
-                    "charity.user.login",
-                    "Donor login",
-                    CanonicalVariable::actor(ActorRole::Principal, ActorSlot::Login),
-                )
-                .legacy(
-                    "charity.user.display_name",
-                    "Donor display name",
-                    CanonicalVariable::actor(ActorRole::Principal, ActorSlot::Name),
-                ),
-        )
-    }
-
-    fn actors(&self) -> ActorDeclaration {
-        ActorDeclaration::principal()
+fn condition_display(config: &TriggerConfig) -> UserText {
+    let min = config.int("min_amount_cents").unwrap_or(0);
+    if min == 0 {
+        messages::CONDITION_ANY_AMOUNT.into()
+    } else {
+        messages::condition_amount_at_least(min).into()
     }
 }
+
+fn matches(config: &TriggerConfig, event: &Event) -> bool {
+    let min_amount_cents = config.int("min_amount_cents").unwrap_or(0);
+
+    let amount_cents = event
+        .payload
+        .get(charity_fields::CHARITY)
+        .and_then(|c| c.get(charity_fields::AMOUNT_CENTS))
+        .and_then(|v| v.as_i64())
+        .unwrap_or(0);
+
+    amount_cents >= min_amount_cents
+}
+
+fn variables() -> Option<TriggerVariables> {
+    Some(
+        TriggerVariables::new()
+            .actor(twitch_actor(ActorRole::Principal), donor_identity)
+            .event_specific(
+                DeclaredVariable {
+                    name: "charity.id".to_owned(),
+                    kind: VariantKind::String,
+                    label: "Charity campaign ID".to_owned(),
+                    synthesis: None,
+                },
+                |event| {
+                    Variant::String(payload_read::nested_text(
+                        event,
+                        charity_fields::CHARITY,
+                        charity_fields::CHARITY_ID,
+                    ))
+                },
+            )
+            .event_specific(
+                DeclaredVariable {
+                    name: "charity.name".to_owned(),
+                    kind: VariantKind::String,
+                    label: "Charity name".to_owned(),
+                    synthesis: None,
+                },
+                |event| {
+                    Variant::String(payload_read::nested_text(
+                        event,
+                        charity_fields::CHARITY,
+                        charity_fields::CHARITY_NAME,
+                    ))
+                },
+            )
+            .event_specific(
+                DeclaredVariable {
+                    name: "charity.amount_cents".to_owned(),
+                    kind: VariantKind::Int,
+                    label: "Donation amount (cents)".to_owned(),
+                    synthesis: Some(SynthesisHint::BoundedInt {
+                        min: 0,
+                        max: super::MAX_SYNTHESIZED_COUNT,
+                    }),
+                },
+                |event| {
+                    Variant::Int(payload_read::nested_number(
+                        event,
+                        charity_fields::CHARITY,
+                        charity_fields::AMOUNT_CENTS,
+                    ))
+                },
+            )
+            .event_specific(
+                DeclaredVariable {
+                    name: "charity.currency_code".to_owned(),
+                    kind: VariantKind::String,
+                    label: "Currency code".to_owned(),
+                    synthesis: None,
+                },
+                |event| {
+                    Variant::String(payload_read::nested_text(
+                        event,
+                        charity_fields::CHARITY,
+                        charity_fields::CURRENCY_CODE,
+                    ))
+                },
+            )
+            .event_specific(
+                DeclaredVariable {
+                    name: "charity.decimal_places".to_owned(),
+                    kind: VariantKind::Int,
+                    label: "Amount decimal places".to_owned(),
+                    synthesis: Some(SynthesisHint::BoundedInt { min: 0, max: 3 }),
+                },
+                |event| {
+                    Variant::Int(payload_read::nested_number(
+                        event,
+                        charity_fields::CHARITY,
+                        charity_fields::DECIMAL_PLACES,
+                    ))
+                },
+            )
+            .legacy(
+                "charity.user.login",
+                "Donor login",
+                CanonicalVariable::actor(ActorRole::Principal, ActorSlot::Login),
+            )
+            .legacy(
+                "charity.user.display_name",
+                "Donor display name",
+                CanonicalVariable::actor(ActorRole::Principal, ActorSlot::Name),
+            ),
+    )
+}
+
+pub(super) const SPEC: TwitchTriggerSpec = TwitchTriggerSpec {
+    id: trigger_ids::SUPPORT_CHARITY_DONATION,
+    category: TriggerCategory::Charity,
+    label: "Charity donation",
+    summary: "Fires when a viewer donates to the active charity campaign",
+    search_text: "twitch charity donate donation campaign",
+    icon: "heart",
+    kind: event_kinds::CHANNEL_CHARITY_CAMPAIGN_DONATE,
+    actors: ActorDeclaration::principal(),
+    variables,
+    matches,
+    default_config,
+    config_fields,
+    condition_display,
+    ..TwitchTriggerSpec::BASE
+};
 
 fn donor_identity(event: &Event) -> ActorIdentity {
     payload_read::identity(
@@ -200,6 +172,8 @@ fn donor_identity(event: &Event) -> ActorIdentity {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use forge_events::EventSource;
+    use forge_registry::TriggerKindDescriptor;
 
     fn donation_event(amount_cents: i64) -> Event {
         Event::new(
@@ -234,16 +208,13 @@ mod tests {
             (config_min(501), false),
             (TriggerConfig::new(), true),
         ] {
-            assert_eq!(
-                CharityDonationDescriptor.matches_trigger(&min, &donation_event(500)),
-                expected,
-            );
+            assert_eq!(SPEC.matches_trigger(&min, &donation_event(500)), expected,);
         }
     }
 
     #[test]
     fn build_arg_stack_maps_amount_as_int_and_string_fields() {
-        let stack = CharityDonationDescriptor.build_arg_stack(&donation_event(2500));
+        let stack = SPEC.build_arg_stack(&donation_event(2500));
         assert_eq!(stack.get("charity.amount_cents"), Some(&Variant::Int(2500)));
         assert_eq!(
             stack.get("charity.id"),
@@ -279,7 +250,7 @@ mod tests {
                 }),
             );
 
-            let stack = CharityDonationDescriptor.build_arg_stack(&event);
+            let stack = SPEC.build_arg_stack(&event);
 
             assert_eq!(
                 stack.get("charity.decimal_places"),
@@ -291,7 +262,7 @@ mod tests {
 
     #[test]
     fn a_stored_donation_event_without_a_precision_reads_as_zero_places() {
-        let stack = CharityDonationDescriptor.build_arg_stack(&donation_event(2500));
+        let stack = SPEC.build_arg_stack(&donation_event(2500));
 
         assert_eq!(stack.get("charity.decimal_places"), Some(&Variant::Int(0)));
     }

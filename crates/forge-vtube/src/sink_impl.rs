@@ -7,7 +7,7 @@ use forge_types::Variant;
 
 use crate::client::VTubeClient;
 use crate::error::VTubeError;
-use crate::sink::{VTubeSink, result_keys};
+use crate::sink::{ItemLoad, ItemMove, ItemPin, VTubeSink, result_keys};
 use crate::vts::message_type::{
     COLOR_TINT_REQUEST, CURRENT_MODEL_REQUEST, EXPRESSION_ACTIVATION_REQUEST,
     EXPRESSION_STATE_REQUEST, HOTKEY_TRIGGER_REQUEST, HOTKEYS_IN_CURRENT_MODEL_REQUEST,
@@ -16,6 +16,7 @@ use crate::vts::message_type::{
     MODEL_LOAD_REQUEST, MOVE_MODEL_REQUEST, SET_CURRENT_MODEL_PHYSICS_REQUEST,
 };
 use crate::vts::protocol::check_response;
+use forge_registry::ConfigChoice;
 
 #[async_trait]
 impl VTubeSink for VTubeClient {
@@ -115,27 +116,18 @@ impl VTubeSink for VTubeClient {
         check_response(&resp)
     }
 
-    async fn move_item(
-        &self,
-        item_instance_id: &str,
-        x: Option<f64>,
-        y: Option<f64>,
-        size: Option<f64>,
-        rotation: Option<f64>,
-        order: Option<i64>,
-        time_in_seconds: f64,
-        fade_mode: &str,
-    ) -> Result<(), VTubeError> {
+    async fn move_item(&self, request: &ItemMove<'_>) -> Result<(), VTubeError> {
+        let placement = request.placement;
         let data = json!({
             "itemsToMove": [{
-                "itemInstanceID": item_instance_id,
-                "timeInSeconds": time_in_seconds,
-                "fadeMode": fade_mode,
-                "positionX": x.unwrap_or(ITEM_IGNORE_SENTINEL),
-                "positionY": y.unwrap_or(ITEM_IGNORE_SENTINEL),
-                "size": size.unwrap_or(ITEM_IGNORE_SENTINEL),
-                "rotation": rotation.unwrap_or(ITEM_IGNORE_SENTINEL),
-                "order": order.unwrap_or(ITEM_IGNORE_SENTINEL_ORDER),
+                "itemInstanceID": request.item_instance_id,
+                "timeInSeconds": request.time_in_seconds,
+                "fadeMode": request.fade_mode.wire_name(),
+                "positionX": placement.x.unwrap_or(ITEM_IGNORE_SENTINEL),
+                "positionY": placement.y.unwrap_or(ITEM_IGNORE_SENTINEL),
+                "size": placement.size.unwrap_or(ITEM_IGNORE_SENTINEL),
+                "rotation": placement.rotation.unwrap_or(ITEM_IGNORE_SENTINEL),
+                "order": placement.order.unwrap_or(ITEM_IGNORE_SENTINEL_ORDER),
                 "setFlip": false,
                 "flip": false,
                 "userCanStop": false
@@ -235,62 +227,42 @@ impl VTubeSink for VTubeClient {
         Ok(Variant::Object(fields))
     }
 
-    async fn pin_item(
-        &self,
-        item_instance_id: &str,
-        pin: bool,
-        angle_relative_to: &str,
-        size_relative_to: &str,
-        vertex_pin_type: &str,
-        model_id: &str,
-        art_mesh_id: &str,
-        angle: f64,
-        size: f64,
-    ) -> Result<(), VTubeError> {
+    async fn pin_item(&self, request: &ItemPin<'_>) -> Result<(), VTubeError> {
         let mut data = json!({
-            "pin": pin,
-            "itemInstanceID": item_instance_id
+            "pin": request.pin,
+            "itemInstanceID": request.item_instance_id
         });
-        if pin {
-            data["angleRelativeTo"] = json!(angle_relative_to);
-            data["sizeRelativeTo"] = json!(size_relative_to);
-            data["vertexPinType"] = json!(vertex_pin_type);
+        if request.pin {
+            data["angleRelativeTo"] = json!(request.angle_relative_to.wire_name());
+            data["sizeRelativeTo"] = json!(request.size_relative_to.wire_name());
+            data["vertexPinType"] = json!(request.vertex_pin_type.wire_name());
             data["pinInfo"] = json!({
-                "modelID": model_id,
-                "artMeshID": art_mesh_id,
-                "angle": angle,
-                "size": size
+                "modelID": request.model_id,
+                "artMeshID": request.art_mesh_id,
+                "angle": request.angle,
+                "size": request.size
             });
         }
         let resp = self.send_json_request(ITEM_PIN_REQUEST, data).await?;
         check_response(&resp)
     }
 
-    async fn load_item(
-        &self,
-        file_name: &str,
-        x: Option<f64>,
-        y: Option<f64>,
-        size: Option<f64>,
-        rotation: Option<f64>,
-        fade_time: Option<f64>,
-        order: Option<i64>,
-        unload_on_disconnect: bool,
-    ) -> Result<Variant, VTubeError> {
+    async fn load_item(&self, request: &ItemLoad<'_>) -> Result<Variant, VTubeError> {
+        let placement = request.placement;
         let data = json!({
-            "fileName": file_name,
-            "positionX": x.unwrap_or(0.0),
-            "positionY": y.unwrap_or(0.0),
-            "size": size.unwrap_or(DEFAULT_ITEM_SIZE),
-            "rotation": rotation.unwrap_or(0.0),
-            "fadeTime": fade_time.unwrap_or(DEFAULT_ITEM_FADE_SECS),
-            "order": order.unwrap_or(DEFAULT_ITEM_ORDER),
+            "fileName": request.file_name,
+            "positionX": placement.x.unwrap_or(0.0),
+            "positionY": placement.y.unwrap_or(0.0),
+            "size": placement.size.unwrap_or(DEFAULT_ITEM_SIZE),
+            "rotation": placement.rotation.unwrap_or(0.0),
+            "fadeTime": request.fade_time.unwrap_or(DEFAULT_ITEM_FADE_SECS),
+            "order": placement.order.unwrap_or(DEFAULT_ITEM_ORDER),
             "failIfOrderTaken": false,
             "smoothing": 0,
             "censored": false,
             "flipped": false,
             "locked": false,
-            "unloadWhenPluginDisconnects": unload_on_disconnect,
+            "unloadWhenPluginDisconnects": request.unload_on_disconnect,
             "customDataBase64": "",
             "customDataAskUserFirst": false
         });
@@ -423,6 +395,8 @@ mod tests {
     use serde_json::json;
 
     use super::*;
+    use crate::runners::choices::FadeMode;
+    use crate::sink::ItemPlacement;
     use std::sync::atomic::Ordering;
 
     use crate::client::tests::{
@@ -509,19 +483,25 @@ mod tests {
         let mut vts = FakeVts::bind().await;
         let (client, mut conn) = connected_client(&mut vts).await;
 
+        let request = ItemMove {
+            item_instance_id: "inst-7",
+            placement: ItemPlacement {
+                x: Some(0.5),
+                ..ItemPlacement::default()
+            },
+            time_in_seconds: 0.0,
+            fade_mode: FadeMode::Linear,
+        };
         for (moved, expect_ok) in [(true, true), (false, false)] {
-            let (outcome, ()) = tokio::join!(
-                client.move_item("inst-7", Some(0.5), None, None, None, None, 0.0, "linear"),
-                async {
-                    let request = conn.expect("ItemMoveRequest", SETTLE).await;
-                    let entry = if moved {
-                        json!({ "itemInstanceID": "inst-7", "success": true, "errorID": -1 })
-                    } else {
-                        json!({ "itemInstanceID": "inst-7", "success": false, "errorID": ITEM_ERROR_ID })
-                    };
-                    conn.tx.reply(&request, json!({ "movedItems": [entry] }));
-                }
-            );
+            let (outcome, ()) = tokio::join!(client.move_item(&request), async {
+                let request = conn.expect("ItemMoveRequest", SETTLE).await;
+                let entry = if moved {
+                    json!({ "itemInstanceID": "inst-7", "success": true, "errorID": -1 })
+                } else {
+                    json!({ "itemInstanceID": "inst-7", "success": false, "errorID": ITEM_ERROR_ID })
+                };
+                conn.tx.reply(&request, json!({ "movedItems": [entry] }));
+            });
 
             if expect_ok {
                 assert!(outcome.is_ok(), "moved item reported {outcome:?}");

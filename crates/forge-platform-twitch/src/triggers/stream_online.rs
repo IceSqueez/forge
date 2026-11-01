@@ -1,152 +1,70 @@
+use super::spec::{TwitchTriggerSpec, Variable, table_variables};
 use crate::vocabulary::event_kinds;
 use crate::vocabulary::trigger_ids;
-use forge_events::{Event, EventSource};
-use forge_registry::{
-    ActorDeclaration, EventFilter, KindPlatformContract, TriggerCategory, TriggerKindDescriptor,
-};
-use forge_types::{
-    ArgStack, DeclaredVariable, PlatformId, SynthesisHint, TriggerConfig, VariableSchema, Variant,
-    VariantKind,
-};
+use forge_registry::TriggerVariables;
+use forge_registry::{ActorDeclaration, TriggerCategory};
+use forge_types::SynthesisHint;
 
 use crate::vocabulary::fields::stream as stream_fields;
 
-pub(crate) struct StreamOnlineDescriptor;
+const VARIABLES: &[Variable] = &[
+    Variable::nested_text(
+        "stream_id",
+        "Stream ID",
+        stream_fields::STREAM,
+        stream_fields::STREAM_ID,
+    ),
+    Variable::nested_text(
+        "stream_type",
+        "Stream type",
+        stream_fields::STREAM,
+        stream_fields::STREAM_TYPE,
+    ),
+    Variable::nested_timestamp(
+        "started_at",
+        "Started at",
+        stream_fields::STREAM,
+        stream_fields::STARTED_AT,
+    ),
+    Variable::nested_text(
+        "broadcaster_login",
+        "Broadcaster login",
+        stream_fields::BROADCASTER,
+        stream_fields::BROADCASTER_LOGIN,
+    )
+    .synthesis(SynthesisHint::Username),
+    Variable::nested_text(
+        "broadcaster_id",
+        "Broadcaster ID",
+        stream_fields::BROADCASTER,
+        stream_fields::BROADCASTER_ID,
+    ),
+];
 
-impl TriggerKindDescriptor for StreamOnlineDescriptor {
-    fn id(&self) -> &str {
-        trigger_ids::STREAM_ONLINE
-    }
-
-    fn category(&self) -> TriggerCategory {
-        TriggerCategory::Streams
-    }
-
-    fn label(&self) -> &str {
-        "Stream online"
-    }
-
-    fn summary(&self) -> &str {
-        "Fires when your stream goes live"
-    }
-
-    fn search_text(&self) -> &str {
-        "twitch stream online live started broadcast"
-    }
-
-    fn icon_name(&self) -> &str {
-        "broadcast"
-    }
-
-    fn platform_contract(&self) -> KindPlatformContract {
-        KindPlatformContract::PlatformSpecific(PlatformId::Twitch)
-    }
-
-    fn event_filter(&self) -> EventFilter {
-        EventFilter {
-            source: Some(EventSource::Twitch),
-            kind_prefix: Some(event_kinds::STREAM_ONLINE.to_owned()),
-        }
-    }
-
-    fn matches_trigger(&self, _config: &TriggerConfig, _event: &Event) -> bool {
-        true
-    }
-
-    fn actors(&self) -> ActorDeclaration {
-        ActorDeclaration::Actorless
-    }
-
-    fn build_arg_stack(&self, event: &Event) -> ArgStack {
-        let stream_id = event
-            .payload
-            .get(stream_fields::STREAM)
-            .and_then(|s| s.get(stream_fields::STREAM_ID))
-            .and_then(|v| v.as_str())
-            .unwrap_or("")
-            .to_owned();
-        let stream_type = event
-            .payload
-            .get(stream_fields::STREAM)
-            .and_then(|s| s.get(stream_fields::STREAM_TYPE))
-            .and_then(|v| v.as_str())
-            .unwrap_or("")
-            .to_owned();
-        let started_at = event
-            .payload
-            .get(stream_fields::STREAM)
-            .and_then(|s| s.get(stream_fields::STARTED_AT))
-            .and_then(|v| v.as_str())
-            .and_then(crate::timestamp::variant);
-        let broadcaster_login = event
-            .payload
-            .get(stream_fields::BROADCASTER)
-            .and_then(|b| b.get(stream_fields::BROADCASTER_LOGIN))
-            .and_then(|v| v.as_str())
-            .unwrap_or("")
-            .to_owned();
-        let broadcaster_id = event
-            .payload
-            .get(stream_fields::BROADCASTER)
-            .and_then(|b| b.get(stream_fields::BROADCASTER_ID))
-            .and_then(|v| v.as_str())
-            .unwrap_or("")
-            .to_owned();
-
-        let stack = ArgStack::new()
-            .set("stream_id".to_owned(), Variant::String(stream_id))
-            .set("stream_type".to_owned(), Variant::String(stream_type))
-            .set(
-                "broadcaster_login".to_owned(),
-                Variant::String(broadcaster_login),
-            )
-            .set("broadcaster_id".to_owned(), Variant::String(broadcaster_id));
-        crate::timestamp::set(stack, "started_at", started_at)
-    }
-    fn output_schema(&self) -> Option<VariableSchema> {
-        Some({
-            VariableSchema {
-                variables: vec![
-                    DeclaredVariable {
-                        name: "stream_id".to_owned(),
-                        kind: VariantKind::String,
-                        label: "Stream ID".to_owned(),
-                        synthesis: None,
-                    },
-                    DeclaredVariable {
-                        name: "stream_type".to_owned(),
-                        kind: VariantKind::String,
-                        label: "Stream type".to_owned(),
-                        synthesis: None,
-                    },
-                    DeclaredVariable {
-                        name: "started_at".to_owned(),
-                        kind: VariantKind::Datetime,
-                        label: "Started at".to_owned(),
-                        synthesis: None,
-                    },
-                    DeclaredVariable {
-                        name: "broadcaster_login".to_owned(),
-                        kind: VariantKind::String,
-                        label: "Broadcaster login".to_owned(),
-                        synthesis: Some(SynthesisHint::Username),
-                    },
-                    DeclaredVariable {
-                        name: "broadcaster_id".to_owned(),
-                        kind: VariantKind::String,
-                        label: "Broadcaster ID".to_owned(),
-                        synthesis: None,
-                    },
-                ],
-            }
-        })
-    }
+fn variables() -> Option<TriggerVariables> {
+    Some(table_variables(VARIABLES))
 }
+
+pub(super) const SPEC: TwitchTriggerSpec = TwitchTriggerSpec {
+    id: trigger_ids::STREAM_ONLINE,
+    category: TriggerCategory::Streams,
+    label: "Stream online",
+    summary: "Fires when your stream goes live",
+    search_text: "twitch stream online live started broadcast",
+    icon: "broadcast",
+    kind: event_kinds::STREAM_ONLINE,
+    actors: ActorDeclaration::Actorless,
+    variables,
+    ..TwitchTriggerSpec::BASE
+};
 
 #[cfg(test)]
 mod tests {
     use super::*;
     use crate::timestamp::tests::instant;
+    use forge_events::{Event, EventSource};
+    use forge_registry::TriggerKindDescriptor;
+    use forge_types::Variant;
 
     fn online_event() -> Event {
         Event::new(
@@ -161,14 +79,14 @@ mod tests {
 
     #[test]
     fn event_filter_gates_on_stream_online_kind_prefix() {
-        let filter = StreamOnlineDescriptor.event_filter();
+        let filter = SPEC.event_filter();
         assert_eq!(filter.kind_prefix.as_deref(), Some("twitch.stream.online"));
         assert_eq!(filter.source, Some(EventSource::Twitch));
     }
 
     #[test]
     fn build_arg_stack_maps_stream_and_broadcaster_from_nested_payload() {
-        let stack = StreamOnlineDescriptor.build_arg_stack(&online_event());
+        let stack = SPEC.build_arg_stack(&online_event());
         assert_eq!(
             stack.get("stream_id"),
             Some(&Variant::String("stream-1".to_owned()))

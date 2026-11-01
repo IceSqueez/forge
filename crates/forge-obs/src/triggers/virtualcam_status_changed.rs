@@ -1,107 +1,42 @@
-use forge_events::{Event, EventSource};
-use forge_registry::{EventFilter, KindPlatformContract, TriggerCategory, TriggerKindDescriptor};
-use forge_types::{
-    ArgStack, DeclaredVariable, TriggerConfig, UserText, VariableSchema, VariantKind,
-};
+use super::families;
+use forge_events::Event;
+use forge_events::EventSource;
+use forge_registry::{EventTriggerSpec, TriggerCondition, TriggerMatcher, no_config_fields};
+use forge_types::TriggerConfig;
 
-use super::output_lifecycle::output_arg_stack;
-use crate::vocabulary::fields::virtualcam as fields;
 use crate::vocabulary::messages;
-use crate::vocabulary::{event_kinds, trigger_ids, variables};
+use crate::vocabulary::{event_kinds, trigger_ids};
 
-pub(crate) struct VirtualcamStatusChangedDescriptor;
-
-impl TriggerKindDescriptor for VirtualcamStatusChangedDescriptor {
-    fn id(&self) -> &str {
-        trigger_ids::VIRTUALCAM_STATUS_CHANGED
-    }
-
-    fn category(&self) -> TriggerCategory {
-        TriggerCategory::Integration
-    }
-
-    fn label(&self) -> &str {
-        "OBS virtual camera state changed"
-    }
-
-    fn summary(&self) -> &str {
-        "Fires on any virtual camera state transition (starting, started, stopping, stopped)."
-    }
-
-    fn search_text(&self) -> &str {
-        "obs virtual camera state changed any transition lifecycle"
-    }
-
-    fn icon_name(&self) -> &str {
-        "camera"
-    }
-
-    fn platform_contract(&self) -> KindPlatformContract {
-        KindPlatformContract::Universal
-    }
-
-    fn condition_display(&self, _: &TriggerConfig) -> UserText {
-        messages::CONDITION_ANY_VIRTUAL_CAMERA_STATE_CHANGE.into()
-    }
-
-    fn event_filter(&self) -> EventFilter {
-        EventFilter {
-            source: Some(EventSource::Obs),
-            kind_prefix: Some(event_kinds::VIRTUALCAM_PREFIX.to_owned()),
-        }
-    }
-
-    fn matches_trigger(&self, _config: &TriggerConfig, event: &Event) -> bool {
-        event.kind.starts_with(event_kinds::VIRTUALCAM_PREFIX)
-    }
-
-    fn build_arg_stack(&self, event: &Event) -> ArgStack {
-        build_virtualcam_arg_stack(event)
-    }
-
-    fn output_schema(&self) -> Option<VariableSchema> {
-        Some(VariableSchema {
-            variables: virtualcam_variables(),
-        })
-    }
+fn matches(_config: &TriggerConfig, event: &Event) -> bool {
+    event.kind.starts_with(event_kinds::VIRTUALCAM_PREFIX)
 }
 
-pub(crate) fn virtualcam_variables() -> Vec<DeclaredVariable> {
-    vec![
-        DeclaredVariable {
-            name: variables::virtualcam::OUTPUT_STATE.to_owned(),
-            kind: VariantKind::String,
-            label: "Virtual camera output state".to_owned(),
-            synthesis: None,
-        },
-        DeclaredVariable {
-            name: variables::virtualcam::IS_ACTIVE.to_owned(),
-            kind: VariantKind::Bool,
-            label: "Virtual camera active".to_owned(),
-            synthesis: None,
-        },
-    ]
-}
-
-pub(crate) fn build_virtualcam_arg_stack(event: &Event) -> ArgStack {
-    output_arg_stack(
-        event,
-        fields::IS_ACTIVE,
-        variables::virtualcam::OUTPUT_STATE,
-        variables::virtualcam::IS_ACTIVE,
-    )
-}
+pub(crate) const VIRTUALCAM_STATUS_CHANGED: EventTriggerSpec = EventTriggerSpec {
+    id: trigger_ids::VIRTUALCAM_STATUS_CHANGED,
+    source: EventSource::Obs,
+    label: "OBS virtual camera state changed",
+    summary: "Fires on any virtual camera state transition (starting, started, stopping, stopped).",
+    search_text: "obs virtual camera state changed any transition lifecycle",
+    icon: "camera",
+    prefix: event_kinds::VIRTUALCAM_PREFIX,
+    matcher: TriggerMatcher::Custom(matches),
+    condition: TriggerCondition::Fixed(messages::CONDITION_ANY_VIRTUAL_CAMERA_STATE_CHANGE),
+    config_fields: no_config_fields,
+    variables: families::virtualcam_variables,
+};
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use forge_events::EventSource;
+    use forge_registry::TriggerKindDescriptor;
     use forge_types::Variant;
     use serde_json::json;
     use std::collections::BTreeMap;
 
     #[test]
     fn omnibus_matches_every_virtualcam_lifecycle_kind() {
-        let d = VirtualcamStatusChangedDescriptor;
+        let d = VIRTUALCAM_STATUS_CHANGED;
         for kind in [
             "obs.virtualcam.starting",
             "obs.virtualcam.started",
@@ -118,7 +53,7 @@ mod tests {
 
     #[test]
     fn omnibus_rejects_non_virtualcam_kinds() {
-        let d = VirtualcamStatusChangedDescriptor;
+        let d = VIRTUALCAM_STATUS_CHANGED;
         for kind in [
             "obs.streaming.started",
             "obs.recording.stopped",
@@ -139,7 +74,7 @@ mod tests {
             "obs.virtualcam.started",
             json!({ "is_active": true }),
         );
-        let stack = build_virtualcam_arg_stack(&event);
+        let stack = VIRTUALCAM_STATUS_CHANGED.build_arg_stack(&event);
         assert_eq!(
             stack.get("obs.virtualcam.output_state"),
             Some(&Variant::String("started".to_owned()))
@@ -158,7 +93,9 @@ mod tests {
             json!({ "is_active": false }),
         );
         assert_eq!(
-            build_virtualcam_arg_stack(&event).get("obs.virtualcam.is_active"),
+            VIRTUALCAM_STATUS_CHANGED
+                .build_arg_stack(&event)
+                .get("obs.virtualcam.is_active"),
             Some(&Variant::Bool(false))
         );
     }
@@ -166,7 +103,7 @@ mod tests {
     #[test]
     fn build_arg_stack_derives_output_state_from_kind_when_payload_empty() {
         let event = Event::new(EventSource::Obs, "obs.virtualcam.started", json!({}));
-        let stack = build_virtualcam_arg_stack(&event);
+        let stack = VIRTUALCAM_STATUS_CHANGED.build_arg_stack(&event);
         assert_eq!(
             stack.get("obs.virtualcam.output_state"),
             Some(&Variant::String("started".to_owned())),
@@ -181,7 +118,7 @@ mod tests {
             "obs.virtualcam.started",
             json!({ "is_active": "true" }),
         );
-        let stack = build_virtualcam_arg_stack(&event);
+        let stack = VIRTUALCAM_STATUS_CHANGED.build_arg_stack(&event);
         assert_eq!(
             stack.get("obs.virtualcam.output_state"),
             Some(&Variant::String("started".to_owned()))

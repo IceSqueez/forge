@@ -1,170 +1,142 @@
+use super::spec::TwitchTriggerSpec;
 use crate::vocabulary::trigger_ids;
 use crate::vocabulary::{event_kinds, messages};
-use forge_events::{Event, EventSource};
+use forge_events::Event;
 use forge_registry::{
-    ActorDeclaration, ActorIdentity, ActorRole, CanonicalVariable, EventFilter, FormField,
-    KindPlatformContract, SubActionConfigExt, TriggerCategory, TriggerKindDescriptor,
-    TriggerVariables,
+    ActorDeclaration, ActorIdentity, ActorRole, CanonicalVariable, FormField, SubActionConfigExt,
+    TriggerCategory, TriggerVariables,
 };
-use forge_types::{DeclaredVariable, PlatformId, TriggerConfig, UserText, Variant, VariantKind};
+use forge_types::{DeclaredVariable, TriggerConfig, UserText, Variant, VariantKind};
 
 use super::payload_read::{self, twitch_actor};
 use crate::vocabulary::fields::channel_points as fields;
 
-pub(crate) struct RedemptionUpdatedDescriptor;
+fn default_config() -> TriggerConfig {
+    let mut cfg = TriggerConfig::new();
+    cfg.insert(
+        "status_filter".to_owned(),
+        Variant::String("any".to_owned()),
+    );
+    cfg
+}
 
-impl TriggerKindDescriptor for RedemptionUpdatedDescriptor {
-    fn id(&self) -> &str {
-        trigger_ids::CHANNEL_POINTS_REDEMPTION_UPDATED
-    }
+fn config_fields() -> Vec<FormField> {
+    vec![FormField::Select {
+        key: "status_filter",
+        label: "Redemption status",
+        options: &["any", "fulfilled", "canceled"],
+    }]
+}
 
-    fn category(&self) -> TriggerCategory {
-        TriggerCategory::ChannelPoints
-    }
-
-    fn label(&self) -> &str {
-        "Channel point redemption updated"
-    }
-
-    fn summary(&self) -> &str {
-        "Fires when a channel point redemption is fulfilled or canceled"
-    }
-
-    fn search_text(&self) -> &str {
-        "twitch channel points redemption fulfilled canceled updated status"
-    }
-
-    fn icon_name(&self) -> &str {
-        "star"
-    }
-
-    fn platform_contract(&self) -> KindPlatformContract {
-        KindPlatformContract::PlatformSpecific(PlatformId::Twitch)
-    }
-
-    fn default_config(&self) -> TriggerConfig {
-        let mut cfg = TriggerConfig::new();
-        cfg.insert(
-            "status_filter".to_owned(),
-            Variant::String("any".to_owned()),
-        );
-        cfg
-    }
-
-    fn config_fields(&self) -> Vec<FormField> {
-        vec![FormField::Select {
-            key: "status_filter",
-            label: "Redemption status",
-            options: &["any", "fulfilled", "canceled"],
-        }]
-    }
-
-    fn condition_display(&self, config: &TriggerConfig) -> UserText {
-        match config.get("status_filter").and_then(Variant::as_str) {
-            None | Some("any") => messages::CONDITION_ANY_STATUS.into(),
-            Some(status) => messages::condition_status(status).into(),
-        }
-    }
-
-    fn event_filter(&self) -> EventFilter {
-        EventFilter {
-            source: Some(EventSource::Twitch),
-            kind_prefix: Some(
-                event_kinds::CHANNEL_CHANNEL_POINTS_CUSTOM_REWARD_REDEMPTION_UPDATE.to_owned(),
-            ),
-        }
-    }
-
-    fn matches_trigger(&self, config: &TriggerConfig, event: &Event) -> bool {
-        let filter = config.str("status_filter").unwrap_or("any");
-
-        if filter == "any" {
-            return true;
-        }
-
-        let event_status = event
-            .payload
-            .get(fields::REDEMPTION)
-            .and_then(|r| r.get(fields::REDEMPTION_STATUS))
-            .and_then(|v| v.as_str())
-            .unwrap_or("");
-
-        event_status == filter
-    }
-
-    fn variables(&self) -> Option<TriggerVariables> {
-        Some(
-            TriggerVariables::new()
-                .actor(twitch_actor(ActorRole::Principal), redeemer_identity)
-                .message_text(redemption_user_input)
-                .event_specific(
-                    DeclaredVariable {
-                        name: "redemption.id".to_owned(),
-                        kind: VariantKind::String,
-                        label: "Redemption ID".to_owned(),
-                        synthesis: None,
-                    },
-                    |event| {
-                        Variant::String(payload_read::nested_text(
-                            event,
-                            fields::REDEMPTION,
-                            fields::REDEMPTION_ID,
-                        ))
-                    },
-                )
-                .event_specific(
-                    DeclaredVariable {
-                        name: "redemption.status".to_owned(),
-                        kind: VariantKind::String,
-                        label: "Redemption status".to_owned(),
-                        synthesis: None,
-                    },
-                    |event| {
-                        Variant::String(payload_read::nested_text(
-                            event,
-                            fields::REDEMPTION,
-                            fields::REDEMPTION_STATUS,
-                        ))
-                    },
-                )
-                .event_specific(
-                    DeclaredVariable {
-                        name: "reward.id".to_owned(),
-                        kind: VariantKind::String,
-                        label: "Reward ID".to_owned(),
-                        synthesis: None,
-                    },
-                    |event| {
-                        Variant::String(payload_read::nested_text(
-                            event,
-                            fields::REWARD,
-                            fields::REWARD_ID,
-                        ))
-                    },
-                )
-                .event_specific(
-                    DeclaredVariable {
-                        name: "reward.title".to_owned(),
-                        kind: VariantKind::String,
-                        label: "Reward title".to_owned(),
-                        synthesis: None,
-                    },
-                    |event| {
-                        Variant::String(payload_read::nested_text(
-                            event,
-                            fields::REWARD,
-                            fields::REWARD_TITLE,
-                        ))
-                    },
-                )
-                .legacy("user_input", "User input", CanonicalVariable::MessageText),
-        )
-    }
-
-    fn actors(&self) -> ActorDeclaration {
-        ActorDeclaration::principal()
+fn condition_display(config: &TriggerConfig) -> UserText {
+    match config.get("status_filter").and_then(Variant::as_str) {
+        None | Some("any") => messages::CONDITION_ANY_STATUS.into(),
+        Some(status) => messages::condition_status(status).into(),
     }
 }
+
+fn matches(config: &TriggerConfig, event: &Event) -> bool {
+    let filter = config.str("status_filter").unwrap_or("any");
+
+    if filter == "any" {
+        return true;
+    }
+
+    let event_status = event
+        .payload
+        .get(fields::REDEMPTION)
+        .and_then(|r| r.get(fields::REDEMPTION_STATUS))
+        .and_then(|v| v.as_str())
+        .unwrap_or("");
+
+    event_status == filter
+}
+
+fn variables() -> Option<TriggerVariables> {
+    Some(
+        TriggerVariables::new()
+            .actor(twitch_actor(ActorRole::Principal), redeemer_identity)
+            .message_text(redemption_user_input)
+            .event_specific(
+                DeclaredVariable {
+                    name: "redemption.id".to_owned(),
+                    kind: VariantKind::String,
+                    label: "Redemption ID".to_owned(),
+                    synthesis: None,
+                },
+                |event| {
+                    Variant::String(payload_read::nested_text(
+                        event,
+                        fields::REDEMPTION,
+                        fields::REDEMPTION_ID,
+                    ))
+                },
+            )
+            .event_specific(
+                DeclaredVariable {
+                    name: "redemption.status".to_owned(),
+                    kind: VariantKind::String,
+                    label: "Redemption status".to_owned(),
+                    synthesis: None,
+                },
+                |event| {
+                    Variant::String(payload_read::nested_text(
+                        event,
+                        fields::REDEMPTION,
+                        fields::REDEMPTION_STATUS,
+                    ))
+                },
+            )
+            .event_specific(
+                DeclaredVariable {
+                    name: "reward.id".to_owned(),
+                    kind: VariantKind::String,
+                    label: "Reward ID".to_owned(),
+                    synthesis: None,
+                },
+                |event| {
+                    Variant::String(payload_read::nested_text(
+                        event,
+                        fields::REWARD,
+                        fields::REWARD_ID,
+                    ))
+                },
+            )
+            .event_specific(
+                DeclaredVariable {
+                    name: "reward.title".to_owned(),
+                    kind: VariantKind::String,
+                    label: "Reward title".to_owned(),
+                    synthesis: None,
+                },
+                |event| {
+                    Variant::String(payload_read::nested_text(
+                        event,
+                        fields::REWARD,
+                        fields::REWARD_TITLE,
+                    ))
+                },
+            )
+            .legacy("user_input", "User input", CanonicalVariable::MessageText),
+    )
+}
+
+pub(super) const SPEC: TwitchTriggerSpec = TwitchTriggerSpec {
+    id: trigger_ids::CHANNEL_POINTS_REDEMPTION_UPDATED,
+    category: TriggerCategory::ChannelPoints,
+    label: "Channel point redemption updated",
+    summary: "Fires when a channel point redemption is fulfilled or canceled",
+    search_text: "twitch channel points redemption fulfilled canceled updated status",
+    icon: "star",
+    kind: event_kinds::CHANNEL_CHANNEL_POINTS_CUSTOM_REWARD_REDEMPTION_UPDATE,
+    actors: ActorDeclaration::principal(),
+    variables,
+    matches,
+    default_config,
+    config_fields,
+    condition_display,
+    ..TwitchTriggerSpec::BASE
+};
 
 fn redeemer_identity(event: &Event) -> ActorIdentity {
     payload_read::identity(
@@ -182,6 +154,8 @@ fn redemption_user_input(event: &Event) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use forge_events::EventSource;
+    use forge_registry::TriggerKindDescriptor;
 
     fn config_with_filter(filter: &str) -> TriggerConfig {
         let mut cfg = TriggerConfig::new();
@@ -218,7 +192,7 @@ mod tests {
 
     #[test]
     fn event_filter_targets_redemption_update_kind_from_twitch() {
-        let filter = RedemptionUpdatedDescriptor.event_filter();
+        let filter = SPEC.event_filter();
         assert_eq!(filter.source, Some(EventSource::Twitch));
         assert_eq!(
             filter.kind_prefix.as_deref(),
@@ -241,24 +215,16 @@ mod tests {
                 config_with_filter("canceled"),
                 false,
             ),
-            (
-                "default config fires (any)",
-                RedemptionUpdatedDescriptor.default_config(),
-                true,
-            ),
+            ("default config fires (any)", SPEC.default_config(), true),
         ];
         for (name, cfg, expected) in cases {
-            assert_eq!(
-                RedemptionUpdatedDescriptor.matches_trigger(&cfg, &event),
-                expected,
-                "case: {name}"
-            );
+            assert_eq!(SPEC.matches_trigger(&cfg, &event), expected, "case: {name}");
         }
     }
 
     #[test]
     fn build_arg_stack_exposes_redemption_user_and_reward_vars() {
-        let stack = RedemptionUpdatedDescriptor.build_arg_stack(&fulfilled_event());
+        let stack = SPEC.build_arg_stack(&fulfilled_event());
         assert_eq!(
             stack.get("redemption.id"),
             Some(&Variant::String("redemption-42".to_owned()))

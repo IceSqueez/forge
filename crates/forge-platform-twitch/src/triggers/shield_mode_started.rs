@@ -1,84 +1,50 @@
+use super::spec::TwitchTriggerSpec;
 use crate::vocabulary::event_kinds;
 use crate::vocabulary::trigger_ids;
-use forge_events::{Event, EventSource};
+use forge_events::Event;
 use forge_registry::{
-    ActorDeclaration, ActorIdentity, ActorRole, EventFilter, KindPlatformContract, TriggerCategory,
-    TriggerKindDescriptor, TriggerVariables,
+    ActorDeclaration, ActorIdentity, ActorRole, TriggerCategory, TriggerVariables,
 };
-use forge_types::{DeclaredVariable, PlatformId, TriggerConfig, VariantKind};
+use forge_types::{DeclaredVariable, VariantKind};
 
 use super::payload_read::{self, twitch_actor};
 use crate::vocabulary::fields::shield as shield_fields;
 
-pub(crate) struct ShieldModeStartedDescriptor;
-
-impl TriggerKindDescriptor for ShieldModeStartedDescriptor {
-    fn id(&self) -> &str {
-        trigger_ids::CHANNEL_SHIELD_MODE_STARTED
-    }
-
-    fn category(&self) -> TriggerCategory {
-        TriggerCategory::Moderation
-    }
-
-    fn label(&self) -> &str {
-        "Shield mode started"
-    }
-
-    fn summary(&self) -> &str {
-        "Fires when a moderator activates shield mode in the channel"
-    }
-
-    fn search_text(&self) -> &str {
-        "twitch shield mode protection moderation started activated"
-    }
-
-    fn icon_name(&self) -> &str {
-        "shield"
-    }
-
-    fn platform_contract(&self) -> KindPlatformContract {
-        KindPlatformContract::PlatformSpecific(PlatformId::Twitch)
-    }
-
-    fn event_filter(&self) -> EventFilter {
-        EventFilter {
-            source: Some(EventSource::Twitch),
-            kind_prefix: Some(event_kinds::CHANNEL_SHIELD_MODE_BEGIN.to_owned()),
-        }
-    }
-
-    fn matches_trigger(&self, _config: &TriggerConfig, _event: &Event) -> bool {
-        true
-    }
-
-    fn variables(&self) -> Option<TriggerVariables> {
-        Some(
-            TriggerVariables::new()
-                .actor(
-                    twitch_actor(ActorRole::Principal),
-                    shield_moderator_identity,
-                )
-                .actor(
-                    twitch_actor(ActorRole::Moderator),
-                    shield_moderator_identity,
-                )
-                .event_specific_optional(
-                    DeclaredVariable {
-                        name: "started_at".to_owned(),
-                        kind: VariantKind::Datetime,
-                        label: "Started at".to_owned(),
-                        synthesis: None,
-                    },
-                    |event| payload_read::timestamp(event, shield_fields::STARTED_AT),
-                ),
-        )
-    }
-
-    fn actors(&self) -> ActorDeclaration {
-        ActorDeclaration::Actors(&[ActorRole::Moderator])
-    }
+fn variables() -> Option<TriggerVariables> {
+    Some(
+        TriggerVariables::new()
+            .actor(
+                twitch_actor(ActorRole::Principal),
+                shield_moderator_identity,
+            )
+            .actor(
+                twitch_actor(ActorRole::Moderator),
+                shield_moderator_identity,
+            )
+            .event_specific_optional(
+                DeclaredVariable {
+                    name: "started_at".to_owned(),
+                    kind: VariantKind::Datetime,
+                    label: "Started at".to_owned(),
+                    synthesis: None,
+                },
+                |event| payload_read::timestamp(event, shield_fields::STARTED_AT),
+            ),
+    )
 }
+
+pub(super) const SPEC: TwitchTriggerSpec = TwitchTriggerSpec {
+    id: trigger_ids::CHANNEL_SHIELD_MODE_STARTED,
+    category: TriggerCategory::Moderation,
+    label: "Shield mode started",
+    summary: "Fires when a moderator activates shield mode in the channel",
+    search_text: "twitch shield mode protection moderation started activated",
+    icon: "shield",
+    kind: event_kinds::CHANNEL_SHIELD_MODE_BEGIN,
+    actors: ActorDeclaration::Actors(&[ActorRole::Moderator]),
+    variables,
+    ..TwitchTriggerSpec::BASE
+};
 
 fn shield_moderator_identity(event: &Event) -> ActorIdentity {
     payload_read::identity(
@@ -93,6 +59,8 @@ fn shield_moderator_identity(event: &Event) -> ActorIdentity {
 mod tests {
     use super::*;
     use crate::timestamp::tests::instant;
+    use forge_events::EventSource;
+    use forge_registry::TriggerKindDescriptor;
     use forge_types::Variant;
 
     fn shield_begin_event() -> Event {
@@ -109,7 +77,7 @@ mod tests {
 
     #[test]
     fn event_filter_targets_shield_mode_begin_topic_from_twitch() {
-        let filter = ShieldModeStartedDescriptor.event_filter();
+        let filter = SPEC.event_filter();
         assert_eq!(filter.source, Some(EventSource::Twitch));
         assert_eq!(
             filter.kind_prefix.as_deref(),
@@ -119,7 +87,7 @@ mod tests {
 
     #[test]
     fn build_arg_stack_maps_moderator_fields_and_started_at() {
-        let stack = ShieldModeStartedDescriptor.build_arg_stack(&shield_begin_event());
+        let stack = SPEC.build_arg_stack(&shield_begin_event());
         assert_eq!(
             stack.get("moderator_login"),
             Some(&Variant::String("mod_jane".to_owned()))

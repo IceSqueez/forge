@@ -1,114 +1,47 @@
+use super::spec::{TwitchTriggerSpec, Variable, table_variables};
 use crate::vocabulary::event_kinds;
 use crate::vocabulary::trigger_ids;
-use forge_events::{Event, EventSource};
-use forge_registry::{
-    ActorDeclaration, EventFilter, KindPlatformContract, TriggerCategory, TriggerKindDescriptor,
-};
-use forge_types::{
-    ArgStack, DeclaredVariable, PlatformId, TriggerConfig, VariableSchema, Variant, VariantKind,
-};
+use forge_registry::TriggerVariables;
+use forge_registry::{ActorDeclaration, TriggerCategory};
+use forge_types::VariantKind;
 
-use crate::triggers::poll_started::build_choices_variant;
+use super::families::build_choices_variant;
 use crate::vocabulary::fields::poll as fields;
 
-pub(crate) struct PollProgressDescriptor;
+const VARIABLES: &[Variable] = &[
+    Variable::nested_text("poll.id", "Poll ID", fields::POLL, fields::POLL_ID),
+    Variable::nested_text("poll.title", "Poll title", fields::POLL, fields::POLL_TITLE),
+    Variable::custom(
+        "poll.choices",
+        VariantKind::Array,
+        "Poll choices",
+        build_choices_variant,
+    ),
+];
 
-impl TriggerKindDescriptor for PollProgressDescriptor {
-    fn id(&self) -> &str {
-        trigger_ids::POLL_PROGRESS
-    }
-
-    fn category(&self) -> TriggerCategory {
-        TriggerCategory::Polls
-    }
-
-    fn label(&self) -> &str {
-        "Poll progress"
-    }
-
-    fn summary(&self) -> &str {
-        "Fires when vote counts update on an active poll"
-    }
-
-    fn search_text(&self) -> &str {
-        "twitch poll progress update vote"
-    }
-
-    fn icon_name(&self) -> &str {
-        "chart-bar"
-    }
-
-    fn platform_contract(&self) -> KindPlatformContract {
-        KindPlatformContract::PlatformSpecific(PlatformId::Twitch)
-    }
-
-    fn event_filter(&self) -> EventFilter {
-        EventFilter {
-            source: Some(EventSource::Twitch),
-            kind_prefix: Some(event_kinds::CHANNEL_POLL_PROGRESS.to_owned()),
-        }
-    }
-
-    fn matches_trigger(&self, _config: &TriggerConfig, _event: &Event) -> bool {
-        true
-    }
-
-    fn actors(&self) -> ActorDeclaration {
-        ActorDeclaration::Actorless
-    }
-
-    fn build_arg_stack(&self, event: &Event) -> ArgStack {
-        let poll = event.payload.get(fields::POLL);
-
-        let poll_id = poll
-            .and_then(|v| v.get(fields::POLL_ID))
-            .and_then(|v| v.as_str())
-            .unwrap_or("")
-            .to_owned();
-        let title = poll
-            .and_then(|v| v.get(fields::POLL_TITLE))
-            .and_then(|v| v.as_str())
-            .unwrap_or("")
-            .to_owned();
-
-        let choices = build_choices_variant(event);
-
-        ArgStack::new()
-            .set("poll.id".to_owned(), Variant::String(poll_id))
-            .set("poll.title".to_owned(), Variant::String(title))
-            .set("poll.choices".to_owned(), choices)
-    }
-    fn output_schema(&self) -> Option<VariableSchema> {
-        Some({
-            VariableSchema {
-                variables: vec![
-                    DeclaredVariable {
-                        name: "poll.id".to_owned(),
-                        kind: VariantKind::String,
-                        label: "Poll ID".to_owned(),
-                        synthesis: None,
-                    },
-                    DeclaredVariable {
-                        name: "poll.title".to_owned(),
-                        kind: VariantKind::String,
-                        label: "Poll title".to_owned(),
-                        synthesis: None,
-                    },
-                    DeclaredVariable {
-                        name: "poll.choices".to_owned(),
-                        kind: VariantKind::Array,
-                        label: "Poll choices".to_owned(),
-                        synthesis: None,
-                    },
-                ],
-            }
-        })
-    }
+fn variables() -> Option<TriggerVariables> {
+    Some(table_variables(VARIABLES))
 }
+
+pub(super) const SPEC: TwitchTriggerSpec = TwitchTriggerSpec {
+    id: trigger_ids::POLL_PROGRESS,
+    category: TriggerCategory::Polls,
+    label: "Poll progress",
+    summary: "Fires when vote counts update on an active poll",
+    search_text: "twitch poll progress update vote",
+    icon: "chart-bar",
+    kind: event_kinds::CHANNEL_POLL_PROGRESS,
+    actors: ActorDeclaration::Actorless,
+    variables,
+    ..TwitchTriggerSpec::BASE
+};
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use forge_events::{Event, EventSource};
+    use forge_registry::TriggerKindDescriptor;
+    use forge_types::Variant;
 
     fn poll_progress_event() -> Event {
         let payload = serde_json::json!({
@@ -122,7 +55,7 @@ mod tests {
 
     #[test]
     fn event_filter_targets_poll_progress_topic_from_twitch() {
-        let filter = PollProgressDescriptor.event_filter();
+        let filter = SPEC.event_filter();
         assert_eq!(filter.source, Some(EventSource::Twitch));
         assert_eq!(
             filter.kind_prefix.as_deref(),
@@ -132,7 +65,7 @@ mod tests {
 
     #[test]
     fn build_arg_stack_maps_poll_id_and_title() {
-        let stack = PollProgressDescriptor.build_arg_stack(&poll_progress_event());
+        let stack = SPEC.build_arg_stack(&poll_progress_event());
         assert_eq!(
             stack.get("poll.id"),
             Some(&Variant::String("poll-2".to_owned()))

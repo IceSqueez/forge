@@ -1,12 +1,11 @@
-use forge_events::{Event, EventSource};
+use super::spec::TwitchTriggerSpec;
+use forge_events::Event;
 use forge_registry::{
     ActorDeclaration, ActorIdentity, ActorRole, ActorSlot, CanonicalVariable, ConfigProblem,
-    ConfigReason, EventFilter, FormField, KindPlatformContract, TriggerCategory,
-    TriggerKindDescriptor, TriggerVariables, joined_condition,
+    ConfigReason, FormField, TriggerCategory, TriggerVariables, joined_condition,
 };
 use forge_types::{
-    DeclaredVariable, MessageRef, PlatformId, RecoverMutex, TriggerConfig, UserText, Variant,
-    VariantKind,
+    DeclaredVariable, MessageRef, RecoverMutex, TriggerConfig, UserText, Variant, VariantKind,
 };
 use regex::Regex;
 use std::collections::HashMap;
@@ -20,8 +19,6 @@ use crate::vocabulary::{event_kinds, messages, trigger_ids};
 const COMPILED_PATTERN_CACHE_LIMIT: usize = 64;
 const MATCH_TEXT_KEY: &str = "match_text";
 const MATCH_IS_REGEX_KEY: &str = "match_is_regex";
-
-pub(crate) struct WhisperReceivedDescriptor;
 
 fn compiled_pattern(pattern: &str) -> Option<Regex> {
     static CACHE: OnceLock<Mutex<HashMap<String, Option<Regex>>>> = OnceLock::new();
@@ -58,196 +55,169 @@ fn match_is_regex(config: &TriggerConfig) -> bool {
         .unwrap_or(false)
 }
 
-impl TriggerKindDescriptor for WhisperReceivedDescriptor {
-    fn id(&self) -> &str {
-        trigger_ids::CHAT_WHISPER
+fn config_fields() -> Vec<FormField> {
+    vec![
+        FormField::Text {
+            key: "from_user",
+            label: "From user (login)",
+            placeholder: "any",
+        },
+        FormField::Text {
+            key: MATCH_TEXT_KEY,
+            label: "Match text",
+            placeholder: "leave empty to match all",
+        },
+        FormField::Toggle {
+            key: MATCH_IS_REGEX_KEY,
+            label: "Use regex",
+        },
+    ]
+}
+
+fn check_config(config: &TriggerConfig) -> Result<(), ConfigProblem> {
+    let pattern = match_text(config);
+    if !match_is_regex(config) || pattern.is_empty() {
+        return Ok(());
     }
-
-    fn category(&self) -> TriggerCategory {
-        TriggerCategory::Chat
-    }
-
-    fn label(&self) -> &str {
-        "Whisper received"
-    }
-
-    fn summary(&self) -> &str {
-        "Fires when the bot account receives a whisper"
-    }
-
-    fn search_text(&self) -> &str {
-        "twitch whisper dm direct message private received bot chat"
-    }
-
-    fn icon_name(&self) -> &str {
-        "message-circle"
-    }
-
-    fn platform_contract(&self) -> KindPlatformContract {
-        KindPlatformContract::PlatformSpecific(PlatformId::Twitch)
-    }
-
-    fn config_fields(&self) -> Vec<FormField> {
-        vec![
-            FormField::Text {
-                key: "from_user",
-                label: "From user (login)",
-                placeholder: "any",
-            },
-            FormField::Text {
-                key: MATCH_TEXT_KEY,
-                label: "Match text",
-                placeholder: "leave empty to match all",
-            },
-            FormField::Toggle {
-                key: MATCH_IS_REGEX_KEY,
-                label: "Use regex",
-            },
-        ]
-    }
-
-    fn check_config(&self, config: &TriggerConfig) -> Result<(), ConfigProblem> {
-        let pattern = match_text(config);
-        if !match_is_regex(config) || pattern.is_empty() {
-            return Ok(());
-        }
-        Regex::new(pattern).map(drop).map_err(|error| {
-            ConfigProblem::field(
-                MATCH_TEXT_KEY,
-                ConfigReason::Coded(messages::whisper_pattern_invalid(&error.to_string())),
-            )
-        })
-    }
-
-    fn condition_display(&self, config: &TriggerConfig) -> UserText {
-        let filter_text = |key: &str| {
-            config
-                .get(key)
-                .and_then(Variant::as_str)
-                .map(str::trim)
-                .filter(|text| !text.is_empty())
-        };
-        let parts: Vec<MessageRef> = filter_text("from_user")
-            .map(messages::condition_whisper_from)
-            .into_iter()
-            .chain(filter_text(MATCH_TEXT_KEY).map(messages::condition_whisper_text))
-            .collect();
-        if parts.is_empty() {
-            messages::CONDITION_ANY_WHISPER.into()
-        } else {
-            joined_condition(parts)
-        }
-    }
-
-    fn event_filter(&self) -> EventFilter {
-        EventFilter {
-            source: Some(EventSource::Twitch),
-            kind_prefix: Some(event_kinds::USER_WHISPER_MESSAGE.to_owned()),
-        }
-    }
-
-    fn matches_trigger(&self, config: &TriggerConfig, event: &Event) -> bool {
-        let from_user = config
-            .get("from_user")
-            .and_then(|v| v.as_str())
-            .unwrap_or("")
-            .trim()
-            .to_lowercase();
-
-        if !from_user.is_empty() {
-            let sender_login = event
-                .payload
-                .get(whisper_fields::USER)
-                .and_then(|u| u.get(whisper_fields::USER_LOGIN))
-                .and_then(|v| v.as_str())
-                .unwrap_or("")
-                .to_lowercase();
-            if sender_login != from_user {
-                return false;
-            }
-        }
-
-        let wanted_text = match_text(config);
-
-        if wanted_text.is_empty() {
-            return true;
-        }
-
-        let whisper_text = event
-            .payload
-            .get(whisper_fields::WHISPER)
-            .and_then(|w| w.get(whisper_fields::WHISPER_TEXT))
-            .and_then(|v| v.as_str())
-            .unwrap_or("");
-
-        if match_is_regex(config) {
-            compiled_pattern(wanted_text).is_some_and(|re| re.is_match(whisper_text))
-        } else {
-            whisper_text.contains(wanted_text)
-        }
-    }
-
-    fn variables(&self) -> Option<TriggerVariables> {
-        Some(
-            TriggerVariables::new()
-                .actor(twitch_actor(ActorRole::Principal), sender_identity)
-                .message_text(whisper_text)
-                .event_specific(
-                    DeclaredVariable {
-                        name: "whisper.thread_id".to_owned(),
-                        kind: VariantKind::String,
-                        label: "Whisper thread ID".to_owned(),
-                        synthesis: None,
-                    },
-                    |event| {
-                        Variant::String(payload_read::text(
-                            event,
-                            whisper_fields::WHISPER_THREAD_ID,
-                        ))
-                    },
-                )
-                .event_specific(
-                    DeclaredVariable {
-                        name: "user.color".to_owned(),
-                        kind: VariantKind::String,
-                        label: "Sender name color".to_owned(),
-                        synthesis: None,
-                    },
-                    |event| {
-                        Variant::String(payload_read::nested_text(
-                            event,
-                            whisper_fields::USER,
-                            whisper_fields::USER_COLOR,
-                        ))
-                    },
-                )
-                .legacy(
-                    "whisper.text",
-                    "Whisper text",
-                    CanonicalVariable::MessageText,
-                )
-                .legacy(
-                    "user.id",
-                    "Sender ID",
-                    CanonicalVariable::actor(ActorRole::Principal, ActorSlot::Id),
-                )
-                .legacy(
-                    "user.login",
-                    "Sender login",
-                    CanonicalVariable::actor(ActorRole::Principal, ActorSlot::Login),
-                )
-                .legacy(
-                    "user.display_name",
-                    "Sender display name",
-                    CanonicalVariable::actor(ActorRole::Principal, ActorSlot::Name),
-                ),
+    Regex::new(pattern).map(drop).map_err(|error| {
+        ConfigProblem::field(
+            MATCH_TEXT_KEY,
+            ConfigReason::Coded(messages::whisper_pattern_invalid(&error.to_string())),
         )
-    }
+    })
+}
 
-    fn actors(&self) -> ActorDeclaration {
-        ActorDeclaration::principal()
+fn condition_display(config: &TriggerConfig) -> UserText {
+    let filter_text = |key: &str| {
+        config
+            .get(key)
+            .and_then(Variant::as_str)
+            .map(str::trim)
+            .filter(|text| !text.is_empty())
+    };
+    let parts: Vec<MessageRef> = filter_text("from_user")
+        .map(messages::condition_whisper_from)
+        .into_iter()
+        .chain(filter_text(MATCH_TEXT_KEY).map(messages::condition_whisper_text))
+        .collect();
+    if parts.is_empty() {
+        messages::CONDITION_ANY_WHISPER.into()
+    } else {
+        joined_condition(parts)
     }
 }
+
+fn matches(config: &TriggerConfig, event: &Event) -> bool {
+    let from_user = config
+        .get("from_user")
+        .and_then(|v| v.as_str())
+        .unwrap_or("")
+        .trim()
+        .to_lowercase();
+
+    if !from_user.is_empty() {
+        let sender_login = event
+            .payload
+            .get(whisper_fields::USER)
+            .and_then(|u| u.get(whisper_fields::USER_LOGIN))
+            .and_then(|v| v.as_str())
+            .unwrap_or("")
+            .to_lowercase();
+        if sender_login != from_user {
+            return false;
+        }
+    }
+
+    let wanted_text = match_text(config);
+
+    if wanted_text.is_empty() {
+        return true;
+    }
+
+    let whisper_text = event
+        .payload
+        .get(whisper_fields::WHISPER)
+        .and_then(|w| w.get(whisper_fields::WHISPER_TEXT))
+        .and_then(|v| v.as_str())
+        .unwrap_or("");
+
+    if match_is_regex(config) {
+        compiled_pattern(wanted_text).is_some_and(|re| re.is_match(whisper_text))
+    } else {
+        whisper_text.contains(wanted_text)
+    }
+}
+
+fn variables() -> Option<TriggerVariables> {
+    Some(
+        TriggerVariables::new()
+            .actor(twitch_actor(ActorRole::Principal), sender_identity)
+            .message_text(whisper_text)
+            .event_specific(
+                DeclaredVariable {
+                    name: "whisper.thread_id".to_owned(),
+                    kind: VariantKind::String,
+                    label: "Whisper thread ID".to_owned(),
+                    synthesis: None,
+                },
+                |event| {
+                    Variant::String(payload_read::text(event, whisper_fields::WHISPER_THREAD_ID))
+                },
+            )
+            .event_specific(
+                DeclaredVariable {
+                    name: "user.color".to_owned(),
+                    kind: VariantKind::String,
+                    label: "Sender name color".to_owned(),
+                    synthesis: None,
+                },
+                |event| {
+                    Variant::String(payload_read::nested_text(
+                        event,
+                        whisper_fields::USER,
+                        whisper_fields::USER_COLOR,
+                    ))
+                },
+            )
+            .legacy(
+                "whisper.text",
+                "Whisper text",
+                CanonicalVariable::MessageText,
+            )
+            .legacy(
+                "user.id",
+                "Sender ID",
+                CanonicalVariable::actor(ActorRole::Principal, ActorSlot::Id),
+            )
+            .legacy(
+                "user.login",
+                "Sender login",
+                CanonicalVariable::actor(ActorRole::Principal, ActorSlot::Login),
+            )
+            .legacy(
+                "user.display_name",
+                "Sender display name",
+                CanonicalVariable::actor(ActorRole::Principal, ActorSlot::Name),
+            ),
+    )
+}
+
+pub(super) const SPEC: TwitchTriggerSpec = TwitchTriggerSpec {
+    id: trigger_ids::CHAT_WHISPER,
+    category: TriggerCategory::Chat,
+    label: "Whisper received",
+    summary: "Fires when the bot account receives a whisper",
+    search_text: "twitch whisper dm direct message private received bot chat",
+    icon: "message-circle",
+    kind: event_kinds::USER_WHISPER_MESSAGE,
+    actors: ActorDeclaration::principal(),
+    variables,
+    matches,
+    config_fields,
+    condition_display,
+    check_config,
+    ..TwitchTriggerSpec::BASE
+};
 
 fn sender_identity(event: &Event) -> ActorIdentity {
     payload_read::identity(
@@ -265,6 +235,8 @@ fn whisper_text(event: &Event) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use forge_events::EventSource;
+    use forge_registry::TriggerKindDescriptor;
 
     fn config(pairs: &[(&str, Variant)]) -> TriggerConfig {
         let mut cfg = TriggerConfig::new();
@@ -294,37 +266,31 @@ mod tests {
     #[test]
     fn empty_config_matches_any_whisper() {
         let cfg = TriggerConfig::new();
-        assert!(WhisperReceivedDescriptor.matches_trigger(&cfg, &whisper_event("bobx", "hi")));
+        assert!(SPEC.matches_trigger(&cfg, &whisper_event("bobx", "hi")));
     }
 
     #[test]
     fn from_user_filter_is_case_insensitive() {
         let cfg = config(&[("from_user", Variant::String("BobX".to_owned()))]);
-        assert!(WhisperReceivedDescriptor.matches_trigger(&cfg, &whisper_event("bobx", "hi")));
+        assert!(SPEC.matches_trigger(&cfg, &whisper_event("bobx", "hi")));
     }
 
     #[test]
     fn from_user_filter_rejects_other_sender() {
         let cfg = config(&[("from_user", Variant::String("bobx".to_owned()))]);
-        assert!(!WhisperReceivedDescriptor.matches_trigger(&cfg, &whisper_event("alice", "hi")));
+        assert!(!SPEC.matches_trigger(&cfg, &whisper_event("alice", "hi")));
     }
 
     #[test]
     fn match_text_substring_present_matches() {
         let cfg = config(&[("match_text", Variant::String("secret".to_owned()))]);
-        assert!(
-            WhisperReceivedDescriptor
-                .matches_trigger(&cfg, &whisper_event("bobx", "the secret code"))
-        );
+        assert!(SPEC.matches_trigger(&cfg, &whisper_event("bobx", "the secret code")));
     }
 
     #[test]
     fn match_text_substring_absent_rejects() {
         let cfg = config(&[("match_text", Variant::String("secret".to_owned()))]);
-        assert!(
-            !WhisperReceivedDescriptor
-                .matches_trigger(&cfg, &whisper_event("bobx", "nothing here"))
-        );
+        assert!(!SPEC.matches_trigger(&cfg, &whisper_event("bobx", "nothing here")));
     }
 
     #[test]
@@ -333,9 +299,7 @@ mod tests {
             ("match_text", Variant::String(r"^!play\s+\d+$".to_owned())),
             ("match_is_regex", Variant::Bool(true)),
         ]);
-        assert!(
-            WhisperReceivedDescriptor.matches_trigger(&cfg, &whisper_event("bobx", "!play 42"))
-        );
+        assert!(SPEC.matches_trigger(&cfg, &whisper_event("bobx", "!play 42")));
     }
 
     #[test]
@@ -344,9 +308,7 @@ mod tests {
             ("match_text", Variant::String(r"^!play\s+\d+$".to_owned())),
             ("match_is_regex", Variant::Bool(true)),
         ]);
-        assert!(
-            !WhisperReceivedDescriptor.matches_trigger(&cfg, &whisper_event("bobx", "!play later"))
-        );
+        assert!(!SPEC.matches_trigger(&cfg, &whisper_event("bobx", "!play later")));
     }
 
     #[test]
@@ -355,9 +317,7 @@ mod tests {
             ("match_text", Variant::String("[".to_owned())),
             ("match_is_regex", Variant::Bool(true)),
         ]);
-        assert!(
-            !WhisperReceivedDescriptor.matches_trigger(&cfg, &whisper_event("bobx", "[bracket"))
-        );
+        assert!(!SPEC.matches_trigger(&cfg, &whisper_event("bobx", "[bracket")));
     }
 
     fn regex_config(pattern: &str) -> TriggerConfig {
@@ -370,9 +330,7 @@ mod tests {
     #[test]
     fn check_config_refuses_a_pattern_that_does_not_compile_on_the_text_field() {
         for pattern in ["[", "  (unclosed  "] {
-            let problem = WhisperReceivedDescriptor
-                .check_config(&regex_config(pattern))
-                .unwrap_err();
+            let problem = SPEC.check_config(&regex_config(pattern)).unwrap_err();
 
             let ConfigReason::Coded(message) = problem.reason else {
                 panic!("{pattern:?} must be refused with a coded reason");
@@ -401,11 +359,7 @@ mod tests {
                 ("match_is_regex", Variant::Bool(false)),
             ]),
         ] {
-            assert_eq!(
-                WhisperReceivedDescriptor.check_config(&cfg),
-                Ok(()),
-                "{cfg:?}"
-            );
+            assert_eq!(SPEC.check_config(&cfg), Ok(()), "{cfg:?}");
         }
     }
 
@@ -417,8 +371,8 @@ mod tests {
         let (matches, lines) =
             forge_test_support::log_capture::capture_blocking(tracing::Level::WARN, async {
                 [
-                    WhisperReceivedDescriptor.matches_trigger(&cfg, &event),
-                    WhisperReceivedDescriptor.matches_trigger(&cfg, &event),
+                    SPEC.matches_trigger(&cfg, &event),
+                    SPEC.matches_trigger(&cfg, &event),
                 ]
             });
 
@@ -436,8 +390,8 @@ mod tests {
         let hits = regex_config("^hel+o$");
         let misses = regex_config("^bye$");
 
-        let verdicts = [&hits, &misses, &hits, &misses]
-            .map(|cfg| WhisperReceivedDescriptor.matches_trigger(cfg, &event));
+        let verdicts =
+            [&hits, &misses, &hits, &misses].map(|cfg| SPEC.matches_trigger(cfg, &event));
 
         assert_eq!(verdicts, [true, false, true, false]);
     }
@@ -448,21 +402,14 @@ mod tests {
             ("from_user", Variant::String("bobx".to_owned())),
             ("match_text", Variant::String("hello".to_owned())),
         ]);
-        assert!(
-            WhisperReceivedDescriptor.matches_trigger(&cfg, &whisper_event("bobx", "well hello"))
-        );
-        assert!(
-            !WhisperReceivedDescriptor.matches_trigger(&cfg, &whisper_event("bobx", "goodbye"))
-        );
-        assert!(
-            !WhisperReceivedDescriptor.matches_trigger(&cfg, &whisper_event("alice", "well hello"))
-        );
+        assert!(SPEC.matches_trigger(&cfg, &whisper_event("bobx", "well hello")));
+        assert!(!SPEC.matches_trigger(&cfg, &whisper_event("bobx", "goodbye")));
+        assert!(!SPEC.matches_trigger(&cfg, &whisper_event("alice", "well hello")));
     }
 
     #[test]
     fn build_arg_stack_extracts_whisper_and_user_fields() {
-        let stack =
-            WhisperReceivedDescriptor.build_arg_stack(&whisper_event("bobx", "the message"));
+        let stack = SPEC.build_arg_stack(&whisper_event("bobx", "the message"));
         assert_eq!(
             stack.get("whisper.text"),
             Some(&Variant::String("the message".to_owned()))
@@ -496,7 +443,7 @@ mod tests {
             "user.whisper.message",
             serde_json::json!({}),
         );
-        let stack = WhisperReceivedDescriptor.build_arg_stack(&event);
+        let stack = SPEC.build_arg_stack(&event);
         assert_eq!(
             stack.get("whisper.text"),
             Some(&Variant::String(String::new()))
@@ -517,7 +464,7 @@ mod tests {
                 "whisper": { "text": "psst" }
             }),
         );
-        let stack = WhisperReceivedDescriptor.build_arg_stack(&event);
+        let stack = SPEC.build_arg_stack(&event);
         assert_eq!(
             stack.get("user.display_name"),
             Some(&Variant::String("bobx".to_owned()))

@@ -8,7 +8,8 @@ use async_trait::async_trait;
 use forge_registry::RunContext;
 
 use crate::error::VTubeError;
-use crate::sink::VTubeSink;
+use crate::sink::{ItemLoad, ItemMove, ItemPin, VTubeSink};
+use forge_registry::ConfigChoice;
 
 const SET_PARAM: &str = "set_param";
 
@@ -177,21 +178,19 @@ impl VTubeSink for MockSink {
             &[],
         )
     }
-    async fn move_item(
-        &self,
-        item_id: &str,
-        x: Option<f64>,
-        y: Option<f64>,
-        size: Option<f64>,
-        rotation: Option<f64>,
-        order: Option<i64>,
-        time_in_seconds: f64,
-        fade_mode: &str,
-    ) -> Result<(), VTubeError> {
+    async fn move_item(&self, request: &ItemMove<'_>) -> Result<(), VTubeError> {
+        let placement = request.placement;
         let outcome = self.record(
             "move_item",
-            vec![x, y, size, rotation, widen(order), Some(time_in_seconds)],
-            &[item_id, fade_mode],
+            vec![
+                placement.x,
+                placement.y,
+                placement.size,
+                placement.rotation,
+                widen(placement.order),
+                Some(request.time_in_seconds),
+            ],
+            &[request.item_instance_id, request.fade_mode.wire_name()],
         );
         if self.failing_item_move {
             return Err(VTubeError::NotConnected);
@@ -281,39 +280,26 @@ impl VTubeSink for MockSink {
         )
     }
 
-    async fn pin_item(
-        &self,
-        _: &str,
-        _: bool,
-        _: &str,
-        _: &str,
-        _: &str,
-        model_id: &str,
-        art_mesh_id: &str,
-        angle: f64,
-        size: f64,
-    ) -> Result<(), VTubeError> {
+    async fn pin_item(&self, request: &ItemPin<'_>) -> Result<(), VTubeError> {
         self.record(
             "pin_item",
-            vec![Some(angle), Some(size)],
-            &[model_id, art_mesh_id],
+            vec![Some(request.angle), Some(request.size)],
+            &[request.model_id, request.art_mesh_id],
         )
     }
 
-    async fn load_item(
-        &self,
-        _: &str,
-        x: Option<f64>,
-        y: Option<f64>,
-        size: Option<f64>,
-        rotation: Option<f64>,
-        fade_time: Option<f64>,
-        order: Option<i64>,
-        _: bool,
-    ) -> Result<Variant, VTubeError> {
+    async fn load_item(&self, request: &ItemLoad<'_>) -> Result<Variant, VTubeError> {
+        let placement = request.placement;
         self.record(
             "load_item",
-            vec![x, y, size, rotation, fade_time, widen(order)],
+            vec![
+                placement.x,
+                placement.y,
+                placement.size,
+                placement.rotation,
+                request.fade_time,
+                widen(placement.order),
+            ],
             &[],
         )?;
         Ok(Variant::Object(BTreeMap::from([

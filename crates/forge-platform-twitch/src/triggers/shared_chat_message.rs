@@ -1,98 +1,64 @@
+use super::spec::TwitchTriggerSpec;
 use crate::vocabulary::trigger_ids;
 use crate::vocabulary::{event_kinds, messages};
-use forge_events::{Event, EventSource};
-use forge_registry::{
-    ActorDeclaration, EventFilter, KindPlatformContract, TriggerCategory, TriggerKindDescriptor,
-    TriggerVariables,
-};
-use forge_types::{
-    DeclaredVariable, PlatformId, SynthesisHint, TriggerConfig, UserText, Variant, VariantKind,
-};
+use forge_events::Event;
+use forge_registry::{ActorDeclaration, TriggerCategory, TriggerVariables};
+use forge_types::{DeclaredVariable, SynthesisHint, TriggerConfig, UserText, Variant, VariantKind};
 
 use super::chat_arg_stack::base_chat_variables;
 use crate::vocabulary::fields::chat as chat_fields;
 
-pub(crate) struct SharedChatMessageDescriptor;
-
-impl TriggerKindDescriptor for SharedChatMessageDescriptor {
-    fn id(&self) -> &str {
-        trigger_ids::SHARED_CHAT_MESSAGE_RECEIVED
-    }
-
-    fn category(&self) -> TriggerCategory {
-        TriggerCategory::Chat
-    }
-
-    fn label(&self) -> &str {
-        "Shared chat message"
-    }
-
-    fn summary(&self) -> &str {
-        "Fires when a message arrives via a Shared Chat session from another channel"
-    }
-
-    fn search_text(&self) -> &str {
-        "twitch shared chat session source channel cross-channel"
-    }
-
-    fn icon_name(&self) -> &str {
-        "messages"
-    }
-
-    fn platform_contract(&self) -> KindPlatformContract {
-        KindPlatformContract::PlatformSpecific(PlatformId::Twitch)
-    }
-
-    fn condition_display(&self, _: &TriggerConfig) -> UserText {
-        messages::CONDITION_ANY_SHARED_CHAT_MESSAGE.into()
-    }
-
-    fn event_filter(&self) -> EventFilter {
-        EventFilter {
-            source: Some(EventSource::Twitch),
-            kind_prefix: Some(event_kinds::CHANNEL_CHAT_MESSAGE.to_owned()),
-        }
-    }
-
-    fn matches_trigger(&self, _config: &TriggerConfig, event: &Event) -> bool {
-        !from_channel_field(event, chat_fields::FROM_CHANNEL_LOGIN).is_empty()
-    }
-
-    fn variables(&self) -> Option<TriggerVariables> {
-        Some(
-            base_chat_variables()
-                .event_specific(
-                    DeclaredVariable {
-                        name: "chat.from_channel.login".to_owned(),
-                        kind: VariantKind::String,
-                        label: "Source channel login".to_owned(),
-                        synthesis: Some(SynthesisHint::Username),
-                    },
-                    |event| {
-                        Variant::String(from_channel_field(event, chat_fields::FROM_CHANNEL_LOGIN))
-                    },
-                )
-                .event_specific(
-                    DeclaredVariable {
-                        name: "chat.from_channel.display_name".to_owned(),
-                        kind: VariantKind::String,
-                        label: "Source channel display name".to_owned(),
-                        synthesis: Some(SynthesisHint::DisplayName),
-                    },
-                    |event| {
-                        Variant::String(from_channel_field(
-                            event,
-                            chat_fields::FROM_CHANNEL_DISPLAY_NAME,
-                        ))
-                    },
-                ),
-        )
-    }
-
-    fn actors(&self) -> ActorDeclaration {
-        ActorDeclaration::principal()
-    }
+fn condition_display(_: &TriggerConfig) -> UserText {
+    messages::CONDITION_ANY_SHARED_CHAT_MESSAGE.into()
 }
+
+fn matches(_config: &TriggerConfig, event: &Event) -> bool {
+    !from_channel_field(event, chat_fields::FROM_CHANNEL_LOGIN).is_empty()
+}
+
+fn variables() -> Option<TriggerVariables> {
+    Some(
+        base_chat_variables()
+            .event_specific(
+                DeclaredVariable {
+                    name: "chat.from_channel.login".to_owned(),
+                    kind: VariantKind::String,
+                    label: "Source channel login".to_owned(),
+                    synthesis: Some(SynthesisHint::Username),
+                },
+                |event| Variant::String(from_channel_field(event, chat_fields::FROM_CHANNEL_LOGIN)),
+            )
+            .event_specific(
+                DeclaredVariable {
+                    name: "chat.from_channel.display_name".to_owned(),
+                    kind: VariantKind::String,
+                    label: "Source channel display name".to_owned(),
+                    synthesis: Some(SynthesisHint::DisplayName),
+                },
+                |event| {
+                    Variant::String(from_channel_field(
+                        event,
+                        chat_fields::FROM_CHANNEL_DISPLAY_NAME,
+                    ))
+                },
+            ),
+    )
+}
+
+pub(super) const SPEC: TwitchTriggerSpec = TwitchTriggerSpec {
+    id: trigger_ids::SHARED_CHAT_MESSAGE_RECEIVED,
+    category: TriggerCategory::Chat,
+    label: "Shared chat message",
+    summary: "Fires when a message arrives via a Shared Chat session from another channel",
+    search_text: "twitch shared chat session source channel cross-channel",
+    icon: "messages",
+    kind: event_kinds::CHANNEL_CHAT_MESSAGE,
+    actors: ActorDeclaration::principal(),
+    variables,
+    matches,
+    condition_display,
+    ..TwitchTriggerSpec::BASE
+};
 
 fn from_channel_field(event: &Event, key: &str) -> String {
     super::payload_read::nested_text(event, chat_fields::FROM_CHANNEL, key)
@@ -101,6 +67,8 @@ fn from_channel_field(event: &Event, key: &str) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use forge_events::EventSource;
+    use forge_registry::TriggerKindDescriptor;
 
     fn chat_event(from_channel: Option<serde_json::Value>) -> Event {
         let mut payload = serde_json::json!({
@@ -138,7 +106,7 @@ mod tests {
         ];
         for (name, fc, expected) in cases {
             assert_eq!(
-                SharedChatMessageDescriptor.matches_trigger(&TriggerConfig::new(), &chat_event(fc)),
+                SPEC.matches_trigger(&TriggerConfig::new(), &chat_event(fc)),
                 expected,
                 "case: {name}"
             );
@@ -150,7 +118,7 @@ mod tests {
         let event = chat_event(Some(
             serde_json::json!({ "login": "other_chan", "display_name": "OtherChan" }),
         ));
-        let stack = SharedChatMessageDescriptor.build_arg_stack(&event);
+        let stack = SPEC.build_arg_stack(&event);
         assert_eq!(
             stack.get("chat.from_channel.login"),
             Some(&Variant::String("other_chan".to_owned()))

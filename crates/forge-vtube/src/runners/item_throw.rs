@@ -8,14 +8,14 @@ use forge_registry::{
 };
 use forge_types::{ArgStack, SubActionTelemetry, Variant};
 
+use crate::runners::choices::FadeMode;
 use crate::runners::fields::{ITEM_FILE_NAME, ITEM_SIZE, optional_number, read_non_empty};
 use crate::runners::step_failure;
-use crate::sink::{VTubeSink, result_keys};
+use crate::sink::{ItemLoad, ItemMove, ItemPlacement, VTubeSink, result_keys};
 use crate::vocabulary::{config_keys, messages, sub_action_ids, variables};
 
 const DEFAULT_THROW_SECONDS: f64 = 0.4;
 const SPAWN_FADE_SECONDS: f64 = 0.0;
-const LINEAR_FADE: &str = "linear";
 
 const FROM_X: OptionalField<NumberField> =
     optional_number(config_keys::FROM_X, "From X", "-1.0 to 1.0");
@@ -115,16 +115,18 @@ impl SubActionRunner for ItemThrowRunner {
 
         let loaded = self
             .sink
-            .load_item(
-                &trajectory.file_name,
-                trajectory.from_x,
-                trajectory.from_y,
-                trajectory.size,
-                None,
-                Some(SPAWN_FADE_SECONDS),
-                None,
-                true,
-            )
+            .load_item(&ItemLoad {
+                file_name: &trajectory.file_name,
+                placement: ItemPlacement {
+                    x: trajectory.from_x,
+                    y: trajectory.from_y,
+                    size: trajectory.size,
+                    rotation: None,
+                    order: None,
+                },
+                fade_time: Some(SPAWN_FADE_SECONDS),
+                unload_on_disconnect: true,
+            })
             .await;
 
         let instance_id = match loaded {
@@ -142,16 +144,16 @@ impl SubActionRunner for ItemThrowRunner {
 
         let moved = self
             .sink
-            .move_item(
-                &instance_id,
-                trajectory.to_x,
-                trajectory.to_y,
-                None,
-                None,
-                None,
-                trajectory.duration.unwrap_or(DEFAULT_THROW_SECONDS),
-                LINEAR_FADE,
-            )
+            .move_item(&ItemMove {
+                item_instance_id: &instance_id,
+                placement: ItemPlacement {
+                    x: trajectory.to_x,
+                    y: trajectory.to_y,
+                    ..ItemPlacement::default()
+                },
+                time_in_seconds: trajectory.duration.unwrap_or(DEFAULT_THROW_SECONDS),
+                fade_mode: FadeMode::Linear,
+            })
             .await;
 
         let stack = ctx.arg_stack.clone().set(

@@ -15,8 +15,6 @@ use crate::helix::HelixTransport;
 use crate::step_failure;
 use crate::vocabulary::{config_keys, sub_action_ids};
 
-const KIND_ID: &str = sub_action_ids::CHANNEL_POINTS_ENABLE_REWARD;
-
 pub(crate) const REWARD_ID: PickedTextField = PickedTextField {
     key: config_keys::REWARD_ID,
     label: "Reward ID",
@@ -29,17 +27,85 @@ pub(crate) const REWARD_ID: PickedTextField = PickedTextField {
 
 pub(crate) const REWARD_CONFIG: ConfigSpec = ConfigSpec::new(&[&REWARD_ID]);
 
-pub(crate) struct EnableRewardRunner {
+#[derive(Clone, Copy)]
+struct RewardToggleSpec {
+    id: &'static str,
+    label: &'static str,
+    summary: &'static str,
+    search_text: &'static str,
+    icon: &'static str,
+    body: fn() -> RewardBody,
+}
+
+const ENABLE: RewardToggleSpec = RewardToggleSpec {
+    id: sub_action_ids::CHANNEL_POINTS_ENABLE_REWARD,
+    label: "Enable Channel Point Reward",
+    summary: "Enables a custom channel point reward so viewers can redeem it.",
+    search_text: "twitch channel points custom reward enable on redemption",
+    icon: "star",
+    body: || RewardBody::new().enabled(true),
+};
+
+const DISABLE: RewardToggleSpec = RewardToggleSpec {
+    id: sub_action_ids::CHANNEL_POINTS_DISABLE_REWARD,
+    label: "Disable Channel Point Reward",
+    summary: "Disables a custom channel point reward so viewers cannot redeem it.",
+    search_text: "twitch channel points custom reward disable off redemption",
+    icon: "star",
+    body: || RewardBody::new().enabled(false),
+};
+
+const PAUSE: RewardToggleSpec = RewardToggleSpec {
+    id: sub_action_ids::CHANNEL_POINTS_PAUSE_REWARD,
+    label: "Pause Channel Point Reward",
+    summary: "Pauses a custom channel point reward, queueing new redemptions without fulfilling them.",
+    search_text: "twitch channel points custom reward pause hold queue redemption",
+    icon: "star",
+    body: || RewardBody::new().paused(true),
+};
+
+const RESUME: RewardToggleSpec = RewardToggleSpec {
+    id: sub_action_ids::CHANNEL_POINTS_RESUME_REWARD,
+    label: "Resume Channel Point Reward",
+    summary: "Resumes a paused custom channel point reward so redemptions are fulfilled normally.",
+    search_text: "twitch channel points custom reward resume unpause redemption",
+    icon: "star",
+    body: || RewardBody::new().paused(false),
+};
+
+pub(crate) struct RewardToggleRunner {
+    spec: RewardToggleSpec,
     transport: Arc<dyn HelixTransport>,
     identity: Arc<SelfIdentity>,
 }
 
-impl EnableRewardRunner {
-    pub(crate) fn new(transport: Arc<dyn HelixTransport>, identity: Arc<SelfIdentity>) -> Self {
+impl RewardToggleRunner {
+    fn new(
+        spec: RewardToggleSpec,
+        transport: Arc<dyn HelixTransport>,
+        identity: Arc<SelfIdentity>,
+    ) -> Self {
         Self {
+            spec,
             transport,
             identity,
         }
+    }
+
+    pub(crate) fn enable(transport: Arc<dyn HelixTransport>, identity: Arc<SelfIdentity>) -> Self {
+        Self::new(ENABLE, transport, identity)
+    }
+
+    pub(crate) fn disable(transport: Arc<dyn HelixTransport>, identity: Arc<SelfIdentity>) -> Self {
+        Self::new(DISABLE, transport, identity)
+    }
+
+    pub(crate) fn pause(transport: Arc<dyn HelixTransport>, identity: Arc<SelfIdentity>) -> Self {
+        Self::new(PAUSE, transport, identity)
+    }
+
+    pub(crate) fn resume(transport: Arc<dyn HelixTransport>, identity: Arc<SelfIdentity>) -> Self {
+        Self::new(RESUME, transport, identity)
     }
 }
 
@@ -57,7 +123,7 @@ async fn patch_reward_bool(
     step_failure::outcome(&transport.execute(request).await)
 }
 
-pub(crate) async fn execute_bool_runner(
+async fn execute_bool_runner(
     transport: &Arc<dyn HelixTransport>,
     identity: &Arc<SelfIdentity>,
     kind_id: &str,
@@ -75,9 +141,9 @@ pub(crate) async fn execute_bool_runner(
 }
 
 #[async_trait]
-impl SubActionRunner for EnableRewardRunner {
+impl SubActionRunner for RewardToggleRunner {
     fn id(&self) -> &str {
-        KIND_ID
+        self.spec.id
     }
 
     fn category(&self) -> SubActionCategory {
@@ -85,19 +151,19 @@ impl SubActionRunner for EnableRewardRunner {
     }
 
     fn label(&self) -> &str {
-        "Enable Channel Point Reward"
+        self.spec.label
     }
 
     fn summary(&self) -> &str {
-        "Enables a custom channel point reward so viewers can redeem it."
+        self.spec.summary
     }
 
     fn search_text(&self) -> &str {
-        "twitch channel points custom reward enable on redemption"
+        self.spec.search_text
     }
 
     fn icon_name(&self) -> &str {
-        "star"
+        self.spec.icon
     }
 
     fn config_spec(&self) -> Option<ConfigSpec> {
@@ -112,8 +178,8 @@ impl SubActionRunner for EnableRewardRunner {
         execute_bool_runner(
             &self.transport,
             &self.identity,
-            KIND_ID,
-            RewardBody::new().enabled(true),
+            self.spec.id,
+            (self.spec.body)(),
             config,
             ctx,
         )
@@ -134,8 +200,8 @@ mod tests {
 
     fn enable_runner_with(
         response: Result<serde_json::Value, TwitchError>,
-    ) -> (Arc<MockTransport>, EnableRewardRunner) {
-        crate::sub_actions::test_support::runner_with(vec![response], EnableRewardRunner::new)
+    ) -> (Arc<MockTransport>, RewardToggleRunner) {
+        crate::sub_actions::test_support::runner_with(vec![response], RewardToggleRunner::enable)
     }
 
     #[tokio::test]
@@ -258,5 +324,89 @@ mod tests {
             .await;
 
         assert_request_refused(&telemetry.outcome, 403);
+    }
+
+    #[tokio::test]
+    async fn disable_patches_is_enabled_false() {
+        let transport = Arc::new(MockTransport::returning(Ok(serde_json::Value::Null)));
+        let runner = RewardToggleRunner::disable(
+            Arc::clone(&transport) as Arc<dyn HelixTransport>,
+            crate::sub_actions::test_support::self_identity(),
+        );
+        let stack = ArgStack::new().set("reward.id".to_owned(), Variant::String("rw1".to_owned()));
+
+        let (telemetry, _) = runner
+            .execute(&REWARD_CONFIG.default_config(), &make_ctx(&stack))
+            .await;
+
+        assert_eq!(telemetry.outcome, SubActionOutcome::Success);
+        let request = transport.request(0);
+        assert_eq!(request.method, HelixMethod::Patch);
+        assert_eq!(request.path, "/helix/channel_points/custom_rewards");
+        assert!(
+            request
+                .query
+                .contains(&("broadcaster_id".to_owned(), SELF_USER_ID.to_owned()))
+        );
+        assert!(request.query.contains(&("id".to_owned(), "rw1".to_owned())));
+        assert_eq!(
+            request.body,
+            Some(serde_json::json!({ "is_enabled": false }))
+        );
+    }
+
+    #[tokio::test]
+    async fn pause_patches_is_paused_true() {
+        let transport = Arc::new(MockTransport::returning(Ok(serde_json::Value::Null)));
+        let runner = RewardToggleRunner::pause(
+            Arc::clone(&transport) as Arc<dyn HelixTransport>,
+            crate::sub_actions::test_support::self_identity(),
+        );
+        let stack = ArgStack::new().set("reward.id".to_owned(), Variant::String("rw2".to_owned()));
+
+        let (telemetry, _) = runner
+            .execute(&REWARD_CONFIG.default_config(), &make_ctx(&stack))
+            .await;
+
+        assert_eq!(telemetry.outcome, SubActionOutcome::Success);
+        let request = transport.request(0);
+        assert_eq!(request.method, HelixMethod::Patch);
+        assert_eq!(request.path, "/helix/channel_points/custom_rewards");
+        assert!(
+            request
+                .query
+                .contains(&("broadcaster_id".to_owned(), SELF_USER_ID.to_owned()))
+        );
+        assert!(request.query.contains(&("id".to_owned(), "rw2".to_owned())));
+        assert_eq!(request.body, Some(serde_json::json!({ "is_paused": true })));
+    }
+
+    #[tokio::test]
+    async fn resume_patches_is_paused_false() {
+        let transport = Arc::new(MockTransport::returning(Ok(serde_json::Value::Null)));
+        let runner = RewardToggleRunner::resume(
+            Arc::clone(&transport) as Arc<dyn HelixTransport>,
+            crate::sub_actions::test_support::self_identity(),
+        );
+        let stack = ArgStack::new().set("reward.id".to_owned(), Variant::String("rw3".to_owned()));
+
+        let (telemetry, _) = runner
+            .execute(&REWARD_CONFIG.default_config(), &make_ctx(&stack))
+            .await;
+
+        assert_eq!(telemetry.outcome, SubActionOutcome::Success);
+        let request = transport.request(0);
+        assert_eq!(request.method, HelixMethod::Patch);
+        assert_eq!(request.path, "/helix/channel_points/custom_rewards");
+        assert!(
+            request
+                .query
+                .contains(&("broadcaster_id".to_owned(), SELF_USER_ID.to_owned()))
+        );
+        assert!(request.query.contains(&("id".to_owned(), "rw3".to_owned())));
+        assert_eq!(
+            request.body,
+            Some(serde_json::json!({ "is_paused": false }))
+        );
     }
 }

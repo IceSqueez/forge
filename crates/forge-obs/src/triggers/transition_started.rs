@@ -1,99 +1,31 @@
-use forge_events::{Event, EventSource};
-use forge_registry::{EventFilter, KindPlatformContract, TriggerCategory, TriggerKindDescriptor};
-use forge_types::{
-    ArgStack, DeclaredVariable, TriggerConfig, UserText, VariableSchema, Variant, VariantKind,
-};
+use super::families;
+use forge_events::EventSource;
+use forge_registry::{EventTriggerSpec, TriggerCondition, TriggerMatcher, no_config_fields};
 
-use crate::vocabulary::fields::transition as fields;
 use crate::vocabulary::messages;
-use crate::vocabulary::{event_kinds, trigger_ids, variables};
+use crate::vocabulary::{event_kinds, trigger_ids};
 
-pub(crate) struct TransitionStartedDescriptor;
-
-impl TriggerKindDescriptor for TransitionStartedDescriptor {
-    fn id(&self) -> &str {
-        trigger_ids::TRANSITION_STARTED
-    }
-
-    fn category(&self) -> TriggerCategory {
-        TriggerCategory::Integration
-    }
-
-    fn label(&self) -> &str {
-        "OBS scene transition started"
-    }
-
-    fn summary(&self) -> &str {
-        "Fires when a scene transition begins in OBS."
-    }
-
-    fn search_text(&self) -> &str {
-        "obs scene transition started begin fade cut stinger"
-    }
-
-    fn icon_name(&self) -> &str {
-        "arrow-right"
-    }
-
-    fn platform_contract(&self) -> KindPlatformContract {
-        KindPlatformContract::Universal
-    }
-
-    fn condition_display(&self, _: &TriggerConfig) -> UserText {
-        messages::CONDITION_ANY_TRANSITION_STARTED.into()
-    }
-
-    fn event_filter(&self) -> EventFilter {
-        EventFilter {
-            source: Some(EventSource::Obs),
-            kind_prefix: Some(event_kinds::TRANSITION_PREFIX.to_owned()),
-        }
-    }
-
-    fn matches_trigger(&self, _config: &TriggerConfig, event: &Event) -> bool {
-        event.kind == event_kinds::TRANSITION_STARTED
-    }
-
-    fn build_arg_stack(&self, event: &Event) -> ArgStack {
-        build_transition_arg_stack(event)
-    }
-
-    fn output_schema(&self) -> Option<VariableSchema> {
-        Some(VariableSchema {
-            variables: transition_variables(),
-        })
-    }
-}
-
-pub(crate) fn transition_variables() -> Vec<DeclaredVariable> {
-    vec![DeclaredVariable {
-        name: variables::transition::NAME.to_owned(),
-        kind: VariantKind::String,
-        label: "Transition name".to_owned(),
-        synthesis: None,
-    }]
-}
-
-pub(crate) fn build_transition_arg_stack(event: &Event) -> ArgStack {
-    let mut stack = ArgStack::new();
-    if let Some(name) = event
-        .payload
-        .get(fields::TRANSITION_NAME)
-        .and_then(|v| v.as_str())
-    {
-        stack = stack.set(
-            variables::transition::NAME.to_owned(),
-            Variant::String(name.to_owned()),
-        );
-    }
-    stack
-}
+pub(crate) const TRANSITION_STARTED: EventTriggerSpec = EventTriggerSpec {
+    id: trigger_ids::TRANSITION_STARTED,
+    source: EventSource::Obs,
+    label: "OBS scene transition started",
+    summary: "Fires when a scene transition begins in OBS.",
+    search_text: "obs scene transition started begin fade cut stinger",
+    icon: "arrow-right",
+    prefix: event_kinds::TRANSITION_PREFIX,
+    matcher: TriggerMatcher::Kind(event_kinds::TRANSITION_STARTED),
+    condition: TriggerCondition::Fixed(messages::CONDITION_ANY_TRANSITION_STARTED),
+    config_fields: no_config_fields,
+    variables: families::transition_variables,
+};
 
 #[cfg(test)]
 mod tests {
-    use super::super::TransitionStartedDescriptor;
     use super::super::lifecycle;
-    use super::*;
+    use super::super::transition_started::TRANSITION_STARTED;
+    use forge_events::{Event, EventSource};
+    use forge_registry::TriggerKindDescriptor;
+    use forge_types::Variant;
     use serde_json::json;
     use std::collections::BTreeMap;
 
@@ -111,7 +43,7 @@ mod tests {
     fn each_transition_descriptor_matches_only_its_own_kind() {
         let cfg = BTreeMap::new();
         let descriptors: [(&str, &dyn TriggerKindDescriptor); 3] = [
-            ("obs.transition.started", &TransitionStartedDescriptor),
+            ("obs.transition.started", &TRANSITION_STARTED),
             ("obs.transition.ended", &lifecycle::TRANSITION_ENDED),
             (
                 "obs.transition.video_ended",
@@ -132,13 +64,13 @@ mod tests {
     #[test]
     fn transition_descriptor_rejects_non_transition_kind() {
         let event = Event::new(EventSource::Obs, "obs.scene.changed", json!({}));
-        assert!(!TransitionStartedDescriptor.matches_trigger(&BTreeMap::new(), &event));
+        assert!(!TRANSITION_STARTED.matches_trigger(&BTreeMap::new(), &event));
     }
 
     #[test]
     fn build_arg_stack_extracts_transition_name() {
-        let stack =
-            build_transition_arg_stack(&transition_event("obs.transition.started", "Stinger"));
+        let stack = TRANSITION_STARTED
+            .build_arg_stack(&transition_event("obs.transition.started", "Stinger"));
         assert_eq!(
             stack.get("obs.transition.name"),
             Some(&Variant::String("Stinger".to_owned())),
@@ -148,7 +80,7 @@ mod tests {
     #[test]
     fn build_arg_stack_omits_name_when_payload_field_absent() {
         let event = Event::new(EventSource::Obs, "obs.transition.ended", json!({}));
-        let stack = build_transition_arg_stack(&event);
+        let stack = TRANSITION_STARTED.build_arg_stack(&event);
         assert!(stack.get("obs.transition.name").is_none());
     }
 }

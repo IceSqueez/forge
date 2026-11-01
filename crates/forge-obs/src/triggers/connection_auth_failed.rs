@@ -1,95 +1,50 @@
-use forge_events::{Event, EventSource};
-use forge_registry::{EventFilter, KindPlatformContract, TriggerCategory, TriggerKindDescriptor};
-use forge_types::{
-    ArgStack, DeclaredVariable, TriggerConfig, UserText, VariableSchema, Variant, VariantKind,
+use forge_events::EventSource;
+use forge_registry::TriggerVariables;
+use forge_registry::{
+    EventTriggerSpec, EventVariable, TriggerCondition, TriggerMatcher, event_variables,
+    no_config_fields,
 };
 
 use crate::vocabulary::fields::connection as fields;
 use crate::vocabulary::messages;
 use crate::vocabulary::{event_kinds, trigger_ids, variables};
 
-pub(crate) struct ConnectionAuthFailedDescriptor;
+const VARIABLES: &[EventVariable] = &[EventVariable::text(
+    variables::connection::ERROR_MESSAGE,
+    "Error message",
+    fields::ERROR_MESSAGE,
+)];
 
-impl TriggerKindDescriptor for ConnectionAuthFailedDescriptor {
-    fn id(&self) -> &str {
-        trigger_ids::CONNECTION_AUTH_FAILED
-    }
-
-    fn category(&self) -> TriggerCategory {
-        TriggerCategory::Integration
-    }
-
-    fn label(&self) -> &str {
-        "OBS authentication failed"
-    }
-
-    fn summary(&self) -> &str {
-        "Fires when the OBS WebSocket connection is rejected due to authentication failure."
-    }
-
-    fn search_text(&self) -> &str {
-        "obs connection auth failed password wrong rejected"
-    }
-
-    fn icon_name(&self) -> &str {
-        "shield-x"
-    }
-
-    fn platform_contract(&self) -> KindPlatformContract {
-        KindPlatformContract::Universal
-    }
-
-    fn condition_display(&self, _: &TriggerConfig) -> UserText {
-        messages::CONDITION_AUTHENTICATION_FAILED.into()
-    }
-
-    fn event_filter(&self) -> EventFilter {
-        EventFilter {
-            source: Some(EventSource::Obs),
-            kind_prefix: Some(event_kinds::CONNECTION_PREFIX.to_owned()),
-        }
-    }
-
-    fn matches_trigger(&self, _config: &TriggerConfig, event: &Event) -> bool {
-        event.kind == event_kinds::CONNECTION_AUTH_FAILED
-    }
-
-    fn build_arg_stack(&self, event: &Event) -> ArgStack {
-        let mut stack = ArgStack::new();
-        if let Some(msg) = event
-            .payload
-            .get(fields::ERROR_MESSAGE)
-            .and_then(|v| v.as_str())
-        {
-            stack = stack.set(
-                variables::connection::ERROR_MESSAGE.to_owned(),
-                Variant::String(msg.to_owned()),
-            );
-        }
-        stack
-    }
-
-    fn output_schema(&self) -> Option<VariableSchema> {
-        Some(VariableSchema {
-            variables: vec![DeclaredVariable {
-                name: variables::connection::ERROR_MESSAGE.to_owned(),
-                kind: VariantKind::String,
-                label: "Error message".to_owned(),
-                synthesis: None,
-            }],
-        })
-    }
+fn variables() -> Option<TriggerVariables> {
+    event_variables(VARIABLES)
 }
+
+pub(crate) const CONNECTION_AUTH_FAILED: EventTriggerSpec = EventTriggerSpec {
+    id: trigger_ids::CONNECTION_AUTH_FAILED,
+    source: EventSource::Obs,
+    label: "OBS authentication failed",
+    summary: "Fires when the OBS WebSocket connection is rejected due to authentication failure.",
+    search_text: "obs connection auth failed password wrong rejected",
+    icon: "shield-x",
+    prefix: event_kinds::CONNECTION_PREFIX,
+    matcher: TriggerMatcher::Kind(event_kinds::CONNECTION_AUTH_FAILED),
+    condition: TriggerCondition::Fixed(messages::CONDITION_AUTHENTICATION_FAILED),
+    config_fields: no_config_fields,
+    variables,
+};
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use forge_events::{Event, EventSource};
+    use forge_registry::TriggerKindDescriptor;
+    use forge_types::Variant;
     use serde_json::json;
     use std::collections::BTreeMap;
 
     #[test]
     fn matches_only_auth_failed_among_connection_lifecycle() {
-        let d = ConnectionAuthFailedDescriptor;
+        let d = CONNECTION_AUTH_FAILED;
         for (kind, expected) in [
             ("obs.connection.auth_failed", true),
             ("obs.connection.connected", false),
@@ -106,7 +61,7 @@ mod tests {
 
     #[test]
     fn build_arg_stack_extracts_error_message() {
-        let d = ConnectionAuthFailedDescriptor;
+        let d = CONNECTION_AUTH_FAILED;
         let event = Event::new(
             EventSource::Obs,
             "obs.connection.auth_failed",
@@ -120,7 +75,7 @@ mod tests {
 
     #[test]
     fn build_arg_stack_omits_error_message_when_missing() {
-        let d = ConnectionAuthFailedDescriptor;
+        let d = CONNECTION_AUTH_FAILED;
         let event = Event::new(EventSource::Obs, "obs.connection.auth_failed", json!({}));
         assert_eq!(d.build_arg_stack(&event).get("obs.error_message"), None);
     }

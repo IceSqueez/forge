@@ -1,82 +1,47 @@
+use super::spec::TwitchTriggerSpec;
 use crate::vocabulary::event_kinds;
 use crate::vocabulary::trigger_ids;
-use forge_events::{Event, EventSource};
+use forge_events::Event;
 use forge_registry::{
-    ActorDeclaration, ActorIdentity, ActorRole, CanonicalCount, CanonicalVariable, EventFilter,
-    KindPlatformContract, TriggerCategory, TriggerKindDescriptor, TriggerVariables,
+    ActorDeclaration, ActorIdentity, ActorRole, CanonicalCount, CanonicalVariable, TriggerCategory,
+    TriggerVariables,
 };
-use forge_types::PlatformId;
-use forge_types::TriggerConfig;
 
 use super::payload_read::{self, twitch_actor};
 use crate::vocabulary::fields::support as fields;
 
-pub(crate) struct SupportResubscriberDescriptor;
-
-impl TriggerKindDescriptor for SupportResubscriberDescriptor {
-    fn id(&self) -> &str {
-        trigger_ids::SUPPORT_RESUBSCRIBER
-    }
-
-    fn category(&self) -> TriggerCategory {
-        TriggerCategory::Subscriptions
-    }
-
-    fn label(&self) -> &str {
-        "Re-subscriber"
-    }
-
-    fn summary(&self) -> &str {
-        "Fires on subscription renewals"
-    }
-
-    fn search_text(&self) -> &str {
-        "twitch resub resubscribe renewal subscription months streak"
-    }
-
-    fn icon_name(&self) -> &str {
-        "repeat"
-    }
-
-    fn platform_contract(&self) -> KindPlatformContract {
-        KindPlatformContract::PlatformSpecific(PlatformId::Twitch)
-    }
-
-    fn event_filter(&self) -> EventFilter {
-        EventFilter {
-            source: Some(EventSource::Twitch),
-            kind_prefix: Some(event_kinds::CHANNEL_SUBSCRIPTION_MESSAGE.to_owned()),
-        }
-    }
-
-    fn matches_trigger(&self, _config: &TriggerConfig, _event: &Event) -> bool {
-        true
-    }
-
-    fn variables(&self) -> Option<TriggerVariables> {
-        Some(
-            TriggerVariables::new()
-                .actor(twitch_actor(ActorRole::Principal), resubscriber_identity)
-                .message_text(resub_message)
-                .count(CanonicalCount::SubCumulativeMonths, |event| {
-                    payload_read::number(event, fields::CUMULATIVE_MONTHS)
-                })
-                .count(CanonicalCount::SubStreakMonths, |event| {
-                    payload_read::number(event, fields::STREAK_MONTHS)
-                })
-                .sub_tier(|event| payload_read::text(event, fields::TIER))
-                .legacy(
-                    "sub_message",
-                    "Resub message",
-                    CanonicalVariable::MessageText,
-                ),
-        )
-    }
-
-    fn actors(&self) -> ActorDeclaration {
-        ActorDeclaration::principal()
-    }
+fn variables() -> Option<TriggerVariables> {
+    Some(
+        TriggerVariables::new()
+            .actor(twitch_actor(ActorRole::Principal), resubscriber_identity)
+            .message_text(resub_message)
+            .count(CanonicalCount::SubCumulativeMonths, |event| {
+                payload_read::number(event, fields::CUMULATIVE_MONTHS)
+            })
+            .count(CanonicalCount::SubStreakMonths, |event| {
+                payload_read::number(event, fields::STREAK_MONTHS)
+            })
+            .sub_tier(|event| payload_read::text(event, fields::TIER))
+            .legacy(
+                "sub_message",
+                "Resub message",
+                CanonicalVariable::MessageText,
+            ),
+    )
 }
+
+pub(super) const SPEC: TwitchTriggerSpec = TwitchTriggerSpec {
+    id: trigger_ids::SUPPORT_RESUBSCRIBER,
+    category: TriggerCategory::Subscriptions,
+    label: "Re-subscriber",
+    summary: "Fires on subscription renewals",
+    search_text: "twitch resub resubscribe renewal subscription months streak",
+    icon: "repeat",
+    kind: event_kinds::CHANNEL_SUBSCRIPTION_MESSAGE,
+    actors: ActorDeclaration::principal(),
+    variables,
+    ..TwitchTriggerSpec::BASE
+};
 
 fn resubscriber_identity(event: &Event) -> ActorIdentity {
     payload_read::identity(
@@ -94,6 +59,9 @@ fn resub_message(event: &Event) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use forge_events::EventSource;
+    use forge_registry::TriggerKindDescriptor;
+    use forge_types::TriggerConfig;
     use forge_types::Variant;
 
     fn resub_event() -> Event {
@@ -113,14 +81,12 @@ mod tests {
 
     #[test]
     fn always_matches() {
-        assert!(
-            SupportResubscriberDescriptor.matches_trigger(&TriggerConfig::new(), &resub_event())
-        );
+        assert!(SPEC.matches_trigger(&TriggerConfig::new(), &resub_event()));
     }
 
     #[test]
     fn a_resubscriber_publishes_the_canonical_actor_block_the_tier_and_the_resub_message() {
-        let stack = SupportResubscriberDescriptor.build_arg_stack(&resub_event());
+        let stack = SPEC.build_arg_stack(&resub_event());
         for (name, value) in [
             ("user_id", "222"),
             ("user_name", "LoyalFan"),

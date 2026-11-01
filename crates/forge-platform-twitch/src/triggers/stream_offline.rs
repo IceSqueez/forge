@@ -1,110 +1,51 @@
+use super::spec::{TwitchTriggerSpec, Variable, table_variables};
 use crate::vocabulary::event_kinds;
 use crate::vocabulary::trigger_ids;
-use forge_events::{Event, EventSource};
-use forge_registry::{
-    ActorDeclaration, EventFilter, KindPlatformContract, TriggerCategory, TriggerKindDescriptor,
-};
-use forge_types::{
-    ArgStack, DeclaredVariable, PlatformId, SynthesisHint, TriggerConfig, VariableSchema, Variant,
-    VariantKind,
-};
+use forge_registry::TriggerVariables;
+use forge_registry::{ActorDeclaration, TriggerCategory};
+use forge_types::SynthesisHint;
 
 use crate::vocabulary::fields::stream as stream_fields;
 
-pub(crate) struct StreamOfflineDescriptor;
+const VARIABLES: &[Variable] = &[
+    Variable::nested_text(
+        "broadcaster_login",
+        "Broadcaster login",
+        stream_fields::BROADCASTER,
+        stream_fields::BROADCASTER_LOGIN,
+    )
+    .synthesis(SynthesisHint::Username),
+    Variable::nested_text(
+        "broadcaster_id",
+        "Broadcaster ID",
+        stream_fields::BROADCASTER,
+        stream_fields::BROADCASTER_ID,
+    ),
+];
 
-impl TriggerKindDescriptor for StreamOfflineDescriptor {
-    fn id(&self) -> &str {
-        trigger_ids::STREAM_OFFLINE
-    }
-
-    fn category(&self) -> TriggerCategory {
-        TriggerCategory::Streams
-    }
-
-    fn label(&self) -> &str {
-        "Stream offline"
-    }
-
-    fn summary(&self) -> &str {
-        "Fires when your stream ends"
-    }
-
-    fn search_text(&self) -> &str {
-        "twitch stream offline ended stopped broadcast"
-    }
-
-    fn icon_name(&self) -> &str {
-        "broadcast"
-    }
-
-    fn platform_contract(&self) -> KindPlatformContract {
-        KindPlatformContract::PlatformSpecific(PlatformId::Twitch)
-    }
-
-    fn event_filter(&self) -> EventFilter {
-        EventFilter {
-            source: Some(EventSource::Twitch),
-            kind_prefix: Some(event_kinds::STREAM_OFFLINE.to_owned()),
-        }
-    }
-
-    fn matches_trigger(&self, _config: &TriggerConfig, _event: &Event) -> bool {
-        true
-    }
-
-    fn actors(&self) -> ActorDeclaration {
-        ActorDeclaration::Actorless
-    }
-
-    fn build_arg_stack(&self, event: &Event) -> ArgStack {
-        let broadcaster_login = event
-            .payload
-            .get(stream_fields::BROADCASTER)
-            .and_then(|b| b.get(stream_fields::BROADCASTER_LOGIN))
-            .and_then(|v| v.as_str())
-            .unwrap_or("")
-            .to_owned();
-        let broadcaster_id = event
-            .payload
-            .get(stream_fields::BROADCASTER)
-            .and_then(|b| b.get(stream_fields::BROADCASTER_ID))
-            .and_then(|v| v.as_str())
-            .unwrap_or("")
-            .to_owned();
-
-        ArgStack::new()
-            .set(
-                "broadcaster_login".to_owned(),
-                Variant::String(broadcaster_login),
-            )
-            .set("broadcaster_id".to_owned(), Variant::String(broadcaster_id))
-    }
-    fn output_schema(&self) -> Option<VariableSchema> {
-        Some({
-            VariableSchema {
-                variables: vec![
-                    DeclaredVariable {
-                        name: "broadcaster_login".to_owned(),
-                        kind: VariantKind::String,
-                        label: "Broadcaster login".to_owned(),
-                        synthesis: Some(SynthesisHint::Username),
-                    },
-                    DeclaredVariable {
-                        name: "broadcaster_id".to_owned(),
-                        kind: VariantKind::String,
-                        label: "Broadcaster ID".to_owned(),
-                        synthesis: None,
-                    },
-                ],
-            }
-        })
-    }
+fn variables() -> Option<TriggerVariables> {
+    Some(table_variables(VARIABLES))
 }
+
+pub(super) const SPEC: TwitchTriggerSpec = TwitchTriggerSpec {
+    id: trigger_ids::STREAM_OFFLINE,
+    category: TriggerCategory::Streams,
+    label: "Stream offline",
+    summary: "Fires when your stream ends",
+    search_text: "twitch stream offline ended stopped broadcast",
+    icon: "broadcast",
+    kind: event_kinds::STREAM_OFFLINE,
+    actors: ActorDeclaration::Actorless,
+    variables,
+    ..TwitchTriggerSpec::BASE
+};
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use forge_events::{Event, EventSource};
+    use forge_registry::TriggerKindDescriptor;
+    use forge_types::Variant;
 
     fn offline_event() -> Event {
         Event::new(
@@ -118,14 +59,14 @@ mod tests {
 
     #[test]
     fn event_filter_gates_on_stream_offline_kind_prefix() {
-        let filter = StreamOfflineDescriptor.event_filter();
+        let filter = SPEC.event_filter();
         assert_eq!(filter.kind_prefix.as_deref(), Some("twitch.stream.offline"));
         assert_eq!(filter.source, Some(EventSource::Twitch));
     }
 
     #[test]
     fn build_arg_stack_maps_broadcaster_from_nested_payload() {
-        let stack = StreamOfflineDescriptor.build_arg_stack(&offline_event());
+        let stack = SPEC.build_arg_stack(&offline_event());
         assert_eq!(
             stack.get("broadcaster_login"),
             Some(&Variant::String("host_chan".to_owned()))

@@ -1,115 +1,82 @@
+use super::spec::TwitchTriggerSpec;
 use crate::vocabulary::event_kinds;
 use crate::vocabulary::trigger_ids;
-use forge_events::{Event, EventSource};
+use forge_events::Event;
 use forge_registry::{
-    ActorDeclaration, ActorIdentity, ActorRole, ActorSlot, CanonicalVariable, EventFilter,
-    KindPlatformContract, TriggerCategory, TriggerKindDescriptor, TriggerVariables,
+    ActorDeclaration, ActorIdentity, ActorRole, ActorSlot, CanonicalVariable, TriggerCategory,
+    TriggerVariables,
 };
-use forge_types::{DeclaredVariable, PlatformId, TriggerConfig, Variant, VariantKind};
+use forge_types::{DeclaredVariable, Variant, VariantKind};
 
 use super::payload_read::{self, twitch_actor};
 use crate::vocabulary::fields::warning as warning_fields;
 
-pub(crate) struct WarningSentDescriptor;
-
-impl TriggerKindDescriptor for WarningSentDescriptor {
-    fn id(&self) -> &str {
-        trigger_ids::CHANNEL_WARNING_SENT
-    }
-
-    fn category(&self) -> TriggerCategory {
-        TriggerCategory::Moderation
-    }
-
-    fn label(&self) -> &str {
-        "Warning sent"
-    }
-
-    fn summary(&self) -> &str {
-        "Fires when a moderator issues a warning to a user"
-    }
-
-    fn search_text(&self) -> &str {
-        "twitch warning sent moderator reason chat rules moderation"
-    }
-
-    fn icon_name(&self) -> &str {
-        "bell-alert"
-    }
-
-    fn platform_contract(&self) -> KindPlatformContract {
-        KindPlatformContract::PlatformSpecific(PlatformId::Twitch)
-    }
-
-    fn event_filter(&self) -> EventFilter {
-        EventFilter {
-            source: Some(EventSource::Twitch),
-            kind_prefix: Some(event_kinds::CHANNEL_WARNING_SEND.to_owned()),
-        }
-    }
-
-    fn matches_trigger(&self, _config: &TriggerConfig, _event: &Event) -> bool {
-        true
-    }
-
-    fn variables(&self) -> Option<TriggerVariables> {
-        Some(
-            TriggerVariables::new()
-                .actor(twitch_actor(ActorRole::Principal), warned_user_identity)
-                .actor(
-                    twitch_actor(ActorRole::Moderator),
-                    warning_moderator_identity,
-                )
-                .event_specific(
-                    DeclaredVariable {
-                        name: "warning.reason".to_owned(),
-                        kind: VariantKind::String,
-                        label: "Warning reason".to_owned(),
-                        synthesis: None,
-                    },
-                    |event| Variant::String(payload_read::text(event, warning_fields::REASON)),
-                )
-                .event_specific(
-                    DeclaredVariable {
-                        name: "warning.chat_rules_cited".to_owned(),
-                        kind: VariantKind::Array,
-                        label: "Cited chat rules".to_owned(),
-                        synthesis: None,
-                    },
-                    |event| payload_read::text_list(event, warning_fields::CHAT_RULES_CITED),
-                )
-                .legacy(
-                    "warning.target.login",
-                    "Warned user login",
-                    CanonicalVariable::actor(ActorRole::Principal, ActorSlot::Login),
-                )
-                .legacy(
-                    "warning.target.id",
-                    "Warned user ID",
-                    CanonicalVariable::actor(ActorRole::Principal, ActorSlot::Id),
-                )
-                .legacy(
-                    "warning.target.display_name",
-                    "Warned user display name",
-                    CanonicalVariable::actor(ActorRole::Principal, ActorSlot::Name),
-                )
-                .legacy(
-                    "warning.moderator.id",
-                    "Moderator ID",
-                    CanonicalVariable::actor(ActorRole::Moderator, ActorSlot::Id),
-                )
-                .legacy(
-                    "warning.moderator.login",
-                    "Moderator login",
-                    CanonicalVariable::actor(ActorRole::Moderator, ActorSlot::Login),
-                ),
-        )
-    }
-
-    fn actors(&self) -> ActorDeclaration {
-        ActorDeclaration::Actors(&[ActorRole::Moderator])
-    }
+fn variables() -> Option<TriggerVariables> {
+    Some(
+        TriggerVariables::new()
+            .actor(twitch_actor(ActorRole::Principal), warned_user_identity)
+            .actor(
+                twitch_actor(ActorRole::Moderator),
+                warning_moderator_identity,
+            )
+            .event_specific(
+                DeclaredVariable {
+                    name: "warning.reason".to_owned(),
+                    kind: VariantKind::String,
+                    label: "Warning reason".to_owned(),
+                    synthesis: None,
+                },
+                |event| Variant::String(payload_read::text(event, warning_fields::REASON)),
+            )
+            .event_specific(
+                DeclaredVariable {
+                    name: "warning.chat_rules_cited".to_owned(),
+                    kind: VariantKind::Array,
+                    label: "Cited chat rules".to_owned(),
+                    synthesis: None,
+                },
+                |event| payload_read::text_list(event, warning_fields::CHAT_RULES_CITED),
+            )
+            .legacy(
+                "warning.target.login",
+                "Warned user login",
+                CanonicalVariable::actor(ActorRole::Principal, ActorSlot::Login),
+            )
+            .legacy(
+                "warning.target.id",
+                "Warned user ID",
+                CanonicalVariable::actor(ActorRole::Principal, ActorSlot::Id),
+            )
+            .legacy(
+                "warning.target.display_name",
+                "Warned user display name",
+                CanonicalVariable::actor(ActorRole::Principal, ActorSlot::Name),
+            )
+            .legacy(
+                "warning.moderator.id",
+                "Moderator ID",
+                CanonicalVariable::actor(ActorRole::Moderator, ActorSlot::Id),
+            )
+            .legacy(
+                "warning.moderator.login",
+                "Moderator login",
+                CanonicalVariable::actor(ActorRole::Moderator, ActorSlot::Login),
+            ),
+    )
 }
+
+pub(super) const SPEC: TwitchTriggerSpec = TwitchTriggerSpec {
+    id: trigger_ids::CHANNEL_WARNING_SENT,
+    category: TriggerCategory::Moderation,
+    label: "Warning sent",
+    summary: "Fires when a moderator issues a warning to a user",
+    search_text: "twitch warning sent moderator reason chat rules moderation",
+    icon: "bell-alert",
+    kind: event_kinds::CHANNEL_WARNING_SEND,
+    actors: ActorDeclaration::Actors(&[ActorRole::Moderator]),
+    variables,
+    ..TwitchTriggerSpec::BASE
+};
 
 fn warned_user_identity(event: &Event) -> ActorIdentity {
     payload_read::identity(
@@ -132,6 +99,8 @@ fn warning_moderator_identity(event: &Event) -> ActorIdentity {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use forge_events::EventSource;
+    use forge_registry::TriggerKindDescriptor;
 
     fn warning_send_event(payload: serde_json::Value) -> Event {
         Event::new(EventSource::Twitch, "twitch.channel.warning.send", payload)
@@ -148,7 +117,7 @@ mod tests {
 
     #[test]
     fn event_filter_targets_warning_send_topic_from_twitch() {
-        let filter = WarningSentDescriptor.event_filter();
+        let filter = SPEC.event_filter();
         assert_eq!(filter.source, Some(EventSource::Twitch));
         assert_eq!(
             filter.kind_prefix.as_deref(),
@@ -158,7 +127,7 @@ mod tests {
 
     #[test]
     fn build_arg_stack_surfaces_target_and_moderator_scalar_fields() {
-        let stack = WarningSentDescriptor.build_arg_stack(&warning_send_event(full_payload()));
+        let stack = SPEC.build_arg_stack(&warning_send_event(full_payload()));
         assert_eq!(
             stack.get("warning.target.id"),
             Some(&Variant::String("999".to_owned()))
@@ -183,7 +152,7 @@ mod tests {
 
     #[test]
     fn build_arg_stack_marshals_chat_rules_json_array_into_variant_array() {
-        let stack = WarningSentDescriptor.build_arg_stack(&warning_send_event(full_payload()));
+        let stack = SPEC.build_arg_stack(&warning_send_event(full_payload()));
         assert_eq!(
             stack.get("warning.chat_rules_cited"),
             Some(&Variant::Array(vec![
@@ -200,7 +169,7 @@ mod tests {
             "moderator": { "login": "m" },
             "reason": "r",
         });
-        let stack = WarningSentDescriptor.build_arg_stack(&warning_send_event(payload));
+        let stack = SPEC.build_arg_stack(&warning_send_event(payload));
         assert_eq!(
             stack.get("warning.chat_rules_cited"),
             Some(&Variant::Array(vec![]))
@@ -215,7 +184,7 @@ mod tests {
             "reason": "r",
             "chat_rules_cited": "No spam",
         });
-        let stack = WarningSentDescriptor.build_arg_stack(&warning_send_event(payload));
+        let stack = SPEC.build_arg_stack(&warning_send_event(payload));
         assert_eq!(
             stack.get("warning.chat_rules_cited"),
             Some(&Variant::Array(vec![]))
@@ -230,7 +199,7 @@ mod tests {
             "reason": "r",
             "chat_rules_cited": ["Keep it civil", 42, { "id": "rule-3" }, "No doxxing"],
         });
-        let stack = WarningSentDescriptor.build_arg_stack(&warning_send_event(payload));
+        let stack = SPEC.build_arg_stack(&warning_send_event(payload));
         assert_eq!(
             stack.get("warning.chat_rules_cited"),
             Some(&Variant::Array(vec![
@@ -242,8 +211,7 @@ mod tests {
 
     #[test]
     fn build_arg_stack_on_empty_payload_yields_empty_strings_and_empty_array() {
-        let stack =
-            WarningSentDescriptor.build_arg_stack(&warning_send_event(serde_json::json!({})));
+        let stack = SPEC.build_arg_stack(&warning_send_event(serde_json::json!({})));
         assert_eq!(
             stack.get("warning.target.id"),
             Some(&Variant::String(String::new()))

@@ -342,7 +342,10 @@ fn collect_rust_sources(dir: &Path, out: &mut Vec<PathBuf>) {
     for entry in entries.flatten() {
         let path = entry.path();
         if path.is_dir() {
-            if path.file_name().is_some_and(|name| name == "target") {
+            if path
+                .file_name()
+                .is_some_and(|name| name == "target" || name == "tests")
+            {
                 continue;
             }
             collect_rust_sources(&path, out);

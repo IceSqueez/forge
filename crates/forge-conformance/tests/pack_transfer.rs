@@ -1,4 +1,4 @@
-#![allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
+#![expect(clippy::unwrap_used, reason = "test fixtures assert directly")]
 use std::collections::BTreeSet;
 use std::io::Read;
 use std::path::{Path, PathBuf};

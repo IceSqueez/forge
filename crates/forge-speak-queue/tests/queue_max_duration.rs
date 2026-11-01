@@ -1,4 +1,3 @@
-#![allow(clippy::panic)]
 mod common;
 
 use std::sync::Arc;

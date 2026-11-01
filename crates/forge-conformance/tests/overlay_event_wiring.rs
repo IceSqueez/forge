@@ -1,4 +1,4 @@
-#![allow(clippy::expect_used, clippy::panic)]
+#![expect(clippy::panic, reason = "test fixtures assert directly")]
 use forge_conformance::every_registered_trigger;
 use forge_overlay::config::{HEADLINE, SUBLINE};
 use forge_overlay::kinds::alert::AlertOverlayKind;

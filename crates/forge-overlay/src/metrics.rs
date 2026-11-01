@@ -3,6 +3,8 @@ use crate::kinds::{alert, chat, frame, goal, latest, ticker};
 pub const SURFACE_RGB: [u8; 3] = [20, 20, 28];
 pub const PILL_RADIUS: f32 = 999.0;
 
+pub const ACCENT_PROPERTY: &str = "--accent";
+pub const FONT_PROPERTY: &str = "--font";
 pub const TEXT_SIZE_PROPERTY: &str = "--text-size";
 pub const TEXT_SCALE_PROPERTY: &str = "--text-scale";
 pub const MARGIN_TOP_PROPERTY: &str = "--margin-top";
@@ -246,7 +248,7 @@ pub fn element_sizing(kind_id: &str) -> Option<ElementSizing> {
 
 impl ElementSizing {
     pub fn default_text_size_px(self) -> u32 {
-        self.base_text_size as u32
+        self.base_text_size.round() as u32
     }
 
     pub fn text_scale(self, text_size_px: u32) -> f32 {
@@ -444,11 +446,11 @@ fn content_margins() -> String {
 }
 
 fn accent_border(property: &str, width: f32) -> String {
-    format!("{property}: {width}px solid var(--accent);")
+    format!("{property}: {width}px solid var({ACCENT_PROPERTY});")
 }
 
 fn accent_fill() -> String {
-    "background-color: var(--accent);".to_owned()
+    format!("background-color: var({ACCENT_PROPERTY});")
 }
 
 fn surface(alpha: f32) -> String {

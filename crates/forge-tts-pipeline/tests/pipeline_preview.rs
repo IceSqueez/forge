@@ -1,4 +1,4 @@
-#![allow(clippy::unwrap_used)]
+#![expect(clippy::unwrap_used, reason = "test fixtures assert directly")]
 mod common;
 
 use common::{neutral_config, neutral_output};

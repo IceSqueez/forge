@@ -25,6 +25,7 @@ impl AudioCommand {
     }
 }
 
+#[derive(Debug)]
 pub struct AudioAnnouncement<'a> {
     pub clip_id: &'a str,
     pub clip_path: &'a str,

@@ -634,11 +634,11 @@ mod tests {
 
     #[test]
     fn value_still_shows_and_is_announced_when_every_save_attempt_fails() {
-        let (values, store, recorder) = rig_blocking(failing(3));
+        let (values, store, recorder) = rig_blocking(failing(PERSIST_ATTEMPTS as usize));
 
         project_on_paused_clock(&values, &donation("donatello", "Olena", 10, false));
 
-        assert_eq!(store.upsert_count(), 3);
+        assert_eq!(store.upsert_count(), PERSIST_ATTEMPTS as usize);
         assert_eq!(merged_donor(&values).as_deref(), Some("Olena"));
         assert_eq!(
             changes(&recorder),
@@ -653,7 +653,7 @@ mod tests {
 
     #[test]
     fn exhausted_save_attempts_log_one_error_without_the_donor_name() {
-        let (values, _store, _recorder) = rig_blocking(failing(3));
+        let (values, _store, _recorder) = rig_blocking(failing(PERSIST_ATTEMPTS as usize));
 
         let (_, lines) = capture(Level::WARN, || {
             project_on_paused_clock(&values, &donation("donatello", "Olena", 10, false));
@@ -680,7 +680,7 @@ mod tests {
             project_on_paused_clock(&values, &donation("donatello", "Olena", 10, false));
         });
 
-        assert_eq!(store.upsert_count(), 3);
+        assert_eq!(store.upsert_count(), PERSIST_ATTEMPTS as usize);
         assert!(!lines.iter().any(|line| line.level == Level::ERROR));
     }
 

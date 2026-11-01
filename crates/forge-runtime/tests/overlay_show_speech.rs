@@ -42,7 +42,8 @@ const STAGE: &str = "stage-alert";
 const HEADLINE_KEY: &str = "headline";
 const COMMAND_KEY: &str = "command";
 const REVEAL: &str = "reveal";
-const ALERT_WINDOW: Duration = Duration::from_secs(5);
+const ALERT_WINDOW: Duration =
+    Duration::from_secs(forge_overlay::DEFAULT_DISPLAY_SECS.unsigned_abs());
 const NEVER: Duration = Duration::from_secs(24 * 60 * 60);
 const CANCEL_POLL: Duration = Duration::from_millis(10);
 

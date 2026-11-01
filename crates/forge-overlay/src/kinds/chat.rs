@@ -78,7 +78,11 @@ impl OverlayKindDescriptor for ChatOverlayKind {
     }
 
     fn look_defaults(&self) -> OverlayConfig {
-        let mut defaults = config::shared_style_defaults("sky", "Inter", metrics::CHAT_SIZING);
+        let mut defaults = config::shared_style_defaults(
+            config::ACCENT_SKY,
+            config::FONT_INTER,
+            metrics::CHAT_SIZING,
+        );
         defaults.insert(
             config::POSITION.to_owned(),
             config::text(config::POSITION_BOTTOM),

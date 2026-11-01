@@ -82,7 +82,11 @@ impl OverlayKindDescriptor for LatestOverlayKind {
     }
 
     fn look_defaults(&self) -> OverlayConfig {
-        let mut defaults = config::shared_style_defaults("peach", "Inter", metrics::LATEST_SIZING);
+        let mut defaults = config::shared_style_defaults(
+            config::ACCENT_PEACH,
+            config::FONT_INTER,
+            metrics::LATEST_SIZING,
+        );
         defaults.extend([
             (config::SLOT.to_owned(), config::text(LATEST_DONATION_SLOT)),
             (config::PLATFORM.to_owned(), config::text("")),

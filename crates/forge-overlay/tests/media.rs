@@ -1,4 +1,4 @@
-#![allow(clippy::expect_used)]
+#![expect(clippy::expect_used, reason = "test fixtures assert directly")]
 mod common;
 use common::BLOB_IDENTITY;
 
@@ -169,7 +169,7 @@ fn a_generated_file_name_is_refused_unless_both_halves_are_lowercase_ascii_token
             .expect_err("a name that reaches a path must be a token");
 
         assert!(
-            matches!(&refused, OverlayError::UnsafeIdentity(got) if got == &format!("{identity}.{extension}")),
+            matches!(&refused, OverlayError::UnsafeMediaName(got) if got == &format!("{identity}.{extension}")),
             "{label} ({identity:?}.{extension:?}) produced {refused:?}"
         );
     }

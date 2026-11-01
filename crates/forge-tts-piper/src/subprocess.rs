@@ -79,7 +79,7 @@ impl PiperEngine {
 
 #[cfg(all(test, unix))]
 mod tests {
-    #![allow(clippy::expect_used)]
+    #![expect(clippy::expect_used, reason = "test fixtures assert directly")]
     use std::path::{Path, PathBuf};
     use std::time::Duration;
 

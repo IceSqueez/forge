@@ -1,4 +1,8 @@
-#![allow(clippy::expect_used, clippy::panic)]
+#![expect(
+    clippy::expect_used,
+    clippy::panic,
+    reason = "test fixtures assert directly"
+)]
 mod common;
 use common::{ALERT_KIND, BLANK_KIND, GOAL_KIND, TICKER_KIND};
 

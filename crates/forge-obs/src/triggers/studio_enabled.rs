@@ -86,7 +86,6 @@ mod tests {
     use super::super::StudioEnabledDescriptor;
     use super::super::lifecycle;
     use super::*;
-    use forge_registry::TriggerKindDescriptor;
     use serde_json::json;
     use std::collections::BTreeMap;
 

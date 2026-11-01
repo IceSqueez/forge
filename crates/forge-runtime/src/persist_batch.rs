@@ -177,7 +177,7 @@ pub(crate) async fn run_batched<I, S>(
         committed = flush_unless_abandoned(&mut sink, &mut batch, &mut abandon).await;
     }
     if !committed {
-        let mut rows = batch.len() as u64;
+        let mut rows = u64::try_from(batch.len()).unwrap_or(u64::MAX);
         batch.clear();
         while intake.try_recv().is_some() {
             rows += 1;

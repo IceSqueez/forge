@@ -1,8 +1,7 @@
-#![allow(clippy::expect_used)]
 mod common;
 use common::{
-    ALERT_KIND, BLANK_KIND, CHAT_KIND, FRAME_KIND, GOAL_KIND, LATEST_KIND, TICKER_KIND, text,
-    with_kind,
+    ALERT_KIND, BLANK_KIND, CHAT_KIND, FRAME_KIND, GOAL_KIND, LATEST_KIND, TICKER_KIND, registry,
+    text, with_kind,
 };
 
 use forge_overlay::config::{
@@ -389,4 +388,14 @@ fn margins_written_into_a_config_read_back_unchanged_side_by_side() {
     margins.write_into(&mut config);
 
     assert_eq!(ContentMargins::read(&config, ContentMargins::NONE), margins);
+}
+
+#[test]
+fn the_kind_list_names_every_registered_kind() {
+    let reg = registry();
+    let mut registered: Vec<&str> = reg.all().map(|descriptor| descriptor.id()).collect();
+    registered.sort_unstable();
+    let mut listed = ALL_KINDS.to_vec();
+    listed.sort_unstable();
+    assert_eq!(listed, registered);
 }

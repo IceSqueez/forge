@@ -177,12 +177,17 @@ fn serialize_content_frame(
         content,
         duration_ms,
     })
+    .inspect_err(|error| tracing::warn!(%error, "overlay content frame not serialized"))
     .ok()
 }
 
 async fn fan_out(registry: &RwLock<Vec<ConnectedClient>>, event: &Event) {
-    let Ok(json) = serialize_push(event) else {
-        return;
+    let json = match serialize_push(event) {
+        Ok(json) => json,
+        Err(error) => {
+            tracing::warn!(%error, kind = %event.kind, "bus event not serialized for clients");
+            return;
+        }
     };
     let frame = WsFrame::Text(json);
 

@@ -1,4 +1,3 @@
-#![allow(clippy::panic)]
 mod common;
 
 use forge_speak_queue::{Priority, QueueConfig, RequestId, SpeakCommand, SpeakEvent};

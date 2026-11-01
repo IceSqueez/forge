@@ -1,9 +1,12 @@
+use std::fmt;
+
 use tokio::sync::{mpsc, watch};
 
 use crate::backend::LazyBackend;
-use crate::supervisor::{Command, Supervisor};
+use crate::supervisor::{Command, Supervisor, SupervisorChannels};
 use crate::{AwakeError, AwakeStatus};
 
+#[derive(Debug)]
 pub struct StayAwakeConfig {
     pub enabled: bool,
     pub reason: String,
@@ -24,13 +27,15 @@ impl StayAwake {
         tokio::spawn(async move {
             let (disruption_tx, disruption_rx) = mpsc::unbounded_channel();
             let backend = Box::new(LazyBackend::platform(reason, disruption_tx));
-            Supervisor {
+            Supervisor::new(
                 backend,
                 enabled,
-                status: status_tx,
-                commands: command_rx,
-                disruptions: disruption_rx,
-            }
+                SupervisorChannels {
+                    status: status_tx,
+                    commands: command_rx,
+                    disruptions: disruption_rx,
+                },
+            )
             .run()
             .await;
         });
@@ -46,10 +51,6 @@ impl StayAwake {
             .map_err(|_| AwakeError::Stopped)
     }
 
-    pub fn status(&self) -> AwakeStatus {
-        self.status.borrow().clone()
-    }
-
     pub fn watch(&self) -> StatusWatch {
         StatusWatch(self.status.clone())
     }
@@ -63,6 +64,16 @@ impl StayAwake {
     }
 }
 
+impl fmt::Debug for StayAwake {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter
+            .debug_struct("StayAwake")
+            .field("status", &*self.status.borrow())
+            .finish_non_exhaustive()
+    }
+}
+
+#[derive(Debug)]
 pub struct StatusWatch(watch::Receiver<AwakeStatus>);
 
 impl StatusWatch {

@@ -72,7 +72,11 @@ impl OverlayKindDescriptor for GoalOverlayKind {
     }
 
     fn look_defaults(&self) -> OverlayConfig {
-        let mut defaults = config::shared_style_defaults("green", "Inter", metrics::GOAL_SIZING);
+        let mut defaults = config::shared_style_defaults(
+            config::ACCENT_GREEN,
+            config::FONT_INTER,
+            metrics::GOAL_SIZING,
+        );
         defaults.insert(config::LABEL.to_owned(), config::text("Sub goal"));
         defaults.insert(config::VALUE.to_owned(), config::text("42"));
         defaults.insert(config::TARGET.to_owned(), config::text("100"));

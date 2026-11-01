@@ -90,7 +90,15 @@ async fn list_candidates(folder: &Path) -> Option<Listing> {
     let bundle_suffix = format!(".{BUNDLE_EXTENSION}");
     let partial_suffix = format!("{bundle_suffix}.{PARTIAL_EXTENSION}");
     let ciphertext_suffix = format!("{bundle_suffix}.{CIPHERTEXT_EXTENSION}");
-    while let Ok(Some(entry)) = entries.next_entry().await {
+    loop {
+        let entry = match entries.next_entry().await {
+            Ok(Some(entry)) => entry,
+            Ok(None) => break,
+            Err(error) => {
+                tracing::warn!(%error, "backup directory listing stopped early");
+                break;
+            }
+        };
         let Ok(kind) = entry.file_type().await else {
             continue;
         };

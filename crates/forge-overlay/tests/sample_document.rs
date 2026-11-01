@@ -1,4 +1,4 @@
-#![allow(clippy::expect_used)]
+#![expect(clippy::expect_used, reason = "test fixtures assert directly")]
 mod common;
 use common::{
     ALERT_KIND, BLANK_KIND, CHAT_KIND, FRAME_KIND, GOAL_KIND, IDENTITY, LATEST_KIND,
@@ -233,4 +233,14 @@ fn no_builtin_default_reaches_the_page_with_an_unexpanded_token() {
             );
         }
     }
+}
+
+#[test]
+fn the_pinned_kind_table_names_every_registered_kind() {
+    let reg = registry();
+    let mut registered: Vec<&str> = reg.all().map(|descriptor| descriptor.id()).collect();
+    registered.sort_unstable();
+    let mut pinned = BUILTIN_IDS.to_vec();
+    pinned.sort_unstable();
+    assert_eq!(pinned, registered);
 }

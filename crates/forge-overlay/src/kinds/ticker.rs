@@ -73,8 +73,11 @@ impl OverlayKindDescriptor for TickerOverlayKind {
     }
 
     fn look_defaults(&self) -> OverlayConfig {
-        let mut defaults =
-            config::shared_style_defaults("yellow", "Bebas Neue", metrics::TICKER_SIZING);
+        let mut defaults = config::shared_style_defaults(
+            config::ACCENT_YELLOW,
+            config::FONT_BEBAS_NEUE,
+            metrics::TICKER_SIZING,
+        );
         defaults.insert(
             config::HEADLINE.to_owned(),
             config::text("Latest cheer: %bits_amount% bits"),

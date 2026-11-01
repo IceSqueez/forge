@@ -29,12 +29,12 @@ pub enum PreviewAccent {
 impl PreviewAccent {
     pub fn as_str(self) -> &'static str {
         match self {
-            Self::Mauve => "mauve",
-            Self::Sky => "sky",
-            Self::Green => "green",
-            Self::Peach => "peach",
-            Self::Yellow => "yellow",
-            Self::Red => "red",
+            Self::Mauve => config::ACCENT_MAUVE,
+            Self::Sky => config::ACCENT_SKY,
+            Self::Green => config::ACCENT_GREEN,
+            Self::Peach => config::ACCENT_PEACH,
+            Self::Yellow => config::ACCENT_YELLOW,
+            Self::Red => config::ACCENT_RED,
         }
     }
 }
@@ -126,18 +126,18 @@ pub(crate) fn compose(
 
 fn accent_of(config: &OverlayConfig) -> PreviewAccent {
     match config::read_str(config, config::ACCENT) {
-        "sky" => PreviewAccent::Sky,
-        "green" => PreviewAccent::Green,
-        "peach" => PreviewAccent::Peach,
-        "yellow" => PreviewAccent::Yellow,
-        "red" => PreviewAccent::Red,
+        config::ACCENT_SKY => PreviewAccent::Sky,
+        config::ACCENT_GREEN => PreviewAccent::Green,
+        config::ACCENT_PEACH => PreviewAccent::Peach,
+        config::ACCENT_YELLOW => PreviewAccent::Yellow,
+        config::ACCENT_RED => PreviewAccent::Red,
         _ => PreviewAccent::Mauve,
     }
 }
 
 fn font_of(config: &OverlayConfig) -> PreviewFont {
     match config::read_str(config, config::FONT) {
-        "JetBrains Mono" => PreviewFont::Mono,
+        config::FONT_JETBRAINS_MONO => PreviewFont::Mono,
         _ => PreviewFont::Sans,
     }
 }

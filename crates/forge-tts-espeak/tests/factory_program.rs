@@ -1,5 +1,9 @@
 #![cfg(unix)]
-#![allow(clippy::panic, clippy::expect_used)]
+#![expect(
+    clippy::panic,
+    clippy::expect_used,
+    reason = "test fixtures assert directly"
+)]
 use std::os::unix::fs::PermissionsExt;
 use std::path::{Path, PathBuf};
 use std::sync::OnceLock;

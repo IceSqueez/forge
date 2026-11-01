@@ -46,7 +46,8 @@ impl AwakeStatus {
         }
     }
 
-    pub fn fully_held(&self) -> bool {
+    #[cfg(test)]
+    pub(crate) fn fully_held(&self) -> bool {
         self.display == AspectState::Held && self.system == AspectState::Held
     }
 

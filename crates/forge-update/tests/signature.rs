@@ -1,4 +1,4 @@
-#![allow(clippy::unwrap_used)]
+#![expect(clippy::unwrap_used, reason = "test fixtures assert directly")]
 use forge_update::{
     ArtifactKind, Platform, TrustedKeys, UpdateError, parse_version, verify_manifest,
 };

@@ -209,7 +209,7 @@ impl ResolvedMedia {
 fn generated_file_name(identity: &str, extension: &str) -> Result<String, OverlayError> {
     let safe = is_token(identity, true) && is_token(extension, false);
     if !safe {
-        return Err(OverlayError::UnsafeIdentity(format!(
+        return Err(OverlayError::UnsafeMediaName(format!(
             "{identity}{EXTENSION_SEPARATOR}{extension}"
         )));
     }

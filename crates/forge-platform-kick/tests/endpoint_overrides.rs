@@ -1,4 +1,8 @@
-#![allow(clippy::unwrap_used, clippy::panic)]
+#![expect(
+    clippy::unwrap_used,
+    clippy::panic,
+    reason = "test fixtures assert directly"
+)]
 use forge_types::OAuthToken;
 use std::collections::BTreeMap;
 use std::ffi::OsString;

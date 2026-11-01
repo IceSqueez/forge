@@ -72,7 +72,11 @@ impl OverlayKindDescriptor for FrameOverlayKind {
     }
 
     fn look_defaults(&self) -> OverlayConfig {
-        let mut defaults = config::shared_style_defaults("peach", "Inter", metrics::FRAME_SIZING);
+        let mut defaults = config::shared_style_defaults(
+            config::ACCENT_PEACH,
+            config::FONT_INTER,
+            metrics::FRAME_SIZING,
+        );
         defaults.insert(
             config::POSITION.to_owned(),
             config::text(config::POSITION_BOTTOM),

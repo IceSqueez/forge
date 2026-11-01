@@ -1,4 +1,4 @@
-#![allow(clippy::panic)]
+#![expect(clippy::panic, reason = "test fixtures assert directly")]
 mod gateway_support;
 
 use std::time::Duration;

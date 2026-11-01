@@ -1,4 +1,4 @@
-#![allow(clippy::unwrap_used)]
+#![expect(clippy::unwrap_used, reason = "test fixtures assert directly")]
 mod support;
 
 use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};

@@ -76,7 +76,11 @@ impl ViewerRepo for SqliteViewerRepo {
             .fetch_one(self.db.reader())
             .await
             .map_err(SqliteStorageError::Sqlx)?;
-        Ok(u64::try_from(count).unwrap_or(0))
+        u64::try_from(count).map_err(|_| {
+            StorageError::from(SqliteStorageError::Decode(format!(
+                "negative viewer count {count}"
+            )))
+        })
     }
 
     async fn get(

@@ -1,4 +1,8 @@
-#![allow(clippy::unwrap_used, clippy::expect_used)]
+#![expect(
+    clippy::unwrap_used,
+    clippy::expect_used,
+    reason = "test fixtures assert directly"
+)]
 mod common;
 
 use std::sync::Arc;
@@ -133,11 +137,10 @@ async fn spawn_pipeline() -> PipelineFixture {
                     initial_args: ArgStack::new(),
                     admission: QueueAdmission::default(),
                 };
-                #[expect(
-                    clippy::let_underscore_must_use,
-                    reason = "only completion matters here"
-                )]
-                let _ = sched_clone.dispatch(req).await;
+                sched_clone
+                    .dispatch(req)
+                    .await
+                    .expect("dispatch of the replayed chat event");
             }
         }
     });

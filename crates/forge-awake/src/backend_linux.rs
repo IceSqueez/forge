@@ -18,6 +18,8 @@ const SCREEN_SAVER_PATHS: [&str; 2] = ["/org/freedesktop/ScreenSaver", "/ScreenS
 const LOGIN_NAME: &str = "org.freedesktop.login1";
 const LOGIN_PATH: &str = "/org/freedesktop/login1";
 const LOGIN_MANAGER: &str = "org.freedesktop.login1.Manager";
+const INHIBIT_METHOD: &str = "Inhibit";
+const UNINHIBIT_METHOD: &str = "UnInhibit";
 const IDLE_LOCK: &str = "idle";
 const BLOCK_MODE: &str = "block";
 
@@ -32,6 +34,7 @@ const SCREEN_SAVER_SERVICE: AwakeService = AwakeService::ScreenSaver;
 const LOGIN_SERVICE: AwakeService = AwakeService::LoginManager;
 
 const BUS_TIMEOUT: Duration = Duration::from_secs(5);
+const CONNECT_TIMED_OUT: &str = "connection timed out";
 
 struct ScreenSaverHold {
     cookie: u32,
@@ -129,7 +132,7 @@ impl LinuxBackend {
                 SCREEN_SAVER_NAME,
                 path,
                 SCREEN_SAVER_NAME,
-                "Inhibit",
+                INHIBIT_METHOD,
                 &(APP_NAME, self.reason.as_str()),
             )
             .await
@@ -170,7 +173,7 @@ impl LinuxBackend {
             SCREEN_SAVER_NAME,
             hold.path,
             SCREEN_SAVER_NAME,
-            "UnInhibit",
+            UNINHIBIT_METHOD,
             &(hold.cookie,),
         )
         .await
@@ -186,7 +189,7 @@ impl LinuxBackend {
             LOGIN_NAME,
             LOGIN_PATH,
             LOGIN_MANAGER,
-            "Inhibit",
+            INHIBIT_METHOD,
             &(IDLE_LOCK, APP_NAME, self.reason.as_str(), BLOCK_MODE),
         )
         .await
@@ -245,7 +248,7 @@ async fn connect(
     match tokio::time::timeout(BUS_TIMEOUT, connecting).await {
         Ok(Ok(conn)) => Ok(conn),
         Ok(Err(e)) => Err(unreachable(bus, &e)),
-        Err(_) => Err(unreachable(bus, &"connection timed out")),
+        Err(_) => Err(unreachable(bus, &CONNECT_TIMED_OUT)),
     }
 }
 
@@ -282,30 +285,29 @@ fn spawn_owner_watch(
     disruptions: DisruptionSender,
 ) -> JoinHandle<()> {
     tokio::spawn(async move {
-        let proxy = match zbus::fdo::DBusProxy::new(&conn).await {
-            Ok(proxy) => proxy,
-            Err(e) => {
-                tracing::warn!(name, error = %e, "stay awake: cannot watch the service; a restart will not be noticed");
-                return;
-            }
-        };
-        let changes = match proxy
-            .receive_name_owner_changed_with_args(&[(0, name)])
-            .await
-        {
-            Ok(changes) => changes,
-            Err(e) => {
-                tracing::warn!(name, error = %e, "stay awake: cannot watch the service; a restart will not be noticed");
-                return;
-            }
-        };
-        let mut changes = std::pin::pin!(changes);
-        while changes.next().await.is_some() {
-            if disruptions.send(aspect).is_err() {
-                return;
-            }
+        if let Err(e) = forward_owner_changes(&conn, name, aspect, &disruptions).await {
+            tracing::warn!(name, error = %e, "stay awake: cannot watch the service; a restart will not be noticed");
         }
     })
+}
+
+async fn forward_owner_changes(
+    conn: &Connection,
+    name: &'static str,
+    aspect: Aspect,
+    disruptions: &DisruptionSender,
+) -> zbus::Result<()> {
+    let proxy = zbus::fdo::DBusProxy::new(conn).await?;
+    let changes = proxy
+        .receive_name_owner_changed_with_args(&[(0, name)])
+        .await?;
+    let mut changes = std::pin::pin!(changes);
+    while changes.next().await.is_some() {
+        if disruptions.send(aspect).is_err() {
+            break;
+        }
+    }
+    Ok(())
 }
 
 fn is_connection_lost(err: &zbus::Error) -> bool {

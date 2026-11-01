@@ -1,4 +1,5 @@
 use std::collections::HashMap;
+use std::fmt;
 
 use crate::config::{effective_overlay_config, validate_overlay_config};
 use crate::descriptor::{OverlayConfig, OverlayKindDescriptor};
@@ -9,17 +10,29 @@ pub struct OverlayKindRegistry {
     descriptors: HashMap<String, Box<dyn OverlayKindDescriptor>>,
 }
 
+impl fmt::Debug for OverlayKindRegistry {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter
+            .debug_set()
+            .entries(self.descriptors.keys())
+            .finish()
+    }
+}
+
 impl OverlayKindRegistry {
     pub fn new() -> Self {
         Self::default()
     }
 
-    pub fn register(&mut self, d: Box<dyn OverlayKindDescriptor>) -> Result<(), OverlayError> {
-        let id = d.id().to_owned();
+    pub fn register(
+        &mut self,
+        descriptor: Box<dyn OverlayKindDescriptor>,
+    ) -> Result<(), OverlayError> {
+        let id = descriptor.id().to_owned();
         if self.descriptors.contains_key(&id) {
             return Err(OverlayError::DuplicateKind(id));
         }
-        self.descriptors.insert(id, d);
+        self.descriptors.insert(id, descriptor);
         Ok(())
     }
 

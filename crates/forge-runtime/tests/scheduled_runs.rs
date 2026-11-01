@@ -351,7 +351,7 @@ async fn an_overdue_run_whose_target_cannot_run_is_settled_with_the_matching_rea
         ),
         (
             TargetShape::QueueNotRunning,
-            (ScheduledRunState::Failed, Some("queue_not_found")),
+            (ScheduledRunState::Failed, Some(QUEUE_NOT_FOUND_REASON)),
         ),
     ] {
         let harness = Harness::new().await;
@@ -395,7 +395,10 @@ async fn an_overdue_run_is_refused_only_once_its_queue_is_full() {
         ),
         (
             MAX_PENDING_PER_QUEUE,
-            (ScheduledRunState::Failed, Some("queue_pending_overflow")),
+            (
+                ScheduledRunState::Failed,
+                Some(forge_runtime::QUEUE_OVERFLOW_REASON),
+            ),
         ),
     ] {
         let harness = Harness::new().await;

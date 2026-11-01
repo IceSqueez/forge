@@ -1,8 +1,6 @@
-#![allow(clippy::expect_used, clippy::panic)]
+#![expect(clippy::panic, reason = "test fixtures assert directly")]
 mod common;
-use common::{
-    ALERT_KIND, BLANK_KIND, CHAT_KIND, FRAME_KIND, GOAL_KIND, LATEST_KIND, TICKER_KIND, registry,
-};
+use common::{ALERT_KIND, CHAT_KIND, FRAME_KIND, GOAL_KIND, LATEST_KIND, TICKER_KIND, registry};
 
 use std::collections::BTreeSet;
 
@@ -292,15 +290,8 @@ fn a_kind_is_guarded_against_style_drift_exactly_when_it_draws_a_page() {
 
 #[test]
 fn every_stock_look_clips_at_the_box_and_keeps_its_margins_inside_it() {
-    for kind_id in [
-        ALERT_KIND,
-        BLANK_KIND,
-        CHAT_KIND,
-        FRAME_KIND,
-        GOAL_KIND,
-        LATEST_KIND,
-        TICKER_KIND,
-    ] {
+    for descriptor in registry().all() {
+        let kind_id = descriptor.id();
         let style = stylesheet(kind_id);
         let root = standalone_rule(style, "html,\nbody");
 

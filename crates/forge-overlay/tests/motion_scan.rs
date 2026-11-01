@@ -1,4 +1,4 @@
-#![allow(clippy::expect_used)]
+#![expect(clippy::expect_used, reason = "test fixtures assert directly")]
 mod common;
 use common::{ALERT_KIND, BLANK_KIND, CHAT_KIND, FRAME_KIND, GOAL_KIND, TICKER_KIND, registry};
 

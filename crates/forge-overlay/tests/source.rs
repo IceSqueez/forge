@@ -1,4 +1,3 @@
-#![allow(clippy::expect_used)]
 mod common;
 use common::{IDENTITY, UNSAFE_IDENTITIES, names_in, unborn_root};
 

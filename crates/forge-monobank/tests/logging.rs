@@ -1,4 +1,3 @@
-#![allow(clippy::unwrap_used)]
 mod support;
 
 use forge_test_support::log_capture::LogRecording;

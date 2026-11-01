@@ -94,7 +94,6 @@ mod tests {
     use super::super::TransitionStartedDescriptor;
     use super::super::lifecycle;
     use super::*;
-    use forge_registry::TriggerKindDescriptor;
     use serde_json::json;
     use std::collections::BTreeMap;
 

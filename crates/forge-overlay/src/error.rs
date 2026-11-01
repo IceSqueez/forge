@@ -18,6 +18,12 @@ pub enum OverlayError {
     #[error("overlay identity '{0}' is not a safe directory name")]
     UnsafeIdentity(String),
 
+    #[error("media file name '{0}' is not safe to write")]
+    UnsafeMediaName(String),
+
+    #[error("'{path}' is not a config document this overlay can update")]
+    ConfigDocumentShape { path: String },
+
     #[error("'{0}' is not a page file an overlay can hand over to its owner")]
     NotOverridable(String),
 

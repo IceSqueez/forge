@@ -118,7 +118,6 @@ impl TriggerKindDescriptor for SourceSceneItemVisibilityChangedDescriptor {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use forge_registry::TriggerKindDescriptor;
     use serde_json::json;
 
     #[test]

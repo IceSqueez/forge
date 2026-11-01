@@ -1,4 +1,3 @@
-#![allow(clippy::expect_used)]
 mod common;
 use common::{ALERT_KIND, BLANK_KIND, CHAT_KIND, FRAME_KIND, GOAL_KIND, TICKER_KIND, registry};
 

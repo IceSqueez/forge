@@ -39,7 +39,8 @@ const HEADLINE_KEY: &str = "headline";
 const WAIT_KEY: &str = "wait_for_show";
 const DURATION_KEY: &str = "duration_seconds";
 
-const ALERT_WINDOW: Duration = Duration::from_secs(5);
+const ALERT_WINDOW: Duration =
+    Duration::from_secs(forge_overlay::DEFAULT_DISPLAY_SECS.unsigned_abs());
 const ALERT_EXIT_TAIL: Duration = Duration::from_millis(DEFAULT_EXIT_MS.unsigned_abs());
 const ALERT_SPAN: Duration = ALERT_WINDOW.saturating_add(ALERT_EXIT_TAIL);
 const NEVER: Duration = Duration::from_secs(24 * 60 * 60);

@@ -98,8 +98,7 @@ pub trait OverlayFrameSink: Send + Sync {
 
     async fn revoke(&self, identity: &OverlayId);
 
-    async fn receivers(&self, identity: &OverlayId) -> OverlayReceivers {
-        let _ = identity;
+    async fn receivers(&self, _identity: &OverlayId) -> OverlayReceivers {
         OverlayReceivers::default()
     }
 }

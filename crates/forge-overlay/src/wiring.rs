@@ -9,6 +9,7 @@ use crate::descriptor::{ConfigSection, DeliveryDisposition, OverlayConfig, Overl
 const PRINCIPAL_DISPLAY_NAME: CanonicalVariable =
     CanonicalVariable::actor(ActorRole::Principal, ActorSlot::Name);
 
+#[derive(Debug)]
 pub struct EventWiringTrigger<'a> {
     pub kind_id: &'a str,
     pub label: &'a str,

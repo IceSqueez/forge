@@ -73,7 +73,11 @@ impl OverlayKindDescriptor for AlertOverlayKind {
     }
 
     fn look_defaults(&self) -> OverlayConfig {
-        let mut defaults = config::shared_style_defaults("mauve", "Rubik", metrics::ALERT_SIZING);
+        let mut defaults = config::shared_style_defaults(
+            config::ACCENT_MAUVE,
+            config::FONT_RUBIK,
+            metrics::ALERT_SIZING,
+        );
         defaults.insert(
             config::HEADLINE.to_owned(),
             config::text("Thanks for the sub!"),

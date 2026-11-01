@@ -1,4 +1,8 @@
-#![allow(clippy::unwrap_used, clippy::panic)]
+#![expect(
+    clippy::unwrap_used,
+    clippy::panic,
+    reason = "test fixtures assert directly"
+)]
 use std::time::Duration;
 
 use forge_vtube::{VTubeError, VTubeTiming, probe_connection, probe_connection_with_timing};

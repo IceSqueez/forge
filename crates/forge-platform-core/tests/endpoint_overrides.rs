@@ -1,4 +1,4 @@
-#![allow(clippy::panic)]
+#![expect(clippy::panic, reason = "test fixtures assert directly")]
 use std::collections::BTreeMap;
 use std::ffi::OsString;
 

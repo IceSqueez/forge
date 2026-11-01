@@ -1,4 +1,8 @@
-#![allow(clippy::panic, clippy::unwrap_used)]
+#![expect(
+    clippy::panic,
+    clippy::unwrap_used,
+    reason = "test fixtures assert directly"
+)]
 mod common;
 
 use std::num::NonZeroUsize;

@@ -1,4 +1,3 @@
-#![allow(clippy::unwrap_used, clippy::panic)]
 mod common;
 
 use forge_speak_queue::vocabulary::RejectReason;

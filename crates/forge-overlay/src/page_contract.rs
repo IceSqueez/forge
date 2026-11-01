@@ -4,8 +4,8 @@ use crate::config::{
 };
 use crate::descriptor::{ConfigSection, OverlayKindDescriptor};
 use crate::metrics::{
-    MARGIN_BOTTOM_PROPERTY, MARGIN_LEFT_PROPERTY, MARGIN_RIGHT_PROPERTY, MARGIN_TOP_PROPERTY,
-    TEXT_SIZE_PROPERTY,
+    ACCENT_PROPERTY, FONT_PROPERTY, MARGIN_BOTTOM_PROPERTY, MARGIN_LEFT_PROPERTY,
+    MARGIN_RIGHT_PROPERTY, MARGIN_TOP_PROPERTY, TEXT_SIZE_PROPERTY,
 };
 
 pub(crate) const PAGE_NAMESPACE: &str = "forge";
@@ -101,11 +101,11 @@ pub const PAGE_CONTRACT: PageContract = PageContract {
     },
     custom_properties: &[
         RuntimeProperty {
-            property: "--accent",
+            property: ACCENT_PROPERTY,
             config_key: ACCENT,
         },
         RuntimeProperty {
-            property: "--font",
+            property: FONT_PROPERTY,
             config_key: FONT,
         },
         RuntimeProperty {

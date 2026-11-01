@@ -1,4 +1,4 @@
-#![allow(clippy::panic)]
+#![expect(clippy::panic, reason = "test fixtures assert directly")]
 use forge_overlay::config::{HEADLINE, SUBLINE};
 use forge_overlay::kinds::alert::AlertOverlayKind;
 use forge_overlay::{OverlayConfig, SampleContext, SampleTrigger, sample_content, sample_context};

@@ -1,4 +1,3 @@
-#![allow(clippy::expect_used)]
 mod common;
 use common::{ALERT_KIND, registry};
 

@@ -8,15 +8,35 @@ pub(crate) enum Command {
     Release,
 }
 
-pub(crate) struct Supervisor {
-    pub(crate) backend: Box<dyn AwakeBackend>,
-    pub(crate) enabled: bool,
+pub(crate) struct SupervisorChannels {
     pub(crate) status: watch::Sender<AwakeStatus>,
     pub(crate) commands: mpsc::UnboundedReceiver<Command>,
     pub(crate) disruptions: mpsc::UnboundedReceiver<Aspect>,
 }
 
+pub(crate) struct Supervisor {
+    backend: Box<dyn AwakeBackend>,
+    enabled: bool,
+    status: watch::Sender<AwakeStatus>,
+    commands: mpsc::UnboundedReceiver<Command>,
+    disruptions: mpsc::UnboundedReceiver<Aspect>,
+}
+
 impl Supervisor {
+    pub(crate) fn new(
+        backend: Box<dyn AwakeBackend>,
+        enabled: bool,
+        channels: SupervisorChannels,
+    ) -> Self {
+        Self {
+            backend,
+            enabled,
+            status: channels.status,
+            commands: channels.commands,
+            disruptions: channels.disruptions,
+        }
+    }
+
     pub(crate) async fn run(mut self) {
         if self.enabled {
             self.acquire_all().await;
@@ -44,6 +64,9 @@ impl Supervisor {
         self.status.send_modify(|status| status.enabled = enabled);
         if enabled {
             tracing::info!("stay awake: turned on");
+            for aspect in Aspect::ALL {
+                self.record(aspect, AspectState::Pending);
+            }
             self.acquire_all().await;
         } else {
             tracing::info!("stay awake: turned off");
@@ -69,9 +92,6 @@ impl Supervisor {
     async fn reacquire(&mut self, aspect: Aspect) {
         if !self.enabled {
             return;
-        }
-        if self.backend.is_held(aspect) {
-            self.backend.release(aspect).await;
         }
         self.acquire(aspect).await;
     }

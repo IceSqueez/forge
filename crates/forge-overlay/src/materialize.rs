@@ -125,16 +125,23 @@ fn sweep_generated_media(
 ) {
     let entries = match fs::read_dir(namespace) {
         Ok(entries) => entries,
-        Err(_) => {
-            report.media_sweep_failures.push(display(namespace));
+        Err(error) => {
+            report
+                .media_sweep_failures
+                .push(sweep_failure(namespace, &error));
             return;
         }
     };
 
     for entry in entries {
-        let Ok(entry) = entry else {
-            report.media_sweep_failures.push(display(namespace));
-            continue;
+        let entry = match entry {
+            Ok(entry) => entry,
+            Err(error) => {
+                report
+                    .media_sweep_failures
+                    .push(sweep_failure(namespace, &error));
+                continue;
+            }
         };
         let path = entry.path();
         let Some(name) = entry.file_name().to_str().map(str::to_owned) else {
@@ -150,7 +157,9 @@ fn sweep_generated_media(
         }
         match fs::remove_file(&path) {
             Ok(()) => report.media_removed.push(name),
-            Err(_) => report.media_sweep_failures.push(display(&path)),
+            Err(error) => report
+                .media_sweep_failures
+                .push(sweep_failure(&path, &error)),
         }
     }
 }
@@ -179,7 +188,9 @@ pub fn refresh_config_credential(
 
     let mut document: serde_json::Value = serde_json::from_str(&existing)?;
     let Some(fields) = document.as_object_mut() else {
-        return Ok(false);
+        return Err(OverlayError::ConfigDocumentShape {
+            path: display(&resolved),
+        });
     };
     fields.insert(
         CREDENTIAL_FIELD.to_owned(),
@@ -314,6 +325,10 @@ fn canonicalize(path: &Path) -> Result<PathBuf, OverlayError> {
     })
 }
 
+fn sweep_failure(path: &Path, error: &std::io::Error) -> String {
+    format!("{}: {error}", path.display())
+}
+
 pub(crate) fn display(path: &Path) -> String {
     path.display().to_string()
 }
@@ -349,7 +364,8 @@ mod tests {
 
         sweep_generated_media(&namespace, &BTreeSet::new(), &mut report);
 
-        assert_eq!(report.media_sweep_failures, vec![display(&namespace)]);
+        assert_eq!(report.media_sweep_failures.len(), 1);
+        assert!(report.media_sweep_failures[0].starts_with(&display(&namespace)));
     }
 
     #[test]

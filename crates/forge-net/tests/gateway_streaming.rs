@@ -1,4 +1,4 @@
-#![allow(clippy::panic)]
+#![expect(clippy::panic, reason = "test fixtures assert directly")]
 mod gateway_streaming_support;
 mod gateway_support;
 

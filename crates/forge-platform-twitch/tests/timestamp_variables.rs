@@ -1,4 +1,4 @@
-#![allow(clippy::expect_used)]
+#![expect(clippy::expect_used, reason = "test fixtures assert directly")]
 use forge_events::{Event, EventSource};
 use forge_platform_twitch::register_twitch_triggers;
 use forge_registry::{

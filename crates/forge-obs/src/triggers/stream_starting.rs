@@ -97,7 +97,6 @@ mod tests {
     use super::super::lifecycle;
     use super::super::{StreamStartingDescriptor, StreamStatusChangedDescriptor};
     use super::*;
-    use forge_registry::TriggerKindDescriptor;
     use forge_types::Variant;
     use serde_json::json;
     use std::collections::BTreeMap;

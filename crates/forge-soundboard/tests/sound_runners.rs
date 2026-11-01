@@ -1,4 +1,4 @@
-#![allow(clippy::unwrap_used)]
+#![expect(clippy::unwrap_used, reason = "test fixtures assert directly")]
 use forge_events::test_support::NullPublisher;
 use std::collections::BTreeSet;
 use std::sync::{Arc, Mutex};

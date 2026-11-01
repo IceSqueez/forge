@@ -1,4 +1,4 @@
-#![allow(clippy::expect_used, clippy::panic)]
+#![expect(clippy::panic, reason = "test fixtures assert directly")]
 mod common;
 use common::registry;
 

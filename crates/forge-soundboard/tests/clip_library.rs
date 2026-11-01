@@ -1,4 +1,8 @@
-#![allow(clippy::unwrap_used, clippy::expect_used)]
+#![expect(
+    clippy::unwrap_used,
+    clippy::expect_used,
+    reason = "test fixtures assert directly"
+)]
 use forge_events::test_support::CapturingPublisher;
 use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};

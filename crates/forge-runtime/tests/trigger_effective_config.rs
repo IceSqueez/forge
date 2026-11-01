@@ -1,4 +1,4 @@
-#![allow(clippy::unwrap_used)]
+#![expect(clippy::unwrap_used, reason = "test fixtures assert directly")]
 mod common;
 use std::collections::BTreeMap;
 use std::sync::{Arc, Mutex};

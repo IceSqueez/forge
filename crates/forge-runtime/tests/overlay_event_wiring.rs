@@ -39,7 +39,7 @@ const FOLLOW_LABEL: &str = "Followed";
 const UNCURATED_KIND: &str = "stub.something_happened";
 const UNCURATED_LABEL: &str = "Something happened";
 const OTHER_KIND: &str = "stub.other_thing";
-const ALERT_DEFAULT_SECS: i64 = 5;
+const ALERT_DEFAULT_SECS: i64 = forge_overlay::DEFAULT_DISPLAY_SECS;
 
 #[derive(Clone, Copy)]
 enum Declares {

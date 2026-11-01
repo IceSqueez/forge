@@ -30,7 +30,8 @@ const LIVE_DONOR: &str = "Olena";
 const LIVE_TRACK: &str = "Night Bus";
 const STALE_RETAINED: &str = "stale retained";
 const SAMPLE_DONOR: &str = "PixelPal";
-const PREVIEW_HOLD: Duration = Duration::from_secs(5);
+const PREVIEW_HOLD: Duration =
+    Duration::from_secs(forge_overlay::DEFAULT_DISPLAY_SECS.unsigned_abs());
 const WAIT_BOUND: Duration = Duration::from_secs(30);
 const HOLD_SLACK: Duration = Duration::from_millis(10);
 

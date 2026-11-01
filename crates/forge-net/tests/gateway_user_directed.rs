@@ -1,4 +1,8 @@
-#![allow(clippy::unwrap_used, clippy::panic)]
+#![expect(
+    clippy::unwrap_used,
+    clippy::panic,
+    reason = "test fixtures assert directly"
+)]
 mod gateway_streaming_support;
 mod gateway_support;
 

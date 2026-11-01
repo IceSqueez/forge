@@ -74,7 +74,7 @@ impl BatchSink for RunHistorySink {
             self.executions.extend(record.execution);
         }
 
-        let runs = self.contexts.len() as u64;
+        let runs = u64::try_from(self.contexts.len()).unwrap_or(u64::MAX);
         match tokio::time::timeout(BATCH_WRITE_TIMEOUT, self.history.save_batch(&self.contexts))
             .await
         {
@@ -109,7 +109,7 @@ impl BatchSink for RunHistorySink {
     }
 
     fn abandon(&mut self, runs: u64) -> u64 {
-        let runs = runs + self.contexts.len() as u64;
+        let runs = runs.saturating_add(u64::try_from(self.contexts.len()).unwrap_or(u64::MAX));
         self.contexts.clear();
         self.executions.clear();
         self.loss.unwritten(runs);

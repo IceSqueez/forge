@@ -1,4 +1,8 @@
-#![allow(clippy::unwrap_used, clippy::expect_used)]
+#![expect(
+    clippy::unwrap_used,
+    clippy::expect_used,
+    reason = "test fixtures assert directly"
+)]
 mod common;
 use common::{
     ALERT_KIND, BLOB_IDENTITY, IDENTITY, UNSAFE_IDENTITIES, names_in, registry, sub_alert_instance,
@@ -837,10 +841,12 @@ fn refreshing_a_config_that_is_not_a_json_object_reports_false_and_leaves_it_alo
     let body = "[\"not\", \"an\", \"object\"]";
     fs::write(directory.join(CONFIG_FILE), body).unwrap();
 
-    let refreshed =
-        refresh_config_credential(&root, IDENTITY, FRESH_CREDENTIAL).expect("not an object");
+    let refused = refresh_config_credential(&root, IDENTITY, FRESH_CREDENTIAL);
 
-    assert!(!refreshed);
+    assert!(matches!(
+        refused,
+        Err(OverlayError::ConfigDocumentShape { .. })
+    ));
     assert_eq!(
         fs::read_to_string(directory.join(CONFIG_FILE)).unwrap(),
         body

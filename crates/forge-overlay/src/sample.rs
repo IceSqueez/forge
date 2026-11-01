@@ -10,6 +10,7 @@ use crate::content::delivered_content;
 use crate::descriptor::{OverlayConfig, OverlayKindDescriptor};
 use crate::latest::{latest_binding, latest_content, sample_latest_value};
 
+#[derive(Debug)]
 pub struct SampleTrigger {
     pub kind_id: String,
     pub contract: KindPlatformContract,

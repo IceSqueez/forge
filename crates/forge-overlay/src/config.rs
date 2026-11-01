@@ -49,11 +49,30 @@ pub const ICON_OPTIONS_KEY: &str = forge_registry::OVERLAY_ICON_OPTIONS_KEY;
 
 pub const DEFAULT_ICON: &str = "star-filled";
 
-pub const ACCENT_OPTIONS: &[&str] = &["mauve", "sky", "green", "peach", "yellow", "red"];
-pub const FONT_OPTIONS: &[&str] = &["Inter", "JetBrains Mono", "Rubik", "Bebas Neue"];
-pub const POSITION_OPTIONS: &[&str] = &["top", "bottom"];
+pub const ACCENT_MAUVE: &str = "mauve";
+pub const ACCENT_SKY: &str = "sky";
+pub const ACCENT_GREEN: &str = "green";
+pub const ACCENT_PEACH: &str = "peach";
+pub const ACCENT_YELLOW: &str = "yellow";
+pub const ACCENT_RED: &str = "red";
+pub const ACCENT_OPTIONS: &[&str] = &[
+    ACCENT_MAUVE,
+    ACCENT_SKY,
+    ACCENT_GREEN,
+    ACCENT_PEACH,
+    ACCENT_YELLOW,
+    ACCENT_RED,
+];
+
+pub const FONT_INTER: &str = "Inter";
+pub const FONT_JETBRAINS_MONO: &str = "JetBrains Mono";
+pub const FONT_RUBIK: &str = "Rubik";
+pub const FONT_BEBAS_NEUE: &str = "Bebas Neue";
+pub const FONT_OPTIONS: &[&str] = &[FONT_INTER, FONT_JETBRAINS_MONO, FONT_RUBIK, FONT_BEBAS_NEUE];
+
 pub const POSITION_TOP: &str = "top";
 pub const POSITION_BOTTOM: &str = "bottom";
+pub const POSITION_OPTIONS: &[&str] = &[POSITION_TOP, POSITION_BOTTOM];
 
 pub const DURATION_MIN_SECS: i64 = 1;
 pub const DURATION_MAX_SECS: i64 = 15;

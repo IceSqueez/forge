@@ -6,7 +6,7 @@ use tokio::sync::{mpsc, watch};
 use tokio::task::JoinHandle;
 
 use crate::backend::AwakeBackend;
-use crate::supervisor::{Command, Supervisor};
+use crate::supervisor::{Command, Supervisor, SupervisorChannels};
 use crate::{Aspect, AwakeError, AwakeStatus};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -86,13 +86,15 @@ pub(crate) fn supervisor(backend: &FakeBackend, enabled: bool) -> (Supervisor, H
     let (status_tx, status_rx) = watch::channel(AwakeStatus::initial(enabled));
     let (command_tx, command_rx) = mpsc::unbounded_channel();
     let (disruption_tx, disruption_rx) = mpsc::unbounded_channel();
-    let supervisor = Supervisor {
-        backend: Box::new(backend.clone()),
+    let supervisor = Supervisor::new(
+        Box::new(backend.clone()),
         enabled,
-        status: status_tx,
-        commands: command_rx,
-        disruptions: disruption_rx,
-    };
+        SupervisorChannels {
+            status: status_tx,
+            commands: command_rx,
+            disruptions: disruption_rx,
+        },
+    );
     let harness = Harness {
         commands: command_tx,
         disruptions: disruption_tx,

@@ -963,20 +963,14 @@ mod tests {
                 rt.block_on(repo.list())
                     .expect("list")
                     .into_iter()
-                    .map(|alias| (alias.alias_key, alias.voice_id.0))
+                    .map(|alias| alias.alias_key)
                     .collect::<Vec<_>>()
             };
-            settle_until(vcx, &rt, |_| {
-                saved()
-                    .iter()
-                    .any(|(id, voice)| id != viewer_id || voice != "amy")
+            settle_until(vcx, &rt, |cx| {
+                view.read_with(cx, |view, _| view.form.is_none())
             });
 
-            assert_eq!(
-                saved().into_iter().map(|(id, _)| id).collect::<Vec<_>>(),
-                [saved_under],
-                "{viewer_id:?}"
-            );
+            assert_eq!(saved(), [saved_under], "{viewer_id:?}");
         }
     }
 

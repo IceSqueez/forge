@@ -393,6 +393,77 @@ mod tests {
     }
 
     #[test]
+    fn language_names_sort_in_alphabet_order_in_either_script() {
+        for (label, unsorted, expected) in [
+            (
+                "ukrainian letters",
+                vec![
+                    "Японська",
+                    "Італійська",
+                    "Китайська",
+                    "Іспанська",
+                    "Ісландська",
+                    "Ґуджараті",
+                    "Естонська",
+                    "Їдиш",
+                    "Йорданська",
+                    "Євейська",
+                    "Грецька",
+                    "Жемайтська",
+                    "Ірландська",
+                ],
+                vec![
+                    "Грецька",
+                    "Ґуджараті",
+                    "Естонська",
+                    "Євейська",
+                    "Жемайтська",
+                    "Ірландська",
+                    "Ісландська",
+                    "Іспанська",
+                    "Італійська",
+                    "Їдиш",
+                    "Йорданська",
+                    "Китайська",
+                    "Японська",
+                ],
+            ),
+            (
+                "apostrophe is ignored",
+                vec!["Вірменська", "В'єтнамська", "Валлійська"],
+                vec!["Валлійська", "В'єтнамська", "Вірменська"],
+            ),
+            (
+                "latin stays plain alphabetical",
+                vec!["Spanish", "english", "German", "Icelandic", "Italian"],
+                vec!["english", "German", "Icelandic", "Italian", "Spanish"],
+            ),
+        ] {
+            let named: BTreeMap<String, &str> = (b'a'..)
+                .zip(unsorted)
+                .map(|(letter, name)| (format!("x{}", char::from(letter)), name))
+                .collect();
+            let voices: Vec<TtsVoice> = named
+                .keys()
+                .map(|code| voice(ENGINE, "Voice", code, VoiceGender::Male))
+                .collect();
+
+            let listing =
+                VoiceListing::derive(Arc::new(voices), ENGINE, &VoiceFilter::default(), |key| {
+                    named
+                        .get(key)
+                        .map(|name| (*name).to_owned())
+                        .unwrap_or_default()
+                });
+
+            let languages: Vec<&str> = listing.languages.iter().map(|l| l.name.as_str()).collect();
+            let groups: Vec<&str> = listing.groups.iter().map(|g| g.name.as_str()).collect();
+            assert_eq!(languages, expected, "{label}");
+            assert_eq!(groups, expected, "{label}");
+        }
+    }
+
+    #[test]
     fn language_choices_and_total_ignore_the_active_filter() {
         let filter = filtered("Леся", Some("uk"), GenderFilter::Male);
 

@@ -682,6 +682,7 @@ fn form_to_alias(form: &AliasForm, cx: &App) -> VoiceAlias {
 
 #[cfg(test)]
 mod tests {
+    use forge_speech_types::VoiceGender;
     use forge_storage::Language;
     use forge_types::PlatformId;
     use gpui::{Entity, EntityInputHandler, Subscription, TestAppContext};
@@ -717,11 +718,31 @@ mod tests {
         locked: bool,
         values: AliasValues,
     ) -> Mounted {
+        mount_with_voices(cx, editing, identity, locked, values, Vec::new())
+    }
+
+    fn mount_with_voices(
+        cx: &mut TestAppContext,
+        editing: Option<AliasId>,
+        identity: Option<AliasIdentity>,
+        locked: bool,
+        values: AliasValues,
+        catalog: Vec<TtsVoice>,
+    ) -> Mounted {
         install_language(Language::En);
         install_presentation(cx);
         cx.update(|cx| {
-            let form =
-                cx.new(|cx| AliasForm::new(editing, identity, locked, values, Vec::new(), cx));
+            let form = cx.new(|cx| {
+                AliasForm::new(
+                    editing,
+                    identity,
+                    locked,
+                    values,
+                    Vec::new(),
+                    Arc::new(catalog),
+                    cx,
+                )
+            });
             let submitted = cx.new(|cx| Submitted {
                 seen: Vec::new(),
                 _sub: cx.subscribe(&form, |this: &mut Submitted, _form, event, _cx| {
@@ -979,6 +1000,59 @@ mod tests {
                 .update(cx, |form, cx| form.set_saving(saving, cx));
 
             assert!(submit(cx, &mounted).is_empty(), "{label}");
+        }
+    }
+
+    fn installed(engine: &str, id: &str) -> TtsVoice {
+        TtsVoice {
+            id: VoiceId(id.to_owned()),
+            name: id.to_owned(),
+            locale: "uk-UA".to_owned(),
+            gender: VoiceGender::Neutral,
+            engine_id: EngineId(engine.to_owned()),
+            is_neural: false,
+            sample_rate_hint: 22_050,
+        }
+    }
+
+    #[gpui::test]
+    fn picking_a_voice_stores_its_id_and_engine_and_the_unlisted_entry_changes_nothing(
+        cx: &mut TestAppContext,
+    ) {
+        for (label, item, expected) in [
+            ("catalog index", "1", ("piper", "uk_UA-ukrainian_tts")),
+            (
+                "unlisted stored voice",
+                "stored",
+                ("elevenlabs", "en_US-amy"),
+            ),
+            ("out of range index", "9", ("elevenlabs", "en_US-amy")),
+        ] {
+            let existing = stored(AliasState::Active);
+            let mounted = mount_with_voices(
+                cx,
+                Some(existing.id.clone()),
+                Some(identity(&existing.alias_key, "alice", AliasScope::YouTube)),
+                true,
+                AliasValues::of(&existing),
+                vec![
+                    installed("piper", "en_US-lessac"),
+                    installed("piper", "uk_UA-ukrainian_tts"),
+                ],
+            );
+
+            mounted
+                .form
+                .update(cx, |form, cx| form.pick_voice(item, cx));
+
+            let (engine, voice) = expected;
+            let submitted = submit(cx, &mounted);
+            let shape = alias_shape(&VoiceAlias {
+                engine_id: EngineId(engine.to_owned()),
+                voice_id: VoiceId(voice.to_owned()),
+                ..existing
+            });
+            assert_eq!(submitted, [shape], "{label}");
         }
     }
 

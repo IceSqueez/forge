@@ -111,9 +111,12 @@ pub(crate) fn engine_voice_options(voices: &[TtsVoice]) -> Vec<ChoiceOption> {
 
 #[cfg(test)]
 mod tests {
+    use forge_components::item_matches;
     use forge_speech_types::{EngineId, VoiceGender, VoiceId};
+    use forge_storage::Language;
 
     use super::*;
+    use crate::app::i18n::install_language;
 
     fn voice(engine_id: &str, id: &str, name: &str, locale: &str) -> TtsVoice {
         TtsVoice {
@@ -145,5 +148,120 @@ mod tests {
                 ChoiceOption::new("piper/en_US/amy", "Piper - amy (en_US)"),
             ]
         );
+    }
+
+    fn catalog() -> Vec<TtsVoice> {
+        vec![
+            voice("piper", "en_US/amy", "amy", "en_US"),
+            voice("piper", "uk_UA/lada", "Lada", "uk_UA"),
+            voice("piper", "de_DE/eva", "Eva", "de-DE"),
+            voice("sapi", "zira", "Zira", ""),
+        ]
+    }
+
+    fn rows(choices: &AliasVoiceChoices) -> Vec<(String, Option<String>)> {
+        choices
+            .items
+            .iter()
+            .map(|item| {
+                (
+                    item.label.to_string(),
+                    item.sublabel.as_ref().map(ToString::to_string),
+                )
+            })
+            .collect()
+    }
+
+    fn row(label: &str, sublabel: &str) -> (String, Option<String>) {
+        (label.to_owned(), Some(sublabel.to_owned()))
+    }
+
+    #[test]
+    fn the_picker_lists_the_chosen_engine_alphabetically_with_the_locale_in_the_row() {
+        let choices = alias_voice_choices(&catalog(), Some("piper"), "uk_UA/lada");
+
+        assert_eq!(
+            rows(&choices),
+            [
+                row("amy", "Piper - en-US"),
+                row("Eva", "Piper - de-DE"),
+                row("Lada", "Piper - uk-UA"),
+            ]
+        );
+        assert_eq!(choices.current.as_deref(), Some("1"));
+    }
+
+    #[test]
+    fn without_an_engine_every_voice_is_offered_with_its_engine() {
+        let choices = alias_voice_choices(&catalog(), None, "");
+
+        assert_eq!(choices.items.len(), 4);
+        assert_eq!(choices.current, None);
+        assert_eq!(
+            rows(&choices).last(),
+            Some(&row("Zira", "Microsoft SAPI 5"))
+        );
+    }
+
+    #[test]
+    fn a_stored_voice_that_is_gone_stays_on_top_as_the_current_entry() {
+        install_language(Language::En);
+        for (label, engine, stored) in [
+            ("uninstalled", Some("piper"), "uk_UA/gone"),
+            ("installed on another engine", Some("sapi"), "en_US/amy"),
+        ] {
+            let choices = alias_voice_choices(&catalog(), engine, stored);
+
+            assert_eq!(
+                rows(&choices).first(),
+                Some(&row(stored, "Not installed")),
+                "{label}"
+            );
+            assert_eq!(
+                choices.current.as_deref(),
+                Some(UNLISTED_STORED_VOICE),
+                "{label}"
+            );
+            assert_eq!(
+                alias_voice_field(&catalog(), engine, stored),
+                Some(format!("{stored} - Not installed")),
+                "{label}"
+            );
+        }
+    }
+
+    #[test]
+    fn the_field_names_an_installed_voice_and_stays_blank_without_one() {
+        for (stored, expected) in [
+            ("uk_UA/lada", Some("Lada (uk-UA)")),
+            ("zira", Some("Zira")),
+            ("", None),
+        ] {
+            assert_eq!(
+                alias_voice_field(&catalog(), None, stored).as_deref(),
+                expected,
+                "{stored:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn search_finds_a_voice_by_name_or_locale_in_any_case() {
+        let choices = alias_voice_choices(&catalog(), Some("piper"), "");
+        for (query, expected) in [
+            ("uk-UA", vec!["Lada"]),
+            ("uk-ua", vec!["Lada"]),
+            ("lad", vec!["Lada"]),
+            ("de", vec!["Eva"]),
+            ("fr-FR", vec![]),
+        ] {
+            let found: Vec<&str> = choices
+                .items
+                .iter()
+                .filter(|item| item_matches(&item.label, item.sublabel.as_deref(), query))
+                .map(|item| item.label.as_ref())
+                .collect();
+            assert_eq!(found, expected, "{query}");
+        }
     }
 }

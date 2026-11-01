@@ -107,7 +107,7 @@ struct Booted {
 
 async fn boot(platform_identities: PlatformIdentities) -> Booted {
     let backend = open_store().await;
-    seed_integrations_and_server_off(backend.as_ref()).await;
+    seed_integrations_and_server_off(backend.settings_repo().as_ref()).await;
     let action = seed_action_on_custom_event(&backend).await;
     let booted = boot_host(
         Arc::clone(&backend),
@@ -285,7 +285,7 @@ fn a_custom_event_runs_its_seeded_action_and_leaves_history_and_a_global() {
             run.metadata,
             ExecutionMetadata::Trigger { event_id: recorded, .. } if recorded == event_id
         ));
-        let globals: Arc<dyn GlobalsRepo> = Arc::clone(&booted.backend) as Arc<dyn GlobalsRepo>;
+        let globals: Arc<dyn GlobalsRepo> = booted.backend.globals_repo();
         assert_eq!(
             globals.get(GLOBAL_NAME).await.unwrap(),
             Some(Variant::String(GLOBAL_VALUE.to_owned()))
@@ -348,8 +348,11 @@ fn the_graceful_stop_returns_and_leaves_a_store_that_reopens_with_its_settings()
         .await
         .unwrap();
         let reopened = guarded("the reopen", open_store()).await;
-        let server_enabled =
-            read_setting_or_default(reopened.as_ref(), &forge_server::settings::ENABLED).await;
+        let server_enabled = read_setting_or_default(
+            reopened.settings_repo().as_ref(),
+            &forge_server::settings::ENABLED,
+        )
+        .await;
         assert!(!server_enabled);
     });
 }

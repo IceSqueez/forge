@@ -68,14 +68,35 @@ pub enum ReadFault {
 pub const SETTINGS_READ_FAILED: &str = "settings store unreachable";
 pub const SETTINGS_WRITE_FAILED: &str = "settings store is read-only";
 
-pub struct TestBackend {
+pub struct TestRepos {
     settings: MemorySettings,
     writes: UnboundedSender<SettingWrite>,
     reads: Mutex<HashMap<String, usize>>,
     read_faults: Mutex<HashMap<String, ReadFault>>,
     write_faults: Mutex<std::collections::HashSet<String>>,
-    overlays: Option<Arc<dyn OverlayRepo>>,
     scripts: Option<Arc<dyn ScriptRepo>>,
+}
+
+impl TestRepos {
+    fn over(
+        settings: MemorySettings,
+        writes: UnboundedSender<SettingWrite>,
+        scripts: Option<Arc<dyn ScriptRepo>>,
+    ) -> Arc<Self> {
+        Arc::new(Self {
+            settings,
+            writes,
+            reads: Mutex::default(),
+            read_faults: Mutex::default(),
+            write_faults: Mutex::default(),
+            scripts,
+        })
+    }
+}
+
+pub struct TestBackend {
+    repos: Arc<TestRepos>,
+    overlays: Option<Arc<dyn OverlayRepo>>,
     actions: Option<Arc<dyn ActionRepo>>,
     triggers: Option<Arc<dyn TriggerInstanceRepo>>,
     media: Arc<dyn MediaRepo>,
@@ -167,13 +188,8 @@ fn backend_over(
     let (writes, rx) = unbounded_channel();
     (
         Arc::new(TestBackend {
-            settings: MemorySettings::new(),
-            writes,
-            reads: Mutex::default(),
-            read_faults: Mutex::default(),
-            write_faults: Mutex::default(),
+            repos: TestRepos::over(MemorySettings::new(), writes, scripts),
             overlays,
-            scripts,
             actions: None,
             triggers: None,
             media,
@@ -203,13 +219,8 @@ impl TestBackend {
     ) -> Arc<Self> {
         let (writes, _) = unbounded_channel();
         Arc::new(Self {
-            settings,
-            writes,
-            reads: Mutex::default(),
-            read_faults: Mutex::default(),
-            write_faults: Mutex::default(),
+            repos: TestRepos::over(settings, writes, None),
             overlays: None,
-            scripts: None,
             actions: None,
             triggers: None,
             media: Arc::new(EmptyMediaLibrary),
@@ -219,7 +230,27 @@ impl TestBackend {
             on_shutdown: None,
         })
     }
+}
 
+impl TestBackend {
+    pub fn settings_repo(&self) -> Arc<dyn SettingsRepo> {
+        Arc::clone(&self.repos) as Arc<dyn SettingsRepo>
+    }
+
+    pub fn credentials_repo(&self) -> Arc<dyn CredentialsRepo> {
+        Arc::clone(&self.repos) as Arc<dyn CredentialsRepo>
+    }
+}
+
+impl std::ops::Deref for TestBackend {
+    type Target = TestRepos;
+
+    fn deref(&self) -> &TestRepos {
+        &self.repos
+    }
+}
+
+impl TestRepos {
     pub fn seed<C: SettingCodec>(&self, setting: &Setting<C>, value: &C::Value) {
         self.settings.seed(setting, value).unwrap();
     }
@@ -288,7 +319,7 @@ impl TestBackend {
 }
 
 #[async_trait::async_trait]
-impl SettingsRepo for TestBackend {
+impl SettingsRepo for TestRepos {
     async fn get_raw(&self, gate: RowGate, key: &str) -> Result<Option<String>, StorageError> {
         *self
             .reads
@@ -332,7 +363,7 @@ impl SettingsRepo for TestBackend {
 }
 
 #[async_trait::async_trait]
-impl CredentialsRepo for TestBackend {
+impl CredentialsRepo for TestRepos {
     async fn store(&self, _: &CredentialId, _: &str) -> Result<(), StorageError> {
         Ok(())
     }
@@ -359,7 +390,7 @@ impl CredentialsRepo for TestBackend {
 }
 
 #[async_trait::async_trait]
-impl GlobalsRepo for TestBackend {
+impl GlobalsRepo for TestRepos {
     async fn get(&self, _: &str) -> Result<Option<Variant>, StorageError> {
         unreachable!("this TestBackend was built without globals")
     }
@@ -471,7 +502,7 @@ impl GlobalsRepo for TestBackend {
 }
 
 #[async_trait::async_trait]
-impl UserGlobalsRepo for TestBackend {
+impl UserGlobalsRepo for TestRepos {
     async fn get(&self, _: &UserGlobalKey) -> Result<Option<Variant>, StorageError> {
         unreachable!("this TestBackend was built without user globals")
     }
@@ -504,7 +535,7 @@ impl UserGlobalsRepo for TestBackend {
     }
 }
 
-impl TestBackend {
+impl TestRepos {
     fn scripts(&self) -> &Arc<dyn ScriptRepo> {
         self.scripts
             .as_ref()
@@ -513,7 +544,7 @@ impl TestBackend {
 }
 
 #[async_trait::async_trait]
-impl ScriptRepo for TestBackend {
+impl ScriptRepo for TestRepos {
     async fn get(&self, id: ScriptId) -> Result<Option<ScriptRecord>, StorageError> {
         self.scripts().get(id).await
     }
@@ -591,6 +622,26 @@ impl ScriptRepo for TestBackend {
 
 #[async_trait::async_trait]
 impl DataProvider for TestBackend {
+    fn globals_repo(&self) -> Arc<dyn GlobalsRepo> {
+        Arc::clone(&self.repos) as Arc<dyn GlobalsRepo>
+    }
+
+    fn user_globals_repo(&self) -> Arc<dyn UserGlobalsRepo> {
+        Arc::clone(&self.repos) as Arc<dyn UserGlobalsRepo>
+    }
+
+    fn settings_repo(&self) -> Arc<dyn SettingsRepo> {
+        TestBackend::settings_repo(self)
+    }
+
+    fn script_repo(&self) -> Arc<dyn ScriptRepo> {
+        Arc::clone(&self.repos) as Arc<dyn ScriptRepo>
+    }
+
+    fn credentials_repo(&self) -> Arc<dyn CredentialsRepo> {
+        TestBackend::credentials_repo(self)
+    }
+
     fn action_repo(&self) -> Arc<dyn ActionRepo> {
         if let Some(actions) = &self.actions {
             return Arc::clone(actions);
@@ -1077,11 +1128,11 @@ pub async fn stopped_server_hosting(
     overlay_root: std::path::PathBuf,
 ) -> ServerHandle {
     let config = ServerDeps::new(overlay_root)
-        .with_settings(Arc::clone(backend) as Arc<dyn SettingsRepo>)
-        .with_credentials(Arc::clone(backend) as Arc<dyn CredentialsRepo>)
+        .with_settings(backend.settings_repo())
+        .with_credentials(backend.credentials_repo())
         .with_actions(Arc::new(StubActions))
-        .with_globals(Arc::clone(backend) as Arc<dyn GlobalsRepo>)
-        .with_user_globals(Arc::clone(backend) as Arc<dyn UserGlobalsRepo>)
+        .with_globals(backend.globals_repo())
+        .with_user_globals(backend.user_globals_repo())
         .with_overlays(Arc::new(StubOverlays))
         .build();
     stopped_server(config)
@@ -1444,7 +1495,7 @@ fn youtube_token_source() -> Arc<
 
 fn register_youtube_runners(sub_actions: &mut SubActionRegistry, bus: &Arc<EventBus>) {
     use forge_platform_youtube as yt;
-    let api = yt::YoutubeDataApi::new(
+    let api = yt::YouTubeDataApi::new(
         &forge_platform_core::PlatformEndpoints::default(),
         yt::SharedQuota::default(),
         publisher(bus),
@@ -1454,17 +1505,17 @@ fn register_youtube_runners(sub_actions: &mut SubActionRegistry, bus: &Arc<Event
     let broadcast = yt::ActiveBroadcastIdHandle::new();
     yt::register_youtube_sub_actions(
         sub_actions,
-        Arc::new(yt::YoutubeSendChat::new(
+        Arc::new(yt::YouTubeSendChat::new(
             api.clone(),
             youtube_token_source(),
             chat.clone(),
         )),
-        Arc::new(yt::YoutubeModeration::new(
+        Arc::new(yt::YouTubeModeration::new(
             api.clone(),
             youtube_token_source(),
             Arc::new(|| {
                 Box::pin(async {
-                    Ok(yt::YoutubeBroadcaster {
+                    Ok(yt::YouTubeBroadcaster {
                         channel_id: "UCtest".to_owned(),
                         channel_title: "Test".to_owned(),
                     })
@@ -1473,27 +1524,27 @@ fn register_youtube_runners(sub_actions: &mut SubActionRegistry, bus: &Arc<Event
             chat,
             Arc::new(forge_storage::MockBanLedgerRepo::new()),
         )),
-        Arc::new(yt::YoutubeStreamMetadata::new(
+        Arc::new(yt::YouTubeStreamMetadata::new(
             api.clone(),
             youtube_token_source(),
             broadcast.clone(),
         )),
-        Arc::new(yt::YoutubeStreamStats::new(
+        Arc::new(yt::YouTubeStreamStats::new(
             api.clone(),
             youtube_token_source(),
             broadcast.clone(),
         )),
-        Arc::new(yt::YoutubeAdBreak::new(
+        Arc::new(yt::YouTubeAdBreak::new(
             api.clone(),
             youtube_token_source(),
             broadcast.clone(),
         )),
-        Arc::new(yt::YoutubeThumbnail::new(
+        Arc::new(yt::YouTubeThumbnail::new(
             api.clone(),
             youtube_token_source(),
             broadcast,
         )),
-        Arc::new(yt::YoutubeChannelLookup::new(api, youtube_token_source())),
+        Arc::new(yt::YouTubeChannelLookup::new(api, youtube_token_source())),
     )
     .unwrap();
 }

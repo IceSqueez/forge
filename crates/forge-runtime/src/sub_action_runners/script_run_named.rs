@@ -14,15 +14,14 @@ use forge_storage::{
     ExecutionStatus, GlobalsRepo, SCRIPT_NAME_KEY, SCRIPT_RUN_NAMED_KIND, ScriptRepo, SettingsRepo,
 };
 use forge_types::{
-    ArgStack, SubActionConfig, SubActionOutcome, SubActionTelemetry, VariantKind,
-    strip_var_decoration,
+    ArgStack, SubActionConfig, SubActionOutcome, SubActionTelemetry, strip_var_decoration,
 };
 use time::OffsetDateTime;
 
 use crate::core_messages;
 use crate::engine::scheduled_runs::SchedulingContext;
 use crate::services::global_mutation::RuntimeScriptGlobals;
-use crate::services::script_registry::{SCRIPT_PANIC_ERROR_TYPE, ScriptRegistry};
+use crate::services::script_catalog::{SCRIPT_PANIC_ERROR_TYPE, ScriptCatalog};
 
 pub const TARGET_VAR_KEY: &str = "target_var";
 
@@ -52,7 +51,7 @@ fn read_config(
 }
 
 pub(crate) struct ScriptRunNamedRunner {
-    registry: Arc<ScriptRegistry>,
+    registry: Arc<ScriptCatalog>,
     globals: Arc<dyn ScriptGlobals>,
     publisher: Arc<dyn EventPublisher>,
     settings: Arc<dyn SettingsRepo>,
@@ -61,7 +60,7 @@ pub(crate) struct ScriptRunNamedRunner {
 
 impl ScriptRunNamedRunner {
     pub(crate) fn new(
-        registry: Arc<ScriptRegistry>,
+        registry: Arc<ScriptCatalog>,
         globals: Arc<dyn GlobalsRepo>,
         publisher: Arc<dyn EventPublisher>,
         settings: Arc<dyn SettingsRepo>,
@@ -119,7 +118,7 @@ impl SubActionRunner for ScriptRunNamedRunner {
         SubActionIo {
             produces: vec![ProducedVariable {
                 output_name_key: TARGET_VAR_KEY.to_owned(),
-                kind: VariantKind::String,
+                kind: None,
                 label: "Script result".to_owned(),
             }],
             ..SubActionIo::default()
@@ -161,7 +160,7 @@ impl SubActionRunner for ScriptRunNamedRunner {
                         started_at,
                         duration_ms,
                         outcome: SubActionOutcome::Failed(failure.into()),
-                        index: ctx.index,
+                        position: forge_types::StepPosition::TopLevel(ctx.index),
                     },
                     None,
                 );
@@ -272,7 +271,7 @@ impl SubActionRunner for ScriptRunNamedRunner {
                 started_at,
                 duration_ms,
                 outcome,
-                index: ctx.index,
+                position: forge_types::StepPosition::TopLevel(ctx.index),
             },
             updated_stack,
         )
@@ -287,6 +286,7 @@ mod tests {
     use crate::{EventBus, NullEventLogRepo};
     use forge_events::Event;
     use forge_events::test_support::NullPublisher;
+    use forge_storage::DataProvider;
     use forge_storage::ScriptRecord;
     use forge_storage_sqlite::SqliteBackend;
     use forge_types::Variant;
@@ -323,14 +323,14 @@ mod tests {
             created_at: ts,
             last_modified: ts,
         };
-        backend.save(record).await.unwrap();
+        backend.script_repo().save(record).await.unwrap();
 
         let runner = ScriptRunNamedRunner::new(
-            Arc::new(ScriptRegistry::new()),
-            Arc::clone(&backend) as Arc<dyn GlobalsRepo>,
+            Arc::new(ScriptCatalog::new()),
+            backend.globals_repo(),
             publisher,
-            Arc::clone(&backend) as Arc<dyn SettingsRepo>,
-            Arc::clone(&backend) as Arc<dyn ScriptRepo>,
+            backend.settings_repo(),
+            backend.script_repo(),
         );
 
         let mut config = runner.default_config();
@@ -461,7 +461,7 @@ mod tests {
 
     struct NamedScript {
         backend: Sandboxed<Arc<SqliteBackend>>,
-        registry: Arc<ScriptRegistry>,
+        registry: Arc<ScriptCatalog>,
         runner: ScriptRunNamedRunner,
         config: SubActionConfig,
         record: ScriptRecord,
@@ -471,13 +471,13 @@ mod tests {
         async fn saved(body: &str) -> Self {
             let backend = sandboxed_backend([0xab; 32]).await.map(Arc::new);
             let bus = EventBus::new(Arc::new(NullEventLogRepo));
-            let registry = Arc::new(ScriptRegistry::new());
+            let registry = Arc::new(ScriptCatalog::new());
             let runner = ScriptRunNamedRunner::new(
                 Arc::clone(&registry),
-                Arc::clone(&backend) as Arc<dyn GlobalsRepo>,
+                backend.globals_repo(),
                 Arc::clone(&bus) as Arc<dyn EventPublisher>,
-                Arc::clone(&backend) as Arc<dyn SettingsRepo>,
-                Arc::clone(&backend) as Arc<dyn ScriptRepo>,
+                backend.settings_repo(),
+                backend.script_repo(),
             );
             let mut config = runner.default_config();
             config.insert(
@@ -495,7 +495,7 @@ mod tests {
                 created_at: now,
                 last_modified: now,
             };
-            backend.save(record.clone()).await.unwrap();
+            backend.script_repo().save(record.clone()).await.unwrap();
             Self {
                 backend,
                 registry,
@@ -521,7 +521,7 @@ mod tests {
         async fn stored_with(&self, change: impl FnOnce(&mut ScriptRecord)) {
             let mut record = self.record.clone();
             change(&mut record);
-            self.backend.save(record).await.unwrap();
+            self.backend.script_repo().save(record).await.unwrap();
         }
 
         async fn assert_gone(&self) {
@@ -569,7 +569,10 @@ mod tests {
         let script = NamedScript::saved("1").await;
         script.output().await;
 
-        ScriptRepo::delete(&**script.backend, script.record.id)
+        script
+            .backend
+            .script_repo()
+            .delete(script.record.id)
             .await
             .unwrap();
 
@@ -583,6 +586,7 @@ mod tests {
 
         script
             .backend
+            .script_repo()
             .archive_script(script.record.id)
             .await
             .unwrap();
@@ -613,10 +617,10 @@ mod tests {
         let backend = sandboxed_backend([0xab; 32]).await.map(Arc::new);
         let bus = EventBus::new(Arc::new(NullEventLogRepo));
         let runner = ScriptRunNamedRunner::new(
-            Arc::new(ScriptRegistry::new()),
-            Arc::clone(&backend) as Arc<dyn GlobalsRepo>,
+            Arc::new(ScriptCatalog::new()),
+            backend.globals_repo(),
             bus,
-            Arc::clone(&backend) as Arc<dyn SettingsRepo>,
+            backend.settings_repo(),
             Arc::new(repo),
         );
         let mut config = runner.default_config();

@@ -25,16 +25,13 @@ use forge_storage::MockVoiceAliasRepo;
 use forge_storage::credentials::MockCredentialsRepo;
 use forge_storage::test_support::MemorySettings;
 use forge_storage::{
-    ActionRepo, BanLedgerRepo, ChatHistoryRepo, CredentialId, CredentialsRepo, DataProvider,
-    DonationRepo, EventLogRepo, ExecutionStatus, GlobalEntry, GlobalsRepo, HistoryRepo,
-    LatestValueRepo, MediaRepo, QueueRepo, RowClasses, RowGate, ScheduledRunRepo, ScriptRecord,
-    ScriptReferences, ScriptRepo, ScriptTelemetry, SettingRow, SettingsRepo, SoundboardClipsRepo,
-    StorageError, TriggerInstanceRepo, TtsFiltersRepo, UserGlobalEntry, UserGlobalKey,
-    UserGlobalsRepo, ViewerRepo, VoiceAliasRepo,
+    ActionRepo, BanLedgerRepo, ChatHistoryRepo, CredentialsRepo, DataProvider, DonationRepo,
+    EventLogRepo, GlobalsRepo, HistoryRepo, LatestValueRepo, MediaRepo, QueueRepo,
+    ScheduledRunRepo, ScriptRepo, SettingsRepo, SoundboardClipsRepo, StorageError,
+    TriggerInstanceRepo, TtsFiltersRepo, UserGlobalsRepo, ViewerRepo, VoiceAliasRepo,
 };
 use forge_storage::{MockOverlayRepo, OverlayRepo};
-use forge_types::{ScriptId, TriggerInstanceId, Variant};
-use time::OffsetDateTime;
+use forge_types::TriggerInstanceId;
 
 pub(crate) struct StubProvider {
     pub action_repo: Arc<MockActionRepo>,
@@ -171,296 +168,27 @@ impl Default for StubProvider {
 }
 
 #[async_trait]
-impl GlobalsRepo for StubProvider {
-    async fn get(&self, name: &str) -> Result<Option<Variant>, StorageError> {
-        self.globals_repo.get(name).await
-    }
-
-    async fn set(&self, name: &str, value: Variant, persisted: bool) -> Result<(), StorageError> {
-        self.globals_repo.set(name, value, persisted).await
-    }
-
-    async fn delete(&self, name: &str) -> Result<bool, StorageError> {
-        self.globals_repo.delete(name).await
-    }
-
-    async fn list(&self) -> Result<Vec<GlobalEntry>, StorageError> {
-        self.globals_repo.list().await
-    }
-
-    async fn storage_bytes(&self) -> Result<u64, StorageError> {
-        self.globals_repo.storage_bytes().await
-    }
-
-    async fn last_save_at(&self) -> Result<Option<OffsetDateTime>, StorageError> {
-        self.globals_repo.last_save_at().await
-    }
-
-    async fn incr(&self, name: &str, amount: i64) -> Result<Variant, StorageError> {
-        self.globals_repo.incr(name, amount).await
-    }
-
-    async fn peek(
-        &self,
-        name: &str,
-    ) -> Result<Option<forge_types::Variant>, forge_storage::StorageError> {
-        forge_storage::GlobalsRepo::get(self, name).await
-    }
-
-    async fn persisted(&self, name: &str) -> Result<Option<bool>, forge_storage::StorageError> {
-        Ok(forge_storage::GlobalsRepo::list(self)
-            .await?
-            .into_iter()
-            .find(|entry| entry.name == name)
-            .map(|entry| entry.persisted))
-    }
-
-    async fn set_persisted(
-        &self,
-        _name: &str,
-        _persisted: bool,
-    ) -> Result<bool, forge_storage::StorageError> {
-        Err(forge_storage::StorageError::NotReady)
-    }
-
-    async fn rename(
-        &self,
-        _old_name: &str,
-        _new_name: &str,
-    ) -> Result<(), forge_storage::StorageError> {
-        Err(forge_storage::StorageError::NotReady)
-    }
-
-    async fn rename_and_set(
-        &self,
-        _old_name: &str,
-        _new_name: &str,
-        _value: Variant,
-        _persisted: bool,
-    ) -> Result<(), forge_storage::StorageError> {
-        Err(forge_storage::StorageError::NotReady)
-    }
-
-    async fn count(&self) -> Result<usize, forge_storage::StorageError> {
-        Ok(forge_storage::GlobalsRepo::list(self).await?.len())
-    }
-
-    async fn archive(&self, _name: &str) -> Result<bool, forge_storage::StorageError> {
-        Err(forge_storage::StorageError::NotReady)
-    }
-
-    async fn restore(&self, _name: &str) -> Result<bool, forge_storage::StorageError> {
-        Err(forge_storage::StorageError::NotReady)
-    }
-
-    async fn list_archived(
-        &self,
-    ) -> Result<Vec<forge_storage::GlobalEntry>, forge_storage::StorageError> {
-        Ok(Vec::new())
-    }
-
-    async fn array_append(
-        &self,
-        _name: &str,
-        _item: forge_types::Variant,
-        _max_len: Option<usize>,
-    ) -> Result<usize, forge_storage::StorageError> {
-        Err(forge_storage::StorageError::NotReady)
-    }
-
-    async fn array_remove(
-        &self,
-        _name: &str,
-        _item: &forge_types::Variant,
-        _remove_all: bool,
-    ) -> Result<usize, forge_storage::StorageError> {
-        Err(forge_storage::StorageError::NotReady)
-    }
-
-    async fn toggle(&self, _name: &str) -> Result<bool, forge_storage::StorageError> {
-        Err(forge_storage::StorageError::NotReady)
-    }
-}
-
-#[async_trait]
-impl UserGlobalsRepo for StubProvider {
-    async fn get(&self, key: &UserGlobalKey) -> Result<Option<Variant>, StorageError> {
-        self.user_globals_repo.get(key).await
-    }
-
-    async fn set(&self, key: &UserGlobalKey, value: Variant) -> Result<(), StorageError> {
-        self.user_globals_repo.set(key, value).await
-    }
-
-    async fn delete(&self, key: &UserGlobalKey) -> Result<bool, StorageError> {
-        self.user_globals_repo.delete(key).await
-    }
-
-    async fn list_for_user(
-        &self,
-        broadcaster_id: &str,
-        user_id: &str,
-    ) -> Result<Vec<UserGlobalEntry>, StorageError> {
-        self.user_globals_repo
-            .list_for_user(broadcaster_id, user_id)
-            .await
-    }
-
-    async fn list_for_broadcaster(
-        &self,
-        broadcaster_id: &str,
-    ) -> Result<Vec<UserGlobalEntry>, StorageError> {
-        self.user_globals_repo
-            .list_for_broadcaster(broadcaster_id)
-            .await
-    }
-
-    async fn incr(
-        &self,
-        key: &UserGlobalKey,
-        amount: i64,
-    ) -> Result<forge_types::Variant, forge_storage::StorageError> {
-        let current = forge_storage::UserGlobalsRepo::get(self, key).await?;
-        let next = forge_storage::incremented(&key.name, current, amount)?;
-        forge_storage::UserGlobalsRepo::set(self, key, next.clone()).await?;
-        Ok(next)
-    }
-}
-
-#[async_trait]
-impl SettingsRepo for StubProvider {
-    async fn get_raw(&self, gate: RowGate, key: &str) -> Result<Option<String>, StorageError> {
-        self.settings_repo.get_raw(gate, key).await
-    }
-
-    async fn delete_raw(&self, gate: RowGate, key: &str) -> Result<bool, StorageError> {
-        self.settings_repo.delete_raw(gate, key).await
-    }
-
-    async fn load_rows(&self, gate: RowGate) -> Result<Vec<SettingRow>, StorageError> {
-        self.settings_repo.load_rows(gate).await
-    }
-
-    async fn put_row(
-        &self,
-        gate: RowGate,
-        key: &str,
-        value: &str,
-        classes: RowClasses,
-    ) -> Result<(), StorageError> {
-        self.settings_repo.put_row(gate, key, value, classes).await
-    }
-}
-
-#[async_trait]
-impl ScriptRepo for StubProvider {
-    async fn get(&self, id: ScriptId) -> Result<Option<ScriptRecord>, StorageError> {
-        self.script_repo.get(id).await
-    }
-
-    async fn get_by_name(&self, name: &str) -> Result<Option<ScriptRecord>, StorageError> {
-        self.script_repo.get_by_name(name).await
-    }
-
-    async fn save(&self, record: ScriptRecord) -> Result<(), StorageError> {
-        self.script_repo.save(record).await
-    }
-
-    async fn delete(&self, id: ScriptId) -> Result<bool, StorageError> {
-        self.script_repo.delete(id).await
-    }
-
-    async fn list(&self) -> Result<Vec<ScriptRecord>, StorageError> {
-        self.script_repo.list().await
-    }
-
-    async fn list_enabled(&self) -> Result<Vec<ScriptRecord>, StorageError> {
-        self.script_repo.list_enabled().await
-    }
-
-    async fn record_execution(
-        &self,
-        script_id: ScriptId,
-        started_at: OffsetDateTime,
-        duration_ms: u64,
-        status: ExecutionStatus,
-    ) -> Result<(), StorageError> {
-        self.script_repo
-            .record_execution(script_id, started_at, duration_ms, status)
-            .await
-    }
-
-    async fn telemetry(&self, id: ScriptId) -> Result<ScriptTelemetry, StorageError> {
-        self.script_repo.telemetry(id).await
-    }
-
-    async fn prune_executions_before(
-        &self,
-        cutoff: OffsetDateTime,
-        chunk_rows: u32,
-    ) -> Result<u64, StorageError> {
-        self.script_repo
-            .prune_executions_before(cutoff, chunk_rows)
-            .await
-    }
-
-    async fn rename_cascading(
-        &self,
-        id: ScriptId,
-        new_name: &str,
-    ) -> Result<ScriptReferences, StorageError> {
-        self.script_repo.rename_cascading(id, new_name).await
-    }
-
-    async fn referrers(&self, name: &str) -> Result<ScriptReferences, StorageError> {
-        self.script_repo.referrers(name).await
-    }
-
-    async fn archive_script(&self, id: ScriptId) -> Result<bool, StorageError> {
-        self.script_repo.archive_script(id).await
-    }
-
-    async fn restore_script(&self, id: ScriptId) -> Result<bool, StorageError> {
-        self.script_repo.restore_script(id).await
-    }
-
-    async fn list_archived_scripts(&self) -> Result<Vec<ScriptRecord>, StorageError> {
-        self.script_repo.list_archived_scripts().await
-    }
-}
-
-#[async_trait]
-impl CredentialsRepo for StubProvider {
-    async fn store(&self, id: &CredentialId, plaintext_bundle: &str) -> Result<(), StorageError> {
-        self.credentials_repo.store(id, plaintext_bundle).await
-    }
-
-    async fn load(&self, id: &CredentialId) -> Result<Option<String>, StorageError> {
-        self.credentials_repo.load(id).await
-    }
-
-    async fn delete(&self, id: &CredentialId) -> Result<bool, StorageError> {
-        self.credentials_repo.delete(id).await
-    }
-
-    async fn list_ids(&self) -> Result<Vec<CredentialId>, StorageError> {
-        self.credentials_repo.list_ids().await
-    }
-
-    async fn last_refresh(
-        &self,
-        id: &CredentialId,
-    ) -> Result<Option<OffsetDateTime>, StorageError> {
-        self.credentials_repo.last_refresh(id).await
-    }
-
-    async fn mark_refreshed(&self, id: &CredentialId) -> Result<(), StorageError> {
-        self.credentials_repo.mark_refreshed(id).await
-    }
-}
-
-#[async_trait]
 impl DataProvider for StubProvider {
+    fn globals_repo(&self) -> Arc<dyn GlobalsRepo> {
+        Arc::clone(&self.globals_repo) as Arc<dyn GlobalsRepo>
+    }
+
+    fn user_globals_repo(&self) -> Arc<dyn UserGlobalsRepo> {
+        Arc::clone(&self.user_globals_repo) as Arc<dyn UserGlobalsRepo>
+    }
+
+    fn settings_repo(&self) -> Arc<dyn SettingsRepo> {
+        Arc::new(self.settings_repo.clone()) as Arc<dyn SettingsRepo>
+    }
+
+    fn script_repo(&self) -> Arc<dyn ScriptRepo> {
+        Arc::clone(&self.script_repo) as Arc<dyn ScriptRepo>
+    }
+
+    fn credentials_repo(&self) -> Arc<dyn CredentialsRepo> {
+        Arc::clone(&self.credentials_repo) as Arc<dyn CredentialsRepo>
+    }
+
     fn action_repo(&self) -> Arc<dyn ActionRepo> {
         Arc::clone(&self.action_repo) as Arc<dyn ActionRepo>
     }

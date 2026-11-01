@@ -28,7 +28,7 @@ pub(super) fn content_list_item_row(
         dim,
     );
 
-    let (name_family, name_font) = if item.monospace_name {
+    let (name_family, name_font) = if item.name_is_identifier {
         (cx.mono_family(), ROW_MONO_NAME_FONT)
     } else {
         (cx.body_family(), ROW_NAME_FONT)
@@ -132,7 +132,7 @@ pub(super) fn key_value_row_elem(
         };
         row = row.child(icon(ic, FONT_SM, palette.success));
     }
-    plain_row_wrapper(row.into_any_element(), DEFAULT_ROW_PAD_Y, palette, density)
+    plain_row_wrapper(row.into_any_element(), STANDARD_ROW_PAD_Y, palette, density)
 }
 
 pub(super) fn active_item_row_elem(
@@ -177,9 +177,9 @@ pub(super) fn active_item_row_elem(
     }
 
     if item.active {
-        active_row_wrapper(row.into_any_element(), DEFAULT_ROW_PAD_Y, palette, density)
+        active_row_wrapper(row.into_any_element(), STANDARD_ROW_PAD_Y, palette, density)
     } else {
-        plain_row_wrapper(row.into_any_element(), DEFAULT_ROW_PAD_Y, palette, density)
+        plain_row_wrapper(row.into_any_element(), STANDARD_ROW_PAD_Y, palette, density)
     }
 }
 
@@ -229,7 +229,7 @@ pub(super) fn subscription_row_elem(
         div().into_any_element()
     };
     row = row.child(trailing);
-    plain_row_wrapper(row.into_any_element(), DEFAULT_ROW_PAD_Y, palette, density)
+    plain_row_wrapper(row.into_any_element(), STANDARD_ROW_PAD_Y, palette, density)
 }
 
 pub(super) fn scope_row_elem(
@@ -253,7 +253,7 @@ pub(super) fn scope_row_elem(
                 .text_color(palette.text_primary)
                 .child(scope.to_owned()),
         );
-    plain_row_wrapper(row.into_any_element(), DEFAULT_ROW_PAD_Y, palette, density)
+    plain_row_wrapper(row.into_any_element(), STANDARD_ROW_PAD_Y, palette, density)
 }
 
 pub(super) fn active_row_wrapper(

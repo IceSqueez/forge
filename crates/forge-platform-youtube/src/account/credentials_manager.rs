@@ -10,34 +10,34 @@ use forge_storage::{CredentialId, CredentialsRepo};
 use time::{Duration, OffsetDateTime};
 use tokio::sync::watch;
 
-use crate::account::auth::{YoutubeAuthBundle, fetch_own_channel};
+use crate::account::auth::{YouTubeAuthBundle, fetch_own_channel};
 use crate::account::credentials::{
-    DEFAULT_ACCESS_TOKEN_LIFETIME_SECS, YOUTUBE_CREDENTIAL_ID, YoutubeBroadcaster,
-    YoutubeCredentials,
+    DEFAULT_ACCESS_TOKEN_LIFETIME_SECS, YOUTUBE_CREDENTIAL_ID, YouTubeBroadcaster,
+    YouTubeCredentials,
 };
 use crate::account::oauth_client::GoogleOAuthClient;
-use crate::api::data_api::YoutubeDataApi;
+use crate::api::data_api::YouTubeDataApi;
 
 use crate::vocabulary::INTEGRATION_ID as PLATFORM;
 
-pub struct YoutubeCredentialsManager {
-    refresh: SingleFlightRefresh<YoutubeRotation>,
-    api: YoutubeDataApi,
+pub struct YouTubeCredentialsManager {
+    refresh: SingleFlightRefresh<YouTubeRotation>,
+    api: YouTubeDataApi,
 }
 
-struct YoutubeRotation {
+struct YouTubeRotation {
     store: CredentialStore,
     oauth: GoogleOAuthClient,
 }
 
-impl YoutubeCredentialsManager {
+impl YouTubeCredentialsManager {
     pub fn new(
         repo: Arc<dyn CredentialsRepo>,
         oauth: GoogleOAuthClient,
-        api: YoutubeDataApi,
+        api: YouTubeDataApi,
     ) -> Self {
         Self {
-            refresh: SingleFlightRefresh::new(YoutubeRotation {
+            refresh: SingleFlightRefresh::new(YouTubeRotation {
                 store: CredentialStore {
                     repo,
                     expiry_tx: watch::channel(None).0,
@@ -64,23 +64,23 @@ impl YoutubeCredentialsManager {
         &self.refresh.rotation().oauth
     }
 
-    pub(crate) fn data_api(&self) -> &YoutubeDataApi {
+    pub(crate) fn data_api(&self) -> &YouTubeDataApi {
         &self.api
     }
 
-    pub async fn load(&self) -> Result<Option<YoutubeCredentials>, PlatformError> {
+    pub async fn load(&self) -> Result<Option<YouTubeCredentials>, PlatformError> {
         self.store().load().await
     }
 
-    pub async fn broadcaster(&self) -> Result<YoutubeBroadcaster, PlatformError> {
+    pub async fn broadcaster(&self) -> Result<YouTubeBroadcaster, PlatformError> {
         let creds = self.store().require().await?;
-        Ok(YoutubeBroadcaster {
+        Ok(YouTubeBroadcaster {
             channel_id: creds.channel_id,
             channel_title: creds.channel_title,
         })
     }
 
-    pub async fn save_from_bundle(&self, bundle: YoutubeAuthBundle) -> Result<(), PlatformError> {
+    pub async fn save_from_bundle(&self, bundle: YouTubeAuthBundle) -> Result<(), PlatformError> {
         let unix_secs = bundle
             .expires_at
             .duration_since(UNIX_EPOCH)
@@ -93,7 +93,7 @@ impl YoutubeCredentialsManager {
                 .map_err(|e| PlatformError::Auth {
                     reason: e.to_string(),
                 })?;
-        let creds = YoutubeCredentials {
+        let creds = YouTubeCredentials {
             access_token: bundle.access_token,
             refresh_token: bundle.refresh_token,
             client_id: bundle.client_id,
@@ -118,11 +118,11 @@ impl YoutubeCredentialsManager {
     pub async fn refresh(
         &self,
         failed_access_token: &str,
-    ) -> Result<YoutubeCredentials, PlatformError> {
+    ) -> Result<YouTubeCredentials, PlatformError> {
         self.refresh.replace_rejected(failed_access_token).await
     }
 
-    pub async fn ensure_channel_handle(&self) -> Result<YoutubeCredentials, PlatformError> {
+    pub async fn ensure_channel_handle(&self) -> Result<YouTubeCredentials, PlatformError> {
         let creds = self.store().require().await?;
         if creds.channel_handle.is_some() {
             return Ok(creds);
@@ -154,29 +154,29 @@ impl YoutubeCredentialsManager {
 }
 
 #[async_trait]
-impl TokenRotation for YoutubeRotation {
-    type Credential = YoutubeCredentials;
+impl TokenRotation for YouTubeRotation {
+    type Credential = YouTubeCredentials;
 
     fn platform(&self) -> &'static str {
         PLATFORM
     }
 
-    async fn load(&self) -> Result<Option<YoutubeCredentials>, PlatformError> {
+    async fn load(&self) -> Result<Option<YouTubeCredentials>, PlatformError> {
         self.store.load().await
     }
 
-    fn access_token<'a>(&self, credential: &'a YoutubeCredentials) -> &'a str {
+    fn access_token<'a>(&self, credential: &'a YouTubeCredentials) -> &'a str {
         credential.access_token.expose()
     }
 
-    fn near_expiry(&self, credential: &YoutubeCredentials) -> bool {
+    fn near_expiry(&self, credential: &YouTubeCredentials) -> bool {
         expires_within_refresh_buffer(credential.expires_at)
     }
 
     async fn rotate(
         &self,
-        existing: YoutubeCredentials,
-    ) -> Result<YoutubeCredentials, PlatformError> {
+        existing: YouTubeCredentials,
+    ) -> Result<YouTubeCredentials, PlatformError> {
         let grant = self.oauth.refresh(existing.refresh_token.expose()).await?;
         let expires_in = i64::try_from(
             grant
@@ -189,7 +189,7 @@ impl TokenRotation for YoutubeRotation {
             .ok_or_else(|| PlatformError::MalformedResponse {
                 reason: "token lifetime out of range".to_owned(),
             })?;
-        let updated = YoutubeCredentials {
+        let updated = YouTubeCredentials {
             access_token: grant.access_token,
             refresh_token: grant.refresh_token.unwrap_or(existing.refresh_token),
             client_id: existing.client_id,
@@ -209,7 +209,7 @@ struct CredentialStore {
 }
 
 impl CredentialStore {
-    async fn load(&self) -> Result<Option<YoutubeCredentials>, PlatformError> {
+    async fn load(&self) -> Result<Option<YouTubeCredentials>, PlatformError> {
         let Some(json) = self
             .repo
             .load(&CredentialId::new(YOUTUBE_CREDENTIAL_ID))
@@ -221,11 +221,11 @@ impl CredentialStore {
         Ok(Some(serde_json::from_str(&json)?))
     }
 
-    async fn require(&self) -> Result<YoutubeCredentials, PlatformError> {
+    async fn require(&self) -> Result<YouTubeCredentials, PlatformError> {
         self.load().await?.ok_or_else(|| reauth_required(PLATFORM))
     }
 
-    async fn persist(&self, creds: &YoutubeCredentials) -> Result<(), PlatformError> {
+    async fn persist(&self, creds: &YouTubeCredentials) -> Result<(), PlatformError> {
         let json = serde_json::to_string(creds)?;
         self.repo
             .store(&CredentialId::new(YOUTUBE_CREDENTIAL_ID), &json)
@@ -260,10 +260,10 @@ mod tests {
     use serde_json::json;
     use time::{Duration, OffsetDateTime};
 
-    use super::YoutubeCredentialsManager;
-    use crate::account::auth::YoutubeAuthBundle;
+    use super::YouTubeCredentialsManager;
+    use crate::account::auth::YouTubeAuthBundle;
     use crate::account::credentials::{
-        DEFAULT_ACCESS_TOKEN_LIFETIME_SECS, YOUTUBE_CREDENTIAL_ID, YoutubeCredentials,
+        DEFAULT_ACCESS_TOKEN_LIFETIME_SECS, YOUTUBE_CREDENTIAL_ID, YouTubeCredentials,
     };
     use crate::api::quota_state::SharedQuota;
     use crate::endpoints_test_support::{
@@ -281,14 +281,14 @@ mod tests {
     const REQUEST_FAIL_KIND: &str = "request.fail";
     const CONCURRENT_CALLERS: usize = 4;
 
-    fn repo_with_creds(creds: &YoutubeCredentials) -> Arc<MemoryCredentials> {
+    fn repo_with_creds(creds: &YouTubeCredentials) -> Arc<MemoryCredentials> {
         Arc::new(MemoryCredentials::holding(
             YOUTUBE_CREDENTIAL_ID,
             &serde_json::to_string(creds).unwrap(),
         ))
     }
 
-    fn stored_creds(repo: &MemoryCredentials) -> Option<YoutubeCredentials> {
+    fn stored_creds(repo: &MemoryCredentials) -> Option<YouTubeCredentials> {
         repo.stored(YOUTUBE_CREDENTIAL_ID)
             .and_then(|bundle| serde_json::from_str(&bundle).ok())
     }
@@ -357,8 +357,8 @@ mod tests {
         }
     }
 
-    fn stub_creds(expires_at: OffsetDateTime) -> YoutubeCredentials {
-        YoutubeCredentials {
+    fn stub_creds(expires_at: OffsetDateTime) -> YouTubeCredentials {
+        YouTubeCredentials {
             access_token: OAuthToken::new(EXISTING_ACCESS),
             refresh_token: OAuthToken::new(EXISTING_REFRESH),
             client_id: "test_client_id".to_owned(),
@@ -369,11 +369,11 @@ mod tests {
         }
     }
 
-    fn fresh() -> YoutubeCredentials {
+    fn fresh() -> YouTubeCredentials {
         stub_creds(OffsetDateTime::now_utc() + Duration::hours(1))
     }
 
-    fn near_expiry() -> YoutubeCredentials {
+    fn near_expiry() -> YouTubeCredentials {
         stub_creds(OffsetDateTime::now_utc() + Duration::seconds(60))
     }
 
@@ -397,15 +397,15 @@ mod tests {
         repo: Arc<MemoryCredentials>,
         quota: SharedQuota,
         bus: Arc<CapturingPublisher>,
-        manager: Arc<YoutubeCredentialsManager>,
+        manager: Arc<YouTubeCredentialsManager>,
     }
 
-    async fn rig(creds: &YoutubeCredentials) -> Rig {
+    async fn rig(creds: &YouTubeCredentials) -> Rig {
         let server = StubServer::start().await;
         let repo = repo_with_creds(creds);
         let quota = SharedQuota::default();
         let bus = Arc::new(CapturingPublisher::default());
-        let manager = Arc::new(YoutubeCredentialsManager::new(
+        let manager = Arc::new(YouTubeCredentialsManager::new(
             repo.clone(),
             oauth_client_at(&server.uri()),
             data_api_with(&server.uri(), quota.clone(), bus.clone()),
@@ -421,7 +421,7 @@ mod tests {
 
     #[tokio::test]
     async fn load_returns_none_when_no_row() {
-        let manager = YoutubeCredentialsManager::new(
+        let manager = YouTubeCredentialsManager::new(
             Arc::new(MemoryCredentials::default()),
             unreachable_oauth_client(),
             unreachable_data_api(),
@@ -432,7 +432,7 @@ mod tests {
 
     #[tokio::test]
     async fn load_of_an_undecryptable_stored_credential_asks_youtube_for_reauth() {
-        let manager = YoutubeCredentialsManager::new(
+        let manager = YouTubeCredentialsManager::new(
             Arc::new(LoadFailsRepo(|| StorageError::Decryption)),
             unreachable_oauth_client(),
             unreachable_data_api(),
@@ -449,12 +449,12 @@ mod tests {
     #[tokio::test]
     async fn save_from_bundle_persists_credentials() {
         let repo = Arc::new(MemoryCredentials::default());
-        let manager = YoutubeCredentialsManager::new(
+        let manager = YouTubeCredentialsManager::new(
             repo.clone(),
             unreachable_oauth_client(),
             unreachable_data_api(),
         );
-        let bundle = YoutubeAuthBundle {
+        let bundle = YouTubeAuthBundle {
             access_token: OAuthToken::new("ya29.bundle"),
             refresh_token: OAuthToken::new("1//bundle_refresh"),
             channel_id: "UCbundle".to_owned(),
@@ -481,7 +481,7 @@ mod tests {
     #[tokio::test]
     async fn the_expiry_watch_follows_a_persist_and_a_clear() {
         let repo = Arc::new(MemoryCredentials::default());
-        let manager = YoutubeCredentialsManager::new(
+        let manager = YouTubeCredentialsManager::new(
             repo.clone(),
             unreachable_oauth_client(),
             unreachable_data_api(),
@@ -490,7 +490,7 @@ mod tests {
         let initial = *expiry.borrow();
 
         manager
-            .save_from_bundle(YoutubeAuthBundle {
+            .save_from_bundle(YouTubeAuthBundle {
                 access_token: OAuthToken::new("ya29.bundle"),
                 refresh_token: OAuthToken::new("1//bundle_refresh"),
                 channel_id: "UCbundle".to_owned(),
@@ -578,7 +578,7 @@ mod tests {
 
     #[tokio::test]
     async fn get_valid_access_token_returns_reauth_required_when_no_creds() {
-        let manager = YoutubeCredentialsManager::new(
+        let manager = YouTubeCredentialsManager::new(
             Arc::new(MemoryCredentials::default()),
             unreachable_oauth_client(),
             unreachable_data_api(),
@@ -769,7 +769,7 @@ mod tests {
 
     #[tokio::test]
     async fn a_refresh_task_that_dies_reports_an_auth_error() {
-        let manager = YoutubeCredentialsManager::new(
+        let manager = YouTubeCredentialsManager::new(
             Arc::new(PanickingRepo),
             unreachable_oauth_client(),
             unreachable_data_api(),
@@ -796,7 +796,7 @@ mod tests {
                 &json!({ "error": "invalid_grant" }),
             ),
         );
-        let platform = Arc::new(crate::chat::chat_platform::YoutubePlatform::new(
+        let platform = Arc::new(crate::chat::chat_platform::YouTubePlatform::new(
             data_api_with(&rig.server.uri(), rig.quota.clone(), rig.bus.clone()),
             "UCtest123".to_owned(),
             Arc::clone(&rig.manager),
@@ -804,12 +804,12 @@ mod tests {
             crate::broadcast::active_broadcast_id::ActiveBroadcastIdHandle::new(),
             crate::chat::ban_ledger_test_support::MemoryBanLedger::shared(),
         ));
-        let bundle = crate::builtin::YoutubeIntegrationBundle::new(
+        let bundle = crate::builtin::YouTubeIntegrationBundle::new(
             "UCtest123".to_owned(),
             platform,
             Arc::clone(&rig.manager),
         );
-        crate::builtin::YoutubeIntegrationBundle::start_background_tasks(&bundle);
+        crate::builtin::YouTubeIntegrationBundle::start_background_tasks(&bundle);
         let mut revisions = bundle.status_revisions().unwrap();
 
         let outcome = bundle.refresh_token().await;

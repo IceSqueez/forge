@@ -2,7 +2,7 @@ use forge_net::GatewayRequest;
 use forge_platform_core::PlatformError;
 use forge_types::Secret;
 
-use crate::api::data_api::{YoutubeDataApi, json_body};
+use crate::api::data_api::{YouTubeDataApi, json_body};
 use crate::broadcast::active_broadcast_id::ActiveBroadcastIdHandle;
 
 const CUEPOINT_COST: u32 = 1;
@@ -11,15 +11,15 @@ const MISSING_SCOPE: &str = "ad break scope missing";
 
 use forge_platform_core::TokenSource;
 
-pub struct YoutubeAdBreak {
-    api: YoutubeDataApi,
+pub struct YouTubeAdBreak {
+    api: YouTubeDataApi,
     access_token_source: TokenSource,
     active_broadcast_id: ActiveBroadcastIdHandle,
 }
 
-impl YoutubeAdBreak {
+impl YouTubeAdBreak {
     pub fn new(
-        api: YoutubeDataApi,
+        api: YouTubeDataApi,
         access_token_source: TokenSource,
         active_broadcast_id: ActiveBroadcastIdHandle,
     ) -> Self {
@@ -81,7 +81,7 @@ mod tests {
 
     #[tokio::test]
     async fn insert_returns_unsupported_when_no_active_broadcast() {
-        let ad_break = YoutubeAdBreak::new(unreachable_data_api(), token_source(), broadcast(None));
+        let ad_break = YouTubeAdBreak::new(unreachable_data_api(), token_source(), broadcast(None));
 
         let err = ad_break.insert_cuepoint(30).await.unwrap_err();
 
@@ -104,7 +104,7 @@ mod tests {
             .mount(&server)
             .await;
         let quota = SharedQuota::default();
-        let ad_break = YoutubeAdBreak::new(
+        let ad_break = YouTubeAdBreak::new(
             data_api_charging(&server.uri(), quota.clone()),
             token_source(),
             broadcast(Some("bc-777")),

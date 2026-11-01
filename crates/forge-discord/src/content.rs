@@ -4,9 +4,9 @@ use std::sync::{Arc, Mutex};
 
 use time::OffsetDateTime;
 
+use forge_platform_core::RowSpacing;
 use forge_platform_core::{
-    BuiltinContent, ContentList, ContentListItem, DEFAULT_ROW_PADDING_Y_PX, DetailSection,
-    SectionIcon, TokenColor, TrailingToken,
+    BuiltinContent, ContentList, ContentListItem, DetailSection, SectionIcon, Tone, TrailingToken,
 };
 
 use crate::client::DiscordClient;
@@ -96,7 +96,7 @@ impl BuiltinContent for DiscordClient {
                     icon: SectionIcon::new("webhook"),
                     icon_tint: None,
                     name: name.clone(),
-                    monospace_name: true,
+                    name_is_identifier: true,
                     active: last_ok,
                     active_label: if last_ok {
                         Some(labels::OK.into())
@@ -104,9 +104,9 @@ impl BuiltinContent for DiscordClient {
                         None
                     },
                     trailing: vec![if last_ok {
-                        TrailingToken::Badge(labels::READY.into(), TokenColor::Green)
+                        TrailingToken::Badge(labels::READY.into(), Tone::Positive)
                     } else {
-                        TrailingToken::Badge(labels::ERROR.into(), TokenColor::Red)
+                        TrailingToken::Badge(labels::ERROR.into(), Tone::Critical)
                     }],
                     enabled: true,
                     on_click: None,
@@ -133,7 +133,7 @@ impl BuiltinContent for DiscordClient {
                     icon: SectionIcon::new("message"),
                     icon_tint: None,
                     name: format!("{}: {short_id}", r.webhook_name),
-                    monospace_name: true,
+                    name_is_identifier: true,
                     active: r.ok,
                     active_label: if r.had_embed {
                         Some(labels::EMBED.into())
@@ -158,7 +158,7 @@ impl BuiltinContent for DiscordClient {
                 inline_label: None,
                 count_label: Some(webhook_count),
                 visible_rows: None,
-                row_padding_y_px: DEFAULT_ROW_PADDING_Y_PX,
+                row_spacing: RowSpacing::Standard,
                 refreshable: false,
                 items: webhook_items.into(),
                 footer: None,
@@ -170,7 +170,7 @@ impl BuiltinContent for DiscordClient {
                 inline_label: None,
                 count_label: Some(post_count),
                 visible_rows: None,
-                row_padding_y_px: DEFAULT_ROW_PADDING_Y_PX,
+                row_spacing: RowSpacing::Standard,
                 refreshable: false,
                 items: post_items.into(),
                 footer: None,

@@ -109,9 +109,13 @@ async fn wait_ledger<T>(
 async fn forge_probe_authenticates_and_reads_the_scene_list() {
     let fake = FakeObs::start(with_password()).await.unwrap();
 
-    let probe = probe_connection(support::LOOPBACK, fake.port(), PASSWORD)
-        .await
-        .unwrap();
+    let probe = probe_connection(&forge_obs::ObsEndpoint::new(
+        support::LOOPBACK,
+        fake.port(),
+        PASSWORD,
+    ))
+    .await
+    .unwrap();
 
     assert_eq!(probe.scene_count, 2);
     let session = &fake.ledger().sessions[0];
@@ -122,9 +126,13 @@ async fn forge_probe_authenticates_and_reads_the_scene_list() {
 async fn forge_probe_with_the_wrong_password_is_refused_as_an_authentication_failure() {
     let fake = FakeObs::start(with_password()).await.unwrap();
 
-    let outcome = probe_connection(support::LOOPBACK, fake.port(), "not-the-password")
-        .await
-        .map(|probe| probe.scene_count);
+    let outcome = probe_connection(&forge_obs::ObsEndpoint::new(
+        support::LOOPBACK,
+        fake.port(),
+        "not-the-password",
+    ))
+    .await
+    .map(|probe| probe.scene_count);
 
     assert!(
         matches!(outcome, Err(ObsError::Authentication)),
@@ -146,9 +154,12 @@ async fn forge_client_primes_its_catalog_and_publishes_connected() {
     let fake = FakeObs::start(with_password()).await.unwrap();
     let captured = Arc::new(CapturingPublisher::default());
 
-    let _client = ObsClient::connect(&fake.url(), Some(PASSWORD), captured.clone())
-        .await
-        .unwrap();
+    let _client = ObsClient::connect(
+        &forge_obs::ObsEndpoint::parse(&fake.url(), PASSWORD).unwrap(),
+        captured.clone(),
+    )
+    .await
+    .unwrap();
 
     wait_ledger(&fake, |ledger| {
         ledger
@@ -178,9 +189,12 @@ async fn forge_client_primes_its_catalog_and_publishes_connected() {
 async fn forge_scene_switch_is_recorded_and_echoed_as_a_scene_changed_event() {
     let fake = FakeObs::start(with_password()).await.unwrap();
     let captured = Arc::new(CapturingPublisher::default());
-    let client = ObsClient::connect(&fake.url(), Some(PASSWORD), captured.clone())
-        .await
-        .unwrap();
+    let client = ObsClient::connect(
+        &forge_obs::ObsEndpoint::parse(&fake.url(), PASSWORD).unwrap(),
+        captured.clone(),
+    )
+    .await
+    .unwrap();
     wait_ledger(&fake, |ledger| ledger.live_sessions().next().map(|_| ()))
         .await
         .unwrap();

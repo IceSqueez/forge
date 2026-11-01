@@ -93,9 +93,9 @@ fn make_quota() -> SharedQuota {
     SharedQuota::default()
 }
 
-fn make_poller(server: &MockServer) -> (YoutubeChatPoller, UnboundedSender<Event>) {
+fn make_poller(server: &MockServer) -> (YouTubeChatPoller, UnboundedSender<Event>) {
     let (tx, _rx) = tokio::sync::mpsc::unbounded_channel();
-    let poller = YoutubeChatPoller::new(
+    let poller = YouTubeChatPoller::new(
         crate::endpoints_test_support::data_api_at(&server.uri()),
         token_source(),
         tx.clone(),
@@ -110,7 +110,7 @@ fn make_poller(server: &MockServer) -> (YoutubeChatPoller, UnboundedSender<Event
 fn make_poller_with_receiver(
     server: &MockServer,
 ) -> (
-    YoutubeChatPoller,
+    YouTubeChatPoller,
     tokio::sync::mpsc::UnboundedReceiver<Event>,
 ) {
     make_poller_with_ledger(
@@ -123,11 +123,11 @@ fn make_poller_with_ledger(
     server: &MockServer,
     ban_ledger: Arc<dyn BanLedgerRepo>,
 ) -> (
-    YoutubeChatPoller,
+    YouTubeChatPoller,
     tokio::sync::mpsc::UnboundedReceiver<Event>,
 ) {
     let (tx, rx) = tokio::sync::mpsc::unbounded_channel();
-    let poller = YoutubeChatPoller::new(
+    let poller = YouTubeChatPoller::new(
         crate::endpoints_test_support::data_api_at(&server.uri()),
         token_source(),
         tx,
@@ -170,13 +170,13 @@ fn stub_poller_with_quota(
     server: &StubServer,
     quota: SharedQuota,
 ) -> (
-    YoutubeChatPoller,
+    YouTubeChatPoller,
     Arc<std::sync::atomic::AtomicUsize>,
     tokio::sync::mpsc::UnboundedReceiver<Event>,
 ) {
     let (tx, rx) = tokio::sync::mpsc::unbounded_channel();
     let (source, resolved) = resolution_probe(server);
-    let poller = YoutubeChatPoller::new(
+    let poller = YouTubeChatPoller::new(
         crate::endpoints_test_support::data_api_charging(&server.uri(), quota),
         source,
         tx,
@@ -190,7 +190,7 @@ fn stub_poller_with_quota(
 }
 
 async fn run_through_resolutions(
-    poller: YoutubeChatPoller,
+    poller: YouTubeChatPoller,
     resolved: &std::sync::atomic::AtomicUsize,
     resolutions: usize,
 ) {
@@ -210,7 +210,7 @@ async fn run_through_resolutions(
 }
 
 async fn drain_events_over_broadcast_cycles(
-    poller: YoutubeChatPoller,
+    poller: YouTubeChatPoller,
     mut rx: tokio::sync::mpsc::UnboundedReceiver<Event>,
     resolved: &std::sync::atomic::AtomicUsize,
     resolutions: usize,
@@ -564,7 +564,7 @@ async fn dedup_via_next_page_token() {
         .await;
 
     let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel();
-    let poller = YoutubeChatPoller::new(
+    let poller = YouTubeChatPoller::new(
         crate::endpoints_test_support::data_api_at(&server.uri()),
         token_source(),
         tx,
@@ -652,7 +652,7 @@ async fn cancel_token_breaks_loop() {
 fn make_poller_with_both_handles(
     server: &MockServer,
 ) -> (
-    YoutubeChatPoller,
+    YouTubeChatPoller,
     LiveChatIdHandle,
     ActiveBroadcastIdHandle,
     tokio::sync::mpsc::UnboundedReceiver<Event>,
@@ -660,7 +660,7 @@ fn make_poller_with_both_handles(
     let (tx, rx) = tokio::sync::mpsc::unbounded_channel();
     let live = LiveChatIdHandle::new();
     let broadcast = ActiveBroadcastIdHandle::new();
-    let poller = YoutubeChatPoller::new(
+    let poller = YouTubeChatPoller::new(
         crate::endpoints_test_support::data_api_at(&server.uri()),
         token_source(),
         tx,
@@ -706,7 +706,7 @@ async fn absent_broadcast_clears_both_handles_and_emits_nothing_when_never_live(
     let broadcast = ActiveBroadcastIdHandle::new();
     broadcast.set(Some("stale-bc".to_owned()));
 
-    let poller = YoutubeChatPoller::new(
+    let poller = YouTubeChatPoller::new(
         crate::endpoints_test_support::data_api_at(&server.uri()),
         token_source(),
         tx,
@@ -1027,7 +1027,7 @@ fn reply_sequenced_broadcasts(
 }
 
 async fn run_until_resolution_and_drain_titles(
-    poller: YoutubeChatPoller,
+    poller: YouTubeChatPoller,
     resolved: &std::sync::atomic::AtomicUsize,
     mut rx: tokio::sync::mpsc::UnboundedReceiver<Event>,
     resolutions: usize,
@@ -1309,7 +1309,7 @@ async fn ended_chat_is_not_repolled_and_next_discovery_waits_for_the_cadence() {
         server.reply_always(BROADCASTS, StubReply::ok(&broadcast_response("lc-live")));
         server.reply_always(CHAT_MESSAGES, response);
         let (tx, _rx) = tokio::sync::mpsc::unbounded_channel();
-        let poller = YoutubeChatPoller::new(
+        let poller = YouTubeChatPoller::new(
             crate::endpoints_test_support::data_api_at(&server.uri()),
             token_source(),
             tx,
@@ -1373,9 +1373,9 @@ async fn same_live_session_resolved_twice_emits_single_online() {
 
 const URL_SENTINEL: &str = "yt-url-leak-probe";
 
-fn poller_at(api_base: String) -> YoutubeChatPoller {
+fn poller_at(api_base: String) -> YouTubeChatPoller {
     let (tx, _rx) = tokio::sync::mpsc::unbounded_channel();
-    YoutubeChatPoller::new(
+    YouTubeChatPoller::new(
         crate::endpoints_test_support::data_api_at(&api_base),
         token_source(),
         tx,
@@ -1396,7 +1396,7 @@ fn failed_with<T>(result: Result<T, FetchFailure>) -> PlatformError {
     }
 }
 
-async fn failures_from_both_fetches(poller: &YoutubeChatPoller) -> [PlatformError; 2] {
+async fn failures_from_both_fetches(poller: &YouTubeChatPoller) -> [PlatformError; 2] {
     let cancel = CancellationToken::new();
     [
         failed_with(poller.fetch_live_chat_id("tok", &cancel).await),
@@ -1457,7 +1457,7 @@ fn fixture_line(edit: impl FnOnce(&mut serde_json::Value)) -> Event {
     let mut raw = fixture["raw"].clone();
     edit(&mut raw);
     let (tx, _rx) = tokio::sync::mpsc::unbounded_channel();
-    let poller = YoutubeChatPoller::new(
+    let poller = YouTubeChatPoller::new(
         crate::endpoints_test_support::unreachable_data_api(),
         token_source(),
         tx,
@@ -1486,7 +1486,7 @@ fn a_text_message_publishes_exactly_the_shared_fixture_payload() {
     ))
     .unwrap();
     let (tx, _rx) = tokio::sync::mpsc::unbounded_channel();
-    let poller = YoutubeChatPoller::new(
+    let poller = YouTubeChatPoller::new(
         crate::endpoints_test_support::unreachable_data_api(),
         token_source(),
         tx,
@@ -1732,7 +1732,7 @@ use crate::api::poll_health::PollLinkHealth;
 type HealthReport = (PollLinkHealth, usize);
 
 struct ProbedPoller {
-    poller: YoutubeChatPoller,
+    poller: YouTubeChatPoller,
     reports: tokio::sync::mpsc::UnboundedReceiver<HealthReport>,
     token_calls: Arc<std::sync::atomic::AtomicUsize>,
     _events: tokio::sync::mpsc::UnboundedReceiver<Event>,
@@ -1769,7 +1769,7 @@ fn probed_poller(server: &StubServer, token: TokenOutcome, quota: SharedQuota) -
         let _ = report_tx.send((health, calls.load(std::sync::atomic::Ordering::SeqCst)));
     });
     let (tx, events) = tokio::sync::mpsc::unbounded_channel();
-    let poller = YoutubeChatPoller::new(
+    let poller = YouTubeChatPoller::new(
         crate::endpoints_test_support::data_api_charging(&server.uri(), quota),
         source,
         tx,
@@ -1962,7 +1962,7 @@ async fn ids_once_broadcast_lookup_reaches(
     let live = LiveChatIdHandle::new();
     let broadcast = ActiveBroadcastIdHandle::new();
     let (tx, _events) = tokio::sync::mpsc::unbounded_channel();
-    let poller = YoutubeChatPoller::new(
+    let poller = YouTubeChatPoller::new(
         crate::endpoints_test_support::data_api_charging(&server.uri(), make_quota()),
         token_source(),
         tx,
@@ -2051,7 +2051,7 @@ async fn first_chat_poll_after_a_pacific_rollover_waits_only_the_short_floor() {
     });
     let (token_source, token_calls) = counting_token_source();
     let (tx, _rx) = tokio::sync::mpsc::unbounded_channel();
-    let poller = YoutubeChatPoller::new(
+    let poller = YouTubeChatPoller::new(
         crate::endpoints_test_support::data_api_charging(&server.uri(), quota),
         token_source,
         tx,
@@ -2146,9 +2146,9 @@ async fn a_throttle_seen_by_another_client_pauses_the_broadcast_lookup() {
     let api = crate::endpoints_test_support::data_api_charging(&server.uri(), quota.clone());
     let live = LiveChatIdHandle::new();
     live.set(Some("lc-live".to_owned()));
-    let sender = crate::chat::send_chat::YoutubeSendChat::new(api.clone(), token_source(), live);
+    let sender = crate::chat::send_chat::YouTubeSendChat::new(api.clone(), token_source(), live);
     let (tx, _rx) = tokio::sync::mpsc::unbounded_channel();
-    let poller = YoutubeChatPoller::new(
+    let poller = YouTubeChatPoller::new(
         api,
         token_source(),
         tx,
@@ -2217,7 +2217,7 @@ async fn only_a_403_naming_live_chat_ended_is_kept_out_of_request_fail() {
             .await;
         let bus = Arc::new(CapturingPublisher::default());
         let (tx, _rx) = tokio::sync::mpsc::unbounded_channel();
-        let poller = YoutubeChatPoller::new(
+        let poller = YouTubeChatPoller::new(
             data_api_with(
                 &server.uri(),
                 SharedQuota::default(),
@@ -2273,7 +2273,7 @@ async fn cancelling_while_the_access_token_is_being_fetched_returns_at_once() {
         );
         let (source, calls) = token_source_hanging_from_call(hang_from);
         let (tx, _rx) = tokio::sync::mpsc::unbounded_channel();
-        let poller = YoutubeChatPoller::new(
+        let poller = YouTubeChatPoller::new(
             crate::endpoints_test_support::data_api_at(&server.uri()),
             source,
             tx,

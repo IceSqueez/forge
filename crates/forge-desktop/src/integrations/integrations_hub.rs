@@ -863,9 +863,7 @@ impl Render for IntegrationsHubView {
 mod tests {
     use std::collections::HashSet;
 
-    use forge_storage::{
-        MockActionRepo, MockTriggerInstanceRepo, SettingsRepo, integration_enabled_key,
-    };
+    use forge_storage::{MockActionRepo, MockTriggerInstanceRepo, integration_enabled_key};
     use gpui::TestAppContext;
     use std::sync::Mutex;
     use tokio::sync::mpsc::UnboundedReceiver;
@@ -975,11 +973,7 @@ mod tests {
         storage: Sandboxed<Arc<dyn DataProvider>>,
     ) -> Hub {
         let (settings, writes) = test_backend();
-        let supervisor = idle_supervisor(
-            rt,
-            settings as Arc<dyn SettingsRepo>,
-            &[twitch(), obs(), kick()],
-        );
+        let supervisor = idle_supervisor(rt, settings.settings_repo(), &[twitch(), obs(), kick()]);
         let launch = HubLaunch {
             supervisor,
             builtins: BuiltinRegistry::default(),
@@ -1323,8 +1317,7 @@ mod tests {
         let rt = runtime();
         let storage = rt.block_on(sandboxed_provider());
         let (settings, mut writes) = test_backend();
-        let supervisor =
-            idle_supervisor(&rt, settings as Arc<dyn SettingsRepo>, &[twitch(), kick()]);
+        let supervisor = idle_supervisor(&rt, settings.settings_repo(), &[twitch(), kick()]);
         pump(&rt);
         while writes.try_recv().is_ok() {}
         let launch = HubLaunch {
@@ -1421,8 +1414,7 @@ mod tests {
         let rt = runtime();
         let storage = rt.block_on(sandboxed_provider());
         let (settings, _writes) = test_backend();
-        let supervisor =
-            idle_supervisor(&rt, settings as Arc<dyn SettingsRepo>, &[twitch(), obs()]);
+        let supervisor = idle_supervisor(&rt, settings.settings_repo(), &[twitch(), obs()]);
         let launch = HubLaunch {
             supervisor,
             builtins: BuiltinRegistry::default(),

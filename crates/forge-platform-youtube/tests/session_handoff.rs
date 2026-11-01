@@ -7,7 +7,7 @@ use std::time::{Duration, SystemTime};
 
 use forge_platform_core::{ChatPlatform, QuickActionFieldValue, QuickActions};
 use forge_platform_youtube::vocabulary::{config_keys, sub_action_ids};
-use forge_platform_youtube::{YoutubeAssembly, YoutubeAuthBundle, YoutubeSession};
+use forge_platform_youtube::{YouTubeAssembly, YouTubeAuthBundle, YouTubeSession};
 use forge_registry::{RunContext, SubActionConfig, SubActionRegistry};
 use forge_storage::BanLedgerRepo;
 use forge_storage::MockBanLedgerRepo;
@@ -95,8 +95,8 @@ async fn mount_data_api(server: &MockServer, broadcasts: BroadcastScript) {
         .await;
 }
 
-fn signed_in_bundle() -> YoutubeAuthBundle {
-    YoutubeAuthBundle {
+fn signed_in_bundle() -> YouTubeAuthBundle {
+    YouTubeAuthBundle {
         access_token: OAuthToken::new("access"),
         refresh_token: OAuthToken::new("refresh"),
         channel_id: "UCsession".to_owned(),
@@ -109,14 +109,14 @@ fn signed_in_bundle() -> YoutubeAuthBundle {
 
 struct Assembled {
     registry: SubActionRegistry,
-    session: YoutubeSession,
+    session: YouTubeSession,
     ledger: Arc<dyn BanLedgerRepo>,
-    _assembly: YoutubeAssembly,
+    _assembly: YouTubeAssembly,
 }
 
 async fn assembled_over(server: &MockServer) -> Assembled {
     let ledger: Arc<dyn BanLedgerRepo> = Arc::new(MockBanLedgerRepo::new());
-    let assembly = YoutubeAssembly::new(
+    let assembly = YouTubeAssembly::new(
         &data_api_override(server),
         Arc::new(forge_events::test_support::NullPublisher),
         Arc::new(MemoryCredentials::default()),

@@ -4,7 +4,7 @@ use std::ffi::OsString;
 use std::sync::Arc;
 
 use forge_platform_core::{EndpointSurface, PlatformEndpoints, PlatformError};
-use forge_platform_youtube::YoutubeBroadcaster;
+use forge_platform_youtube::YouTubeBroadcaster;
 use futures::future::BoxFuture;
 use wiremock::MockServer;
 
@@ -12,7 +12,7 @@ pub(crate) const DATA_API_PREFIX: &str = "/youtube/v3";
 
 pub(crate) use forge_platform_core::TokenSource;
 pub(crate) type BroadcasterSource =
-    Arc<dyn Fn() -> BoxFuture<'static, Result<YoutubeBroadcaster, PlatformError>> + Send + Sync>;
+    Arc<dyn Fn() -> BoxFuture<'static, Result<YouTubeBroadcaster, PlatformError>> + Send + Sync>;
 
 pub(crate) fn endpoints(overrides: &[(EndpointSurface, String)]) -> PlatformEndpoints {
     let table: BTreeMap<&'static str, String> = overrides
@@ -43,7 +43,7 @@ pub(crate) fn fixed_broadcaster(
 ) -> BroadcasterSource {
     Arc::new(move || {
         Box::pin(async move {
-            Ok(YoutubeBroadcaster {
+            Ok(YouTubeBroadcaster {
                 channel_id: channel_id.to_owned(),
                 channel_title: channel_title.to_owned(),
             })

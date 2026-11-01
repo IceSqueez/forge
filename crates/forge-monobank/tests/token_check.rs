@@ -7,11 +7,11 @@ use forge_monobank::{
     CALL_INTERVAL, MonobankError, MonobankJar, MonobankProvider, MonobankRateLimits,
 };
 use forge_net::{RateLimitOutcome, RateLimiter, TokenBucketRateLimiter};
-use forge_platform_core::PlatformError;
+use forge_platform_core::{DonationAccountSetup, PlatformError, TokenProblem};
 use serde_json::json;
 use support::{
     Bank, CLIENT_INFO, JAR, Limits, MemoryCredentials, OTHER_JAR, OTHER_TOKEN, ScriptedLimiter,
-    TOKEN, creds_with,
+    TOKEN, creds_with, jar_id,
 };
 use wiremock::matchers::{header, method, path};
 use wiremock::{Mock, MockServer, Request, Respond, ResponseTemplate};
@@ -329,9 +329,15 @@ async fn saving_right_after_verifying_reuses_the_jar_list() {
     let provider = provider(&server.uri(), creds.clone(), MonobankRateLimits::official());
 
     provider.verify_token(TOKEN).await.unwrap();
-    let saved = provider.save_token(TOKEN, JAR).await;
+    let saved = provider.save_token(TOKEN, jar_id(JAR)).await;
 
-    assert_eq!(saved.map(|jar| jar.id).ok().as_deref(), Some(JAR));
+    assert_eq!(
+        saved
+            .map(|saved| saved.id.as_str().to_owned())
+            .ok()
+            .as_deref(),
+        Some(JAR)
+    );
     assert_eq!(bank.client_info_calls(), 1);
 }
 
@@ -354,7 +360,7 @@ async fn save_token_persists_the_token_and_the_selected_jar() {
     let creds = Arc::new(MemoryCredentials::default());
 
     let saved = provider(&server.uri(), creds.clone(), Limits::open().shared())
-        .save_token(&format!("{TOKEN}\n"), &format!(" {OTHER_JAR} "))
+        .save_token(&format!("{TOKEN}\n"), jar_id(&format!(" {OTHER_JAR} ")))
         .await;
 
     assert!(saved.is_ok(), "{saved:?}");
@@ -371,7 +377,7 @@ async fn save_token_stores_nothing_when_the_jar_is_not_among_the_tokens_jars() {
     let creds = Arc::new(MemoryCredentials::default());
 
     let result = provider(&server.uri(), creds.clone(), Limits::open().shared())
-        .save_token(TOKEN, OTHER_JAR)
+        .save_token(TOKEN, jar_id(OTHER_JAR))
         .await;
 
     assert!(
@@ -387,7 +393,7 @@ async fn save_token_stores_nothing_when_monobank_rejects_the_token() {
     let creds = Arc::new(MemoryCredentials::default());
 
     let result = provider(&server.uri(), creds.clone(), Limits::open().shared())
-        .save_token(TOKEN, JAR)
+        .save_token(TOKEN, jar_id(JAR))
         .await;
 
     assert!(
@@ -402,11 +408,14 @@ async fn save_token_refuses_an_unsafe_jar_id_without_a_request() {
     let server = mute_server().await;
 
     for jar in ["../client-info", "a/b", "a b", ""] {
-        let result = provider(&server.uri(), Arc::default(), Limits::open().shared())
-            .save_token(TOKEN, jar)
-            .await;
+        let result = DonationAccountSetup::save_token(
+            &provider(&server.uri(), Arc::default(), Limits::open().shared()),
+            TOKEN,
+            Some(jar),
+        )
+        .await;
         assert!(
-            matches!(result, Err(MonobankError::InvalidJarId)),
+            matches!(result, Err(TokenProblem::NoJarPicked)),
             "{jar:?}: {result:?}"
         );
     }
@@ -417,7 +426,7 @@ async fn select_jar_needs_a_stored_token() {
     let server = mute_server().await;
 
     let result = provider(&server.uri(), Arc::default(), Limits::open().shared())
-        .select_jar(JAR)
+        .select_jar(jar_id(JAR))
         .await;
 
     assert!(
@@ -433,7 +442,7 @@ async fn select_jar_keeps_the_stored_token_and_switches_the_jar() {
     let creds = creds_with(TOKEN, Some(JAR));
 
     let selected = provider(&server.uri(), creds.clone(), Limits::open().shared())
-        .select_jar(OTHER_JAR)
+        .select_jar(jar_id(OTHER_JAR))
         .await;
 
     assert!(selected.is_ok(), "{selected:?}");

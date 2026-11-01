@@ -717,8 +717,8 @@ mod tests {
                 let _runtime = self.rt.enter();
                 Some(spawn_speak_queue_with_registry(engines_registry()))
             });
-            let credentials = Arc::clone(&self.backend) as Arc<dyn CredentialsRepo>;
-            let settings = Arc::clone(&self.backend) as Arc<dyn SettingsRepo>;
+            let credentials = self.backend.credentials_repo();
+            let settings = self.backend.settings_repo();
             let handle = self.rt.handle().clone();
             let view = cx.update(|cx| {
                 cx.new(|cx| {

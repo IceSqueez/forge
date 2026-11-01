@@ -1,6 +1,7 @@
 use forge_events::{Event, EventSource};
 use forge_registry::{
-    EventFilter, FormField, KindPlatformContract, TriggerCategory, TriggerKindDescriptor,
+    EventFilter, FormField, KindPlatformContract, TriggerCatalogEntry, TriggerCategory,
+    TriggerKindDescriptor,
 };
 use forge_types::{
     ArgStack, DeclaredVariable, TriggerConfig, UserText, VariableSchema, Variant, VariantKind,
@@ -38,14 +39,7 @@ fn declared(name: &str, kind: VariantKind) -> DeclaredVariable {
     }
 }
 
-impl TriggerKindDescriptor for HotkeyEdgeDescriptor {
-    fn id(&self) -> &str {
-        match self.edge {
-            HotkeyEdge::Press => trigger_ids::GLOBAL_PRESSED,
-            HotkeyEdge::Release => trigger_ids::GLOBAL_RELEASED,
-        }
-    }
-
+impl TriggerCatalogEntry for HotkeyEdgeDescriptor {
     fn category(&self) -> TriggerCategory {
         TriggerCategory::Integration
     }
@@ -75,6 +69,15 @@ impl TriggerKindDescriptor for HotkeyEdgeDescriptor {
 
     fn icon_name(&self) -> &str {
         "keyboard"
+    }
+}
+
+impl TriggerKindDescriptor for HotkeyEdgeDescriptor {
+    fn id(&self) -> &str {
+        match self.edge {
+            HotkeyEdge::Press => trigger_ids::GLOBAL_PRESSED,
+            HotkeyEdge::Release => trigger_ids::GLOBAL_RELEASED,
+        }
     }
 
     fn platform_contract(&self) -> KindPlatformContract {

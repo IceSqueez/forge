@@ -397,7 +397,9 @@ mod tests {
         install_language(Language::En);
         let (backend, writes) = test_backend();
         let view = cx.update(|cx| {
-            cx.new(|cx| SettingsRegionView::new(backend, rt.handle().clone(), choices, cx))
+            cx.new(|cx| {
+                SettingsRegionView::new(backend.settings_repo(), rt.handle().clone(), choices, cx)
+            })
         });
         (view, writes)
     }

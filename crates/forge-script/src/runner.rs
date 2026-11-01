@@ -199,6 +199,7 @@ pub async fn run_inline(
 
 #[cfg(test)]
 mod tests {
+    use forge_storage::DataProvider;
     use std::sync::Mutex;
 
     use forge_types::IntegrationId;
@@ -221,8 +222,8 @@ mod tests {
         let backend = sandboxed_backend([0xab; 32]).await.map(Arc::new);
         let captured = CapturingPublisher::shared();
         let host = ScriptHost {
-            globals: repo_globals(Arc::clone(&backend)),
-            settings: Arc::clone(&backend) as Arc<dyn SettingsRepo>,
+            globals: repo_globals(backend.globals_repo()),
+            settings: backend.settings_repo(),
             bus: Arc::clone(&captured) as Arc<dyn EventPublisher>,
             capabilities: ScriptCapabilities {
                 integrations: Some(Arc::new(TwitchDisabled)),
@@ -284,8 +285,8 @@ mod tests {
     ) -> Result<RunResult, ScriptError> {
         let backend = sandboxed_backend([0xab; 32]).await.map(Arc::new);
         let host = ScriptHost {
-            globals: repo_globals(Arc::clone(&backend)),
-            settings: Arc::clone(&backend) as Arc<dyn SettingsRepo>,
+            globals: repo_globals(backend.globals_repo()),
+            settings: backend.settings_repo(),
             bus: CapturingPublisher::shared() as Arc<dyn EventPublisher>,
             capabilities: ScriptCapabilities {
                 latest_values,
@@ -344,8 +345,8 @@ mod tests {
     async fn an_editor_run_schedules_through_the_wired_scheduler() {
         let backend = sandboxed_backend([0xab; 32]).await.map(Arc::new);
         let host = ScriptHost {
-            globals: repo_globals(Arc::clone(&backend)),
-            settings: Arc::clone(&backend) as Arc<dyn SettingsRepo>,
+            globals: repo_globals(backend.globals_repo()),
+            settings: backend.settings_repo(),
             bus: CapturingPublisher::shared() as Arc<dyn EventPublisher>,
             capabilities: ScriptCapabilities {
                 scheduler: Some(Arc::new(KeyHolder)),
@@ -389,8 +390,8 @@ mod tests {
         let backend = sandboxed_backend([0xab; 32]).await.map(Arc::new);
         let speaker = Arc::new(RecordingSpeaker(Mutex::new(Vec::new())));
         let host = ScriptHost {
-            globals: repo_globals(Arc::clone(&backend)),
-            settings: Arc::clone(&backend) as Arc<dyn SettingsRepo>,
+            globals: repo_globals(backend.globals_repo()),
+            settings: backend.settings_repo(),
             bus: CapturingPublisher::shared() as Arc<dyn EventPublisher>,
             capabilities: ScriptCapabilities {
                 speak: Some(Arc::clone(&speaker) as Arc<dyn SpeakRequester>),
@@ -415,8 +416,8 @@ mod tests {
     async fn an_editor_run_reaches_the_http_client_and_its_deny_by_default_policy() {
         let backend = sandboxed_backend([0xab; 32]).await.map(Arc::new);
         let host = ScriptHost {
-            globals: repo_globals(Arc::clone(&backend)),
-            settings: Arc::clone(&backend) as Arc<dyn SettingsRepo>,
+            globals: repo_globals(backend.globals_repo()),
+            settings: backend.settings_repo(),
             bus: CapturingPublisher::shared() as Arc<dyn EventPublisher>,
             capabilities: ScriptCapabilities::default(),
         };
@@ -448,7 +449,7 @@ mod tests {
         ScriptSession::open(
             store,
             bus,
-            repo_globals(Arc::clone(&backend)),
+            repo_globals(backend.globals_repo()),
             caused_by,
             ScriptCapabilities::default(),
         )
@@ -507,7 +508,7 @@ mod tests {
         ScriptSession::open(
             &store,
             CapturingPublisher::shared() as Arc<dyn EventPublisher>,
-            repo_globals(Arc::clone(&backend)),
+            repo_globals(backend.globals_repo()),
             EventId::new(),
             ScriptCapabilities::default(),
         )

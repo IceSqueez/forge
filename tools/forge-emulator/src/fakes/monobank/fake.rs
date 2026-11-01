@@ -16,8 +16,9 @@ use crate::fakes::support::{Observed, ServerTasks, bind_loopback, local_addr, se
 
 pub const UNKNOWN_TOKEN_MESSAGE: &str = "Unknown 'X-Token'";
 pub const TOO_MANY_REQUESTS_MESSAGE: &str = "Too many requests";
-pub const MAX_STATEMENT_ITEMS: usize = 500;
-pub const MAX_STATEMENT_WINDOW_SECS: i64 = 31 * 24 * 3_600 + 3_600;
+pub const MAX_STATEMENT_ITEMS: usize = forge_monobank::STATEMENT_PAGE_LIMIT;
+pub const MAX_STATEMENT_WINDOW_SECS: i64 =
+    forge_monobank::MAX_STATEMENT_WINDOW.as_secs().cast_signed();
 
 const TOKEN_HEADER: &str = "x-token";
 const CLIENT_INFO_PATH: &str = "/personal/client-info";

@@ -241,11 +241,7 @@ impl ActionEditor {
         } else {
             palette.disabled
         };
-        let glyph = Icon::from_name(
-            descriptor
-                .map(TriggerKindDescriptor::icon_name)
-                .unwrap_or("bolt"),
-        );
+        let glyph = Icon::from_name(descriptor.map(|kind| kind.icon_name()).unwrap_or("bolt"));
 
         let leading = div()
             .flex()

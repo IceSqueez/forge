@@ -1,7 +1,7 @@
 use forge_events::{Event, EventSource};
 use forge_registry::{
     ActorDeclaration, ActorRole, ActorSlot, CanonicalVariable, EventFilter, KindPlatformContract,
-    TriggerCategory, TriggerKindDescriptor, TriggerVariables,
+    TriggerCatalogEntry, TriggerCategory, TriggerKindDescriptor, TriggerVariables,
 };
 use forge_types::{
     DeclaredVariable, PlatformId, SynthesisHint, TriggerConfig, Variant, VariantKind,
@@ -13,11 +13,7 @@ use crate::vocabulary::{event_kinds, trigger_ids, variables};
 
 pub(crate) struct SupportSuperStickerDescriptor;
 
-impl TriggerKindDescriptor for SupportSuperStickerDescriptor {
-    fn id(&self) -> &str {
-        trigger_ids::CHAT_SUPER_STICKER
-    }
-
+impl TriggerCatalogEntry for SupportSuperStickerDescriptor {
     fn category(&self) -> TriggerCategory {
         TriggerCategory::Bits
     }
@@ -36,6 +32,12 @@ impl TriggerKindDescriptor for SupportSuperStickerDescriptor {
 
     fn icon_name(&self) -> &str {
         "star"
+    }
+}
+
+impl TriggerKindDescriptor for SupportSuperStickerDescriptor {
+    fn id(&self) -> &str {
+        trigger_ids::CHAT_SUPER_STICKER
     }
 
     fn platform_contract(&self) -> KindPlatformContract {

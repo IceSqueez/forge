@@ -6,4 +6,4 @@ pub(crate) mod donations;
 pub(crate) mod global_mutation;
 pub(crate) mod latest;
 pub(crate) mod lifecycle_messages;
-pub(crate) mod script_registry;
+pub(crate) mod script_catalog;

@@ -6,7 +6,7 @@ use forge_components::{
     ghost_button_with_icon, setting_rows, setting_value_row, spacing, spinner, tr,
 };
 use forge_storage::settings::core_settings;
-use forge_storage::{DataProvider, SettingsRepo, read_setting};
+use forge_storage::{DataProvider, read_setting};
 use gpui::{ClickEvent, Context, Entity, Window, div, prelude::*};
 use tokio::runtime::Handle;
 
@@ -65,7 +65,7 @@ impl SettingsAboutView {
         }
         self.state = AboutState::Collecting;
         let window_facts = WindowFacts::read(window, cx);
-        let settings = Arc::clone(&self.backend) as Arc<dyn SettingsRepo>;
+        let settings = self.backend.settings_repo();
         async_bridge::run_async(
             &self.rt_handle,
             async move {

@@ -65,7 +65,7 @@ impl RepoGlobals {
 }
 
 pub(crate) fn repo_globals(
-    repo: std::sync::Arc<impl forge_storage::GlobalsRepo + 'static>,
+    repo: std::sync::Arc<dyn forge_storage::GlobalsRepo>,
 ) -> std::sync::Arc<dyn crate::ScriptGlobals> {
     std::sync::Arc::new(RepoGlobals::new(repo))
 }

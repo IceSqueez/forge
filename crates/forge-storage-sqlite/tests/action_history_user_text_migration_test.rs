@@ -24,7 +24,7 @@ fn at(seconds: i64) -> OffsetDateTime {
 
 fn step(index: usize, outcome: SubActionOutcome) -> SubActionTelemetry {
     SubActionTelemetry {
-        index,
+        position: forge_types::StepPosition::TopLevel(index),
         kind: format!("step.{index}"),
         started_at: at(1_700_000_000),
         duration_ms: 3,

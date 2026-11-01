@@ -1,5 +1,3 @@
-use forge_storage::SettingsRepo;
-
 use crate::bundle::cancel::CancelFlag;
 use crate::full::writer::{
     ScheduledBackupRequest, ScheduledWrite, write_scheduled_backup_cancellable,
@@ -87,9 +85,9 @@ impl Service {
         };
         self.progress.last_success_at = Some(self.parts.clock.now());
         self.progress.fingerprint = Some(fingerprint);
-        let repo: &dyn SettingsRepo = self.parts.provider.as_ref();
+        let repo = self.parts.provider.settings_repo();
         self.progress
-            .save(repo)
+            .save(repo.as_ref())
             .await
             .map_err(|_| FailureCategory::StateNotSaved)?;
         let prune_failures = if wrote {

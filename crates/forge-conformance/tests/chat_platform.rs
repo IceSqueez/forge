@@ -17,7 +17,7 @@ use forge_platform_kick::{
 use forge_platform_twitch::TwitchAssembly;
 use forge_platform_youtube::{
     ActiveBroadcastIdHandle, GoogleOAuthClient, LiveChatIdHandle, SharedQuota,
-    YoutubeCredentialsManager, YoutubeDataApi, YoutubePlatform, google_oauth_gateway,
+    YouTubeCredentialsManager, YouTubeDataApi, YouTubePlatform, google_oauth_gateway,
 };
 use forge_registry::SubActionRegistry;
 use forge_storage::test_support::MemoryCredentials;
@@ -83,15 +83,15 @@ async fn signed_out_twitch(endpoints: &PlatformEndpoints) -> Arc<dyn ChatPlatfor
 }
 
 fn signed_out_youtube(endpoints: &PlatformEndpoints) -> Arc<dyn ChatPlatform> {
-    let api = YoutubeDataApi::new(endpoints, SharedQuota::default(), publisher()).unwrap();
+    let api = YouTubeDataApi::new(endpoints, SharedQuota::default(), publisher()).unwrap();
     let oauth = GoogleOAuthClient::new(
         google_oauth_gateway(endpoints, limiter()).unwrap(),
         CLIENT_ID.to_owned(),
         Secret::new("secret"),
     );
     let manager =
-        YoutubeCredentialsManager::new(Arc::new(MemoryCredentials::default()), oauth, api.clone());
-    Arc::new(YoutubePlatform::new(
+        YouTubeCredentialsManager::new(Arc::new(MemoryCredentials::default()), oauth, api.clone());
+    Arc::new(YouTubePlatform::new(
         api,
         "UCconformance".to_owned(),
         Arc::new(manager),

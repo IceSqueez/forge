@@ -46,11 +46,12 @@ async fn peek_reads_the_value_without_counting_a_read() {
 async fn shutting_down_stores_reads_not_flushed_yet() {
     let (dir, backend) = setup_file_backed().await;
     backend
+        .globals_repo()
         .set("counted", Variant::Int(1), true)
         .await
         .expect("set");
-    backend.get("counted").await.expect("get");
-    backend.get("counted").await.expect("get");
+    backend.globals_repo().get("counted").await.expect("get");
+    backend.globals_repo().get("counted").await.expect("get");
 
     backend.shutdown().await;
 
@@ -289,18 +290,24 @@ async fn incr_on_string_global_returns_type_mismatch() {
 #[tokio::test]
 async fn concurrent_reads_counter_exact() {
     let (_dir, backend) = setup_file_backed().await;
-    backend.set("x", Variant::Int(0), false).await.expect("set");
+    backend
+        .globals_repo()
+        .set("x", Variant::Int(0), false)
+        .await
+        .expect("set");
 
     let mut handles = Vec::with_capacity(100);
     for _ in 0..100 {
         let b = Arc::clone(&backend);
-        handles.push(tokio::spawn(async move { b.get("x").await.expect("get") }));
+        handles.push(tokio::spawn(async move {
+            b.globals_repo().get("x").await.expect("get")
+        }));
     }
     for h in handles {
         h.await.expect("task panicked");
     }
 
-    let entries = backend.list().await.expect("list");
+    let entries = backend.globals_repo().list().await.expect("list");
     let entry = entries.iter().find(|e| e.name == "x").expect("entry");
     assert_eq!(
         entry.reads, 100,
@@ -316,6 +323,7 @@ async fn concurrent_reads_counter_exact() {
 async fn concurrent_incr_no_lost_updates() {
     let (_dir, backend) = setup_file_backed().await;
     backend
+        .globals_repo()
         .set("counter", Variant::Int(0), false)
         .await
         .expect("set");
@@ -324,21 +332,21 @@ async fn concurrent_incr_no_lost_updates() {
     for _ in 0..50 {
         let b = Arc::clone(&backend);
         handles.push(tokio::spawn(async move {
-            b.incr("counter", 1).await.expect("incr")
+            b.globals_repo().incr("counter", 1).await.expect("incr")
         }));
     }
     for h in handles {
         h.await.expect("task panicked");
     }
 
-    let got = backend.get("counter").await.expect("get");
+    let got = backend.globals_repo().get("counter").await.expect("get");
     assert_eq!(
         got,
         Some(Variant::Int(50)),
         "50 concurrent incr(1) must sum to exactly 50"
     );
 
-    let entries = backend.list().await.expect("list");
+    let entries = backend.globals_repo().list().await.expect("list");
     let entry = entries.iter().find(|e| e.name == "counter").expect("entry");
     assert_eq!(entry.reads, 1, "one get at end increments reads to 1");
     assert_eq!(entry.writes, 51, "one set + 50 incr = 51 writes");
@@ -525,15 +533,27 @@ async fn persisted_query_does_not_count_as_a_read() {
 async fn backend_persisted_delegates_to_globals_repo() {
     let backend = common::migrated_backend(TEST_KEY).await;
     backend
+        .globals_repo()
         .set("live", Variant::Int(1), true)
         .await
         .expect("set");
 
     assert_eq!(
-        backend.persisted("live").await.expect("persisted"),
+        backend
+            .globals_repo()
+            .persisted("live")
+            .await
+            .expect("persisted"),
         Some(true)
     );
-    assert_eq!(backend.persisted("nope").await.expect("persisted"), None);
+    assert_eq!(
+        backend
+            .globals_repo()
+            .persisted("nope")
+            .await
+            .expect("persisted"),
+        None
+    );
 }
 
 #[tokio::test]
@@ -541,15 +561,21 @@ async fn backend_export_all_delegates_correctly() {
     let backend = common::migrated_backend(TEST_KEY).await;
 
     backend
+        .globals_repo()
         .set("x", Variant::Int(100), true)
         .await
         .expect("set x");
     backend
+        .globals_repo()
         .set("y", Variant::Bool(true), false)
         .await
         .expect("set y");
 
-    let exports = backend.export_all().await.expect("export_all via backend");
+    let exports = backend
+        .globals_repo()
+        .export_all()
+        .await
+        .expect("export_all via backend");
     assert_eq!(exports.len(), 2);
 
     let x = exports.iter().find(|e| e.name == "x").expect("x");

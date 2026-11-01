@@ -42,8 +42,8 @@ mod tests {
 
     use forge_events::{Event, EventSource};
     use forge_registry::{
-        ChatTriggerFamily, EventFilter, FormField, KindPlatformContract, TriggerCategory,
-        TriggerKindDescriptor,
+        ChatTriggerFamily, EventFilter, FormField, KindPlatformContract, TriggerCatalogEntry,
+        TriggerCategory, TriggerKindDescriptor,
     };
     use forge_storage::ActionStats;
     use forge_storage::MockActionRepo;
@@ -66,24 +66,31 @@ mod tests {
         family: Option<ChatTriggerFamily>,
     }
 
-    impl TriggerKindDescriptor for FakeTrigger {
-        fn id(&self) -> &str {
-            self.id
-        }
+    impl TriggerCatalogEntry for FakeTrigger {
         fn category(&self) -> TriggerCategory {
             TriggerCategory::Chat
         }
+
         fn label(&self) -> &str {
             ""
         }
+
         fn summary(&self) -> &str {
             ""
         }
+
         fn search_text(&self) -> &str {
             ""
         }
+
         fn icon_name(&self) -> &str {
             ""
+        }
+    }
+
+    impl TriggerKindDescriptor for FakeTrigger {
+        fn id(&self) -> &str {
+            self.id
         }
         fn platform_contract(&self) -> KindPlatformContract {
             KindPlatformContract::Universal

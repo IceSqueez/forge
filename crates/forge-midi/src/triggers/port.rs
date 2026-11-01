@@ -1,6 +1,7 @@
 use forge_events::{Event, EventSource};
 use forge_registry::{
-    EventFilter, FormField, KindPlatformContract, TriggerCategory, TriggerKindDescriptor,
+    EventFilter, FormField, KindPlatformContract, TriggerCatalogEntry, TriggerCategory,
+    TriggerKindDescriptor,
 };
 use forge_types::{
     ArgStack, DeclaredVariable, TriggerConfig, UserText, VariableSchema, Variant, VariantKind,
@@ -26,11 +27,7 @@ impl MidiPortTrigger {
     }
 }
 
-impl TriggerKindDescriptor for MidiPortTrigger {
-    fn id(&self) -> &str {
-        self.id
-    }
-
+impl TriggerCatalogEntry for MidiPortTrigger {
     fn category(&self) -> TriggerCategory {
         TriggerCategory::Integration
     }
@@ -49,6 +46,12 @@ impl TriggerKindDescriptor for MidiPortTrigger {
 
     fn icon_name(&self) -> &str {
         "music"
+    }
+}
+
+impl TriggerKindDescriptor for MidiPortTrigger {
+    fn id(&self) -> &str {
+        self.id
     }
 
     fn platform_contract(&self) -> KindPlatformContract {

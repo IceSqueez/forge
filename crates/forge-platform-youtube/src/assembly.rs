@@ -8,34 +8,34 @@ use forge_registry::SubActionRegistry;
 use forge_storage::{BanLedgerRepo, CredentialsRepo};
 use forge_types::Secret;
 
-use crate::account::auth::YoutubeSignIn;
+use crate::account::auth::YouTubeSignIn;
 use crate::account::oauth_client::{
     GOOGLE_OAUTH_BUDGET_CAPACITY, GOOGLE_OAUTH_BUDGET_WINDOW, google_oauth_gateway,
 };
 use crate::broadcast::broadcast_lookup::BroadcastLookup;
 use crate::chat::chat_platform::token_source;
 use crate::{
-    ActiveBroadcastIdHandle, GoogleOAuthClient, LiveChatIdHandle, SharedQuota, YoutubeAdBreak,
-    YoutubeChannelLookup, YoutubeCredentialsManager, YoutubeDataApi, YoutubeIntegrationBundle,
-    YoutubeModeration, YoutubePlatform, YoutubeSendChat, YoutubeStreamMetadata, YoutubeStreamStats,
-    YoutubeThumbnail, register_youtube_sub_actions,
+    ActiveBroadcastIdHandle, GoogleOAuthClient, LiveChatIdHandle, SharedQuota, YouTubeAdBreak,
+    YouTubeChannelLookup, YouTubeCredentialsManager, YouTubeDataApi, YouTubeIntegrationBundle,
+    YouTubeModeration, YouTubePlatform, YouTubeSendChat, YouTubeStreamMetadata, YouTubeStreamStats,
+    YouTubeThumbnail, register_youtube_sub_actions,
 };
 
-pub struct YoutubeAssembly {
-    api: YoutubeDataApi,
-    manager: Arc<YoutubeCredentialsManager>,
+pub struct YouTubeAssembly {
+    api: YouTubeDataApi,
+    manager: Arc<YouTubeCredentialsManager>,
     live_chat_id: LiveChatIdHandle,
     active_broadcast: ActiveBroadcastIdHandle,
     ban_ledger: Arc<dyn BanLedgerRepo>,
-    sign_in: YoutubeSignIn,
+    sign_in: YouTubeSignIn,
 }
 
-pub struct YoutubeSession {
-    pub platform: Arc<YoutubePlatform>,
-    pub bundle: Arc<YoutubeIntegrationBundle>,
+pub struct YouTubeSession {
+    pub platform: Arc<YouTubePlatform>,
+    pub bundle: Arc<YouTubeIntegrationBundle>,
 }
 
-impl YoutubeAssembly {
+impl YouTubeAssembly {
     pub fn new(
         endpoints: &PlatformEndpoints,
         events: Arc<dyn EventPublisher>,
@@ -51,11 +51,11 @@ impl YoutubeAssembly {
             .inspect_err(|e| tracing::error!(error = %e, "youtube oauth gateway build failed"))
             .ok()?;
         let oauth = GoogleOAuthClient::new(oauth_gateway, client_id, client_secret);
-        let api = YoutubeDataApi::new(endpoints, SharedQuota::default(), events)
+        let api = YouTubeDataApi::new(endpoints, SharedQuota::default(), events)
             .inspect_err(|e| tracing::error!(error = %e, "youtube data api gateway build failed"))
             .ok()?;
-        let manager = Arc::new(YoutubeCredentialsManager::new(creds, oauth, api.clone()));
-        let sign_in = YoutubeSignIn::new(Arc::clone(&manager));
+        let manager = Arc::new(YouTubeCredentialsManager::new(creds, oauth, api.clone()));
+        let sign_in = YouTubeSignIn::new(Arc::clone(&manager));
         let lookup = BroadcastLookup::new(api.clone(), token_source(Arc::clone(&manager)));
         let live_chat_id = LiveChatIdHandle::new();
         live_chat_id.fall_back_to(lookup.clone());
@@ -71,16 +71,16 @@ impl YoutubeAssembly {
         })
     }
 
-    pub fn sign_in(&self) -> YoutubeSignIn {
+    pub fn sign_in(&self) -> YouTubeSignIn {
         self.sign_in.clone()
     }
 
-    pub fn credentials_manager(&self) -> Arc<YoutubeCredentialsManager> {
+    pub fn credentials_manager(&self) -> Arc<YouTubeCredentialsManager> {
         Arc::clone(&self.manager)
     }
 
     pub fn register_sub_actions(&self, registry: &mut SubActionRegistry) {
-        let send = Arc::new(YoutubeSendChat::new(
+        let send = Arc::new(YouTubeSendChat::new(
             self.api.clone(),
             token_source(Arc::clone(&self.manager)),
             self.live_chat_id.clone(),
@@ -92,34 +92,34 @@ impl YoutubeAssembly {
                 Box::pin(async move { manager.broadcaster().await }) as PlatformFuture<_>
             })
         };
-        let moderation = Arc::new(YoutubeModeration::new(
+        let moderation = Arc::new(YouTubeModeration::new(
             self.api.clone(),
             token_source(Arc::clone(&self.manager)),
             broadcaster_source,
             self.live_chat_id.clone(),
             Arc::clone(&self.ban_ledger),
         ));
-        let metadata = Arc::new(YoutubeStreamMetadata::new(
+        let metadata = Arc::new(YouTubeStreamMetadata::new(
             self.api.clone(),
             token_source(Arc::clone(&self.manager)),
             self.active_broadcast.clone(),
         ));
-        let stream_stats = Arc::new(YoutubeStreamStats::new(
+        let stream_stats = Arc::new(YouTubeStreamStats::new(
             self.api.clone(),
             token_source(Arc::clone(&self.manager)),
             self.active_broadcast.clone(),
         ));
-        let ad_break = Arc::new(YoutubeAdBreak::new(
+        let ad_break = Arc::new(YouTubeAdBreak::new(
             self.api.clone(),
             token_source(Arc::clone(&self.manager)),
             self.active_broadcast.clone(),
         ));
-        let thumbnail = Arc::new(YoutubeThumbnail::new(
+        let thumbnail = Arc::new(YouTubeThumbnail::new(
             self.api.clone(),
             token_source(Arc::clone(&self.manager)),
             self.active_broadcast.clone(),
         ));
-        let channel_lookup = Arc::new(YoutubeChannelLookup::new(
+        let channel_lookup = Arc::new(YouTubeChannelLookup::new(
             self.api.clone(),
             token_source(Arc::clone(&self.manager)),
         ));
@@ -137,11 +137,11 @@ impl YoutubeAssembly {
         }
     }
 
-    pub async fn start(&self) -> Result<Option<YoutubeSession>, PlatformError> {
+    pub async fn start(&self) -> Result<Option<YouTubeSession>, PlatformError> {
         let Some(stored) = self.manager.load().await? else {
             return Ok(None);
         };
-        let platform = Arc::new(YoutubePlatform::new(
+        let platform = Arc::new(YouTubePlatform::new(
             self.api.clone(),
             stored.channel_id.clone(),
             Arc::clone(&self.manager),
@@ -149,12 +149,12 @@ impl YoutubeAssembly {
             self.active_broadcast.clone(),
             Arc::clone(&self.ban_ledger),
         ));
-        let bundle = YoutubeIntegrationBundle::new(
+        let bundle = YouTubeIntegrationBundle::new(
             stored.channel_id,
             Arc::clone(&platform),
             Arc::clone(&self.manager),
         );
-        YoutubeIntegrationBundle::start_background_tasks(&bundle);
-        Ok(Some(YoutubeSession { platform, bundle }))
+        YouTubeIntegrationBundle::start_background_tasks(&bundle);
+        Ok(Some(YouTubeSession { platform, bundle }))
     }
 }

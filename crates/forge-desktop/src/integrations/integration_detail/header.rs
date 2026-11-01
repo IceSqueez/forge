@@ -61,7 +61,7 @@ pub(super) fn hero_badge_elem(
         palette.surface_overlay,
         text_color,
         user_text_string(&badge_spec.label),
-        badge_spec.monospace,
+        badge_spec.is_identifier,
         FONT_XS,
     )
     .weight(FontWeight::NORMAL)

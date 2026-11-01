@@ -416,7 +416,11 @@ fn open_main_window(
         crate::app::window_presence::track_window_presence(window, cx);
         if let Some((backend, rt_handle, persisted)) = placement_storage {
             crate::app::window_placement::track_window_placement(
-                window, backend, rt_handle, persisted, cx,
+                window,
+                backend.settings_repo(),
+                rt_handle,
+                persisted,
+                cx,
             );
         }
         cx.new(|cx| RootView::new(boot_inputs_for_root.clone(), cx))

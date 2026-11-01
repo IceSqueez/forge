@@ -192,7 +192,7 @@ use crate::engine::condition::ConditionGate;
 use crate::engine::scheduled_runs::ScheduledRunsHandle;
 use crate::integrations::egress::{EgressClient, HttpMethod};
 use crate::overlays::overlay_service::OverlayServiceHandle;
-use crate::services::script_registry::ScriptRegistry;
+use crate::services::script_catalog::ScriptCatalog;
 
 pub fn register_scheduled_run_sub_actions(
     reg: &mut SubActionRegistry,
@@ -210,7 +210,7 @@ pub fn register_scheduled_run_sub_actions(
 pub struct CoreSubActionDeps {
     pub globals: Arc<dyn GlobalsRepo>,
     pub user_globals: Arc<dyn UserGlobalsRepo>,
-    pub scripts: Arc<ScriptRegistry>,
+    pub scripts: Arc<ScriptCatalog>,
     pub publisher: Arc<dyn EventPublisher>,
     pub settings: Arc<dyn SettingsRepo>,
     pub scheduler: QueueSchedulerHandle,
@@ -404,7 +404,7 @@ mod tests {
         CodeKind, DurationBounds, FormField, RegistryError, RunContext, SubActionRunner,
         TriggerKindDescriptor,
     };
-    use forge_storage::SettingsRepo;
+
     use forge_types::{ArgStack, EventId, SubActionConfig, SubActionOutcome, Variant};
     use std::sync::Arc;
 
@@ -487,7 +487,7 @@ mod tests {
     async fn duration_fields_keep_their_stored_key_base_and_bounds() {
         let gate = Arc::new(ConditionGate::new(&Config::default()));
         let backend = sandboxed_backend([0x22; 32]).await.map(Arc::new);
-        let settings = Arc::clone(&*backend) as Arc<dyn SettingsRepo>;
+        let settings = forge_storage::DataProvider::settings_repo(&**backend);
         let http = CoreHttpRunner::new(
             HttpMethod::Get,
             settings,

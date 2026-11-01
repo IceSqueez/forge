@@ -61,6 +61,12 @@ fn trigger_kinds() -> TriggerRegistry {
             .expect("every owned fake carries its own id");
     }
     registry
+        .register(Box::new(FakeTrigger {
+            id: DONATION_RECEIVED_KIND,
+            variables: None,
+        }))
+        .expect("the unowned donation fake carries its own id");
+    registry
 }
 
 fn no_unowned_candidates(_: &str) -> Vec<IntegrationId> {

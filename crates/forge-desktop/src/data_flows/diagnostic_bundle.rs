@@ -10,7 +10,7 @@ use crate::automation::run_disclosure::{
 use crate::shared::repo_failure::RepoFailure;
 use forge_platform_core::HealthValue;
 use forge_runtime::COMMAND_LINE_TARGET;
-use forge_storage::{DataProvider, SettingsRepo, disclose_rows, load_setting_rows};
+use forge_storage::{DataProvider, disclose_rows, load_setting_rows};
 use forge_types::REDACTION_STAMP;
 use forge_types::{INTEGRATION_DISABLED, LogLevel, SCRIPT_LOG_TARGET};
 use time::OffsetDateTime;
@@ -113,7 +113,7 @@ pub(crate) async fn gather_input(
     env_overridden: bool,
 ) -> Result<BundleInput, RepoFailure> {
     let history = backend.history_repo();
-    let settings = backend as Arc<dyn SettingsRepo>;
+    let settings = backend.settings_repo();
     let stored = load_setting_rows(settings.as_ref())
         .await
         .map_err(RepoFailure::from)?;
@@ -767,7 +767,7 @@ mod tests {
 
     fn step_carrying(index: usize, outcome: SubActionOutcome) -> SubActionTelemetry {
         SubActionTelemetry {
-            index,
+            position: forge_types::StepPosition::TopLevel(index),
             kind: "core.log".to_owned(),
             started_at: OffsetDateTime::UNIX_EPOCH,
             duration_ms: 5,

@@ -99,7 +99,11 @@ async fn bring_queue_live(services: &PackServices, queue: &Queue) -> bool {
 }
 
 async fn refresh_scripts(services: &PackServices) -> bool {
-    match services.scripts.load_all(services.backend.as_ref()).await {
+    match services
+        .scripts
+        .load_all(services.backend.script_repo().as_ref())
+        .await
+    {
         Ok(()) => true,
         Err(error) => {
             tracing::warn!(%error, "scripts could not be reloaded after the pack import");
@@ -317,7 +321,7 @@ mod tests {
     use forge_speak_queue::PipelineConfigHandle;
     use forge_speech_types::{AliasId, VoiceAlias};
     use forge_speech_types::{AliasState, AssignmentStrategy, EngineId, IgnoreProfile, VoiceId};
-    use forge_storage::{OverlayId, ScriptRecord, ScriptRepo, StoredClip, TtsPipelineSettings};
+    use forge_storage::{OverlayId, ScriptRecord, StoredClip, TtsPipelineSettings};
     use forge_transfer::{
         PackItemKey, PackItemKind, PackWrittenItem, SetupImportOutcome, SetupLivePart,
         SetupQueueChanges,
@@ -455,22 +459,19 @@ mod tests {
     }
 
     #[test]
-    fn a_written_script_reloads_the_script_registry() {
+    fn a_written_script_reloads_the_script_catalog() {
         let rt = runtime();
         let world = pack_world(&rt);
         let now = OffsetDateTime::now_utc();
-        rt.block_on(ScriptRepo::save(
-            world.provider().as_ref(),
-            ScriptRecord {
-                id: ScriptId::new(),
-                name: "imported_greet".to_owned(),
-                body: "let greeting = 1;".to_owned(),
-                contract: ScriptContract::default(),
-                enabled: true,
-                created_at: now,
-                last_modified: now,
-            },
-        ))
+        rt.block_on(world.provider().script_repo().save(ScriptRecord {
+            id: ScriptId::new(),
+            name: "imported_greet".to_owned(),
+            body: "let greeting = 1;".to_owned(),
+            contract: ScriptContract::default(),
+            enabled: true,
+            created_at: now,
+            last_modified: now,
+        }))
         .unwrap();
 
         let live = refresh(

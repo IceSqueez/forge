@@ -56,10 +56,10 @@ impl<'a> Validator<'a> {
             | StepAction::KickPusherEvent { .. }
             | StepAction::KickStream { .. }
             | StepAction::KickChannelPolled { .. } => self.check_kick_action(location, action),
-            StepAction::YoutubeChatPolled { .. }
-            | StepAction::YoutubeChat(_)
-            | StepAction::YoutubeChatEvent { .. }
-            | StepAction::YoutubeBroadcast { .. } => self.check_youtube_action(location, action),
+            StepAction::YouTubeChatPolled { .. }
+            | StepAction::YouTubeChat(_)
+            | StepAction::YouTubeChatEvent { .. }
+            | StepAction::YouTubeBroadcast { .. } => self.check_youtube_action(location, action),
             StepAction::ObsOnline {}
             | StepAction::ObsIdentified { .. }
             | StepAction::ObsRestart { .. }

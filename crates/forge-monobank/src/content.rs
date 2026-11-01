@@ -36,7 +36,7 @@ fn jar_card(status: &PollStatus) -> DetailSection {
     let field = |label: MessageCode, value: Option<UserText>| InfoField {
         label: label.into(),
         value: value.unwrap_or_else(|| VerbatimText::new(NOT_SET).into()),
-        monospace_value: false,
+        value_is_identifier: false,
     };
     DetailSection::InfoCard {
         title: messages::LABEL_JAR_TITLE.into(),

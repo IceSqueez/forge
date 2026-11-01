@@ -82,7 +82,7 @@ async fn load_resolver(
             )
         }
     };
-    let defaults = match forge_storage::synthesis_defaults(backend.as_ref()).await {
+    let defaults = match forge_storage::synthesis_defaults(backend.settings_repo().as_ref()).await {
         Ok(defaults) => defaults,
         Err(e) => {
             tracing::warn!(error = %e, "failed to load synthesis defaults on boot; using defaults");
@@ -102,7 +102,7 @@ async fn load_engine_params(
     let mut defaults = std::collections::HashMap::new();
     let mut gains = std::collections::HashMap::new();
     for engine_id in engine_ids {
-        match forge_storage::engine_params(backend.as_ref(), &engine_id.0).await {
+        match forge_storage::engine_params(backend.settings_repo().as_ref(), &engine_id.0).await {
             Ok(params) => {
                 defaults.insert(
                     engine_id.clone(),
@@ -124,7 +124,7 @@ async fn load_engine_params(
 }
 
 async fn load_master_volume(backend: &Arc<dyn DataProvider>) -> f32 {
-    match forge_storage::master_volume(backend.as_ref()).await {
+    match forge_storage::master_volume(backend.settings_repo().as_ref()).await {
         Ok(volume) => volume,
         Err(e) => {
             tracing::warn!(error = %e, "failed to load the master volume on boot; using full volume");
@@ -136,7 +136,7 @@ async fn load_master_volume(backend: &Arc<dyn DataProvider>) -> f32 {
 async fn load_disabled_engines(
     backend: &Arc<dyn DataProvider>,
 ) -> std::collections::HashSet<EngineId> {
-    match forge_storage::disabled_tts_engines(backend.as_ref()).await {
+    match forge_storage::disabled_tts_engines(backend.settings_repo().as_ref()).await {
         Ok(ids) => ids.into_iter().map(EngineId).collect(),
         Err(e) => {
             tracing::warn!(error = %e, "failed to load the disabled TTS engines on boot; all engines stay enabled");
@@ -163,7 +163,12 @@ async fn build_speech_output(
     backend: &Arc<dyn DataProvider>,
     audio_sinks: Arc<dyn AudioSinkFactory>,
 ) -> Arc<DeviceSink> {
-    let stored_device_id = match read_setting(backend.as_ref(), &AUDIO_OUTPUT_DEVICE_ID).await {
+    let stored_device_id = match read_setting(
+        backend.settings_repo().as_ref(),
+        &AUDIO_OUTPUT_DEVICE_ID,
+    )
+    .await
+    {
         Ok(id) => id,
         Err(e) => {
             tracing::warn!(error = %e, "failed to read the stored audio output device preference");
@@ -191,7 +196,7 @@ async fn build_speak_queue(
     let mut registry = TtsRegistry::new();
     register_local_engines(&mut registry, local_engines).await;
 
-    let creds: Arc<dyn CredentialsRepo> = Arc::clone(backend) as Arc<dyn CredentialsRepo>;
+    let creds: Arc<dyn CredentialsRepo> = backend.credentials_repo();
     register_cloud_engines(&mut registry, creds.as_ref(), cloud_gateways).await;
 
     let engine_ids = registry.engine_ids();
@@ -274,7 +279,7 @@ pub async fn build_speech(
         warnings,
     )
     .await;
-    let settings = Arc::clone(backend) as Arc<dyn SettingsRepo>;
+    let settings = backend.settings_repo();
     let voice_gate = build_voice_gate(settings.as_ref(), queue.clone(), warnings).await;
     let bridge = queue
         .clone()

@@ -2,7 +2,7 @@ use forge_net::GatewayRequest;
 use forge_platform_core::PlatformError;
 use forge_types::Secret;
 
-use crate::api::data_api::{YoutubeDataApi, json_body, malformed};
+use crate::api::data_api::{YouTubeDataApi, json_body, malformed};
 use crate::broadcast::active_broadcast_id::ActiveBroadcastIdHandle;
 
 const FETCH_COST: u32 = 1;
@@ -19,15 +19,15 @@ enum Field {
     Privacy,
 }
 
-pub struct YoutubeStreamMetadata {
-    api: YoutubeDataApi,
+pub struct YouTubeStreamMetadata {
+    api: YouTubeDataApi,
     access_token_source: TokenSource,
     active_broadcast_id: ActiveBroadcastIdHandle,
 }
 
-impl YoutubeStreamMetadata {
+impl YouTubeStreamMetadata {
     pub fn new(
-        api: YoutubeDataApi,
+        api: YouTubeDataApi,
         access_token_source: TokenSource,
         active_broadcast_id: ActiveBroadcastIdHandle,
     ) -> Self {
@@ -139,11 +139,11 @@ mod tests {
         Arc::new(|| Box::pin(async { Ok("test-token".to_owned()) }))
     }
 
-    fn metadata_on(server: &MockServer) -> (YoutubeStreamMetadata, SharedQuota) {
+    fn metadata_on(server: &MockServer) -> (YouTubeStreamMetadata, SharedQuota) {
         let handle = ActiveBroadcastIdHandle::new();
         handle.set(Some("vid-1".to_owned()));
         let quota = SharedQuota::default();
-        let meta = YoutubeStreamMetadata::new(
+        let meta = YouTubeStreamMetadata::new(
             data_api_charging(&server.uri(), quota.clone()),
             token_source(),
             handle,
@@ -278,7 +278,7 @@ mod tests {
         let server = MockServer::start().await;
         let handle = ActiveBroadcastIdHandle::new();
         let quota = SharedQuota::default();
-        let meta = YoutubeStreamMetadata::new(
+        let meta = YouTubeStreamMetadata::new(
             data_api_charging(&server.uri(), quota.clone()),
             token_source(),
             handle,

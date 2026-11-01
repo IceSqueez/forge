@@ -1,8 +1,8 @@
 use forge_events::Event;
 use forge_events::EventSource;
 use forge_registry::{
-    ActorDeclaration, EventFilter, KindPlatformContract, TriggerCategory, TriggerKindDescriptor,
-    TriggerVariables,
+    ActorDeclaration, EventFilter, KindPlatformContract, TriggerCatalogEntry, TriggerCategory,
+    TriggerKindDescriptor, TriggerVariables,
 };
 use forge_types::{DeclaredVariable, PlatformId, TriggerConfig, Variant, VariantKind};
 
@@ -12,11 +12,7 @@ use crate::vocabulary::{event_kinds, trigger_ids, variables};
 
 pub(crate) struct LivestreamMetadataDescriptor;
 
-impl TriggerKindDescriptor for LivestreamMetadataDescriptor {
-    fn id(&self) -> &str {
-        trigger_ids::LIVESTREAM_METADATA_UPDATED
-    }
-
+impl TriggerCatalogEntry for LivestreamMetadataDescriptor {
     fn category(&self) -> TriggerCategory {
         TriggerCategory::Streams
     }
@@ -35,6 +31,12 @@ impl TriggerKindDescriptor for LivestreamMetadataDescriptor {
 
     fn icon_name(&self) -> &str {
         "edit"
+    }
+}
+
+impl TriggerKindDescriptor for LivestreamMetadataDescriptor {
+    fn id(&self) -> &str {
+        trigger_ids::LIVESTREAM_METADATA_UPDATED
     }
 
     fn platform_contract(&self) -> KindPlatformContract {

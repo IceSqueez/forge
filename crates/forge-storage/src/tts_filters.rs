@@ -63,6 +63,41 @@ impl SkipRegex {
     }
 }
 
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(from = "Option<bool>", into = "Option<bool>")]
+pub enum LanguageAwareVoice {
+    #[default]
+    NotAdded,
+    Off,
+    On,
+}
+
+impl LanguageAwareVoice {
+    pub fn is_on(self) -> bool {
+        self == Self::On
+    }
+}
+
+impl From<Option<bool>> for LanguageAwareVoice {
+    fn from(stored: Option<bool>) -> Self {
+        match stored {
+            None => Self::NotAdded,
+            Some(false) => Self::Off,
+            Some(true) => Self::On,
+        }
+    }
+}
+
+impl From<LanguageAwareVoice> for Option<bool> {
+    fn from(voice: LanguageAwareVoice) -> Self {
+        match voice {
+            LanguageAwareVoice::NotAdded => None,
+            LanguageAwareVoice::Off => Some(false),
+            LanguageAwareVoice::On => Some(true),
+        }
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct TtsPipelineSettings {
     pub url_mode: UrlMode,
@@ -108,7 +143,7 @@ pub struct TtsPipelineSettings {
     #[serde(default = "default_row_enabled")]
     pub output_max_duration_enabled: bool,
     #[serde(default)]
-    pub output_language_aware_voice: Option<bool>,
+    pub output_language_aware_voice: LanguageAwareVoice,
 }
 
 fn default_row_enabled() -> bool {
@@ -149,7 +184,7 @@ impl Default for TtsPipelineSettings {
             output_sanitize_punctuation: false,
             output_max_duration_secs: None,
             output_max_duration_enabled: default_row_enabled(),
-            output_language_aware_voice: None,
+            output_language_aware_voice: LanguageAwareVoice::NotAdded,
         }
     }
 }

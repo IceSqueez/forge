@@ -7,12 +7,11 @@ use forge_components::{ToastKind, tr};
 use forge_storage::{ScriptRecord, ScriptReferences, ScriptRepo};
 use forge_types::{ScriptContract, ScriptId, VariantKind};
 use gpui::{App, Context};
-use std::sync::Arc;
 use time::OffsetDateTime;
 
 impl ScriptList {
     pub(in super::super) fn create_script(&mut self, cx: &mut Context<Self>) {
-        let repo = Arc::clone(&self.deps.backend) as Arc<dyn ScriptRepo>;
+        let repo = self.deps.backend.script_repo();
         async_bridge::run_async(
             &self.deps.rt_handle,
             async move {
@@ -201,7 +200,7 @@ impl ScriptList {
     pub(super) fn set_enabled(&mut self, id: ScriptId, enabled: bool, cx: &mut Context<Self>) {
         self.row_menu = None;
         cx.notify();
-        let repo = Arc::clone(&self.deps.backend) as Arc<dyn ScriptRepo>;
+        let repo = self.deps.backend.script_repo();
         async_bridge::run_async(
             &self.deps.rt_handle,
             async move {

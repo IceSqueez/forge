@@ -1,7 +1,8 @@
 use forge_events::{Event, EventSource};
 use forge_registry::{
     ActorDeclaration, ActorIdentity, ActorRole, ActorSlot, CanonicalVariable, EventFilter,
-    KindPlatformContract, TriggerCategory, TriggerKindDescriptor, TriggerVariables,
+    KindPlatformContract, TriggerCatalogEntry, TriggerCategory, TriggerKindDescriptor,
+    TriggerVariables,
 };
 use forge_types::PlatformId;
 use forge_types::TriggerConfig;
@@ -12,11 +13,7 @@ use crate::vocabulary::{event_kinds, trigger_ids, variables};
 
 pub(crate) struct SupportNewMemberDescriptor;
 
-impl TriggerKindDescriptor for SupportNewMemberDescriptor {
-    fn id(&self) -> &str {
-        trigger_ids::CHANNEL_MEMBER
-    }
-
+impl TriggerCatalogEntry for SupportNewMemberDescriptor {
     fn category(&self) -> TriggerCategory {
         TriggerCategory::Subscriptions
     }
@@ -35,6 +32,12 @@ impl TriggerKindDescriptor for SupportNewMemberDescriptor {
 
     fn icon_name(&self) -> &str {
         "user-plus"
+    }
+}
+
+impl TriggerKindDescriptor for SupportNewMemberDescriptor {
+    fn id(&self) -> &str {
+        trigger_ids::CHANNEL_MEMBER
     }
 
     fn platform_contract(&self) -> KindPlatformContract {

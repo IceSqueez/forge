@@ -127,8 +127,8 @@ pub(in crate::automation::actions_screen) mod tests {
     use forge_storage::MockQueueRepo;
     use forge_storage::MockSoundboardClipsRepo;
     use forge_storage::MockTriggerInstanceRepo;
+    use forge_storage::QueueRepo;
     use forge_storage::{DataProvider, SoundboardClipsRepo};
-    use forge_storage::{GlobalsRepo, QueueRepo, ScriptRepo};
 
     use super::*;
     use crate::test_support::{
@@ -204,13 +204,13 @@ pub(in crate::automation::actions_screen) mod tests {
                             queue_repo,
                             actions_service: service,
                             trigger_instance_repo: trigger_repo,
-                            script_repo: Arc::clone(&backend) as Arc<dyn ScriptRepo>,
+                            script_repo: backend.script_repo(),
                             clip_library: Arc::new(ClipLibrary::new(
                                 clips,
                                 backend.media_repo(),
                                 Arc::new(forge_events::test_support::NullPublisher),
                             )),
-                            globals_repo: Arc::clone(&backend) as Arc<dyn GlobalsRepo>,
+                            globals_repo: backend.globals_repo(),
                             overlay_repo: Arc::new(StubOverlays),
                             speak: None,
                             sub_action_registry: Arc::new(owned_sub_actions(&[(OBS_SCENE, "obs")])),
@@ -222,7 +222,7 @@ pub(in crate::automation::actions_screen) mod tests {
                             bus,
                             scheduler,
                         },
-                        Arc::clone(&backend) as Arc<dyn SettingsRepo>,
+                        backend.settings_repo(),
                         Arc::new(OverlayKindRegistry::new()),
                         None,
                         cx,

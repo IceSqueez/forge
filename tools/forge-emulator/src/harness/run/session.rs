@@ -295,17 +295,17 @@ impl ExpectationContext<'_, '_> {
             Expectation::KickNoUnexpectedRequests {} => {
                 unbounded(self.kick(|kick| assess_no_unexpected_kick_requests(&kick.ledger())))
             }
-            Expectation::YoutubeRequestCount(count) => unbounded(
+            Expectation::YouTubeRequestCount(count) => unbounded(
                 self.youtube(|youtube| assess_youtube_request_count(&youtube.ledger(), count)),
             ),
-            Expectation::YoutubeNoUnexpectedRequests {} => unbounded(
+            Expectation::YouTubeNoUnexpectedRequests {} => unbounded(
                 self.youtube(|youtube| assess_no_unexpected_youtube_requests(&youtube.ledger())),
             ),
             Expectation::TwitchSubscription(subscription) => {
                 self.twitch_subscription(subscription).await
             }
             Expectation::KickRequest(request) => self.kick_request(request).await,
-            Expectation::YoutubeRequest(request) => self.youtube_request(request).await,
+            Expectation::YouTubeRequest(request) => self.youtube_request(request).await,
             Expectation::OverlayContent(content) => self.overlay_content(content).await,
             Expectation::LogLine(line) => self.log_line(line).await,
             Expectation::DiscordPost(post) => self.discord_post(post).await,

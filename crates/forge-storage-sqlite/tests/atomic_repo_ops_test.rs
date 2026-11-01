@@ -19,12 +19,12 @@ async fn file_backed() -> (tempfile::TempDir, Sandboxed<Arc<SqliteBackend>>) {
     (dir, backend)
 }
 
-fn globals(backend: &SqliteBackend) -> &dyn GlobalsRepo {
-    backend
+fn globals(backend: &SqliteBackend) -> Arc<dyn GlobalsRepo> {
+    backend.globals_repo()
 }
 
-fn users(backend: &SqliteBackend) -> &dyn UserGlobalsRepo {
-    backend
+fn users(backend: &SqliteBackend) -> Arc<dyn UserGlobalsRepo> {
+    backend.user_globals_repo()
 }
 
 fn ints(values: &[i64]) -> Variant {

@@ -107,8 +107,7 @@ async fn a_backoff_loop_announces_one_state_change_per_real_transition() {
     let (tx, mut rx) = mpsc::unbounded_channel();
 
     let client = ObsClient::connect_with_timing(
-        &format!("127.0.0.1:{port}"),
-        None,
+        &forge_obs::ObsEndpoint::parse(&format!("127.0.0.1:{port}"), "").unwrap(),
         Arc::new(ForwardingPublisher(tx)),
         fast_retries(),
     )
@@ -143,8 +142,7 @@ async fn disconnecting_during_a_stalled_connect_does_not_wait_out_the_connect_ti
     });
     let (tx, _rx) = mpsc::unbounded_channel();
     let client = ObsClient::connect_with_timing(
-        &format!("127.0.0.1:{port}"),
-        None,
+        &forge_obs::ObsEndpoint::parse(&format!("127.0.0.1:{port}"), "").unwrap(),
         Arc::new(ForwardingPublisher(tx)),
         ObsTiming {
             connect_timeout: BEYOND_ANY_GUARD,
@@ -184,8 +182,7 @@ async fn a_retired_client_stays_silent_when_its_server_speaks_afterwards() {
     let (tx, mut rx) = mpsc::unbounded_channel();
 
     let client = ObsClient::connect(
-        &format!("127.0.0.1:{port}"),
-        None,
+        &forge_obs::ObsEndpoint::parse(&format!("127.0.0.1:{port}"), "").unwrap(),
         Arc::new(ForwardingPublisher(tx)),
     )
     .await

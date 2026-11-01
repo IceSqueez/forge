@@ -8,16 +8,16 @@ use forge_storage::{BanLedgerEntry, BanLedgerKey, BanLedgerRepo, StorageError, m
 use futures::future::BoxFuture;
 use time::OffsetDateTime;
 
-use crate::account::credentials::YoutubeBroadcaster;
+use crate::account::credentials::YouTubeBroadcaster;
 
 pub(crate) const TEST_BROADCASTER_CHANNEL_ID: &str = "UCbroadcaster";
 pub(crate) const TEST_BROADCASTER_TITLE: &str = "Broadcaster";
 
 pub(crate) type BroadcasterSource =
-    Arc<dyn Fn() -> BoxFuture<'static, Result<YoutubeBroadcaster, PlatformError>> + Send + Sync>;
+    Arc<dyn Fn() -> BoxFuture<'static, Result<YouTubeBroadcaster, PlatformError>> + Send + Sync>;
 
-pub(crate) fn test_broadcaster() -> YoutubeBroadcaster {
-    YoutubeBroadcaster {
+pub(crate) fn test_broadcaster() -> YouTubeBroadcaster {
+    YouTubeBroadcaster {
         channel_id: TEST_BROADCASTER_CHANNEL_ID.to_owned(),
         channel_title: TEST_BROADCASTER_TITLE.to_owned(),
     }
@@ -28,7 +28,7 @@ pub(crate) fn broadcaster_source() -> BroadcasterSource {
 }
 
 pub(crate) fn switchable_broadcaster_source(
-    current: Arc<Mutex<YoutubeBroadcaster>>,
+    current: Arc<Mutex<YouTubeBroadcaster>>,
 ) -> BroadcasterSource {
     Arc::new(move || {
         let broadcaster = current.lock_recover().clone();

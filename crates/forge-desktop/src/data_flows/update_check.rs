@@ -2,7 +2,7 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use crate::data_flows::update_report::ROLLED_BACK_VERSION;
-use forge_storage::{DataProvider, SettingsRepo, read_setting};
+use forge_storage::{DataProvider, read_setting};
 use forge_update::{
     GithubRepo, InstallKind, ManualReason, Platform, PublishedRelease, TrustedKeys, UpdateClient,
     UpdateError, UpdateOffer, check_for_update, detect_install, fetch_latest_release, is_newer,
@@ -194,7 +194,7 @@ pub(crate) async fn run_update_check(
 }
 
 async fn probe(backend: Arc<dyn DataProvider>) -> Probe {
-    let repo = backend as Arc<dyn SettingsRepo>;
+    let repo = backend.settings_repo();
     let stored_rollback = read_setting(repo.as_ref(), &ROLLED_BACK_VERSION).await;
     let rollback_unknown = stored_rollback.is_err();
     if let Err(error) = &stored_rollback {

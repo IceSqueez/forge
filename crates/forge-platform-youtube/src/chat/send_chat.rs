@@ -3,7 +3,7 @@ use forge_platform_core::PlatformError;
 use forge_platform_core::TokenSource;
 use forge_types::Secret;
 
-use crate::api::data_api::{YoutubeDataApi, json_body};
+use crate::api::data_api::{YouTubeDataApi, json_body};
 use crate::broadcast::live_chat_id::LiveChatIdHandle;
 
 const SEND_COST: u32 = 20;
@@ -12,15 +12,15 @@ const POLL_COST: u32 = 20;
 const MESSAGES_PATH: &str = "/liveChat/messages";
 const MISSING_SCOPE: &str = "chat write scope missing";
 
-pub struct YoutubeSendChat {
-    api: YoutubeDataApi,
+pub struct YouTubeSendChat {
+    api: YouTubeDataApi,
     access_token_source: TokenSource,
     live_chat_id: LiveChatIdHandle,
 }
 
-impl YoutubeSendChat {
+impl YouTubeSendChat {
     pub fn new(
-        api: YoutubeDataApi,
+        api: YouTubeDataApi,
         access_token_source: TokenSource,
         live_chat_id: LiveChatIdHandle,
     ) -> Self {
@@ -136,8 +136,8 @@ mod tests {
         handle
     }
 
-    fn sender_on(server: &MockServer, quota: &SharedQuota) -> YoutubeSendChat {
-        YoutubeSendChat::new(
+    fn sender_on(server: &MockServer, quota: &SharedQuota) -> YouTubeSendChat {
+        YouTubeSendChat::new(
             data_api_charging(&server.uri(), quota.clone()),
             token_source(),
             live_chat(Some("lc-test")),
@@ -153,7 +153,7 @@ mod tests {
 
     #[tokio::test]
     async fn send_and_create_poll_are_unsupported_without_a_live_chat() {
-        let sender = YoutubeSendChat::new(unreachable_data_api(), token_source(), live_chat(None));
+        let sender = YouTubeSendChat::new(unreachable_data_api(), token_source(), live_chat(None));
 
         let send = sender.send("hello").await.unwrap_err();
         let poll = sender

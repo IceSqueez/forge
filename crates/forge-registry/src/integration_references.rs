@@ -1,6 +1,5 @@
 use std::collections::HashMap;
 
-use forge_events::DONATION_PROVIDER_CONFIG_KEY;
 use forge_types::{Action, ActionId, IntegrationId, SubActionStep, TriggerInstance, Variant};
 
 use crate::registry::{SubActionRegistry, TriggerRegistry};
@@ -62,10 +61,13 @@ fn trigger_owners(
     if let Some(owner) = trigger_kinds.owning_integration(&trigger.kind_id) {
         return vec![owner.clone()];
     }
-    let filtered = match trigger.overrides.get(DONATION_PROVIDER_CONFIG_KEY) {
-        Some(Variant::String(service)) if !service.trim().is_empty() => Some(service.trim()),
-        _ => None,
-    };
+    let filtered = trigger_kinds
+        .get(&trigger.kind_id)
+        .and_then(|kind| kind.service_filter_field())
+        .and_then(|field| trigger.overrides.get(field))
+        .and_then(Variant::as_str)
+        .map(str::trim)
+        .filter(|service| !service.is_empty());
     unowned_kind_candidates(&trigger.kind_id)
         .into_iter()
         .filter(|candidate| filtered.is_none_or(|service| candidate.as_str() == service))

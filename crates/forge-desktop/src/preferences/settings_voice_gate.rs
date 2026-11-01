@@ -138,7 +138,7 @@ impl SettingsVoiceGateView {
     fn load(&mut self, uncached: bool, cx: &mut Context<Self>) {
         self.devices_load = Loadable::Loading;
         let ticket = self.devices_gen.next();
-        let settings = Arc::clone(&self.backend) as Arc<dyn SettingsRepo>;
+        let settings = self.backend.settings_repo();
         async_bridge::run_async(
             &self.rt_handle,
             load_devices_and_settings(settings, uncached),
@@ -236,7 +236,7 @@ impl SettingsVoiceGateView {
         } else {
             self.owner.stop();
         }
-        let settings = Arc::clone(&self.backend) as Arc<dyn SettingsRepo>;
+        let settings = self.backend.settings_repo();
         let enabled = self.enabled;
         async_bridge::run_async(
             &self.rt_handle,
@@ -267,7 +267,7 @@ impl SettingsVoiceGateView {
         self.persist_error = None;
         self.picker_open = false;
         self.owner.reconfigure(self.config());
-        let settings = Arc::clone(&self.backend) as Arc<dyn SettingsRepo>;
+        let settings = self.backend.settings_repo();
         let device_id = self.selected_id.clone();
         async_bridge::run_async(
             &self.rt_handle,
@@ -285,7 +285,7 @@ impl SettingsVoiceGateView {
     fn set_threshold(&mut self, threshold: f32, cx: &mut Context<Self>) {
         self.threshold = threshold.clamp(0.0, 1.0);
         self.owner.reconfigure(self.config());
-        let settings = Arc::clone(&self.backend) as Arc<dyn SettingsRepo>;
+        let settings = self.backend.settings_repo();
         let value = self.threshold;
         self.threshold_debounce.schedule_reporting(
             &self.rt_handle,
@@ -310,7 +310,7 @@ impl SettingsVoiceGateView {
         if let Some(hold_ms) = parsed {
             self.hold_ms = hold_ms;
             self.owner.reconfigure(self.config());
-            let settings = Arc::clone(&self.backend) as Arc<dyn SettingsRepo>;
+            let settings = self.backend.settings_repo();
             self.hold_debounce.schedule_reporting(
                 &self.rt_handle,
                 tr!("settings_persist_failed"),

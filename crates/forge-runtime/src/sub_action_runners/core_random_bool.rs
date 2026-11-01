@@ -70,7 +70,7 @@ impl SubActionRunner for CoreRandomBoolRunner {
         SubActionIo {
             produces: vec![ProducedVariable {
                 output_name_key: INTO_VAR_KEY.to_owned(),
-                kind: VariantKind::Bool,
+                kind: Some(VariantKind::Bool),
                 label: "Random boolean".to_owned(),
             }],
             ..SubActionIo::default()

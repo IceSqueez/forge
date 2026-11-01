@@ -123,7 +123,7 @@ impl BackupScheduleView {
     }
 
     fn settings_repo(&self) -> Arc<dyn SettingsRepo> {
-        Arc::clone(&self.backend) as Arc<dyn SettingsRepo>
+        self.backend.settings_repo()
     }
 
     fn load(&mut self, cx: &mut Context<Self>) {
@@ -586,14 +586,24 @@ pub(crate) mod tests {
         async fn apply(&self, provider: &dyn DataProvider) {
             match self {
                 Self::Enabled(enabled) => {
-                    write_setting(provider, &BACKUP_SCHEDULE_ENABLED, enabled).await
+                    write_setting(
+                        provider.settings_repo().as_ref(),
+                        &BACKUP_SCHEDULE_ENABLED,
+                        enabled,
+                    )
+                    .await
                 }
                 Self::Key(encoded) => {
-                    write_setting(provider, &BACKUP_SCHEDULE_KEY, &Some(encoded.clone())).await
+                    write_setting(
+                        provider.settings_repo().as_ref(),
+                        &BACKUP_SCHEDULE_KEY,
+                        &Some(encoded.clone()),
+                    )
+                    .await
                 }
                 Self::LastSuccessAt(at) => {
                     write_setting(
-                        provider,
+                        provider.settings_repo().as_ref(),
                         &BACKUP_SCHEDULE_LAST_SUCCESS_AT,
                         &Some(at.clone()),
                     )
@@ -628,7 +638,7 @@ pub(crate) mod tests {
         let provider = Arc::clone(world.provider());
         let service = rt.block_on(async {
             write_setting(
-                provider.as_ref(),
+                provider.settings_repo().as_ref(),
                 &BACKUP_SCHEDULE_DESTINATION,
                 &Some(shown_destination.clone()),
             )
@@ -680,13 +690,18 @@ pub(crate) mod tests {
     impl ScheduleRig {
         pub(crate) fn stored<C: SettingCodec>(&self, setting: &Setting<C>) -> Option<C::Value> {
             self.rt
-                .block_on(read_stored_setting(self.world.provider().as_ref(), setting))
+                .block_on(read_stored_setting(
+                    self.world.provider().settings_repo().as_ref(),
+                    setting,
+                ))
                 .unwrap()
         }
 
         fn stored_portability(&self, key: &str) -> Option<SettingPortability> {
             self.rt
-                .block_on(load_setting_rows(self.world.provider().as_ref()))
+                .block_on(load_setting_rows(
+                    self.world.provider().settings_repo().as_ref(),
+                ))
                 .unwrap()
                 .into_iter()
                 .find(|row| row.key() == key)
@@ -824,7 +839,10 @@ pub(crate) mod tests {
                     backend.seed_raw(number.declaration(), raw);
                 }
                 let loaded = rt
-                    .block_on(read_stored_setting(backend.as_ref(), number.declaration()))
+                    .block_on(read_stored_setting(
+                        backend.settings_repo().as_ref(),
+                        number.declaration(),
+                    ))
                     .ok()
                     .map(|value| value.unwrap_or_else(|| number.default_value()));
                 assert_eq!(loaded, expected, "{number:?} stored {stored:?}");
@@ -840,7 +858,7 @@ pub(crate) mod tests {
                 let (backend, _writes) = crate::test_support::test_backend();
                 backend.seed_raw(number.declaration(), blank);
 
-                let loaded = rt.block_on(load_schedule(backend));
+                let loaded = rt.block_on(load_schedule(backend.settings_repo()));
 
                 assert!(
                     matches!(
@@ -1338,7 +1356,7 @@ pub(crate) mod tests {
         });
         let reloaded = rig
             .rt
-            .block_on(load_schedule(Arc::clone(rig.world.provider()) as _))
+            .block_on(load_schedule(rig.world.provider().settings_repo()))
             .unwrap()
             .settings
             .included;

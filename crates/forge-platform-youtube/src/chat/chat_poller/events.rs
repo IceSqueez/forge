@@ -1,6 +1,6 @@
 use super::*;
 
-impl YoutubeChatPoller {
+impl YouTubeChatPoller {
     pub(super) fn build_event(
         &self,
         item: &serde_json::Value,

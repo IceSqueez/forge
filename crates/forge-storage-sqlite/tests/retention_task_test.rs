@@ -247,7 +247,9 @@ async fn shrinking_the_event_window_makes_the_running_pruner_apply_the_new_windo
         .await;
     db.after_a_full_sweep().await;
 
-    set_event_log_retention_days(&db.backend, 3).await.unwrap();
+    set_event_log_retention_days(db.backend.settings_repo().as_ref(), 3)
+        .await
+        .unwrap();
 
     assert!(
         db.reaches("event_log", |rows| rows == 0).await,
@@ -299,8 +301,10 @@ async fn a_sweep_prunes_resolved_scheduled_runs_older_than_the_window_and_keeps_
 #[tokio::test]
 async fn each_table_is_pruned_by_its_own_window_when_the_two_retentions_differ() {
     let db = open().await;
-    set_event_log_retention_days(&db.backend, 3).await.unwrap();
-    set_action_history_retention_days(&db.backend, 30)
+    set_event_log_retention_days(db.backend.settings_repo().as_ref(), 3)
+        .await
+        .unwrap();
+    set_action_history_retention_days(db.backend.settings_repo().as_ref(), 30)
         .await
         .unwrap();
     let db = db.restarted().await;
@@ -336,7 +340,7 @@ async fn each_table_is_pruned_by_its_own_window_when_the_two_retentions_differ()
 #[tokio::test]
 async fn shrinking_the_action_history_window_makes_the_running_pruner_apply_the_new_window() {
     let db = open().await;
-    set_action_history_retention_days(&db.backend, 30)
+    set_action_history_retention_days(db.backend.settings_repo().as_ref(), 30)
         .await
         .unwrap();
     let db = db.restarted().await;
@@ -344,7 +348,7 @@ async fn shrinking_the_action_history_window_makes_the_running_pruner_apply_the_
     db.record_run(time::Duration::days(20)).await;
     db.after_a_full_sweep().await;
 
-    set_action_history_retention_days(&db.backend, 10)
+    set_action_history_retention_days(db.backend.settings_repo().as_ref(), 10)
         .await
         .unwrap();
 
@@ -357,7 +361,7 @@ async fn shrinking_the_action_history_window_makes_the_running_pruner_apply_the_
 #[tokio::test]
 async fn a_sweep_prunes_script_executions_older_than_the_action_history_window() {
     let db = open().await;
-    set_action_history_retention_days(&db.backend, 30)
+    set_action_history_retention_days(db.backend.settings_repo().as_ref(), 30)
         .await
         .unwrap();
     let db = db.restarted().await;
@@ -365,7 +369,7 @@ async fn a_sweep_prunes_script_executions_older_than_the_action_history_window()
     let now = OffsetDateTime::now_utc();
     for age in [time::Duration::days(40), time::Duration::days(20)] {
         ScriptRepo::record_execution(
-            &db.backend,
+            db.backend.script_repo().as_ref(),
             script,
             now - age,
             RUN_DURATION_MS,

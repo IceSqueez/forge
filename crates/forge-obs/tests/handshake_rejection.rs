@@ -88,7 +88,9 @@ async fn received_through_the_auth_failure<T>(
 async fn probe_against_closing_server(code: u16, reason: &'static str, password: &str) -> ObsError {
     let (listener, port) = bind_loopback().await;
     let server = tokio::spawn(serve_one_close_frame(listener, code, reason));
-    let outcome = forge_obs::probe_connection("127.0.0.1", port, password).await;
+    let outcome =
+        forge_obs::probe_connection(&forge_obs::ObsEndpoint::new("127.0.0.1", port, password))
+            .await;
     server.abort();
     match outcome {
         Err(e) => e,
@@ -154,8 +156,7 @@ async fn a_rejected_password_makes_the_supervisor_report_an_authentication_failu
     let (tx, mut rx) = mpsc::unbounded_channel();
 
     let client = ObsClient::connect(
-        &format!("127.0.0.1:{port}"),
-        Some("wrong-password"),
+        &forge_obs::ObsEndpoint::parse(&format!("127.0.0.1:{port}"), "wrong-password").unwrap(),
         Arc::new(ForwardingPublisher(tx)),
     )
     .await
@@ -203,8 +204,7 @@ async fn the_connection_state_is_already_settled_when_the_auth_failure_is_publis
 
     let client = Arc::new(
         ObsClient::connect(
-            &format!("127.0.0.1:{port}"),
-            Some("wrong-password"),
+            &forge_obs::ObsEndpoint::parse(&format!("127.0.0.1:{port}"), "wrong-password").unwrap(),
             Arc::new(StateProbePublisher {
                 client: Arc::clone(&slot),
                 tx,
@@ -287,8 +287,7 @@ async fn serve_accept_then_reset(listener: TcpListener) {
 async fn recorded_failure_code(port: u16) -> String {
     use forge_platform_core::BuiltinStatus;
     let client = ObsClient::connect(
-        &format!("127.0.0.1:{port}"),
-        Some("wrong-password"),
+        &forge_obs::ObsEndpoint::parse(&format!("127.0.0.1:{port}"), "wrong-password").unwrap(),
         Arc::new(forge_events::test_support::NullPublisher),
     )
     .await

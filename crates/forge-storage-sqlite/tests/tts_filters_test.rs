@@ -1,3 +1,4 @@
+use forge_storage::LanguageAwareVoice;
 use forge_storage::{
     BlocklistMode, DataProvider, FilterRule, FilterRuleKind, SkipRegex, TtsFiltersRepo,
     TtsPipelineSettings, UrlMode,
@@ -148,7 +149,12 @@ async fn pipeline_settings_max_duration_round_trips_including_clearing_a_previou
 async fn pipeline_settings_language_aware_voice_round_trips_through_all_three_states() {
     let r = repo().await;
 
-    for flag in [Some(true), Some(false), None, Some(true)] {
+    for flag in [
+        LanguageAwareVoice::On,
+        LanguageAwareVoice::Off,
+        LanguageAwareVoice::NotAdded,
+        LanguageAwareVoice::On,
+    ] {
         let s = TtsPipelineSettings {
             output_language_aware_voice: flag,
             ..TtsPipelineSettings::default()
@@ -172,7 +178,7 @@ async fn switched_off_rows_round_trip_and_an_overwrite_switches_them_back_on() {
             skip_prefix_enabled: on,
             output_max_duration_secs: Some(30),
             output_max_duration_enabled: on,
-            output_language_aware_voice: Some(on),
+            output_language_aware_voice: Some(on).into(),
             skip_custom_regexes: vec![
                 SkipRegex {
                     pattern: "^second$".to_owned(),

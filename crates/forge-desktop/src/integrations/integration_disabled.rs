@@ -15,7 +15,7 @@ use forge_components::{
 use forge_platform_core::{ConnectionAffordance, IntegrationDeclaration};
 use forge_registry::ReferencingAction;
 use forge_registry::{IntegrationReferences, SubActionRegistry, TriggerRegistry};
-use forge_storage::{CredentialsRepo, DataProvider, has_credentials_for};
+use forge_storage::{DataProvider, has_credentials_for};
 use forge_types::IntegrationId;
 use gpui::{
     AnyElement, App, ClickEvent, Context, ElementId, Entity, EventEmitter, FontWeight, Pixels,
@@ -126,7 +126,7 @@ impl IntegrationDisabledView {
                     IntegrationReferences::default()
                 }
             };
-            let credentials = Arc::clone(&backend) as Arc<dyn CredentialsRepo>;
+            let credentials = backend.credentials_repo();
             let has_credentials = match has_credentials_for(credentials.as_ref(), &id).await {
                 Ok(present) => present,
                 Err(e) => {
@@ -613,7 +613,7 @@ impl Render for IntegrationDisabledView {
 #[cfg(test)]
 mod tests {
 
-    use forge_storage::{CredentialId, SettingsRepo, integration_enabled_key};
+    use forge_storage::{CredentialId, integration_enabled_key};
     use forge_types::ActionId;
     use gpui::{TestAppContext, size};
 
@@ -648,7 +648,7 @@ mod tests {
             let scene = seed_action(&storage, "Scene", vec![step(OBS_SCENE, true)]).await;
             let chat = seed_trigger(&storage, TWITCH_CHAT).await;
             link(&storage, scene, chat).await;
-            (Arc::clone(&storage) as Arc<dyn CredentialsRepo>)
+            (storage.credentials_repo())
                 .store(&CredentialId::new("obs:password"), "hunter2")
                 .await
                 .unwrap();
@@ -734,7 +734,7 @@ mod tests {
         let rt = runtime();
         let (storage, _) = seeded_storage(&rt);
         let (settings, mut writes) = test_backend();
-        let supervisor = idle_supervisor(&rt, settings as Arc<dyn SettingsRepo>, &[obs()]);
+        let supervisor = idle_supervisor(&rt, settings.settings_repo(), &[obs()]);
         pump(&rt);
         while writes.try_recv().is_ok() {}
         let view = open(cx, &rt, &storage, obs(), supervisor.slot(&obs()));

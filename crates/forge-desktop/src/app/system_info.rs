@@ -556,6 +556,54 @@ mod tests {
         }
     }
 
+    #[test]
+    fn the_build_line_follows_the_interface_language() {
+        let dev = |language| {
+            crate::app::i18n::install_language(language);
+            let mut shown = info(full_window(), full_host());
+            shown.release_build = false;
+            shown.shown_value(InfoField::Build)
+        };
+        let release = |language| {
+            crate::app::i18n::install_language(language);
+            let mut host = full_host();
+            host.install = None;
+            info(full_window(), host).shown_value(InfoField::Build)
+        };
+
+        assert_eq!(dev(forge_storage::Language::En).as_deref(), Some("dev"));
+        assert_eq!(
+            dev(forge_storage::Language::Uk).as_deref(),
+            Some("\u{440}\u{43e}\u{437}\u{440}\u{43e}\u{431}\u{43a}\u{430}")
+        );
+        assert_eq!(
+            release(forge_storage::Language::En).as_deref(),
+            Some("release")
+        );
+        assert_eq!(
+            release(forge_storage::Language::Uk).as_deref(),
+            Some("\u{440}\u{435}\u{43b}\u{456}\u{437}")
+        );
+        crate::app::i18n::install_language(forge_storage::Language::En);
+    }
+
+    #[test]
+    fn a_shown_value_never_carries_the_identity_the_host_scrubs() {
+        crate::app::i18n::install_language(forge_storage::Language::En);
+        let mut host = full_host();
+        host.cpu_model = Some("Ryzen of streamer".to_owned());
+        host.identity = scrubber(&["streamer"]);
+
+        let shown = info(full_window(), host).shown_value(InfoField::Cpu);
+
+        assert!(
+            shown
+                .as_deref()
+                .is_some_and(|cpu| !cpu.contains("streamer")),
+            "{shown:?}"
+        );
+    }
+
     fn appimage() -> InstallKind {
         InstallKind::Updatable(UpdatableInstall {
             layout: InstallLayout::LinuxAppImage,

@@ -250,6 +250,7 @@ fn placement_map(placement: ScriptSchedulePlacement) -> Map {
 #[cfg(test)]
 mod tests {
     use forge_events::test_support::NullPublisher;
+    use forge_storage::DataProvider;
     use std::sync::Mutex;
     use std::time::{Duration, Instant};
 
@@ -343,7 +344,7 @@ mod tests {
         let backend = sandboxed_backend([0xab; 32]).await.map(Arc::new);
         let mut api = ForgeApi::new(
             Arc::new(NullPublisher),
-            repo_globals(Arc::clone(&backend)),
+            repo_globals(backend.globals_repo()),
             EventId::new(),
             Instant::now() + Duration::from_secs(10),
         );

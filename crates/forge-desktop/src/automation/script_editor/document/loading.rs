@@ -4,17 +4,16 @@ use crate::app::async_bridge;
 use crate::shared::repo_failure::RepoFailure;
 use forge_components::tr;
 use forge_script::EngineConfig;
-use forge_storage::{ScriptRecord, ScriptRepo, SettingsRepo};
+use forge_storage::{ScriptRecord, ScriptRepo};
 use forge_types::ScriptId;
 use gpui::{App, Context};
-use std::sync::Arc;
 use std::time::Duration;
 
 const COMPILE_DEBOUNCE: Duration = Duration::from_millis(300);
 
 impl ScriptDocument {
     pub(super) fn load_engine_timeout(&mut self, cx: &mut Context<Self>) {
-        let settings = Arc::clone(&self.deps.backend) as Arc<dyn SettingsRepo>;
+        let settings = self.deps.backend.settings_repo();
         async_bridge::run_async(
             &self.deps.rt_handle,
             async move { EngineConfig::read(settings.as_ref()).await.wall_time_ms },
@@ -36,7 +35,7 @@ impl ScriptDocument {
     }
 
     pub(in super::super) fn open_script(&mut self, id: ScriptId, cx: &mut Context<Self>) {
-        let repo = Arc::clone(&self.deps.backend) as Arc<dyn ScriptRepo>;
+        let repo = self.deps.backend.script_repo();
         async_bridge::run_async(
             &self.deps.rt_handle,
             async move { ScriptRepo::get(&*repo, id).await.map_err(RepoFailure::from) },
@@ -91,7 +90,7 @@ impl ScriptDocument {
 
     pub(super) fn load_telemetry(&mut self, id: ScriptId, cx: &mut Context<Self>) {
         self.telemetry = None;
-        let repo = Arc::clone(&self.deps.backend) as Arc<dyn ScriptRepo>;
+        let repo = self.deps.backend.script_repo();
         async_bridge::run_async(
             &self.deps.rt_handle,
             async move { repo.telemetry(id).await.map_err(RepoFailure::from) },

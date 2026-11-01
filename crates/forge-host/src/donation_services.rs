@@ -144,7 +144,7 @@ mod tests {
         MIN_POLL_INTERVAL,
     };
     use forge_platform_core::{DonationProvider, PlatformEndpoints};
-    use forge_storage::CredentialsRepo;
+
     use futures_util::StreamExt as _;
 
     use super::*;
@@ -161,12 +161,12 @@ mod tests {
                 .expect("the gateway builds offline");
         let provider = Arc::new(DonatelloProvider::new(
             config,
-            Arc::clone(&backend) as Arc<dyn CredentialsRepo>,
+            backend.credentials_repo(),
             gateway,
         ));
 
         donatello_service(Arc::clone(&provider))
-            .restore_poll_interval(backend.as_ref())
+            .restore_poll_interval(backend.settings_repo().as_ref())
             .await;
 
         let mut feed = provider.donations();

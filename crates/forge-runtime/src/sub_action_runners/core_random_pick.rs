@@ -5,7 +5,7 @@ use forge_registry::{
     RunContext, StepCatalogEntry, StepTimer, SubActionCategory, SubActionIo, SubActionRunner,
     TypedField, VariableField,
 };
-use forge_types::{ArgStack, SubActionConfig, SubActionTelemetry, Variant, VariantKind};
+use forge_types::{ArgStack, SubActionConfig, SubActionTelemetry, Variant};
 use rand::RngExt;
 use rand::distr::Distribution;
 use rand::distr::weighted::WeightedIndex;
@@ -161,7 +161,7 @@ impl SubActionRunner for CoreRandomPickRunner {
         SubActionIo {
             produces: vec![ProducedVariable {
                 output_name_key: INTO_VAR_KEY.to_owned(),
-                kind: VariantKind::String,
+                kind: None,
                 label: "Picked item".to_owned(),
             }],
             ..SubActionIo::default()

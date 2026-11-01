@@ -120,7 +120,7 @@ mod tests {
         CapabilityFlags, ConnectionState, ControlOutcome, DetailSection, DonationStream,
         HeaderAction, HealthMetric, HealthMetricId, HealthStream, HealthValue, QuickAction,
     };
-    use forge_storage::{MockDonationRepo, SettingsRepo};
+    use forge_storage::MockDonationRepo;
     use forge_types::{Donation, MessageCode, Shared};
     use tokio::sync::mpsc;
 
@@ -267,12 +267,12 @@ mod tests {
         ));
         let factory = DonationFactory {
             provider: Arc::clone(service),
-            creds: Arc::clone(&backend) as Arc<dyn CredentialsRepo>,
+            creds: backend.credentials_repo(),
             ingest,
         };
         IntegrationSupervisor::launch(
             vec![Arc::new(factory) as Arc<dyn forge_runtime::IntegrationFactory<BuiltinObject>>],
-            backend as Arc<dyn SettingsRepo>,
+            backend.settings_repo(),
             forge_runtime::IntegrationGate::new(),
             Arc::new(crate::integrations::BuiltinRegistry::default()),
             forge_runtime::spawn_live_viewer_aggregator(&forge_net::TaskOwner::new()),

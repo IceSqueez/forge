@@ -185,7 +185,7 @@ impl SubActionRunner for CoreTimeNowRunner {
         SubActionIo {
             produces: vec![ProducedVariable {
                 output_name_key: INTO_VAR_KEY.to_owned(),
-                kind: VariantKind::Datetime,
+                kind: Some(VariantKind::Datetime),
                 label: "Current time".to_owned(),
             }],
             fixed_outputs: vec![

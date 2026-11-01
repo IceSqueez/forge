@@ -458,7 +458,7 @@ pub(crate) fn step_outputs(
             .and_then(Variant::as_str)
             .and_then(normalize_var_name)
         {
-            out.push((name, Some(produced.kind)));
+            out.push((name, produced.kind));
         }
     }
     out.extend(io.fixed_outputs.into_iter().map(|name| (name, None)));

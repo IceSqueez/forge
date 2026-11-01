@@ -293,7 +293,7 @@ impl SafetyCopiesView {
     }
 
     fn settings_repo(&self) -> Arc<dyn SettingsRepo> {
-        Arc::clone(&self.backend) as Arc<dyn SettingsRepo>
+        self.backend.settings_repo()
     }
 
     fn load(&mut self, cx: &mut Context<Self>) {
@@ -743,13 +743,28 @@ mod tests {
         async fn apply(&self, provider: &dyn forge_storage::DataProvider) {
             match self {
                 Self::Mode(mode) => {
-                    write_setting(provider, &SAFETY_COPIES_MODE, &(*mode).to_owned()).await
+                    write_setting(
+                        provider.settings_repo().as_ref(),
+                        &SAFETY_COPIES_MODE,
+                        &(*mode).to_owned(),
+                    )
+                    .await
                 }
                 Self::KeepNewest(count) => {
-                    write_setting(provider, &SAFETY_COPIES_KEEP_NEWEST, count).await
+                    write_setting(
+                        provider.settings_repo().as_ref(),
+                        &SAFETY_COPIES_KEEP_NEWEST,
+                        count,
+                    )
+                    .await
                 }
                 Self::DeleteAfterDays(days) => {
-                    write_setting(provider, &SAFETY_COPIES_DELETE_AFTER_DAYS, days).await
+                    write_setting(
+                        provider.settings_repo().as_ref(),
+                        &SAFETY_COPIES_DELETE_AFTER_DAYS,
+                        days,
+                    )
+                    .await
                 }
             }
             .unwrap();
@@ -823,7 +838,10 @@ mod tests {
 
         fn stored<C: SettingCodec>(&self, setting: &Setting<C>) -> Option<C::Value> {
             self.rt
-                .block_on(read_stored_setting(self.provider.as_ref(), setting))
+                .block_on(read_stored_setting(
+                    self.provider.settings_repo().as_ref(),
+                    setting,
+                ))
                 .unwrap()
         }
 

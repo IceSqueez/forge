@@ -74,7 +74,7 @@ mod tests {
     use forge_storage::test_support::{MemorySettings, StoredSettingRow};
     use forge_storage::{
         DataProvider, RowClasses, SettingDisclosure, SettingKey, SettingPortability, SettingSkip,
-        SettingSpec, SettingsRepo, load_setting_rows, write_setting,
+        SettingSpec, load_setting_rows, write_setting,
     };
 
     use super::{DENSITY, registered_settings_catalog};
@@ -196,7 +196,8 @@ mod tests {
     #[tokio::test]
     async fn every_setting_a_fresh_database_and_the_first_run_write_is_declared() {
         let backend = sandboxed_backend_at("sqlite::memory:", TEST_KEY).await;
-        let settings: &dyn SettingsRepo = &*backend;
+        let settings_repo = backend.settings_repo();
+        let settings = settings_repo.as_ref();
         crate::app::first_run::record_completed(settings)
             .await
             .unwrap();

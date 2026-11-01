@@ -903,3 +903,68 @@ fn settled_for(publisher: &CapturingPublisher, row: &StoredClip) -> usize {
         .filter(|payload| payload["clip_id"] == clip_id)
         .count()
 }
+
+#[tokio::test]
+async fn a_new_clip_starts_at_full_volume_on_the_default_output_with_no_known_length() {
+    let fx = harness();
+    let source = legacy_source(".wav");
+    fx.media.knows(
+        &source.path().to_string_lossy(),
+        AIRHORN_BLOB,
+        MANAGED_AIRHORN,
+    );
+
+    let id = fx
+        .library
+        .create_clip(forge_soundboard::NewClip {
+            name: "Airhorn".to_owned(),
+            file_path: source.path().to_path_buf(),
+            hotkey: Some("F13".to_owned()),
+            category: "Memes".to_owned(),
+            loop_playback: true,
+            builtin_id: None,
+        })
+        .await
+        .expect("the clip is stored");
+
+    let row = fx
+        .clips
+        .get(id)
+        .await
+        .expect("the clip store answers")
+        .expect("the clip row exists");
+    assert_eq!(
+        (
+            row.name.as_str(),
+            row.hotkey.as_deref(),
+            row.category.as_str(),
+            row.loop_playback,
+        ),
+        ("Airhorn", Some("F13"), "Memes", true)
+    );
+    assert_eq!(
+        (row.volume, row.output_device, row.duration_secs),
+        (1.0, OutputDevice::Default, None)
+    );
+}
+
+#[tokio::test]
+async fn a_refused_source_leaves_no_clip_row() {
+    let fx = harness();
+    let unreadable = std::path::PathBuf::from("/nonexistent/forge/clip.wav");
+
+    let created = fx
+        .library
+        .create_clip(forge_soundboard::NewClip {
+            name: "Gone".to_owned(),
+            file_path: unreadable,
+            hotkey: None,
+            category: String::new(),
+            loop_playback: false,
+            builtin_id: None,
+        })
+        .await;
+
+    assert!(created.is_err(), "{created:?}");
+    assert!(fx.clips.saved.lock().unwrap().is_empty());
+}

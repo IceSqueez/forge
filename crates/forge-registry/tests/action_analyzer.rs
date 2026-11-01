@@ -674,7 +674,7 @@ fn producing(kind: VariantKind) -> SubActionIo {
     SubActionIo {
         produces: vec![ProducedVariable {
             output_name_key: INTO_VAR_KEY.to_owned(),
-            kind,
+            kind: Some(kind),
             label: "Output".to_owned(),
         }],
         ..SubActionIo::default()
@@ -1166,7 +1166,7 @@ fn named_output() -> SubActionIo {
     SubActionIo {
         produces: vec![ProducedVariable {
             output_name_key: INTO_VAR_KEY.to_owned(),
-            kind: VariantKind::String,
+            kind: Some(VariantKind::String),
             label: "Output".to_owned(),
         }],
         ..SubActionIo::default()

@@ -6,17 +6,17 @@ use forge_registry::{RunContext, StepCatalogEntry, StepTimer, SubActionCategory,
 use forge_types::{ArgStack, SubActionTelemetry, Variant};
 
 use super::step_failure;
-use crate::broadcast::stream_stats::YoutubeStreamStats;
+use crate::broadcast::stream_stats::YouTubeStreamStats;
 use crate::vocabulary::sub_action_ids;
 use crate::vocabulary::variables::stream_stats as variables;
 use forge_platform_core::timestamp_variant;
 
 pub(crate) struct LookupStreamStatsRunner {
-    stats: Arc<YoutubeStreamStats>,
+    stats: Arc<YouTubeStreamStats>,
 }
 
 impl LookupStreamStatsRunner {
-    pub(crate) fn new(stats: Arc<YoutubeStreamStats>) -> Self {
+    pub(crate) fn new(stats: Arc<YouTubeStreamStats>) -> Self {
         Self { stats }
     }
 }
@@ -109,7 +109,7 @@ mod tests {
     fn runner_on(server: &MockServer, broadcast: Option<&str>) -> LookupStreamStatsRunner {
         let handle = ActiveBroadcastIdHandle::new();
         handle.set(broadcast.map(|s| s.to_owned()));
-        let stats = YoutubeStreamStats::new(
+        let stats = YouTubeStreamStats::new(
             crate::endpoints_test_support::data_api_at(&server.uri()),
             token_source(),
             handle,

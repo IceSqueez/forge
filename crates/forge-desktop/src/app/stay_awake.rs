@@ -137,7 +137,7 @@ mod tests {
         let rt = runtime();
         let parked = runtime();
         let (settings, _writes) = test_backend();
-        let setting = setting(parked_service(&parked), Arc::clone(&settings) as _, &rt);
+        let setting = setting(parked_service(&parked), settings.settings_repo(), &rt);
         let settled = cx.new(|_| Settled::default());
 
         toggle(&setting, &settled, false, cx);
@@ -145,7 +145,7 @@ mod tests {
         cx.run_until_parked();
 
         let next_start = rt
-            .block_on(read_setting(settings.as_ref(), &STAY_AWAKE))
+            .block_on(read_setting(settings.settings_repo().as_ref(), &STAY_AWAKE))
             .unwrap();
         assert_eq!(
             (outcomes(&settled, cx), next_start),
@@ -158,7 +158,7 @@ mod tests {
         let rt = runtime();
         let (settings, _writes) = test_backend();
         settings.fail_writes(STAY_AWAKE.name());
-        let setting = setting(stopped_service(), settings as _, &rt);
+        let setting = setting(stopped_service(), settings.settings_repo(), &rt);
         let settled = cx.new(|_| Settled::default());
 
         toggle(&setting, &settled, false, cx);
@@ -179,7 +179,7 @@ mod tests {
     fn a_stopped_service_settles_failed_after_the_choice_was_stored(cx: &mut TestAppContext) {
         let rt = runtime();
         let (settings, mut writes) = test_backend();
-        let setting = setting(stopped_service(), settings as _, &rt);
+        let setting = setting(stopped_service(), settings.settings_repo(), &rt);
         let settled = cx.new(|_| Settled::default());
 
         toggle(&setting, &settled, false, cx);

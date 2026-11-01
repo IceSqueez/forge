@@ -8,7 +8,7 @@ use forge_emulator::fakes::monobank::{
     MAX_STATEMENT_WINDOW_SECS, MonobankEndpoint, TOO_MANY_REQUESTS_MESSAGE, UNKNOWN_TOKEN_MESSAGE,
 };
 use forge_emulator::vocabulary::FAKE_MONOBANK_TOKEN;
-use forge_monobank::{MonobankConfig, MonobankError, MonobankProvider, MonobankRateLimits};
+use forge_monobank::{JarId, MonobankConfig, MonobankError, MonobankProvider, MonobankRateLimits};
 use forge_net::TokenBucketRateLimiter;
 use forge_platform_core::{
     BuiltinControl, DonationProvider, DonationStream, PlatformEndpoints, PlatformError,
@@ -390,7 +390,10 @@ async fn real_provider_connects_within_the_banks_call_limit() {
     let provider = provider_against(&fake, MonobankRateLimits::official());
 
     let jars = provider.verify_token(FAKE_MONOBANK_TOKEN).await.unwrap();
-    provider.save_token(FAKE_MONOBANK_TOKEN, JAR).await.unwrap();
+    provider
+        .save_token(FAKE_MONOBANK_TOKEN, JarId::parse(JAR).unwrap())
+        .await
+        .unwrap();
     let mut stream = provider.donations();
     fake.wait_for("first statement", WAIT, |requests| {
         requests
@@ -423,7 +426,10 @@ async fn real_provider_reads_history_from_the_fake_then_a_live_top_up() {
     })
     .await;
     let provider = provider_against(&fake, generous_limits());
-    provider.save_token(FAKE_MONOBANK_TOKEN, JAR).await.unwrap();
+    provider
+        .save_token(FAKE_MONOBANK_TOKEN, JarId::parse(JAR).unwrap())
+        .await
+        .unwrap();
     let mut stream = provider.donations();
     let history = next(&mut stream).await.unwrap();
 
@@ -478,7 +484,10 @@ async fn real_provider_skips_outgoing_and_reports_unsupported_currency() {
     })
     .await;
     let provider = provider_against(&fake, generous_limits());
-    provider.save_token(FAKE_MONOBANK_TOKEN, JAR).await.unwrap();
+    provider
+        .save_token(FAKE_MONOBANK_TOKEN, JarId::parse(JAR).unwrap())
+        .await
+        .unwrap();
     let mut stream = provider.donations();
 
     let plain = next(&mut stream).await.unwrap();

@@ -1,5 +1,5 @@
 use crate::category::TriggerCategory;
-use crate::descriptor::TriggerKindDescriptor;
+use crate::descriptor::{TriggerCatalogEntry, TriggerKindDescriptor};
 use crate::event_filter::EventFilter;
 use crate::form::FormField;
 use crate::kind_platform_contract::KindPlatformContract;
@@ -41,11 +41,7 @@ pub fn no_config_fields() -> Vec<FormField> {
     Vec::new()
 }
 
-impl TriggerKindDescriptor for EventTriggerSpec {
-    fn id(&self) -> &str {
-        self.id
-    }
-
+impl TriggerCatalogEntry for EventTriggerSpec {
     fn category(&self) -> TriggerCategory {
         TriggerCategory::Integration
     }
@@ -64,6 +60,12 @@ impl TriggerKindDescriptor for EventTriggerSpec {
 
     fn icon_name(&self) -> &str {
         self.icon
+    }
+}
+
+impl TriggerKindDescriptor for EventTriggerSpec {
+    fn id(&self) -> &str {
+        self.id
     }
 
     fn platform_contract(&self) -> KindPlatformContract {

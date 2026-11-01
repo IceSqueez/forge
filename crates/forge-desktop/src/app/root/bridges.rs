@@ -237,7 +237,7 @@ pub(super) fn apply_persisted_shortcuts(
     rt_handle: tokio::runtime::Handle,
 ) {
     cx.spawn(async move |cx| {
-        let repo = backend as Arc<dyn forge_storage::SettingsRepo>;
+        let repo = backend.settings_repo();
         let reply = crate::app::async_bridge::on_runtime(&rt_handle, async move {
 crate::automation::shortcut_overrides::load_overrides(repo).await
         });

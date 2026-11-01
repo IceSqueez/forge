@@ -10,7 +10,7 @@ use forge_types::{ArgStack, SubActionTelemetry};
 
 use super::fields::CHANNEL_ID;
 use super::step_failure;
-use crate::chat::moderation::YoutubeModeration;
+use crate::chat::moderation::YouTubeModeration;
 use crate::vocabulary::{config_keys, sub_action_ids};
 use forge_registry::interpolated_text;
 
@@ -41,11 +41,11 @@ fn read_config(config: &SubActionConfig, args: &ArgStack) -> Result<(String, u32
 }
 
 pub(crate) struct TimeoutUserRunner {
-    moderation: Arc<YoutubeModeration>,
+    moderation: Arc<YouTubeModeration>,
 }
 
 impl TimeoutUserRunner {
-    pub(crate) fn new(moderation: Arc<YoutubeModeration>) -> Self {
+    pub(crate) fn new(moderation: Arc<YouTubeModeration>) -> Self {
         Self { moderation }
     }
 }
@@ -124,7 +124,7 @@ mod tests {
                 + Send
                 + Sync,
         > = Arc::new(|| Box::pin(async { Ok(String::new()) }));
-        let moderation = YoutubeModeration::new(
+        let moderation = YouTubeModeration::new(
             crate::endpoints_test_support::unreachable_data_api(),
             source,
             crate::chat::ban_ledger_test_support::broadcaster_source(),
@@ -233,7 +233,7 @@ mod tests {
                 + Send
                 + Sync,
         > = Arc::new(|| Box::pin(async { Ok("tok".to_owned()) }));
-        let moderation = YoutubeModeration::new(
+        let moderation = YouTubeModeration::new(
             crate::endpoints_test_support::data_api_at(&server.uri()),
             token,
             broadcaster_source(),
@@ -283,7 +283,7 @@ mod tests {
                     + Send
                     + Sync,
             > = Arc::new(|| Box::pin(async { Ok("tok".to_owned()) }));
-            let moderation = YoutubeModeration::new(
+            let moderation = YouTubeModeration::new(
                 crate::endpoints_test_support::data_api_at(&server.uri()),
                 token,
                 broadcaster_source(),

@@ -1,6 +1,4 @@
-use forge_storage::{
-    CatalogRevision, DataProvider, ExecutionStatus, ScriptRecord, ScriptRepo, TriggerChanges,
-};
+use forge_storage::{CatalogRevision, DataProvider, ExecutionStatus, ScriptRecord, TriggerChanges};
 use forge_types::{
     Action, ActionId, PermissionRung, Queue, QueueId, ScriptContract, ScriptId, TriggerConfig,
     TriggerInstance, TriggerInstanceId,
@@ -160,11 +158,11 @@ async fn every_catalog_write_through_the_provider_advances_its_revision() {
 
     let script = script();
     let script_id = script.id;
-    ScriptRepo::save(&*backend, script).await.unwrap();
+    backend.script_repo().save(script).await.unwrap();
     advances!(
         revision,
         "script rename_cascading",
-        backend.rename_cascading(script_id, "renamed")
+        backend.script_repo().rename_cascading(script_id, "renamed")
     );
 }
 

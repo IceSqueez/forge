@@ -1,7 +1,7 @@
 #![expect(clippy::expect_used, reason = "test fixtures")]
 use std::collections::BTreeMap;
 
-use forge_storage::{DataProvider, GlobalsRepo};
+use forge_storage::DataProvider;
 use forge_storage_sqlite::SqliteBackend;
 use forge_types::{PermissionRung, TriggerInstance, TriggerInstanceId, Variant};
 
@@ -51,20 +51,23 @@ async fn action_count_matches_the_list_and_leaves_out_archived_actions() {
 async fn globals_count_matches_the_list_and_leaves_out_archived_globals() {
     let backend = setup().await;
     let repo: &SqliteBackend = &backend;
-    GlobalsRepo::set(repo, "kept", Variant::Int(1), true)
+    repo.globals_repo()
+        .set("kept", Variant::Int(1), true)
         .await
         .expect("set");
-    GlobalsRepo::set(repo, "archived", Variant::Int(2), true)
+    repo.globals_repo()
+        .set("archived", Variant::Int(2), true)
         .await
         .expect("set");
-    GlobalsRepo::archive(repo, "archived")
+    repo.globals_repo()
+        .archive("archived")
         .await
         .expect("archive");
 
-    let count = GlobalsRepo::count(repo).await.expect("count");
+    let count = repo.globals_repo().count().await.expect("count");
 
     assert_eq!(count, 1);
-    assert_eq!(count, GlobalsRepo::list(repo).await.expect("list").len());
+    assert_eq!(count, repo.globals_repo().list().await.expect("list").len());
 }
 
 #[tokio::test]

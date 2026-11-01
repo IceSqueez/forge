@@ -190,7 +190,7 @@ mod tests {
     use super::*;
     use crate::api::ForgeApi;
     use forge_events::test_support::{CapturingPublisher, NullPublisher};
-    use forge_storage::GlobalsRepo;
+    use forge_storage::DataProvider;
     use forge_storage::test_support::MemorySettings;
     use forge_storage_sqlite::SqliteBackend;
 
@@ -216,7 +216,7 @@ mod tests {
     fn make_api(dp: Arc<SqliteBackend>) -> ForgeApi {
         ForgeApi::new(
             Arc::new(NullPublisher),
-            repo_globals(dp.clone()),
+            repo_globals(dp.globals_repo()),
             EventId::new(),
             Instant::now() + std::time::Duration::from_secs(10),
         )
@@ -225,7 +225,7 @@ mod tests {
     fn make_api_with_deadline(dp: Arc<SqliteBackend>, deadline: Instant) -> ForgeApi {
         ForgeApi::new(
             Arc::new(NullPublisher),
-            repo_globals(dp.clone()),
+            repo_globals(dp.globals_repo()),
             EventId::new(),
             deadline,
         )
@@ -393,7 +393,7 @@ mod tests {
             .unwrap();
         let api = ForgeApi::new(
             Arc::new(NullPublisher),
-            repo_globals(dp.clone()),
+            repo_globals(dp.globals_repo()),
             EventId::new(),
             expired_deadline,
         );
@@ -522,7 +522,8 @@ mod tests {
     #[tokio::test]
     async fn with_api_globals_get_returns_stored_value() {
         let dp = open_test_dp().await;
-        GlobalsRepo::set(dp.as_ref(), "counter", Variant::Int(42), false)
+        dp.globals_repo()
+            .set("counter", Variant::Int(42), false)
             .await
             .unwrap();
         let engine = Engine::with_api(unhurried(), make_api(Arc::clone(&dp)));
@@ -562,7 +563,7 @@ mod tests {
         })
         .await
         .unwrap();
-        let stored = GlobalsRepo::get(dp_check.as_ref(), "score").await.unwrap();
+        let stored = dp_check.globals_repo().get("score").await.unwrap();
         assert_eq!(stored, Some(Variant::Int(99)));
     }
 
@@ -574,7 +575,7 @@ mod tests {
         let caused_by = EventId::new();
         let api = ForgeApi::new(
             publisher,
-            repo_globals(dp.clone()),
+            repo_globals(dp.globals_repo()),
             caused_by,
             Instant::now() + std::time::Duration::from_secs(10),
         );
@@ -654,7 +655,7 @@ mod tests {
             .unwrap();
 
             assert!(result.is_ok(), "{value_expr}: {result:?}");
-            let stored = GlobalsRepo::get(dp.as_ref(), "stored").await.unwrap();
+            let stored = dp.globals_repo().get("stored").await.unwrap();
             assert_eq!(stored, Some(expected), "{value_expr}");
         }
     }
@@ -671,7 +672,8 @@ mod tests {
             )])),
         ] {
             let dp = open_test_dp().await;
-            GlobalsRepo::set(dp.as_ref(), "source", original.clone(), false)
+            dp.globals_repo()
+                .set("source", original.clone(), false)
                 .await
                 .unwrap();
             let engine = Engine::with_api(unhurried(), make_api(Arc::clone(&dp)));
@@ -686,7 +688,7 @@ mod tests {
             .unwrap();
 
             assert!(result.is_ok(), "{original:?}: {result:?}");
-            let copy = GlobalsRepo::get(dp.as_ref(), "copy").await.unwrap();
+            let copy = dp.globals_repo().get("copy").await.unwrap();
             assert_eq!(copy, Some(original.clone()), "{original:?}");
         }
     }

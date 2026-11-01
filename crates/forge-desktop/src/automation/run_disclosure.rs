@@ -156,7 +156,7 @@ pub(crate) struct DisclosedStep {
 impl From<&SubActionTelemetry> for DisclosedStep {
     fn from(step: &SubActionTelemetry) -> Self {
         Self {
-            index: (!step.is_nested()).then_some(step.index),
+            index: step.position.top_level(),
             kind: step.kind.clone(),
             started_at: step.started_at,
             duration_ms: step.duration_ms,
@@ -232,9 +232,11 @@ mod tests {
             .collect()
     }
 
+    use forge_types::StepPosition;
+
     fn step(index: usize, kind: &str, outcome: SubActionOutcome) -> SubActionTelemetry {
         SubActionTelemetry {
-            index,
+            position: forge_types::StepPosition::TopLevel(index),
             kind: kind.to_owned(),
             started_at: instant(5),
             duration_ms: 42,
@@ -350,14 +352,16 @@ mod tests {
 
     #[test]
     fn a_nested_step_discloses_no_position_while_a_top_level_one_keeps_its_index() {
-        for (index, expected) in [
-            (0usize, Some(0usize)),
-            (7, Some(7)),
-            (SubActionTelemetry::NESTED, None),
+        for (position, expected) in [
+            (StepPosition::TopLevel(0), Some(0usize)),
+            (StepPosition::TopLevel(7), Some(7)),
+            (StepPosition::Nested, None),
         ] {
-            let disclosed =
-                DisclosedStep::from(&step(index, "core.log", SubActionOutcome::Success));
-            assert_eq!(disclosed.index, expected, "telemetry index {index}");
+            let disclosed = DisclosedStep::from(&SubActionTelemetry {
+                position,
+                ..step(0, "core.log", SubActionOutcome::Success)
+            });
+            assert_eq!(disclosed.index, expected, "telemetry position {position:?}");
         }
     }
 
@@ -407,11 +411,14 @@ mod tests {
             completed_at: Some(instant(3)),
             telemetry: vec![
                 step(0, "twitch.send_chat", SubActionOutcome::Success),
-                step(
-                    SubActionTelemetry::NESTED,
-                    "core.branch/0/core.log",
-                    SubActionOutcome::Failed(forge_types::VerbatimText::new(SENTINEL).into()),
-                ),
+                SubActionTelemetry {
+                    position: StepPosition::Nested,
+                    ..step(
+                        0,
+                        "core.branch/0/core.log",
+                        SubActionOutcome::Failed(forge_types::VerbatimText::new(SENTINEL).into()),
+                    )
+                },
             ],
             outcome: ExecutionOutcome::Failed(forge_types::VerbatimText::new(SENTINEL).into()),
         }

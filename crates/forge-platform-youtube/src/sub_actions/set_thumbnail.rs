@@ -9,7 +9,7 @@ use forge_registry::{
 use forge_types::{ArgStack, SubActionTelemetry};
 
 use super::step_failure;
-use crate::broadcast::thumbnail::YoutubeThumbnail;
+use crate::broadcast::thumbnail::YouTubeThumbnail;
 use crate::vocabulary::{config_keys, sub_action_ids};
 
 const IMAGE_PATH: TextField = TextField {
@@ -25,11 +25,11 @@ const IMAGE_PATH: TextField = TextField {
 const CONFIG: ConfigSpec = ConfigSpec::new(&[&IMAGE_PATH]);
 
 pub(crate) struct SetThumbnailRunner {
-    thumbnail: Arc<YoutubeThumbnail>,
+    thumbnail: Arc<YouTubeThumbnail>,
 }
 
 impl SetThumbnailRunner {
-    pub(crate) fn new(thumbnail: Arc<YoutubeThumbnail>) -> Self {
+    pub(crate) fn new(thumbnail: Arc<YouTubeThumbnail>) -> Self {
         Self { thumbnail }
     }
 }
@@ -131,7 +131,7 @@ mod tests {
     fn runner_on(server: &MockServer, broadcast: Option<&str>) -> SetThumbnailRunner {
         let handle = ActiveBroadcastIdHandle::new();
         handle.set(broadcast.map(|s| s.to_owned()));
-        let thumb = YoutubeThumbnail::new(
+        let thumb = YouTubeThumbnail::new(
             crate::endpoints_test_support::data_api_at(&server.uri()),
             token_source(),
             handle,
@@ -150,7 +150,7 @@ mod tests {
     fn validate_config_requires_non_empty_string_image_path() {
         let server_uri = "http://127.0.0.1:0".to_owned();
         let handle = ActiveBroadcastIdHandle::new();
-        let thumb = YoutubeThumbnail::new(
+        let thumb = YouTubeThumbnail::new(
             crate::endpoints_test_support::data_api_at(&server_uri),
             token_source(),
             handle,

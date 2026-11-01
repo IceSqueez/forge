@@ -1,6 +1,6 @@
 #![expect(clippy::expect_used, reason = "test fixtures")]
 mod common;
-use forge_storage::ScriptRepo;
+use forge_storage::DataProvider;
 use forge_storage_sqlite::{MIGRATIONS, SqliteBackend, apply_migrations, connect};
 use sqlx::SqlitePool;
 use tempfile::TempDir;
@@ -208,8 +208,9 @@ async fn schema_56_database_copied_into_place_opens_migrates_and_loads_its_scrip
     let backend = SqliteBackend::open_for_test(&db_url(&dir, "restored.db"), KEY, media, None)
         .await
         .expect("open the restored database");
-    let scripts = backend.list().await.expect("list scripts");
+    let scripts = backend.script_repo().list().await.expect("list scripts");
     let alpha = backend
+        .script_repo()
         .get_by_name("alpha")
         .await
         .expect("get")

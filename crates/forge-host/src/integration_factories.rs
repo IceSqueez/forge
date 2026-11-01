@@ -151,8 +151,8 @@ impl IntegrationFactory<BuiltinObject> for TwitchFactory {
     }
 }
 
-pub(crate) struct YoutubeFactory {
-    assembly: forge_platform_youtube::YoutubeAssembly,
+pub(crate) struct YouTubeFactory {
+    assembly: forge_platform_youtube::YouTubeAssembly,
     bus: Arc<EventBus>,
     creds: Arc<dyn CredentialsRepo>,
 }
@@ -163,9 +163,9 @@ pub(crate) fn wire_youtube(
     bus: &Arc<EventBus>,
     endpoints: &PlatformEndpoints,
     identity: OAuthClientIdentity,
-) -> Option<YoutubeFactory> {
+) -> Option<YouTubeFactory> {
     let creds = creds_of(backend);
-    let assembly = forge_platform_youtube::YoutubeAssembly::new(
+    let assembly = forge_platform_youtube::YouTubeAssembly::new(
         endpoints,
         publisher(bus),
         Arc::clone(&creds),
@@ -173,27 +173,27 @@ pub(crate) fn wire_youtube(
         (identity.client_id, identity.client_secret),
     )?;
     assembly.register_sub_actions(sub_actions);
-    Some(YoutubeFactory {
+    Some(YouTubeFactory {
         assembly,
         bus: Arc::clone(bus),
         creds,
     })
 }
 
-impl YoutubeFactory {
-    pub(crate) fn sign_in(&self) -> forge_platform_youtube::YoutubeSignIn {
+impl YouTubeFactory {
+    pub(crate) fn sign_in(&self) -> forge_platform_youtube::YouTubeSignIn {
         self.assembly.sign_in()
     }
 
     pub(crate) fn credentials_manager(
         &self,
-    ) -> Arc<forge_platform_youtube::YoutubeCredentialsManager> {
+    ) -> Arc<forge_platform_youtube::YouTubeCredentialsManager> {
         self.assembly.credentials_manager()
     }
 }
 
 #[async_trait]
-impl IntegrationFactory<BuiltinObject> for YoutubeFactory {
+impl IntegrationFactory<BuiltinObject> for YouTubeFactory {
     fn id(&self) -> IntegrationId {
         forge_platform_youtube::YOUTUBE_INTEGRATION.id
     }
@@ -461,7 +461,7 @@ pub(crate) fn wire_obs(
     ObsFactory {
         bus: Arc::clone(bus),
         creds: creds_of(backend),
-        settings: Arc::clone(backend) as Arc<dyn SettingsRepo>,
+        settings: backend.settings_repo(),
         seed: ObsInstallSeed::new(sink, builtins),
     }
 }
@@ -549,7 +549,7 @@ pub(crate) fn wire_vtube(
     VTubeFactory {
         bus: Arc::clone(bus),
         creds: creds_of(backend),
-        settings: Arc::clone(backend) as Arc<dyn SettingsRepo>,
+        settings: backend.settings_repo(),
         seed: VTubeInstallSeed::new(sink, builtins),
     }
 }
@@ -737,7 +737,7 @@ pub(crate) async fn wire_hotkey(
     bus: &Arc<EventBus>,
     main_thread: forge_hotkey::MainThreadLink,
 ) -> (HotkeyFactory, Arc<HotkeyReconciler>) {
-    let settings = Arc::clone(backend) as Arc<dyn SettingsRepo>;
+    let settings = backend.settings_repo();
     let config = forge_hotkey::HotkeyConfig {
         hold_ceiling_secs: forge_hotkey::load_hold_ceiling(settings.as_ref()).await,
         ..forge_hotkey::HotkeyConfig::default()

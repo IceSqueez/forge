@@ -26,9 +26,12 @@ pub fn database_unit_file_names() -> [String; 3] {
 pub const LAST_PRE_BASELINE_RELEASE: &str = "0.6.3";
 
 #[async_trait]
-pub trait DataProvider:
-    GlobalsRepo + UserGlobalsRepo + SettingsRepo + ScriptRepo + CredentialsRepo + Send + Sync
-{
+pub trait DataProvider: Send + Sync {
+    fn globals_repo(&self) -> Arc<dyn GlobalsRepo>;
+    fn user_globals_repo(&self) -> Arc<dyn UserGlobalsRepo>;
+    fn settings_repo(&self) -> Arc<dyn SettingsRepo>;
+    fn script_repo(&self) -> Arc<dyn ScriptRepo>;
+    fn credentials_repo(&self) -> Arc<dyn CredentialsRepo>;
     fn action_repo(&self) -> Arc<dyn ActionRepo>;
     fn trigger_instance_repo(&self) -> Arc<dyn TriggerInstanceRepo>;
     fn queue_repo(&self) -> Arc<dyn QueueRepo>;

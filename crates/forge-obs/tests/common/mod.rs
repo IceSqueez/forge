@@ -414,8 +414,7 @@ pub(crate) async fn connect_with_timing(
     timing: ObsTiming,
 ) -> Arc<ObsClient> {
     let client = ObsClient::connect_with_timing(
-        &format!("127.0.0.1:{}", fake.port),
-        None,
+        &forge_obs::ObsEndpoint::parse(&format!("127.0.0.1:{}", fake.port), "").unwrap(),
         Arc::new(recorder.clone()),
         timing,
     )

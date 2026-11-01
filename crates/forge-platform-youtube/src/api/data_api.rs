@@ -34,13 +34,13 @@ const YOUTUBE_UPLOAD_PROFILE: GatewayProfile = GatewayProfile::platform_api(
 );
 
 #[derive(Clone)]
-pub struct YoutubeDataApi {
+pub struct YouTubeDataApi {
     data: Gateway,
     upload: Gateway,
     quota: SharedQuota,
 }
 
-impl YoutubeDataApi {
+impl YouTubeDataApi {
     pub fn new(
         endpoints: &PlatformEndpoints,
         quota: SharedQuota,
@@ -240,16 +240,16 @@ mod tests {
 
     use super::*;
     use crate::broadcast::active_broadcast_id::ActiveBroadcastIdHandle;
-    use crate::broadcast::ad_break::YoutubeAdBreak;
-    use crate::broadcast::channel_lookup::YoutubeChannelLookup;
-    use crate::broadcast::follow_lookup::YoutubeFollowLookup;
+    use crate::broadcast::ad_break::YouTubeAdBreak;
+    use crate::broadcast::channel_lookup::YouTubeChannelLookup;
+    use crate::broadcast::follow_lookup::YouTubeFollowLookup;
     use crate::broadcast::live_chat_id::LiveChatIdHandle;
-    use crate::broadcast::stream_metadata::YoutubeStreamMetadata;
-    use crate::broadcast::stream_stats::YoutubeStreamStats;
-    use crate::broadcast::thumbnail::YoutubeThumbnail;
+    use crate::broadcast::stream_metadata::YouTubeStreamMetadata;
+    use crate::broadcast::stream_stats::YouTubeStreamStats;
+    use crate::broadcast::thumbnail::YouTubeThumbnail;
     use crate::chat::ban_ledger_test_support::{MemoryBanLedger, broadcaster_source};
-    use crate::chat::moderation::YoutubeModeration;
-    use crate::chat::send_chat::YoutubeSendChat;
+    use crate::chat::moderation::YouTubeModeration;
+    use crate::chat::send_chat::YouTubeSendChat;
     use crate::endpoints_test_support::{
         CapturingPublisher, StubReply, StubServer, data_api_charging, data_api_with, exhaust_quota,
         used_today,
@@ -667,36 +667,36 @@ mod tests {
     }
 
     struct Clients {
-        stats: YoutubeStreamStats,
-        ad_break: YoutubeAdBreak,
-        thumbnail: YoutubeThumbnail,
-        lookup: YoutubeChannelLookup,
-        metadata: YoutubeStreamMetadata,
-        moderation: YoutubeModeration,
-        send: YoutubeSendChat,
-        follow: YoutubeFollowLookup,
+        stats: YouTubeStreamStats,
+        ad_break: YouTubeAdBreak,
+        thumbnail: YouTubeThumbnail,
+        lookup: YouTubeChannelLookup,
+        metadata: YouTubeStreamMetadata,
+        moderation: YouTubeModeration,
+        send: YouTubeSendChat,
+        follow: YouTubeFollowLookup,
     }
 
-    fn clients(api: &YoutubeDataApi, token: &TokenSource) -> Clients {
+    fn clients(api: &YouTubeDataApi, token: &TokenSource) -> Clients {
         let broadcast = ActiveBroadcastIdHandle::new();
         broadcast.set(Some("bc-live".to_owned()));
         let live = LiveChatIdHandle::new();
         live.set(Some("lc-live".to_owned()));
         Clients {
-            stats: YoutubeStreamStats::new(api.clone(), token.clone(), broadcast.clone()),
-            ad_break: YoutubeAdBreak::new(api.clone(), token.clone(), broadcast.clone()),
-            thumbnail: YoutubeThumbnail::new(api.clone(), token.clone(), broadcast.clone()),
-            lookup: YoutubeChannelLookup::new(api.clone(), token.clone()),
-            metadata: YoutubeStreamMetadata::new(api.clone(), token.clone(), broadcast),
-            moderation: YoutubeModeration::new(
+            stats: YouTubeStreamStats::new(api.clone(), token.clone(), broadcast.clone()),
+            ad_break: YouTubeAdBreak::new(api.clone(), token.clone(), broadcast.clone()),
+            thumbnail: YouTubeThumbnail::new(api.clone(), token.clone(), broadcast.clone()),
+            lookup: YouTubeChannelLookup::new(api.clone(), token.clone()),
+            metadata: YouTubeStreamMetadata::new(api.clone(), token.clone(), broadcast),
+            moderation: YouTubeModeration::new(
                 api.clone(),
                 token.clone(),
                 broadcaster_source(),
                 live.clone(),
                 MemoryBanLedger::shared(),
             ),
-            send: YoutubeSendChat::new(api.clone(), token.clone(), live),
-            follow: YoutubeFollowLookup::new(
+            send: YouTubeSendChat::new(api.clone(), token.clone(), live),
+            follow: YouTubeFollowLookup::new(
                 api.clone(),
                 token.clone(),
                 "UCbroadcasterchannel0001".to_owned(),

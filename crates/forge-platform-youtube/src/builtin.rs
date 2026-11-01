@@ -14,39 +14,39 @@ use tokio_stream::StreamExt;
 use tokio_stream::wrappers::BroadcastStream;
 use tokio_util::sync::CancellationToken;
 
-use crate::account::credentials_manager::YoutubeCredentialsManager;
+use crate::account::credentials_manager::YouTubeCredentialsManager;
 use crate::api::quota_state::{QUOTA_DAILY_LIMIT, SharedQuota, today_pacific};
-use crate::broadcast::follow_lookup::YoutubeFollowLookup;
-use crate::broadcast::viewer_poll::{YoutubeViewerPoll, YoutubeViewerSource};
-use crate::chat::chat_platform::YoutubePlatform;
+use crate::broadcast::follow_lookup::YouTubeFollowLookup;
+use crate::broadcast::viewer_poll::{YouTubeViewerPoll, YouTubeViewerSource};
+use crate::chat::chat_platform::YouTubePlatform;
 use crate::vocabulary::messages;
 
 const LIVE_CHAT_METRIC: HealthMetricId = HealthMetricId::new(messages::HEALTH_LIVE_CHAT);
 const EVENTS_METRIC: HealthMetricId = HealthMetricId::new(messages::HEALTH_EVENTS);
 const API_CALLS_METRIC: HealthMetricId = HealthMetricId::new(messages::HEALTH_API_CALLS);
 
-pub struct YoutubeIntegrationBundle {
+pub struct YouTubeIntegrationBundle {
     id: IntegrationId,
     channel_id: String,
     hero_name: RwLock<Option<String>>,
     last_quota_used: AtomicU32,
     token_expires_at: RwLock<Option<SystemTime>>,
     health_tx: broadcast::Sender<HealthDelta>,
-    platform: Arc<YoutubePlatform>,
-    credentials_manager: Arc<YoutubeCredentialsManager>,
+    platform: Arc<YouTubePlatform>,
+    credentials_manager: Arc<YouTubeCredentialsManager>,
     quota: SharedQuota,
-    follow_lookup: YoutubeFollowLookup,
+    follow_lookup: YouTubeFollowLookup,
     viewer_report_tx: watch::Sender<ViewerReport>,
     viewer_report_rx: watch::Receiver<ViewerReport>,
     state_rx: watch::Receiver<ConnectionState>,
     retired: CancellationToken,
 }
 
-impl YoutubeIntegrationBundle {
+impl YouTubeIntegrationBundle {
     pub fn new(
         channel_id: String,
-        platform: Arc<YoutubePlatform>,
-        credentials_manager: Arc<YoutubeCredentialsManager>,
+        platform: Arc<YouTubePlatform>,
+        credentials_manager: Arc<YouTubeCredentialsManager>,
     ) -> Arc<Self> {
         let (health_tx, _) = broadcast::channel(forge_platform_core::HEALTH_CHANNEL_CAPACITY);
         let (viewer_report_tx, _) = watch::channel(ViewerReport::Absent);
@@ -55,7 +55,7 @@ impl YoutubeIntegrationBundle {
 
         let token_source = Self::token_source(&credentials_manager);
         let quota = platform.api().quota().clone();
-        let follow_lookup = YoutubeFollowLookup::new(
+        let follow_lookup = YouTubeFollowLookup::new(
             platform.api().clone(),
             token_source.clone(),
             channel_id.clone(),
@@ -80,7 +80,7 @@ impl YoutubeIntegrationBundle {
         })
     }
 
-    fn token_source(manager: &Arc<YoutubeCredentialsManager>) -> TokenSource {
+    fn token_source(manager: &Arc<YouTubeCredentialsManager>) -> TokenSource {
         let manager = Arc::clone(manager);
         Arc::new(move || {
             let manager = Arc::clone(&manager);
@@ -97,7 +97,7 @@ impl YoutubeIntegrationBundle {
     }
 
     fn spawn_viewer_poll(bundle: &Arc<Self>) {
-        let viewer_poll = YoutubeViewerPoll::new(
+        let viewer_poll = YouTubeViewerPoll::new(
             bundle.platform.api().clone(),
             Self::token_source(&bundle.credentials_manager),
             bundle.platform.active_broadcast_id(),
@@ -114,7 +114,7 @@ impl YoutubeIntegrationBundle {
     }
 
     pub fn viewer_source(&self) -> Box<dyn LiveViewerSource> {
-        Box::new(YoutubeViewerSource::new(self.viewer_report_tx.subscribe()))
+        Box::new(YouTubeViewerSource::new(self.viewer_report_tx.subscribe()))
     }
 
     pub async fn shutdown(&self) {
@@ -236,15 +236,15 @@ impl YoutubeIntegrationBundle {
             .get_or_insert_with(|| SystemTime::from(stored.expires_at));
     }
 
-    pub(crate) fn credentials_manager(&self) -> &Arc<YoutubeCredentialsManager> {
+    pub(crate) fn credentials_manager(&self) -> &Arc<YouTubeCredentialsManager> {
         &self.credentials_manager
     }
 
-    pub(crate) fn platform(&self) -> &Arc<YoutubePlatform> {
+    pub(crate) fn platform(&self) -> &Arc<YouTubePlatform> {
         &self.platform
     }
 
-    pub(crate) fn follow_lookup(&self) -> &YoutubeFollowLookup {
+    pub(crate) fn follow_lookup(&self) -> &YouTubeFollowLookup {
         &self.follow_lookup
     }
 
@@ -313,7 +313,7 @@ fn handle_hero_name(channel_handle: Option<&str>) -> Option<String> {
         .map(|handle| format!("@{}", handle.trim_start_matches('@')))
 }
 
-impl BuiltinStatus for YoutubeIntegrationBundle {
+impl BuiltinStatus for YouTubeIntegrationBundle {
     fn id(&self) -> &IntegrationId {
         &self.id
     }
@@ -361,7 +361,7 @@ impl BuiltinStatus for YoutubeIntegrationBundle {
         vec![HeroBadge {
             label: messages::channel_id_badge(&self.channel_id.to_string()).into(),
             tone: HeroBadgeTone::Neutral,
-            monospace: true,
+            is_identifier: true,
         }]
     }
 
@@ -374,7 +374,7 @@ impl BuiltinStatus for YoutubeIntegrationBundle {
     }
 }
 
-impl BuiltinHealth for YoutubeIntegrationBundle {
+impl BuiltinHealth for YouTubeIntegrationBundle {
     fn metrics(&self) -> [HealthMetric; 4] {
         let state = self.current_state();
         [
@@ -400,7 +400,7 @@ impl BuiltinHealth for YoutubeIntegrationBundle {
     }
 }
 
-impl BuiltinContent for YoutubeIntegrationBundle {
+impl BuiltinContent for YouTubeIntegrationBundle {
     fn sections(&self) -> Vec<DetailSection> {
         Vec::new()
     }
@@ -425,12 +425,12 @@ mod tests {
     use tokio_stream::StreamExt;
 
     use super::*;
-    use crate::account::credentials::YoutubeCredentials;
+    use crate::account::credentials::YouTubeCredentials;
     use crate::broadcast::active_broadcast_id::ActiveBroadcastIdHandle;
     use crate::broadcast::live_chat_id::LiveChatIdHandle;
-    use crate::broadcast::stream_metadata::YoutubeStreamMetadata;
-    use crate::chat::moderation::YoutubeModeration;
-    use crate::chat::send_chat::YoutubeSendChat;
+    use crate::broadcast::stream_metadata::YouTubeStreamMetadata;
+    use crate::chat::moderation::YouTubeModeration;
+    use crate::chat::send_chat::YouTubeSendChat;
     use crate::sub_actions::register_youtube_sub_actions;
     use crate::vocabulary::labels;
     use forge_platform_core::{
@@ -445,20 +445,20 @@ mod tests {
 
     fn make_bundle(
         repo: Arc<dyn CredentialsRepo>,
-    ) -> (Arc<YoutubeIntegrationBundle>, Arc<YoutubePlatform>) {
+    ) -> (Arc<YouTubeIntegrationBundle>, Arc<YouTubePlatform>) {
         make_bundle_with_quota(repo, SharedQuota::default())
     }
 
     fn make_bundle_with_quota(
         repo: Arc<dyn CredentialsRepo>,
         quota: SharedQuota,
-    ) -> (Arc<YoutubeIntegrationBundle>, Arc<YoutubePlatform>) {
-        let manager = Arc::new(YoutubeCredentialsManager::new(
+    ) -> (Arc<YouTubeIntegrationBundle>, Arc<YouTubePlatform>) {
+        let manager = Arc::new(YouTubeCredentialsManager::new(
             repo,
             crate::endpoints_test_support::unreachable_oauth_client(),
             crate::endpoints_test_support::unreachable_data_api(),
         ));
-        let platform = Arc::new(YoutubePlatform::new(
+        let platform = Arc::new(YouTubePlatform::new(
             crate::endpoints_test_support::data_api_charging("http://127.0.0.1:0", quota),
             "UCabc123".to_owned(),
             Arc::clone(&manager),
@@ -467,46 +467,46 @@ mod tests {
             crate::chat::ban_ledger_test_support::MemoryBanLedger::shared(),
         ));
         let bundle =
-            YoutubeIntegrationBundle::new("UCabc123".to_owned(), Arc::clone(&platform), manager);
-        YoutubeIntegrationBundle::start_background_tasks(&bundle);
+            YouTubeIntegrationBundle::new("UCabc123".to_owned(), Arc::clone(&platform), manager);
+        YouTubeIntegrationBundle::start_background_tasks(&bundle);
         (bundle, platform)
     }
 
     fn sub_action_registry() -> SubActionRegistry {
         let api = crate::endpoints_test_support::unreachable_data_api();
-        let sender = Arc::new(YoutubeSendChat::new(
+        let sender = Arc::new(YouTubeSendChat::new(
             api.clone(),
             token_source(),
             LiveChatIdHandle::new(),
         ));
-        let moderation = Arc::new(YoutubeModeration::new(
+        let moderation = Arc::new(YouTubeModeration::new(
             api.clone(),
             token_source(),
             crate::chat::ban_ledger_test_support::broadcaster_source(),
             LiveChatIdHandle::new(),
             crate::chat::ban_ledger_test_support::MemoryBanLedger::shared(),
         ));
-        let metadata = Arc::new(YoutubeStreamMetadata::new(
+        let metadata = Arc::new(YouTubeStreamMetadata::new(
             api.clone(),
             token_source(),
             ActiveBroadcastIdHandle::new(),
         ));
-        let stream_stats = Arc::new(crate::broadcast::stream_stats::YoutubeStreamStats::new(
+        let stream_stats = Arc::new(crate::broadcast::stream_stats::YouTubeStreamStats::new(
             api.clone(),
             token_source(),
             ActiveBroadcastIdHandle::new(),
         ));
-        let ad_break = Arc::new(crate::broadcast::ad_break::YoutubeAdBreak::new(
+        let ad_break = Arc::new(crate::broadcast::ad_break::YouTubeAdBreak::new(
             api.clone(),
             token_source(),
             ActiveBroadcastIdHandle::new(),
         ));
-        let thumbnail = Arc::new(crate::broadcast::thumbnail::YoutubeThumbnail::new(
+        let thumbnail = Arc::new(crate::broadcast::thumbnail::YouTubeThumbnail::new(
             api.clone(),
             token_source(),
             ActiveBroadcastIdHandle::new(),
         ));
-        let channel_lookup = Arc::new(crate::broadcast::channel_lookup::YoutubeChannelLookup::new(
+        let channel_lookup = Arc::new(crate::broadcast::channel_lookup::YouTubeChannelLookup::new(
             api,
             token_source(),
         ));
@@ -537,7 +537,7 @@ mod tests {
         channel_handle: Option<&str>,
         expires_at: OffsetDateTime,
     ) -> String {
-        serde_json::to_string(&YoutubeCredentials {
+        serde_json::to_string(&YouTubeCredentials {
             access_token: OAuthToken::new("access"),
             refresh_token: OAuthToken::new("refresh"),
             client_id: "client".to_owned(),
@@ -913,7 +913,7 @@ mod tests {
             vec![HeroBadge {
                 label: messages::channel_id_badge("UCabc123").into(),
                 tone: HeroBadgeTone::Neutral,
-                monospace: true,
+                is_identifier: true,
             }]
         );
     }

@@ -844,7 +844,7 @@ mod tests {
     use forge_events::EventPublisher;
     use forge_platform_twitch::{BotModerator, BotStatus, DeviceCodeInfo, TwitchError};
     use forge_runtime::{EventBus, NullEventLogRepo};
-    use forge_storage::CredentialsRepo;
+
     use gpui::{AppContext as _, Entity, TestAppContext};
 
     use super::{
@@ -868,7 +868,7 @@ mod tests {
         let (backend, _writes) = test_backend();
         let bus = EventBus::new(Arc::new(NullEventLogRepo));
         let bot = crate::test_support::default_twitch_bot(
-            backend as Arc<dyn CredentialsRepo>,
+            backend.credentials_repo(),
             bus as Arc<dyn EventPublisher>,
         );
         let handle = rt.handle().clone();

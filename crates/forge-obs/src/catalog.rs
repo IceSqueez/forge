@@ -4,9 +4,10 @@ use std::collections::hash_map::DefaultHasher;
 use std::hash::{Hash, Hasher};
 use std::sync::{RwLock, RwLockReadGuard, RwLockWriteGuard};
 
+use forge_platform_core::RowSpacing;
 use forge_platform_core::{
     BuiltinContent, CollectionRevisions, ContentList, ContentListItem, DetailSection, SectionIcon,
-    TokenColor, TrailingToken,
+    Tone, TrailingToken,
 };
 
 use crate::client::ObsClient;
@@ -14,8 +15,6 @@ use crate::source::SourceInfo;
 use crate::vocabulary::{config_keys, labels, sub_action_ids};
 
 const PANEL_VISIBLE_ROWS: u16 = 8;
-const SCENE_ROW_PADDING_Y_PX: u8 = 8;
-const SOURCE_ROW_PADDING_Y_PX: u8 = 7;
 
 pub(crate) fn read_lock<T>(lock: &RwLock<T>) -> RwLockReadGuard<'_, T> {
     lock.read_recover()
@@ -92,7 +91,7 @@ fn scene_to_item(
         },
         icon_tint: None,
         name: name.to_owned(),
-        monospace_name: false,
+        name_is_identifier: false,
         active: is_current,
         active_label: if is_current {
             Some(labels::LIVE.into())
@@ -146,7 +145,7 @@ pub(crate) fn is_audio_kind(kind: Option<&str>) -> bool {
 
 fn toggle_token(
     icon: SectionIcon,
-    tint: TokenColor,
+    tint: Tone,
     actionable: bool,
     step: impl FnOnce() -> SubActionStep,
 ) -> TrailingToken {
@@ -166,9 +165,9 @@ fn source_to_item(scene: &str, info: &SourceInfo, actionable: bool) -> ContentLi
     trailing.push(toggle_token(
         SectionIcon::new(if info.visible { "eye" } else { "eye-off" }),
         if info.visible {
-            TokenColor::Green
+            Tone::Positive
         } else {
-            TokenColor::Muted
+            Tone::Muted
         },
         actionable,
         || {
@@ -185,9 +184,9 @@ fn source_to_item(scene: &str, info: &SourceInfo, actionable: bool) -> ContentLi
     trailing.push(toggle_token(
         SectionIcon::new(if info.locked { "lock" } else { "lock-open" }),
         if info.locked {
-            TokenColor::Yellow
+            Tone::Caution
         } else {
-            TokenColor::Muted
+            Tone::Muted
         },
         actionable,
         || {
@@ -206,7 +205,7 @@ fn source_to_item(scene: &str, info: &SourceInfo, actionable: bool) -> ContentLi
             MessageRef::new(labels::AUDIO_DB)
                 .with_arg("db", VerbatimText::new(format!("{db:.1}")))
                 .into(),
-            TokenColor::Subtle,
+            Tone::Subtle,
         ));
     }
     ContentListItem {
@@ -216,12 +215,12 @@ fn source_to_item(scene: &str, info: &SourceInfo, actionable: bool) -> ContentLi
             SectionIcon::new("eye-off")
         },
         icon_tint: Some(if info.visible {
-            TokenColor::Accent
+            Tone::Accent
         } else {
-            TokenColor::Muted
+            Tone::Muted
         }),
         name: info.name.clone(),
-        monospace_name: true,
+        name_is_identifier: true,
         active: false,
         active_label: None,
         trailing,
@@ -285,11 +284,11 @@ pub(crate) fn catalog_sections(catalog: &ObsCatalog, actionable: bool) -> Vec<De
     let left = ContentList {
         title: labels::SCENES.into(),
         icon: SectionIcon::new("layout-grid"),
-        icon_tint: Some(TokenColor::ThemeBrand),
+        icon_tint: Some(Tone::ThemeBrand),
         inline_label: Some(scene_count),
         count_label: None,
         visible_rows: Some(PANEL_VISIBLE_ROWS),
-        row_padding_y_px: SCENE_ROW_PADDING_Y_PX,
+        row_spacing: RowSpacing::Relaxed,
         refreshable: true,
         items: scene_items.into(),
         footer: None,
@@ -298,11 +297,11 @@ pub(crate) fn catalog_sections(catalog: &ObsCatalog, actionable: bool) -> Vec<De
     let right = ContentList {
         title: labels::SOURCES.into(),
         icon: SectionIcon::new("stack-2"),
-        icon_tint: Some(TokenColor::Info),
+        icon_tint: Some(Tone::Info),
         inline_label: source_scene_label,
         count_label: Some(source_count_label),
         visible_rows: Some(PANEL_VISIBLE_ROWS),
-        row_padding_y_px: SOURCE_ROW_PADDING_Y_PX,
+        row_spacing: RowSpacing::Standard,
         refreshable: false,
         items: source_items.into(),
         footer: None,
@@ -446,8 +445,8 @@ mod tests {
     #[test]
     fn source_row_tints_the_visibility_glyph_by_state() {
         for (visible, glyph, color) in [
-            (true, "eye", TokenColor::Green),
-            (false, "eye-off", TokenColor::Muted),
+            (true, "eye", Tone::Positive),
+            (false, "eye-off", Tone::Muted),
         ] {
             let item = source_to_item(
                 "Gameplay",
@@ -464,8 +463,8 @@ mod tests {
     #[test]
     fn source_row_tints_the_lock_glyph_by_state() {
         for (locked, glyph, color) in [
-            (true, "lock", TokenColor::Yellow),
-            (false, "lock-open", TokenColor::Muted),
+            (true, "lock", Tone::Caution),
+            (false, "lock-open", Tone::Muted),
         ] {
             let item = source_to_item(
                 "Gameplay",
@@ -492,7 +491,7 @@ mod tests {
                 MessageRef::new(labels::AUDIO_DB)
                     .with_arg("db", VerbatimText::new("-12.3"))
                     .into(),
-                TokenColor::Subtle,
+                Tone::Subtle,
             )),
         );
 
@@ -507,8 +506,8 @@ mod tests {
     #[test]
     fn source_row_leading_glyph_and_tint_follow_visibility() {
         for (visible, glyph, tint) in [
-            (true, "browser", TokenColor::Accent),
-            (false, "eye-off", TokenColor::Muted),
+            (true, "browser", Tone::Accent),
+            (false, "eye-off", Tone::Muted),
         ] {
             let item = source_to_item(
                 "Gameplay",
@@ -581,14 +580,14 @@ mod tests {
                 config
             };
             let (eye, eye_tint) = if visible {
-                ("eye", TokenColor::Green)
+                ("eye", Tone::Positive)
             } else {
-                ("eye-off", TokenColor::Muted)
+                ("eye-off", Tone::Muted)
             };
             let (lock, lock_tint) = if locked {
-                ("lock", TokenColor::Yellow)
+                ("lock", Tone::Caution)
             } else {
-                ("lock-open", TokenColor::Muted)
+                ("lock-open", Tone::Muted)
             };
             assert_eq!(
                 item.trailing[..2],

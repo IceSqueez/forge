@@ -164,7 +164,10 @@ mod tests {
                 settings.seed_raw(&FIRST_RUN_COMPLETED, value);
             }
 
-            let resolved = rt.block_on(resolve_first_run(settings.as_ref(), &states(state)));
+            let resolved = rt.block_on(resolve_first_run(
+                settings.settings_repo().as_ref(),
+                &states(state),
+            ));
 
             let written: Vec<SettingWrite> = std::iter::from_fn(|| rx.try_recv().ok()).collect();
             assert_eq!((resolved, written), (expected, writes), "{case}");

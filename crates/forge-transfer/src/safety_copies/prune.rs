@@ -166,6 +166,7 @@ fn remove_all(
 
 #[cfg(test)]
 mod tests {
+    use forge_storage::DataProvider;
     use std::path::Path;
 
     use time::OffsetDateTime;
@@ -236,7 +237,7 @@ mod tests {
             keep_newest: 1,
             delete_after_days: 1,
         }
-        .save(&repo)
+        .save(repo.settings_repo().as_ref())
         .await
         .unwrap();
         let backups = backups_dir(data.path());
@@ -255,7 +256,7 @@ mod tests {
         let older = pre_pack(now - Duration::days(2), "older1");
         let just_written = pre_pack(now, "fresh1");
 
-        prune_after_safety_copy(&repo, data.path(), &just_written).await;
+        prune_after_safety_copy(repo.settings_repo().as_ref(), data.path(), &just_written).await;
 
         assert_eq!(
             (just_written.exists(), skewed_ahead.exists(), older.exists()),

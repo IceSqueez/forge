@@ -1,4 +1,5 @@
 #![expect(clippy::expect_used, reason = "test fixtures")]
+use forge_storage::DataProvider;
 use forge_storage::settings::core_settings::{
     ACCENT, AUDIO_VOICE_GATE_HOLD_MS, AUDIO_VOICE_GATE_INPUT_DEVICE_ID, AUDIO_VOICE_GATE_THRESHOLD,
     EVENT_LOG_RETENTION_DAYS, FONT_BODY, FONT_MONO, LANGUAGE, THEME,
@@ -135,7 +136,7 @@ async fn language_seeds_en_and_round_trips_through_the_setting() {
 #[tokio::test]
 async fn event_log_retention_days_answers_the_shipped_window_while_unset() {
     let backend = setup_backend().await;
-    let days = event_log_retention_days(&*backend)
+    let days = event_log_retention_days(backend.settings_repo().as_ref())
         .await
         .expect("default retention");
     assert_eq!(days, DEFAULT_EVENT_LOG_RETENTION_DAYS);
@@ -145,10 +146,12 @@ async fn event_log_retention_days_answers_the_shipped_window_while_unset() {
 async fn event_log_retention_days_roundtrip() {
     let backend = setup_backend().await;
     for value in [1u32, 7, 30] {
-        set_event_log_retention_days(&*backend, value)
+        set_event_log_retention_days(backend.settings_repo().as_ref(), value)
             .await
             .expect("set");
-        let got = event_log_retention_days(&*backend).await.expect("get");
+        let got = event_log_retention_days(backend.settings_repo().as_ref())
+            .await
+            .expect("get");
         assert_eq!(got, value);
     }
 }
@@ -157,37 +160,55 @@ async fn event_log_retention_days_roundtrip() {
 async fn event_log_retention_days_invalid_string_falls_back_to_seven() {
     let backend = setup_backend().await;
     inject_raw(&backend, EVENT_LOG_RETENTION_DAYS.name(), "not_a_number").await;
-    let days = event_log_retention_days(&*backend).await.expect("fallback");
+    let days = event_log_retention_days(backend.settings_repo().as_ref())
+        .await
+        .expect("fallback");
     assert_eq!(days, DEFAULT_EVENT_LOG_RETENTION_DAYS);
 }
 
 #[tokio::test]
 async fn font_overrides_persist_per_role_and_unset_deletes() {
     let backend = setup_backend().await;
-    write_setting(&*backend, &FONT_BODY, &Some("Custom Sans".to_owned()))
-        .await
-        .expect("set body font");
-    write_setting(&*backend, &FONT_MONO, &Some("Custom Mono".to_owned()))
-        .await
-        .expect("set mono font");
+    write_setting(
+        backend.settings_repo().as_ref(),
+        &FONT_BODY,
+        &Some("Custom Sans".to_owned()),
+    )
+    .await
+    .expect("set body font");
+    write_setting(
+        backend.settings_repo().as_ref(),
+        &FONT_MONO,
+        &Some("Custom Mono".to_owned()),
+    )
+    .await
+    .expect("set mono font");
     assert_eq!(
-        read_setting(&*backend, &FONT_BODY).await.expect("get body"),
+        read_setting(backend.settings_repo().as_ref(), &FONT_BODY)
+            .await
+            .expect("get body"),
         Some("Custom Sans".to_owned())
     );
     assert_eq!(
-        read_setting(&*backend, &FONT_MONO).await.expect("get mono"),
+        read_setting(backend.settings_repo().as_ref(), &FONT_MONO)
+            .await
+            .expect("get mono"),
         Some("Custom Mono".to_owned())
     );
 
-    write_setting(&*backend, &FONT_BODY, &None)
+    write_setting(backend.settings_repo().as_ref(), &FONT_BODY, &None)
         .await
         .expect("unset body");
     assert_eq!(
-        read_setting(&*backend, &FONT_BODY).await.expect("get body"),
+        read_setting(backend.settings_repo().as_ref(), &FONT_BODY)
+            .await
+            .expect("get body"),
         None
     );
     assert_eq!(
-        read_setting(&*backend, &FONT_MONO).await.expect("get mono"),
+        read_setting(backend.settings_repo().as_ref(), &FONT_MONO)
+            .await
+            .expect("get mono"),
         Some("Custom Mono".to_owned()),
         "unsetting one role must not clear the other"
     );
@@ -196,11 +217,13 @@ async fn font_overrides_persist_per_role_and_unset_deletes() {
 #[tokio::test]
 async fn unsetting_a_font_that_was_never_stored_succeeds() {
     let backend = setup_backend().await;
-    write_setting(&*backend, &FONT_MONO, &None)
+    write_setting(backend.settings_repo().as_ref(), &FONT_MONO, &None)
         .await
         .expect("unset on absent key must not error");
     assert_eq!(
-        read_setting(&*backend, &FONT_MONO).await.expect("get mono"),
+        read_setting(backend.settings_repo().as_ref(), &FONT_MONO)
+            .await
+            .expect("get mono"),
         None
     );
 }
@@ -208,27 +231,34 @@ async fn unsetting_a_font_that_was_never_stored_succeeds() {
 #[tokio::test]
 async fn voice_gate_settings_with_no_stored_keys_yields_the_type_defaults() {
     let backend = setup_backend().await;
-    let settings = voice_gate_settings(&*backend).await.expect("load defaults");
+    let settings = voice_gate_settings(backend.settings_repo().as_ref())
+        .await
+        .expect("load defaults");
     assert_eq!(settings, VoiceGateSettings::default());
 }
 
 #[tokio::test]
 async fn voice_gate_settings_round_trip_through_the_typed_setters() {
     let backend = setup_backend().await;
-    set_voice_gate_enabled(&*backend, true)
+    set_voice_gate_enabled(backend.settings_repo().as_ref(), true)
         .await
         .expect("enable");
-    set_voice_gate_input_device_id(&*backend, Some("alsa_input.usb-Yeti".to_owned()))
-        .await
-        .expect("set device");
-    set_voice_gate_threshold(&*backend, 0.42)
+    set_voice_gate_input_device_id(
+        backend.settings_repo().as_ref(),
+        Some("alsa_input.usb-Yeti".to_owned()),
+    )
+    .await
+    .expect("set device");
+    set_voice_gate_threshold(backend.settings_repo().as_ref(), 0.42)
         .await
         .expect("set threshold");
-    set_voice_gate_hold_ms(&*backend, 250)
+    set_voice_gate_hold_ms(backend.settings_repo().as_ref(), 250)
         .await
         .expect("set hold");
 
-    let settings = voice_gate_settings(&*backend).await.expect("load");
+    let settings = voice_gate_settings(backend.settings_repo().as_ref())
+        .await
+        .expect("load");
     assert_eq!(
         settings,
         VoiceGateSettings {
@@ -245,7 +275,9 @@ async fn voice_gate_threshold_falls_back_to_the_default_for_unparsable_or_non_fi
     let backend = setup_backend().await;
     for stored in ["abc", "", " 0.5", "NaN", "inf", "-inf", "1e40"] {
         inject_raw(&backend, AUDIO_VOICE_GATE_THRESHOLD.name(), stored).await;
-        let settings = voice_gate_settings(&*backend).await.expect("load");
+        let settings = voice_gate_settings(backend.settings_repo().as_ref())
+            .await
+            .expect("load");
         assert_eq!(
             settings.threshold, VOICE_GATE_DEFAULT_THRESHOLD,
             "stored threshold {stored:?} must not survive as a usable gain",
@@ -264,7 +296,9 @@ async fn voice_gate_threshold_read_clamps_stored_values_into_the_unit_range() {
         ("340282350000000000000000000000000000000", 1.0),
     ] {
         inject_raw(&backend, AUDIO_VOICE_GATE_THRESHOLD.name(), stored).await;
-        let settings = voice_gate_settings(&*backend).await.expect("load");
+        let settings = voice_gate_settings(backend.settings_repo().as_ref())
+            .await
+            .expect("load");
         assert_eq!(
             settings.threshold, expected,
             "stored threshold {stored:?} clamped wrong",
@@ -277,7 +311,9 @@ async fn voice_gate_hold_ms_falls_back_to_the_default_for_unparsable_values() {
     let backend = setup_backend().await;
     for stored in ["abc", "", "-100", "3.5", "4294967296"] {
         inject_raw(&backend, AUDIO_VOICE_GATE_HOLD_MS.name(), stored).await;
-        let settings = voice_gate_settings(&*backend).await.expect("load");
+        let settings = voice_gate_settings(backend.settings_repo().as_ref())
+            .await
+            .expect("load");
         assert_eq!(
             settings.hold_ms, VOICE_GATE_DEFAULT_HOLD_MS,
             "stored hold {stored:?} must fall back, not collapse to zero",
@@ -289,7 +325,7 @@ async fn voice_gate_hold_ms_falls_back_to_the_default_for_unparsable_values() {
 async fn set_voice_gate_threshold_persists_an_already_clamped_value() {
     let backend = setup_backend().await;
     for (written, expected) in [(2.0f32, 1.0f32), (-1.0, 0.0), (0.42, 0.42)] {
-        set_voice_gate_threshold(&*backend, written)
+        set_voice_gate_threshold(backend.settings_repo().as_ref(), written)
             .await
             .expect("set threshold");
         let raw = stored_value(&backend, AUDIO_VOICE_GATE_THRESHOLD.name())
@@ -306,18 +342,21 @@ async fn set_voice_gate_threshold_persists_an_already_clamped_value() {
 #[tokio::test]
 async fn clearing_the_voice_gate_input_device_removes_the_key_rather_than_blanking_it() {
     let backend = setup_backend().await;
-    set_voice_gate_input_device_id(&*backend, Some("hw:CARD=Yeti".to_owned()))
-        .await
-        .expect("set device");
+    set_voice_gate_input_device_id(
+        backend.settings_repo().as_ref(),
+        Some("hw:CARD=Yeti".to_owned()),
+    )
+    .await
+    .expect("set device");
     assert_eq!(
-        voice_gate_settings(&*backend)
+        voice_gate_settings(backend.settings_repo().as_ref())
             .await
             .expect("load after set")
             .input_device_id,
         Some("hw:CARD=Yeti".to_owned())
     );
 
-    set_voice_gate_input_device_id(&*backend, None)
+    set_voice_gate_input_device_id(backend.settings_repo().as_ref(), None)
         .await
         .expect("clear device");
     assert_eq!(

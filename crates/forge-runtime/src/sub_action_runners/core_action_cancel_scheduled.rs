@@ -86,7 +86,7 @@ impl SubActionRunner for CoreActionCancelScheduledRunner {
         SubActionIo {
             produces: vec![ProducedVariable {
                 output_name_key: CANCELLED_INTO_KEY.to_owned(),
-                kind: VariantKind::Bool,
+                kind: Some(VariantKind::Bool),
                 label: "Scheduled run cancelled".to_owned(),
             }],
             ..SubActionIo::default()

@@ -131,11 +131,14 @@ pub enum ActionDetail {
         live: bool,
     },
     KickChannelPolled,
-    YoutubeChatPolled,
-    YoutubeChatSent {
+    #[serde(rename = "youtube_chat_polled")]
+    YouTubeChatPolled,
+    #[serde(rename = "youtube_chat_sent")]
+    YouTubeChatSent {
         message_id: String,
     },
-    YoutubeBroadcastSet {
+    #[serde(rename = "youtube_broadcast_set")]
+    YouTubeBroadcastSet {
         live: bool,
     },
     ObsOnline,

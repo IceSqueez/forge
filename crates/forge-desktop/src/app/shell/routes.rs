@@ -4,7 +4,7 @@ use forge_platform_core::IntegrationCategory;
 use forge_types::{ActionId, TriggerInstanceId};
 use std::sync::Arc;
 
-use forge_storage::{CredentialsRepo, GlobalsRepo, ScriptRepo, SettingsRepo};
+use forge_storage::{CredentialsRepo, GlobalsRepo, SettingsRepo};
 use forge_types::IntegrationAvailability;
 use gpui::{AppContext, Context};
 
@@ -110,7 +110,7 @@ impl AppShell {
         cx: &mut Context<Self>,
     ) -> RoutedContent {
         let globals = topics.globals.clone();
-        let backend: Arc<dyn GlobalsRepo> = Arc::clone(&handles.backend) as Arc<dyn GlobalsRepo>;
+        let backend: Arc<dyn GlobalsRepo> = handles.backend.globals_repo();
         let rt_handle = handles.rt_handle.clone();
         let bus = Arc::clone(&handles.core.bus);
         cx.new(|cx| {
@@ -197,7 +197,7 @@ impl AppShell {
         cx: &mut Context<Self>,
     ) -> RoutedContent {
         let player = handles.audio.soundboard_player.clone();
-        let settings_repo = Arc::clone(&handles.backend) as Arc<dyn forge_storage::SettingsRepo>;
+        let settings_repo = handles.backend.settings_repo();
         let rt_handle = handles.rt_handle.clone();
         let bus = Arc::clone(&handles.core.bus);
         let keys = ClipKeyState::new(
@@ -255,7 +255,7 @@ impl AppShell {
             date_names: handles.date_names.clone(),
             library: Arc::clone(handles.audio.soundboard_player.library()),
             media: handles.backend.media_repo(),
-            settings_repo: Arc::clone(&handles.backend) as Arc<dyn SettingsRepo>,
+            settings_repo: handles.backend.settings_repo(),
             audio_router: Arc::clone(&handles.audio.audio_router),
             speak: handles.speech.speak.clone(),
             actions: Arc::clone(&handles.overlays.actions),
@@ -275,9 +275,8 @@ impl AppShell {
     ) -> RoutedContent {
         let server = handles.server.clone();
         let rt_handle = handles.rt_handle.clone();
-        let credentials: Arc<dyn CredentialsRepo> =
-            Arc::clone(&handles.backend) as Arc<dyn CredentialsRepo>;
-        let settings: Arc<dyn SettingsRepo> = Arc::clone(&handles.backend) as Arc<dyn SettingsRepo>;
+        let credentials: Arc<dyn CredentialsRepo> = handles.backend.credentials_repo();
+        let settings: Arc<dyn SettingsRepo> = handles.backend.settings_repo();
         let console =
             cx.new(|cx| ServerConsoleView::new(server, rt_handle, credentials, settings, cx));
         Self::follow_nav(&console, cx);
@@ -297,10 +296,10 @@ impl AppShell {
             handles.backend.trigger_instance_repo(),
             handles.integrations.hotkey_reconciler.clone(),
         );
-        let script_repo = Arc::clone(&handles.backend) as Arc<dyn ScriptRepo>;
+        let script_repo = handles.backend.script_repo();
         let clip_library = Arc::clone(handles.audio.soundboard_player.library());
-        let globals_repo = Arc::clone(&handles.backend) as Arc<dyn GlobalsRepo>;
-        let settings_repo = Arc::clone(&handles.backend) as Arc<dyn SettingsRepo>;
+        let globals_repo = handles.backend.globals_repo();
+        let settings_repo = handles.backend.settings_repo();
         let overlay_repo = handles.backend.overlay_repo();
         let overlay_kinds = Arc::clone(&handles.overlays.kinds);
         let speak = handles.speech.speak.clone();
@@ -356,7 +355,7 @@ impl AppShell {
         );
         let action_repo = handles.backend.action_repo();
         let registry = handles.automation.trigger_registry.clone();
-        let settings_repo = Arc::clone(&handles.backend) as Arc<dyn SettingsRepo>;
+        let settings_repo = handles.backend.settings_repo();
         let rt_handle = handles.rt_handle.clone();
         let builtins = handles.integrations.builtins.clone();
         let switch = Self::integration_switch(topics, handles);
@@ -382,13 +381,13 @@ impl AppShell {
         cx: &mut Context<Self>,
     ) -> RoutedContent {
         let backend = handles.backend.clone();
-        let script_registry = handles.automation.script_registry.clone();
+        let script_catalog = handles.automation.script_catalog.clone();
         let bus = handles.core.bus.clone();
         let integrations: Arc<dyn IntegrationAvailability> =
             Arc::new(handles.automation.action_engine.integration_gate().clone());
         let rt_handle = handles.rt_handle.clone();
         let editor = cx.new(|cx| {
-            ScriptEditorView::new(backend, script_registry, bus, integrations, rt_handle, cx)
+            ScriptEditorView::new(backend, script_catalog, bus, integrations, rt_handle, cx)
         });
         Self::guarded(editor.clone(), cx).with_shortcuts(&editor)
     }

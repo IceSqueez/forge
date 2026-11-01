@@ -12,7 +12,7 @@ use crate::account::oauth_client::{
     GOOGLE_OAUTH_BUDGET_CAPACITY, GOOGLE_OAUTH_BUDGET_WINDOW, GoogleOAuthClient,
     google_oauth_gateway,
 };
-use crate::api::data_api::YoutubeDataApi;
+use crate::api::data_api::YouTubeDataApi;
 use crate::api::quota_state::{SharedQuota, today_pacific};
 
 const UNREACHABLE_HTTP: &str = "http://127.0.0.1:0";
@@ -60,11 +60,11 @@ pub(crate) fn data_api_with(
     base: &str,
     quota: SharedQuota,
     bus: Arc<dyn EventPublisher>,
-) -> YoutubeDataApi {
-    YoutubeDataApi::new(&data_api_endpoints(base), quota, bus).unwrap()
+) -> YouTubeDataApi {
+    YouTubeDataApi::new(&data_api_endpoints(base), quota, bus).unwrap()
 }
 
-pub(crate) fn data_api_charging(base: &str, quota: SharedQuota) -> YoutubeDataApi {
+pub(crate) fn data_api_charging(base: &str, quota: SharedQuota) -> YouTubeDataApi {
     data_api_with(
         base,
         quota,
@@ -72,11 +72,11 @@ pub(crate) fn data_api_charging(base: &str, quota: SharedQuota) -> YoutubeDataAp
     )
 }
 
-pub(crate) fn data_api_at(base: &str) -> YoutubeDataApi {
+pub(crate) fn data_api_at(base: &str) -> YouTubeDataApi {
     data_api_charging(base, SharedQuota::default())
 }
 
-pub(crate) fn unreachable_data_api() -> YoutubeDataApi {
+pub(crate) fn unreachable_data_api() -> YouTubeDataApi {
     data_api_at(UNREACHABLE_HTTP)
 }
 

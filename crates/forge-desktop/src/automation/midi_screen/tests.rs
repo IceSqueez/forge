@@ -1,5 +1,7 @@
+use super::Capture;
 use super::mapping_store::{MIDI_KNOWN_DEVICES, load_mappings, save_mapping};
 use super::selection::{follow_device, resolve_selection, visible_mappings};
+use crate::app::navigable_list::{ListStep, NavigableList};
 use crate::automation::midi_mapping_modal::MappingDraft;
 use forge_types::{
     Action, ExecutionMode, PermissionRung, PlatformScope, QueueId, RecoverMutex, TriggerConfig,
@@ -749,7 +751,7 @@ fn the_crumb_leads_back_to_the_midi_category_on_the_hub(cx: &mut gpui::TestAppCo
             None,
             trigger_repo,
             action_repo,
-            settings as Arc<dyn SettingsRepo>,
+            settings.settings_repo(),
             bus,
             handle,
             cx,
@@ -786,7 +788,7 @@ impl DeviceHarness {
     }
 
     fn open(&self, cx: &mut gpui::TestAppContext) -> Entity<MidiScreenView> {
-        let settings = Arc::clone(&self.backend) as Arc<dyn SettingsRepo>;
+        let settings = self.backend.settings_repo();
         let bus = crate::test_support::quiet_bus(&self.rt);
         let handle = self.rt.handle().clone();
         let view = cx.update(|cx| {
@@ -933,4 +935,37 @@ fn a_failed_device_write_shows_the_error_without_reloading_into_another_write(
     harness.settle(cx);
 
     assert_eq!(device_failure(&view, cx), Some(read_only));
+}
+
+#[gpui::test]
+fn the_keyboard_walks_the_mappings_and_stops_at_the_last_row(cx: &mut gpui::TestAppContext) {
+    let harness = DeviceHarness::new(STORED_DEVICES, cx);
+    let view = harness.open(cx);
+    let (first, second) = (mapping_row("first", None), mapping_row("second", None));
+    let (first_id, second_id) = (first.id, second.id);
+
+    view.update(cx, |view, cx| {
+        view.mappings = vec![first, second];
+        let rows = vec![first_id, second_id];
+
+        view.step_list(ListStep::Next, cx);
+        assert_eq!(view.mapping_keys.activation_target(&rows), Some(first_id));
+        view.step_list(ListStep::Next, cx);
+        view.step_list(ListStep::Next, cx);
+        assert_eq!(view.mapping_keys.activation_target(&rows), Some(second_id));
+        view.step_list(ListStep::Prev, cx);
+        assert_eq!(view.mapping_keys.activation_target(&rows), Some(first_id));
+    });
+}
+
+#[gpui::test]
+fn cancel_ends_a_learn_in_progress(cx: &mut gpui::TestAppContext) {
+    let harness = DeviceHarness::new(STORED_DEVICES, cx);
+    let view = harness.open(cx);
+
+    view.update(cx, |view, cx| {
+        view.capture = Capture::Learn;
+        view.cancel_list(cx);
+        assert!(view.capture == Capture::Off);
+    });
 }

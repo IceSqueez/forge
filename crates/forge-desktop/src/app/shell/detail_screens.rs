@@ -55,8 +55,8 @@ impl AppShell {
     }
 
     fn detail_services(handles: &Arc<RuntimeHandles>) -> DetailServices {
-        let credentials = Arc::clone(&handles.backend) as Arc<dyn CredentialsRepo>;
-        let settings = Arc::clone(&handles.backend) as Arc<dyn SettingsRepo>;
+        let credentials = handles.backend.credentials_repo();
+        let settings = handles.backend.settings_repo();
         let history = handles.backend.history_repo();
         let trigger_registry = handles.automation.trigger_registry.clone();
         let bus = Arc::clone(&handles.core.bus) as Arc<dyn EventPublisher>;
@@ -160,8 +160,8 @@ impl AppShell {
         handles: &Arc<RuntimeHandles>,
         cx: &mut Context<Self>,
     ) -> AnyView {
-        let credentials = Arc::clone(&handles.backend) as Arc<dyn CredentialsRepo>;
-        let settings = Arc::clone(&handles.backend) as Arc<dyn SettingsRepo>;
+        let credentials = handles.backend.credentials_repo();
+        let settings = handles.backend.settings_repo();
         let bus = Arc::clone(&handles.core.bus) as Arc<dyn EventPublisher>;
         let rt_handle = handles.rt_handle.clone();
         let seed = handles.integrations.obs_install_seed.clone();
@@ -182,7 +182,7 @@ impl AppShell {
         cx: &mut Context<Self>,
     ) -> AnyView {
         let backend = Arc::clone(&handles.backend);
-        let settings = Arc::clone(&handles.backend) as Arc<dyn SettingsRepo>;
+        let settings = handles.backend.settings_repo();
         let bus = Arc::clone(&handles.core.bus);
         let rt_handle = handles.rt_handle.clone();
         let engine = handles
@@ -220,7 +220,7 @@ impl AppShell {
             .slot(&forge_midi::MIDI_INTEGRATION.id);
         let trigger_repo = handles.backend.trigger_instance_repo();
         let action_repo = handles.backend.action_repo();
-        let settings = Arc::clone(&handles.backend) as Arc<dyn SettingsRepo>;
+        let settings = handles.backend.settings_repo();
         let bus = Arc::clone(&handles.core.bus);
         let rt_handle = handles.rt_handle.clone();
         let view = cx.new(|cx| {
@@ -242,8 +242,8 @@ impl AppShell {
         handles: &Arc<RuntimeHandles>,
         cx: &mut Context<Self>,
     ) -> AnyView {
-        let credentials = Arc::clone(&handles.backend) as Arc<dyn CredentialsRepo>;
-        let settings = Arc::clone(&handles.backend) as Arc<dyn SettingsRepo>;
+        let credentials = handles.backend.credentials_repo();
+        let settings = handles.backend.settings_repo();
         let bus = Arc::clone(&handles.core.bus) as Arc<dyn EventPublisher>;
         let rt_handle = handles.rt_handle.clone();
         let seed = handles.integrations.vtube_install_seed.clone();

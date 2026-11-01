@@ -1,8 +1,8 @@
 use forge_events::Event;
 use forge_events::EventSource;
 use forge_registry::{
-    ActorDeclaration, EventFilter, KindPlatformContract, TriggerCategory, TriggerKindDescriptor,
-    TriggerVariables,
+    ActorDeclaration, EventFilter, KindPlatformContract, TriggerCatalogEntry, TriggerCategory,
+    TriggerKindDescriptor, TriggerVariables,
 };
 use forge_types::{DeclaredVariable, PlatformId, TriggerConfig, Variant, VariantKind};
 
@@ -12,11 +12,7 @@ use crate::vocabulary::{event_kinds, trigger_ids, variables};
 
 pub(crate) struct ChannelBroadcastEndedDescriptor;
 
-impl TriggerKindDescriptor for ChannelBroadcastEndedDescriptor {
-    fn id(&self) -> &str {
-        trigger_ids::STREAM_OFFLINE
-    }
-
+impl TriggerCatalogEntry for ChannelBroadcastEndedDescriptor {
     fn category(&self) -> TriggerCategory {
         TriggerCategory::Streams
     }
@@ -35,6 +31,12 @@ impl TriggerKindDescriptor for ChannelBroadcastEndedDescriptor {
 
     fn icon_name(&self) -> &str {
         "radio-off"
+    }
+}
+
+impl TriggerKindDescriptor for ChannelBroadcastEndedDescriptor {
+    fn id(&self) -> &str {
+        trigger_ids::STREAM_OFFLINE
     }
 
     fn platform_contract(&self) -> KindPlatformContract {

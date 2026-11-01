@@ -11,9 +11,9 @@ use forge_types::Secret;
 use serde::Deserialize;
 
 use crate::account::credentials::DEFAULT_ACCESS_TOKEN_LIFETIME_SECS;
-use crate::account::credentials_manager::YoutubeCredentialsManager;
+use crate::account::credentials_manager::YouTubeCredentialsManager;
 use crate::account::oauth_client::GoogleOAuthClient;
-use crate::api::data_api::{YoutubeDataApi, malformed};
+use crate::api::data_api::{YouTubeDataApi, malformed};
 
 pub const GOOGLE_AUTHORIZE_ENDPOINT: &str = "https://accounts.google.com/o/oauth2/v2/auth";
 
@@ -31,7 +31,7 @@ pub struct LoopbackCode {
 }
 
 #[derive(Debug, Clone)]
-pub struct YoutubeAuthBundle {
+pub struct YouTubeAuthBundle {
     pub access_token: OAuthToken,
     pub refresh_token: OAuthToken,
     pub channel_id: String,
@@ -51,12 +51,12 @@ pub fn client_credentials() -> Option<(String, Secret)> {
 }
 
 #[derive(Clone)]
-pub struct YoutubeSignIn {
-    manager: Arc<YoutubeCredentialsManager>,
+pub struct YouTubeSignIn {
+    manager: Arc<YouTubeCredentialsManager>,
 }
 
-impl YoutubeSignIn {
-    pub fn new(manager: Arc<YoutubeCredentialsManager>) -> Self {
+impl YouTubeSignIn {
+    pub fn new(manager: Arc<YouTubeCredentialsManager>) -> Self {
         Self { manager }
     }
 
@@ -67,14 +67,14 @@ impl YoutubeSignIn {
         )
     }
 
-    pub async fn save(&self, bundle: YoutubeAuthBundle) -> Result<(), PlatformError> {
+    pub async fn save(&self, bundle: YouTubeAuthBundle) -> Result<(), PlatformError> {
         self.manager.save_from_bundle(bundle).await
     }
 }
 
 struct GoogleLoopbackAttempt {
     flow: GoogleAuthFlow,
-    sign_in: YoutubeSignIn,
+    sign_in: YouTubeSignIn,
 }
 
 #[async_trait]
@@ -92,7 +92,7 @@ impl LoopbackAttempt for GoogleLoopbackAttempt {
     }
 }
 
-impl LoopbackSignIn for YoutubeSignIn {
+impl LoopbackSignIn for YouTubeSignIn {
     fn attempt(&self) -> Box<dyn LoopbackAttempt> {
         Box::new(GoogleLoopbackAttempt {
             flow: self.flow(),
@@ -103,13 +103,13 @@ impl LoopbackSignIn for YoutubeSignIn {
 
 pub struct GoogleAuthFlow {
     oauth: GoogleOAuthClient,
-    api: YoutubeDataApi,
+    api: YouTubeDataApi,
     force_consent: bool,
     loopback: PkceLoopback,
 }
 
 impl GoogleAuthFlow {
-    pub fn new(oauth: GoogleOAuthClient, api: YoutubeDataApi) -> Self {
+    pub fn new(oauth: GoogleOAuthClient, api: YouTubeDataApi) -> Self {
         let loopback = PkceLoopback::new(PkceAuthorizeConfig {
             client_id: oauth.client_id().to_owned(),
             authorize_endpoint: GOOGLE_AUTHORIZE_ENDPOINT.to_owned(),
@@ -148,7 +148,7 @@ impl GoogleAuthFlow {
     pub async fn wait_for_authorization(
         &mut self,
         timeout: Duration,
-    ) -> Result<YoutubeAuthBundle, PlatformError> {
+    ) -> Result<YouTubeAuthBundle, PlatformError> {
         let authorization = self.loopback.await_authorization(timeout).await?;
         let grant = self.oauth.exchange_code(&authorization).await?;
         let refresh_token = grant.refresh_token.ok_or_else(|| PlatformError::Auth {
@@ -168,7 +168,7 @@ impl GoogleAuthFlow {
                 reason: NO_CHANNEL_FOUND.to_owned(),
             })?;
 
-        Ok(YoutubeAuthBundle {
+        Ok(YouTubeAuthBundle {
             access_token: grant.access_token,
             refresh_token,
             channel_id: channel.id,
@@ -181,7 +181,7 @@ impl GoogleAuthFlow {
 }
 
 pub(crate) async fn fetch_own_channel(
-    api: &YoutubeDataApi,
+    api: &YouTubeDataApi,
     access_token: &str,
 ) -> Result<Option<ChannelItem>, PlatformError> {
     let request = GatewayRequest::get(YOUTUBE_CHANNELS_PATH)
@@ -301,7 +301,7 @@ mod tests {
             .await;
     }
 
-    async fn sign_in(mut flow: GoogleAuthFlow) -> Result<YoutubeAuthBundle, PlatformError> {
+    async fn sign_in(mut flow: GoogleAuthFlow) -> Result<YouTubeAuthBundle, PlatformError> {
         let auth_url = flow.start().await.unwrap().auth_url;
         trigger_callback(&auth_url, "auth_code_abc");
         flow.wait_for_authorization(CALLBACK_DEADLINE).await
@@ -344,7 +344,7 @@ mod tests {
         .unwrap();
         let flow = GoogleAuthFlow::new(
             GoogleOAuthClient::new(gateway, "cid".to_owned(), forge_types::Secret::new("csec")),
-            YoutubeDataApi::new(
+            YouTubeDataApi::new(
                 &endpoints,
                 SharedQuota::default(),
                 Arc::new(CapturingPublisher::default()),
@@ -631,7 +631,7 @@ mod tests {
 
     #[test]
     fn debug_of_an_auth_bundle_never_carries_a_token() {
-        let bundle = YoutubeAuthBundle {
+        let bundle = YouTubeAuthBundle {
             access_token: OAuthToken::new("bundle-access-sentinel"),
             refresh_token: OAuthToken::new("bundle-refresh-sentinel"),
             channel_id: "UC123".to_owned(),

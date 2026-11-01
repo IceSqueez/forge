@@ -391,7 +391,7 @@ mod tests {
             },
         ] {
             let (backend, _writes) = test_backend();
-            let view = mount(cx, &rt, backend, policy(&rt, initial));
+            let view = mount(cx, &rt, backend.settings_repo(), policy(&rt, initial));
             assert_eq!(shown(&view, cx), initial);
         }
     }
@@ -413,7 +413,7 @@ mod tests {
         ] {
             let (backend, mut writes) = test_backend();
             let policy = policy(&rt, STORED);
-            let view = mount(cx, &rt, backend, policy.clone());
+            let view = mount(cx, &rt, backend.settings_repo(), policy.clone());
 
             view.update(cx, |view, cx| view.flip(setting, cx));
             settle(cx, &rt);
@@ -469,7 +469,7 @@ mod tests {
         let rt = runtime();
         let (backend, _writes) = test_backend();
         let policy = policy(&rt, STORED);
-        let view = mount(cx, &rt, backend, policy.clone());
+        let view = mount(cx, &rt, backend.settings_repo(), policy.clone());
 
         view.update(cx, |view, cx| {
             view.flip(NotificationToggle::ConnectionLossCue, cx)
@@ -517,7 +517,8 @@ mod tests {
         let rt = runtime();
         for enabled in [true, false] {
             let (backend, _writes) = test_backend();
-            let (view, _policy) = mount_with_backup_notice(cx, &rt, backend, enabled);
+            let (view, _policy) =
+                mount_with_backup_notice(cx, &rt, backend.settings_repo(), enabled);
             let opened = view.read_with(cx, |view, _| {
                 view.shown(NotificationSetting::ScheduledBackupFailureNotice)
             });
@@ -531,7 +532,7 @@ mod tests {
     ) {
         let rt = runtime();
         let (backend, mut writes) = test_backend();
-        let (view, policy) = mount_with_backup_notice(cx, &rt, backend, true);
+        let (view, policy) = mount_with_backup_notice(cx, &rt, backend.settings_repo(), true);
 
         view.update(cx, |view, cx| {
             view.flip(NotificationSetting::ScheduledBackupFailureNotice, cx)
@@ -563,7 +564,7 @@ mod tests {
     ) {
         let rt = runtime();
         let (backend, _writes) = test_backend();
-        let (view, _policy) = mount_with_backup_notice(cx, &rt, backend, true);
+        let (view, _policy) = mount_with_backup_notice(cx, &rt, backend.settings_repo(), true);
 
         view.update(cx, |view, cx| {
             view.flip(NotificationSetting::ScheduledBackupFailureNotice, cx)
@@ -609,7 +610,7 @@ mod tests {
     ) {
         let rt = runtime();
         let (backend, mut writes) = test_backend();
-        let (view, _policy) = mount_with_backup_notice(cx, &rt, backend, true);
+        let (view, _policy) = mount_with_backup_notice(cx, &rt, backend.settings_repo(), true);
 
         view.update(cx, |view, cx| {
             view.flip(NotificationSetting::ScheduledBackupFailureNotice, cx);

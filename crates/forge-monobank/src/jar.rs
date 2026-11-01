@@ -1,4 +1,5 @@
 use forge_types::{CurrencyCode, MoneyAmount, RecoverMutex, Secret};
+use std::fmt;
 use std::sync::Mutex;
 use std::time::{Duration, Instant};
 
@@ -10,10 +11,10 @@ use crate::wire::JarWire;
 const JAR_LIST_REUSE_WINDOW: Duration = Duration::from_secs(600);
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
-pub(crate) struct JarId(String);
+pub struct JarId(String);
 
 impl JarId {
-    pub(crate) fn parse(raw: &str) -> Result<Self, MonobankError> {
+    pub fn parse(raw: &str) -> Result<Self, MonobankError> {
         let trimmed = raw.trim();
         let path_safe = trimmed
             .chars()
@@ -24,14 +25,20 @@ impl JarId {
         Ok(Self(trimmed.to_owned()))
     }
 
-    pub(crate) fn as_str(&self) -> &str {
+    pub fn as_str(&self) -> &str {
         &self.0
+    }
+}
+
+impl fmt::Display for JarId {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter.write_str(&self.0)
     }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct MonobankJar {
-    pub id: String,
+    pub id: JarId,
     pub send_id: Option<String>,
     pub title: Option<String>,
     pub currency: Option<CurrencyCode>,
@@ -49,7 +56,7 @@ impl MonobankJar {
                 .and_then(|goal| currency.amount(goal).ok())
         });
         Some(Self {
-            id: id.as_str().to_owned(),
+            id,
             send_id: wire.send_id.filter(|send_id| !send_id.trim().is_empty()),
             title: wire
                 .title
@@ -99,7 +106,7 @@ impl JarDirectory {
         self.jars(api, token)
             .await?
             .into_iter()
-            .find(|jar| jar.id == jar_id.as_str())
+            .find(|jar| jar.id == *jar_id)
             .ok_or(MonobankError::JarNotFound)
     }
 

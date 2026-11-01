@@ -14,7 +14,7 @@ use forge_runtime::{
 };
 use forge_server::DeliveryHub;
 use forge_soundboard::spawn_clip_hotkey_dispatcher;
-use forge_storage::{DataProvider, SettingsRepo};
+use forge_storage::DataProvider;
 use forge_types::{LatestValueReader, Shared, SystemWallClock};
 
 use crate::audio_router::{AudioRouter, AudioRouterParts};
@@ -100,7 +100,11 @@ pub async fn build_host(inputs: HostInputs) -> Host {
         config: forge_runtime::Config::default(),
         os: crate::os_adapters::system_os_ports(),
     });
-    if let Err(e) = wiring.scripts().load_all(backend.as_ref()).await {
+    if let Err(e) = wiring
+        .scripts()
+        .load_all(backend.script_repo().as_ref())
+        .await
+    {
         tracing::warn!(error = %e, "script registry load failed at boot");
         boot_warnings.record(BootWarning::Scripts);
     }
@@ -192,7 +196,7 @@ pub async fn build_host(inputs: HostInputs) -> Host {
 
     let FrozenRuntime {
         catalog,
-        scripts: script_registry,
+        scripts: script_catalog,
         overlays: overlay_service,
         sub_action_registry,
         trigger_registry,
@@ -213,7 +217,7 @@ pub async fn build_host(inputs: HostInputs) -> Host {
     let live_viewers = spawn_live_viewer_aggregator(services);
     let supervisor = IntegrationSupervisor::launch(
         integrations.factories,
-        Arc::clone(&backend) as Arc<dyn SettingsRepo>,
+        backend.settings_repo(),
         action_engine.integration_gate().clone(),
         Arc::new(integrations.builtins.clone()),
         live_viewers.clone(),
@@ -304,7 +308,7 @@ pub async fn build_host(inputs: HostInputs) -> Host {
     Host {
         core,
         automation: AutomationHandles {
-            script_registry,
+            script_catalog,
             sub_action_registry,
             trigger_registry,
             action_engine,

@@ -8,10 +8,10 @@ use forge_net::TokenBucketRateLimiter;
 use forge_platform_core::{ChatPlatform, PlatformEndpoints, ViewerReport};
 use forge_platform_youtube::{
     ActiveBroadcastIdHandle, GOOGLE_OAUTH_BUDGET_CAPACITY, GOOGLE_OAUTH_BUDGET_WINDOW,
-    GoogleOAuthClient, LiveChatIdHandle, SharedQuota, YoutubeAdBreak, YoutubeAuthBundle,
-    YoutubeChannelLookup, YoutubeCredentialsManager, YoutubeDataApi, YoutubeModeration,
-    YoutubePlatform, YoutubeSendChat, YoutubeStreamMetadata, YoutubeStreamStats, YoutubeThumbnail,
-    YoutubeViewerPoll, google_oauth_gateway,
+    GoogleOAuthClient, LiveChatIdHandle, SharedQuota, YouTubeAdBreak, YouTubeAuthBundle,
+    YouTubeChannelLookup, YouTubeCredentialsManager, YouTubeDataApi, YouTubeModeration,
+    YouTubePlatform, YouTubeSendChat, YouTubeStreamMetadata, YouTubeStreamStats, YouTubeThumbnail,
+    YouTubeViewerPoll, google_oauth_gateway,
 };
 use forge_storage::MockBanLedgerRepo;
 use forge_storage::test_support::MemoryCredentials;
@@ -36,8 +36,8 @@ fn token_source() -> TokenSource {
     fixed_token("override-token")
 }
 
-fn api(endpoints: &PlatformEndpoints) -> YoutubeDataApi {
-    YoutubeDataApi::new(
+fn api(endpoints: &PlatformEndpoints) -> YouTubeDataApi {
+    YouTubeDataApi::new(
         endpoints,
         SharedQuota::default(),
         Arc::new(forge_events::test_support::NullPublisher),
@@ -57,8 +57,8 @@ fn active_broadcast() -> ActiveBroadcastIdHandle {
     handle
 }
 
-fn bundle(expires_at: SystemTime, channel_handle: Option<&str>) -> YoutubeAuthBundle {
-    YoutubeAuthBundle {
+fn bundle(expires_at: SystemTime, channel_handle: Option<&str>) -> YouTubeAuthBundle {
+    YouTubeAuthBundle {
         access_token: OAuthToken::new("stale-access"),
         refresh_token: OAuthToken::new("stale-refresh"),
         channel_id: "UCoverride".to_owned(),
@@ -71,8 +71,8 @@ fn bundle(expires_at: SystemTime, channel_handle: Option<&str>) -> YoutubeAuthBu
 
 async fn manager_holding(
     endpoints: &PlatformEndpoints,
-    saved: YoutubeAuthBundle,
-) -> YoutubeCredentialsManager {
+    saved: YouTubeAuthBundle,
+) -> YouTubeCredentialsManager {
     let oauth = GoogleOAuthClient::new(
         google_oauth_gateway(
             endpoints,
@@ -85,7 +85,7 @@ async fn manager_holding(
         "client".to_owned(),
         forge_types::Secret::new("secret"),
     );
-    let manager = YoutubeCredentialsManager::new(
+    let manager = YouTubeCredentialsManager::new(
         Arc::new(MemoryCredentials::default()),
         oauth,
         api(endpoints),
@@ -126,11 +126,11 @@ async fn data_api_override_carries_every_rest_client_to_the_override_host() {
         .await;
     let endpoints = data_api_override(&server);
 
-    YoutubeSendChat::new(api(&endpoints), token_source(), live_chat())
+    YouTubeSendChat::new(api(&endpoints), token_source(), live_chat())
         .send("hi")
         .await
         .ok();
-    YoutubeModeration::new(
+    YouTubeModeration::new(
         api(&endpoints),
         token_source(),
         broadcaster_source(),
@@ -140,19 +140,19 @@ async fn data_api_override_carries_every_rest_client_to_the_override_host() {
     .add_moderator("UCviewer")
     .await
     .ok();
-    YoutubeStreamMetadata::new(api(&endpoints), token_source(), active_broadcast())
+    YouTubeStreamMetadata::new(api(&endpoints), token_source(), active_broadcast())
         .set_title("New title")
         .await
         .ok();
-    YoutubeStreamStats::new(api(&endpoints), token_source(), active_broadcast())
+    YouTubeStreamStats::new(api(&endpoints), token_source(), active_broadcast())
         .fetch()
         .await
         .ok();
-    YoutubeAdBreak::new(api(&endpoints), token_source(), active_broadcast())
+    YouTubeAdBreak::new(api(&endpoints), token_source(), active_broadcast())
         .insert_cuepoint(30)
         .await
         .ok();
-    YoutubeChannelLookup::new(api(&endpoints), token_source())
+    YouTubeChannelLookup::new(api(&endpoints), token_source())
         .lookup("@viewer")
         .await
         .ok();
@@ -187,7 +187,7 @@ async fn upload_api_override_carries_the_thumbnail_upload_to_the_override_host()
     let image = folder.path().join("thumbnail.png");
     std::fs::write(&image, b"\x89PNG\r\n\x1a\n").unwrap();
 
-    let result = YoutubeThumbnail::new(api(&endpoints), token_source(), active_broadcast())
+    let result = YouTubeThumbnail::new(api(&endpoints), token_source(), active_broadcast())
         .set(image.to_str().unwrap())
         .await;
 
@@ -271,7 +271,7 @@ async fn data_api_override_carries_the_viewer_poll_to_the_override_host() {
         .mount(&server)
         .await;
     let (reports_tx, mut reports_rx) = watch::channel(ViewerReport::Absent);
-    let poll = YoutubeViewerPoll::new(
+    let poll = YouTubeViewerPoll::new(
         api(&data_api_override(&server)),
         token_source(),
         active_broadcast(),
@@ -324,7 +324,7 @@ async fn platform_carries_its_override_into_the_chat_poller_and_the_sender() {
         .await;
     let endpoints = data_api_override(&server);
     let manager = manager_holding(&endpoints, bundle(one_hour_from_now(), Some("@override"))).await;
-    let platform = YoutubePlatform::new(
+    let platform = YouTubePlatform::new(
         api(&endpoints),
         "UCoverride".to_owned(),
         Arc::new(manager),

@@ -6,8 +6,8 @@ use forge_storage::{BanLedgerEntry, BanLedgerKey, BanLedgerRepo, BanOrigin, Stor
 use forge_types::Secret;
 use time::OffsetDateTime;
 
-use crate::account::credentials::YoutubeBroadcaster;
-use crate::api::data_api::{DataApiError, YoutubeDataApi, json_body, malformed};
+use crate::account::credentials::YouTubeBroadcaster;
+use crate::api::data_api::{DataApiError, YouTubeDataApi, json_body, malformed};
 use crate::broadcast::live_chat_id::LiveChatIdHandle;
 use crate::chat::ban_ledger::{ban_ledger_key, expiry_after};
 
@@ -23,19 +23,19 @@ const BANNED_OUTSIDE_FORGE: &str =
     "unban - this ban was issued outside forge, lift it in YouTube Studio";
 
 use forge_platform_core::{PlatformFuture, TokenSource};
-type BroadcasterSource = Arc<dyn Fn() -> PlatformFuture<YoutubeBroadcaster> + Send + Sync>;
+type BroadcasterSource = Arc<dyn Fn() -> PlatformFuture<YouTubeBroadcaster> + Send + Sync>;
 
-pub struct YoutubeModeration {
-    api: YoutubeDataApi,
+pub struct YouTubeModeration {
+    api: YouTubeDataApi,
     access_token_source: TokenSource,
     broadcaster_source: BroadcasterSource,
     live_chat_id: LiveChatIdHandle,
     ban_ledger: Arc<dyn BanLedgerRepo>,
 }
 
-impl YoutubeModeration {
+impl YouTubeModeration {
     pub fn new(
-        api: YoutubeDataApi,
+        api: YouTubeDataApi,
         access_token_source: TokenSource,
         broadcaster_source: BroadcasterSource,
         live_chat_id: LiveChatIdHandle,
@@ -334,7 +334,7 @@ mod tests {
         Arc::new(|| Box::pin(async { Ok(TOKEN_SENTINEL.to_owned()) }))
     }
 
-    fn moderation_on(server: &MockServer) -> (YoutubeModeration, SharedQuota) {
+    fn moderation_on(server: &MockServer) -> (YouTubeModeration, SharedQuota) {
         moderation_with(
             server,
             Arc::new(MemoryBanLedger::default()),
@@ -346,14 +346,14 @@ mod tests {
         server: &MockServer,
         ledger: Arc<MemoryBanLedger>,
         broadcaster: BroadcasterSource,
-    ) -> (YoutubeModeration, SharedQuota) {
+    ) -> (YouTubeModeration, SharedQuota) {
         let handle = LiveChatIdHandle::new();
         handle.set(Some("lc-test".to_owned()));
         let quota = SharedQuota::new(QuotaState {
             last_reset_date: today_pacific(),
             ..QuotaState::default()
         });
-        let moderation = YoutubeModeration::new(
+        let moderation = YouTubeModeration::new(
             crate::endpoints_test_support::data_api_charging(&server.uri(), quota.clone()),
             token_source(),
             broadcaster,
@@ -774,7 +774,7 @@ mod tests {
         Timeout(u32),
     }
 
-    async fn issue(moderation: &YoutubeModeration, issue: &Issue) -> Result<(), PlatformError> {
+    async fn issue(moderation: &YouTubeModeration, issue: &Issue) -> Result<(), PlatformError> {
         match issue {
             Issue::Ban => moderation.ban(TARGET_CHANNEL, None).await,
             Issue::Timeout(seconds) => moderation.timeout(TARGET_CHANNEL, *seconds, None).await,
@@ -1037,7 +1037,7 @@ mod tests {
             switchable_broadcaster_source(Arc::clone(&account)),
         );
         moderation.ban(TARGET_CHANNEL, None).await.unwrap();
-        *account.lock().unwrap() = YoutubeBroadcaster {
+        *account.lock().unwrap() = YouTubeBroadcaster {
             channel_id: "UCsecond".to_owned(),
             channel_title: "Second".to_owned(),
         };
@@ -1066,7 +1066,7 @@ mod tests {
             let server = MockServer::start().await;
             mount_delete_status(&server, status.as_u16()).await;
             let bus = Arc::new(crate::endpoints_test_support::CapturingPublisher::default());
-            let moderation = YoutubeModeration::new(
+            let moderation = YouTubeModeration::new(
                 crate::endpoints_test_support::data_api_with(
                     &server.uri(),
                     SharedQuota::default(),

@@ -43,8 +43,8 @@ pub use donation::{Donation, DonationOrigin, Donor, DonorVisibility};
 pub use error::TypesError;
 pub use execution::{
     ArgStack, COMMAND_ARGS_VARIABLE, COMMAND_NAME_VARIABLE, COMMAND_TAIL_VARIABLE,
-    ExecutionContext, ExecutionMetadata, ExecutionOutcome, SubActionOutcome, SubActionTelemetry,
-    integration_disabled_message, whispers_unsupported_message,
+    ExecutionContext, ExecutionMetadata, ExecutionOutcome, StepPosition, SubActionOutcome,
+    SubActionTelemetry, integration_disabled_message, whispers_unsupported_message,
 };
 pub use hex::to_lower_hex;
 pub use ids::{

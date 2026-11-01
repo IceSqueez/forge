@@ -11,7 +11,7 @@ use forge_types::DonationOrigin;
 use serde_json::json;
 use support::{
     Bank, CLIENT_INFO, Harness, JAR, MemoryCredentials, OTHER_JAR, STATEMENT_PREFIX,
-    ScriptedLimiter, TOKEN, creds_with, now_unix, top_up,
+    ScriptedLimiter, TOKEN, creds_with, jar_id, now_unix, top_up,
 };
 use tokio_stream::StreamExt;
 use wiremock::ResponseTemplate;
@@ -329,7 +329,7 @@ async fn selecting_the_missing_jar_resumes_a_stopped_poller() {
     let mut h = Harness::with_creds(bank, creds_with(TOKEN, None)).await;
     let _missing_jar = h.next().await;
 
-    h.provider.select_jar(JAR).await.unwrap();
+    h.provider.select_jar(jar_id(JAR)).await.unwrap();
     let donation = h.next().await.unwrap();
 
     assert_eq!(donation.donation_id, "D-1");
@@ -345,7 +345,7 @@ async fn switching_to_another_jar_takes_a_fresh_history_baseline() {
     h.wait_for("baseline poll", |s| s.last_poll_at.is_some())
         .await;
 
-    h.provider.select_jar(OTHER_JAR).await.unwrap();
+    h.provider.select_jar(jar_id(OTHER_JAR)).await.unwrap();
     let other = h.next().await.unwrap();
 
     assert_eq!(

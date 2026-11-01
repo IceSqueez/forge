@@ -4,7 +4,7 @@ use forge_types::DonationOrigin;
 
 use crate::config::MAX_STATEMENT_WINDOW;
 
-pub(crate) const STATEMENT_PAGE_LIMIT: usize = 500;
+pub const STATEMENT_PAGE_LIMIT: usize = 500;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) struct StatementWindow {

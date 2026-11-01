@@ -42,7 +42,7 @@ async fn unnoticed_leftover(backend: Arc<dyn DataProvider>) -> Option<LeftoverNo
     .await
     .ok()
     .flatten()?;
-    let repo = backend as Arc<dyn SettingsRepo>;
+    let repo = backend.settings_repo();
     let noticed = read_setting_or_default(repo.as_ref(), &LEFTOVER_INSTALL_NOTICED).await;
     leftover_notice(Some(leftover), noticed)
 }
@@ -91,7 +91,7 @@ fn raise_leftover_toast(backend: Arc<dyn DataProvider>, rt_handle: Handle, cx: &
                 detached(
                     &rt_handle,
                     "open the installed apps settings",
-                    open_installed_apps(Arc::clone(&backend) as Arc<dyn SettingsRepo>),
+                    open_installed_apps(backend.settings_repo()),
                 );
             },
         )),
@@ -152,10 +152,10 @@ mod tests {
         let rt = runtime();
         let (backend, _writes) = test_backend();
 
-        rt.block_on(remember_leftover_noticed(backend.as_ref()));
+        rt.block_on(remember_leftover_noticed(backend.settings_repo().as_ref()));
 
         let noticed = rt.block_on(read_setting_or_default(
-            backend.as_ref(),
+            backend.settings_repo().as_ref(),
             &LEFTOVER_INSTALL_NOTICED,
         ));
         assert_eq!(
@@ -170,10 +170,10 @@ mod tests {
         let (backend, _writes) = test_backend();
         backend.fail_writes(NOTICED_KEY);
 
-        rt.block_on(remember_leftover_noticed(backend.as_ref()));
+        rt.block_on(remember_leftover_noticed(backend.settings_repo().as_ref()));
 
         let noticed = rt.block_on(read_setting_or_default(
-            backend.as_ref(),
+            backend.settings_repo().as_ref(),
             &LEFTOVER_INSTALL_NOTICED,
         ));
         assert!(leftover_notice(Some(PathBuf::from(INSTALL_DIR)), noticed).is_some());

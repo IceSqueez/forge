@@ -9,7 +9,7 @@ use forge_registry::{
 use forge_types::{ArgStack, SubActionTelemetry, Variant};
 
 use super::step_failure;
-use crate::broadcast::channel_lookup::YoutubeChannelLookup;
+use crate::broadcast::channel_lookup::YouTubeChannelLookup;
 use crate::vocabulary::variables::viewer as variables;
 use crate::vocabulary::{config_keys, sub_action_ids};
 
@@ -26,11 +26,11 @@ const IDENTIFIER: TextField = TextField {
 const CONFIG: ConfigSpec = ConfigSpec::new(&[&IDENTIFIER]);
 
 pub(crate) struct LookupViewerRunner {
-    lookup: Arc<YoutubeChannelLookup>,
+    lookup: Arc<YouTubeChannelLookup>,
 }
 
 impl LookupViewerRunner {
-    pub(crate) fn new(lookup: Arc<YoutubeChannelLookup>) -> Self {
+    pub(crate) fn new(lookup: Arc<YouTubeChannelLookup>) -> Self {
         Self { lookup }
     }
 }
@@ -132,7 +132,7 @@ mod tests {
     }
 
     fn runner_on(server: &MockServer) -> LookupViewerRunner {
-        let lookup = YoutubeChannelLookup::new(
+        let lookup = YouTubeChannelLookup::new(
             crate::endpoints_test_support::data_api_at(&server.uri()),
             token_source(),
         );
@@ -165,7 +165,7 @@ mod tests {
     }
 
     fn runner_on_uri(uri: &str) -> LookupViewerRunner {
-        let lookup = YoutubeChannelLookup::new(
+        let lookup = YouTubeChannelLookup::new(
             crate::endpoints_test_support::data_api_at(uri),
             token_source(),
         );

@@ -34,7 +34,7 @@ pub mod vocabulary;
 
 pub use client::{EVENT_BUFFER_CAPACITY, ObsClient};
 pub use connect_settings::{OBS_AUTO_RECONNECT, OBS_CONNECT_ON_LAUNCH};
-pub use endpoint::parse_endpoint;
+pub use endpoint::ObsEndpoint;
 pub use error::ObsError;
 pub use integration::OBS_INTEGRATION;
 pub use probe::probe_connection;

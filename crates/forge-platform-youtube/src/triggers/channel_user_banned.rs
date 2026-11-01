@@ -1,8 +1,8 @@
 use forge_events::{Event, EventSource};
 use forge_registry::{
     ActorDeclaration, ActorIdentity, ActorRole, ActorSlot, CanonicalVariable, EventFilter,
-    FormField, KindPlatformContract, SubActionConfigExt, TriggerCategory, TriggerKindDescriptor,
-    TriggerVariables,
+    FormField, KindPlatformContract, SubActionConfigExt, TriggerCatalogEntry, TriggerCategory,
+    TriggerKindDescriptor, TriggerVariables,
 };
 use forge_types::{
     DeclaredVariable, PlatformId, SynthesisHint, TriggerConfig, UserText, Variant, VariantKind,
@@ -19,11 +19,7 @@ const TEMPORARY_BAN: &str = "temporary";
 
 pub(crate) struct ChannelUserBannedDescriptor;
 
-impl TriggerKindDescriptor for ChannelUserBannedDescriptor {
-    fn id(&self) -> &str {
-        trigger_ids::CHANNEL_USER_BANNED
-    }
-
+impl TriggerCatalogEntry for ChannelUserBannedDescriptor {
     fn category(&self) -> TriggerCategory {
         TriggerCategory::Users
     }
@@ -42,6 +38,12 @@ impl TriggerKindDescriptor for ChannelUserBannedDescriptor {
 
     fn icon_name(&self) -> &str {
         "user-x"
+    }
+}
+
+impl TriggerKindDescriptor for ChannelUserBannedDescriptor {
+    fn id(&self) -> &str {
+        trigger_ids::CHANNEL_USER_BANNED
     }
 
     fn platform_contract(&self) -> KindPlatformContract {

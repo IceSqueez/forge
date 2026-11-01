@@ -15,7 +15,7 @@ use time::OffsetDateTime;
 use tokio::sync::mpsc::UnboundedSender;
 use tokio_util::sync::{CancellationToken, DropGuard};
 
-use crate::api::data_api::{DataApiError, YoutubeDataApi, malformed};
+use crate::api::data_api::{DataApiError, YouTubeDataApi, malformed};
 use crate::api::poll_health::{PollHealthReporter, PollHealthTracker};
 use crate::api::quota_state::{CHAT_POLL_COST, today_pacific};
 use crate::broadcast::active_broadcast_id::ActiveBroadcastIdHandle;
@@ -92,8 +92,8 @@ pub struct ChatPollerStopGuard {
     _cancels_on_drop: DropGuard,
 }
 
-pub struct YoutubeChatPoller {
-    api: YoutubeDataApi,
+pub struct YouTubeChatPoller {
+    api: YouTubeDataApi,
     access_token_source: TokenSource,
     bus_sender: UnboundedSender<Event>,
     channel_id: String,
@@ -104,9 +104,9 @@ pub struct YoutubeChatPoller {
     timings: ChatPollTimings,
 }
 
-impl YoutubeChatPoller {
+impl YouTubeChatPoller {
     pub fn new(
-        api: YoutubeDataApi,
+        api: YouTubeDataApi,
         access_token_source: TokenSource,
         bus_sender: UnboundedSender<Event>,
         channel_id: String,

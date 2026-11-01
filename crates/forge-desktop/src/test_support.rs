@@ -11,8 +11,8 @@ use forge_overlay::SampleContext;
 use forge_registry::ActorRole;
 use forge_registry::{
     ActorBlock, ActorIdentity, ChatTriggerFamily, EventFilter, FormField, KindPlatformContract,
-    LoginSlot, SubActionRegistry, TriggerCategory, TriggerKindDescriptor, TriggerRegistry,
-    TriggerVariables,
+    LoginSlot, SubActionRegistry, TriggerCatalogEntry, TriggerCategory, TriggerKindDescriptor,
+    TriggerRegistry, TriggerVariables,
 };
 use forge_runtime::{
     ActionCancelRegistry, EventBus, OverlayFrameSink, OverlayReceivers, OverlaySampleSource,
@@ -38,9 +38,10 @@ pub(crate) use memory_scripts::MemoryScripts;
 
 pub(crate) async fn booted_runtime_handles() -> crate::app::runtime_handles::RuntimeHandles {
     let backend = forge_host::test_support::open_store().await;
-    forge_host::test_support::seed_integrations_and_server_off(backend.as_ref()).await;
+    forge_host::test_support::seed_integrations_and_server_off(backend.settings_repo().as_ref())
+        .await;
     forge_storage::write_setting(
-        backend.as_ref(),
+        backend.settings_repo().as_ref(),
         &crate::app::stay_awake::STAY_AWAKE,
         &false,
     )
@@ -149,11 +150,7 @@ impl StubTrigger {
     }
 }
 
-impl TriggerKindDescriptor for StubTrigger {
-    fn id(&self) -> &str {
-        &self.id
-    }
-
+impl TriggerCatalogEntry for StubTrigger {
     fn category(&self) -> TriggerCategory {
         self.category
     }
@@ -172,6 +169,12 @@ impl TriggerKindDescriptor for StubTrigger {
 
     fn icon_name(&self) -> &str {
         "bell"
+    }
+}
+
+impl TriggerKindDescriptor for StubTrigger {
+    fn id(&self) -> &str {
+        &self.id
     }
 
     fn platform_contract(&self) -> KindPlatformContract {
@@ -290,7 +293,7 @@ pub(crate) fn stored_shortcut_overrides(
         );
     }
     runtime().block_on(crate::automation::shortcut_overrides::load_overrides(
-        backend,
+        backend.settings_repo(),
     ))
 }
 
@@ -894,7 +897,7 @@ pub(crate) fn lifecycle_switch(
     crate::integrations::integration_switch::IntegrationSwitch,
 ) {
     let (settings, _writes) = test_backend();
-    let supervisor = idle_supervisor(rt, settings as Arc<dyn SettingsRepo>, &[]);
+    let supervisor = idle_supervisor(rt, settings.settings_repo(), &[]);
     cx.update(|cx| {
         let lifecycle = gpui::AppContext::new(cx, |_| {
             crate::integrations::integration_lifecycle::IntegrationLifecycle::new(initial)

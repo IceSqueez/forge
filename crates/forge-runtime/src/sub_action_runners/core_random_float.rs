@@ -110,7 +110,7 @@ impl SubActionRunner for CoreRandomFloatRunner {
         SubActionIo {
             produces: vec![ProducedVariable {
                 output_name_key: INTO_VAR_KEY.to_owned(),
-                kind: VariantKind::Float,
+                kind: Some(VariantKind::Float),
                 label: "Random float".to_owned(),
             }],
             ..SubActionIo::default()

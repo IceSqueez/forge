@@ -2,9 +2,10 @@ use forge_types::{RecoverMutex, UserText, VerbatimText};
 use std::collections::{HashMap, HashSet};
 use std::sync::{Arc, Mutex};
 
+use forge_platform_core::RowSpacing;
 use forge_platform_core::{
-    BuiltinContent, ContentList, ContentListItem, DEFAULT_ROW_PADDING_Y_PX, DetailSection,
-    KeyValueRow, SectionIcon, TrailingToken,
+    BuiltinContent, ContentList, ContentListItem, DetailSection, KeyValueRow, SectionIcon,
+    TrailingToken,
 };
 
 use crate::client::MidiClient;
@@ -48,7 +49,7 @@ impl BuiltinContent for MidiClient {
                     icon: SectionIcon::new("plug"),
                     icon_tint: None,
                     name: p.name.clone(),
-                    monospace_name: true,
+                    name_is_identifier: true,
                     active: subscribed,
                     active_label: Some(status_label.into()),
                     trailing: vec![TrailingToken::Label(
@@ -67,7 +68,7 @@ impl BuiltinContent for MidiClient {
                 icon: SectionIcon::new("plug"),
                 icon_tint: None,
                 name: p.name.clone(),
-                monospace_name: true,
+                name_is_identifier: true,
                 active: false,
                 active_label: None,
                 trailing: vec![],
@@ -88,7 +89,7 @@ impl BuiltinContent for MidiClient {
                     inline_label: None,
                     count_label: Some(input_count),
                     visible_rows: None,
-                    row_padding_y_px: DEFAULT_ROW_PADDING_Y_PX,
+                    row_spacing: RowSpacing::Standard,
                     refreshable: false,
                     items: input_items.into(),
                     footer: None,
@@ -100,7 +101,7 @@ impl BuiltinContent for MidiClient {
                     inline_label: None,
                     count_label: Some(output_count),
                     visible_rows: None,
-                    row_padding_y_px: DEFAULT_ROW_PADDING_Y_PX,
+                    row_spacing: RowSpacing::Standard,
                     refreshable: false,
                     items: output_items.into(),
                     footer: None,

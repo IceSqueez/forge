@@ -2988,6 +2988,7 @@ dependencies = [
  "forge-types",
  "futures-util",
  "obws",
+ "serde",
  "serde_json",
  "thiserror 2.0.21",
  "time",
@@ -3003,6 +3004,7 @@ version = "0.6.3"
 dependencies = [
  "forge-durable",
  "forge-registry",
+ "forge-speech-types",
  "forge-types",
  "serde",
  "serde_json",
@@ -3159,6 +3161,7 @@ dependencies = [
  "forge-registry",
  "forge-runtime",
  "forge-script",
+ "forge-speech-types",
  "forge-storage",
  "forge-storage-sqlite",
  "forge-test-support",

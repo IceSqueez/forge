@@ -7,7 +7,6 @@ use forge_components::{
     readonly_mono_field, setting_block, setting_row, setting_rows, spacing, toggle, tr,
 };
 use forge_server::ServerSettings;
-use forge_storage::SettingsRepo;
 use forge_types::Secret;
 use gpui::{AnyElement, ClickEvent, Context, Pixels, div, px};
 
@@ -26,7 +25,7 @@ impl SettingsWebSocketView {
         let prev = self.require_ws_token;
         let value = !prev;
         self.require_ws_token = value;
-        let repo = Arc::clone(&self.backend) as Arc<dyn SettingsRepo>;
+        let repo = self.backend.settings_repo();
         let server = self.server.clone();
         self.persist_field(
             prev,
@@ -54,7 +53,7 @@ impl SettingsWebSocketView {
         let prev = self.require_overlay_token;
         let value = !prev;
         self.require_overlay_token = value;
-        let repo = Arc::clone(&self.backend) as Arc<dyn SettingsRepo>;
+        let repo = self.backend.settings_repo();
         let server = self.server.clone();
         self.persist_field(
             prev,

@@ -32,7 +32,7 @@ impl StepTimer {
         let duration_ms =
             u64::try_from(self.monotonic_start.elapsed().as_millis()).unwrap_or(u64::MAX);
         SubActionTelemetry {
-            index: self.index,
+            position: forge_types::StepPosition::TopLevel(self.index),
             kind: self.kind,
             started_at: self.started_at,
             duration_ms,
@@ -81,7 +81,7 @@ mod tests {
         let stack = ArgStack::new();
         let tel = StepTimer::start(&ctx(&stack, 3), "core.demo").finish(SubActionOutcome::Success);
         assert_eq!(tel.kind, "core.demo");
-        assert_eq!(tel.index, 3);
+        assert_eq!(tel.position, forge_types::StepPosition::TopLevel(3));
         assert!(tel.args_in.is_empty());
         assert!(tel.produced.is_empty());
     }

@@ -1,8 +1,8 @@
 use forge_events::Event;
 use forge_registry::{CanonicalCount, CanonicalVariable, VariableStanding};
 use forge_registry::{
-    EventFilter, FormField, KindPlatformContract, TriggerCategory, TriggerKindDescriptor,
-    TriggerVariables, declared_variables,
+    EventFilter, FormField, KindPlatformContract, TriggerCatalogEntry, TriggerCategory,
+    TriggerKindDescriptor, TriggerVariables, declared_variables,
 };
 use forge_types::{
     DeclaredVariable, PlatformId, TriggerConfig, VariableSchema, Variant, VariantKind,
@@ -40,11 +40,7 @@ impl StubTrigger {
     }
 }
 
-impl TriggerKindDescriptor for StubTrigger {
-    fn id(&self) -> &str {
-        self.id
-    }
-
+impl TriggerCatalogEntry for StubTrigger {
     fn category(&self) -> TriggerCategory {
         TriggerCategory::Chat
     }
@@ -63,6 +59,12 @@ impl TriggerKindDescriptor for StubTrigger {
 
     fn icon_name(&self) -> &str {
         "chat"
+    }
+}
+
+impl TriggerKindDescriptor for StubTrigger {
+    fn id(&self) -> &str {
+        self.id
     }
 
     fn platform_contract(&self) -> KindPlatformContract {

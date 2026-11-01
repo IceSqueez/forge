@@ -229,7 +229,10 @@ async fn a_row_sealed_before_id_binding_fails_with_decryption_so_the_user_reauth
     seed_legacy(&side, BOT, &TEST_KEY, "legacy_token").await;
 
     let backend = disk.boot(TEST_KEY).await;
-    let result = backend.load(&CredentialId::new(BOT)).await;
+    let result = backend
+        .credentials_repo()
+        .load(&CredentialId::new(BOT))
+        .await;
 
     assert!(
         matches!(&result, Err(e) if e.stored_secret_unrecoverable()),

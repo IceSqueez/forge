@@ -4,7 +4,8 @@ use forge_events::{
 };
 use forge_registry::{
     ActorDeclaration, ActorIdentity, ActorRole, EventFilter, FormField, KindPlatformContract,
-    LoginSlot, SourcedActor, TriggerCategory, TriggerKindDescriptor, TriggerVariables,
+    LoginSlot, SourcedActor, TriggerCatalogEntry, TriggerCategory, TriggerKindDescriptor,
+    TriggerVariables,
 };
 use forge_types::{DeclaredVariable, TriggerConfig, UserText, Variant, VariantKind};
 
@@ -14,11 +15,7 @@ pub const DONATION_PROVIDER_OPTIONS_KEY: &str = "donations.provider_ids";
 
 pub struct DonationReceivedDescriptor;
 
-impl TriggerKindDescriptor for DonationReceivedDescriptor {
-    fn id(&self) -> &str {
-        DONATION_RECEIVED_KIND
-    }
-
+impl TriggerCatalogEntry for DonationReceivedDescriptor {
     fn category(&self) -> TriggerCategory {
         TriggerCategory::Donations
     }
@@ -38,9 +35,19 @@ impl TriggerKindDescriptor for DonationReceivedDescriptor {
     fn icon_name(&self) -> &str {
         "currency-dollar"
     }
+}
+
+impl TriggerKindDescriptor for DonationReceivedDescriptor {
+    fn id(&self) -> &str {
+        DONATION_RECEIVED_KIND
+    }
 
     fn platform_contract(&self) -> KindPlatformContract {
         KindPlatformContract::Universal
+    }
+
+    fn service_filter_field(&self) -> Option<&'static str> {
+        Some(DONATION_PROVIDER_CONFIG_KEY)
     }
 
     fn config_fields(&self) -> Vec<FormField> {

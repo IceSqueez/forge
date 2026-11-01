@@ -12,7 +12,7 @@ use tokio_util::sync::CancellationToken;
 use tracing::debug;
 
 use forge_net::Gateway;
-use forge_platform_core::TokenColor;
+use forge_platform_core::Tone;
 use forge_platform_core::{
     BuiltinContent, BuiltinHealth, BuiltinStatus, CapabilityFlags, ChatPlatform,
     CollectionRevisionSignal, CollectionRevisions, ConnectionState, CredentialState, DetailSection,
@@ -753,7 +753,7 @@ impl BuiltinStatus for TwitchIntegrationBundle {
         let mut badges = vec![HeroBadge {
             label: messages::user_id_badge(&self.config.user_id).into(),
             tone: HeroBadgeTone::Neutral,
-            monospace: true,
+            is_identifier: true,
         }];
         let tier = self.tier();
         badges.push(HeroBadge {
@@ -763,7 +763,7 @@ impl BuiltinStatus for TwitchIntegrationBundle {
             } else {
                 HeroBadgeTone::Positive
             },
-            monospace: false,
+            is_identifier: false,
         });
         badges
     }
@@ -802,7 +802,7 @@ impl BuiltinContent for TwitchIntegrationBundle {
         let scopes_list = DetailSection::ScopesList {
             title: labels::OAUTH_SCOPES.into(),
             icon: SectionIcon::new("key"),
-            icon_tint: Some(TokenColor::Yellow),
+            icon_tint: Some(Tone::Caution),
             scopes: TWITCH_BROADCASTER_SCOPES
                 .iter()
                 .map(|s| (*s).to_owned())
@@ -849,7 +849,7 @@ impl BuiltinContent for TwitchIntegrationBundle {
         let eventsub_list = DetailSection::SubscriptionList {
             title: labels::EVENTSUB_SUBSCRIPTIONS.into(),
             icon: SectionIcon::new("rss"),
-            icon_tint: Some(TokenColor::ThemeBrand),
+            icon_tint: Some(Tone::ThemeBrand),
             items: sub_items.into(),
             footer: None,
             banner: dropped_kind.map(|kind| {
@@ -1405,7 +1405,7 @@ mod tests {
             let status: &dyn BuiltinStatus = b.as_ref();
             let badges = status.name_badges();
             assert_eq!(badges[0].label, messages::user_id_badge("1").into());
-            assert!(badges[0].monospace);
+            assert!(badges[0].is_identifier);
             let tier_badge = badges
                 .iter()
                 .find(|badge| badge.label == UserText::from(tier.label()))

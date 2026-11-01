@@ -26,7 +26,7 @@ pub(crate) async fn load_setup_inventory(
     let configuration = load_pack_inventory(provider).await?;
     let tts = provider.tts_filters_repo();
     let voices = provider.voice_alias_repo();
-    let portable_settings = load_setting_rows(provider)
+    let portable_settings = load_setting_rows(provider.settings_repo().as_ref())
         .await?
         .into_iter()
         .filter(|row| row.classes().portability == SettingPortability::Portable)

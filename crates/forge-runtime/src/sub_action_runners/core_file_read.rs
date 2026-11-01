@@ -11,7 +11,6 @@ use forge_registry::{
 };
 use forge_types::{
     ArgStack, MessageRef, SubActionConfig, SubActionOutcome, SubActionTelemetry, Variant,
-    VariantKind,
 };
 use tokio::io::AsyncReadExt;
 
@@ -127,7 +126,7 @@ impl SubActionRunner for CoreFileReadRunner {
         SubActionIo {
             produces: vec![ProducedVariable {
                 output_name_key: FILE_READ_TARGET_VAR_KEY.to_owned(),
-                kind: VariantKind::Array,
+                kind: None,
                 label: "File contents".to_owned(),
             }],
             ..SubActionIo::default()

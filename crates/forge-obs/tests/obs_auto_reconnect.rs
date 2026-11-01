@@ -75,8 +75,11 @@ impl RefusingObs {
         timing: ObsTiming,
     ) -> Arc<ObsClient> {
         let client = ObsClient::connect_with_timing(
-            &format!("127.0.0.1:{}", self.port),
-            password,
+            &forge_obs::ObsEndpoint::parse(
+                &format!("127.0.0.1:{}", self.port),
+                password.unwrap_or_default(),
+            )
+            .unwrap(),
             Arc::new(Recorder::default()),
             timing,
         )
@@ -200,8 +203,7 @@ async fn a_connect_to_a_closed_port_records_connect_refused() {
     let (listener, port) = bind_loopback().await;
     drop(listener);
     let client = ObsClient::connect_with_timing(
-        &format!("127.0.0.1:{port}"),
-        None,
+        &forge_obs::ObsEndpoint::parse(&format!("127.0.0.1:{port}"), "").unwrap(),
         Arc::new(Recorder::default()),
         fast_retries(),
     )
@@ -246,8 +248,7 @@ async fn a_manual_reconnect_clears_the_previous_failure_while_the_new_attempt_is
         })
     };
     let client = ObsClient::connect(
-        &format!("127.0.0.1:{port}"),
-        None,
+        &forge_obs::ObsEndpoint::parse(&format!("127.0.0.1:{port}"), "").unwrap(),
         Arc::new(Recorder::default()),
     )
     .await

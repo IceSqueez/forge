@@ -78,7 +78,7 @@ impl SubActionRunner for TripRunner {
             SubActionTelemetry {
                 args_in: ::std::collections::BTreeMap::new(),
                 produced: ::std::collections::BTreeMap::new(),
-                index: ctx.index,
+                position: forge_types::StepPosition::TopLevel(ctx.index),
                 kind: TRIP_KIND.to_owned(),
                 started_at: OffsetDateTime::now_utc(),
                 duration_ms: 0,
@@ -171,9 +171,9 @@ async fn consumers_filtering_out_nested_rows_see_only_positional_top_level_steps
         2,
         "only the two positional top-level steps survive"
     );
-    assert_eq!(top[0].index, 0);
+    assert_eq!(top[0].position.top_level(), Some(0));
     assert_eq!(top[0].kind, "core.args.set");
-    assert_eq!(top[1].index, 1);
+    assert_eq!(top[1].position.top_level(), Some(1));
     assert_eq!(top[1].kind, "core.logic.if_then_else");
     assert_eq!(
         nested_paths(&run.telemetry).len(),

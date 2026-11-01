@@ -2,8 +2,6 @@ use std::ops::RangeInclusive;
 
 use crate::duration_bounds::DurationBounds;
 
-pub const ENGINE_VOICE_OPTIONS_KEY: &str = "tts.engine_voices";
-
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum CodeLanguage {
     Rhai,

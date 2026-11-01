@@ -481,7 +481,7 @@ mod tests {
         StubActions, error_toasts, owned_triggers, pump_until, runtime, test_backend,
     };
     use forge_components::{Density, Presentation, ThemeId};
-    use forge_storage::{MockTriggerInstanceRepo, SettingsRepo};
+    use forge_storage::MockTriggerInstanceRepo;
 
     const TWITCH_CHAT: &str = "twitch.chat";
 
@@ -592,7 +592,7 @@ mod tests {
                     Arc::new(repo),
                     Arc::new(StubActions),
                     Arc::new(owned_triggers(&[(TWITCH_CHAT, "twitch")])),
-                    Arc::clone(&settings) as Arc<dyn SettingsRepo>,
+                    settings.settings_repo(),
                     handle.clone(),
                     None,
                     cx,
@@ -601,13 +601,8 @@ mod tests {
         });
 
         let app_wide = cx.update(|cx| {
-            StoredFavorites::shared(
-                TRIGGER_FAVORITES,
-                settings as Arc<dyn SettingsRepo>,
-                &handle,
-                cx,
-            )
-            .entity_id()
+            StoredFavorites::shared(TRIGGER_FAVORITES, settings.settings_repo(), &handle, cx)
+                .entity_id()
         });
 
         let flow = view.read_with(cx, |view, _| view.create.clone());

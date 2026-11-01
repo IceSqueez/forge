@@ -68,7 +68,7 @@ impl SubActionRunner for CoreStringFormatRunner {
         SubActionIo {
             produces: vec![ProducedVariable {
                 output_name_key: INTO_VAR_KEY.to_owned(),
-                kind: VariantKind::String,
+                kind: Some(VariantKind::String),
                 label: "Formatted string".to_owned(),
             }],
             ..SubActionIo::default()

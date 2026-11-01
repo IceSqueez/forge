@@ -1,7 +1,8 @@
 use forge_events::{Event, EventSource};
 use forge_registry::{
     ActorDeclaration, ActorIdentity, ActorRole, ActorSlot, CanonicalCount, CanonicalVariable,
-    EventFilter, KindPlatformContract, TriggerCategory, TriggerKindDescriptor, TriggerVariables,
+    EventFilter, KindPlatformContract, TriggerCatalogEntry, TriggerCategory, TriggerKindDescriptor,
+    TriggerVariables,
 };
 use forge_types::PlatformId;
 use forge_types::TriggerConfig;
@@ -12,11 +13,7 @@ use crate::vocabulary::{event_kinds, trigger_ids, variables};
 
 pub(crate) struct HostDescriptor;
 
-impl TriggerKindDescriptor for HostDescriptor {
-    fn id(&self) -> &str {
-        trigger_ids::CHANNEL_HOSTED
-    }
-
+impl TriggerCatalogEntry for HostDescriptor {
     fn category(&self) -> TriggerCategory {
         TriggerCategory::Streams
     }
@@ -35,6 +32,12 @@ impl TriggerKindDescriptor for HostDescriptor {
 
     fn icon_name(&self) -> &str {
         "users"
+    }
+}
+
+impl TriggerKindDescriptor for HostDescriptor {
+    fn id(&self) -> &str {
+        trigger_ids::CHANNEL_HOSTED
     }
 
     fn platform_contract(&self) -> KindPlatformContract {

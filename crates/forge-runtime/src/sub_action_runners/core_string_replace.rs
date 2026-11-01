@@ -133,7 +133,7 @@ impl SubActionRunner for CoreStringReplaceRunner {
         SubActionIo {
             produces: vec![ProducedVariable {
                 output_name_key: INTO_VAR_KEY.to_owned(),
-                kind: VariantKind::String,
+                kind: Some(VariantKind::String),
                 label: "Replaced string".to_owned(),
             }],
             ..SubActionIo::default()

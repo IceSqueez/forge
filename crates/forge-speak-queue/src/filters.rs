@@ -187,7 +187,7 @@ fn output_from_settings(settings: &TtsPipelineSettings) -> OutputConfig {
         max_duration_secs: settings
             .output_max_duration_secs
             .filter(|_| settings.output_max_duration_enabled),
-        language_aware_voice: settings.output_language_aware_voice.unwrap_or(false),
+        language_aware_voice: settings.output_language_aware_voice.is_on(),
     }
 }
 

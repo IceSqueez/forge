@@ -12,13 +12,12 @@ use forge_runtime::ScriptRunInlineRunner;
 use forge_runtime::{
     CatchUpSettle, EventBus, FrozenRuntime, NullEventLogRepo, QueueAdmission, QueueMode,
     RuntimeError, RuntimeWiring, ScheduleDue, ScheduleRequest, ScheduledRunsHandle,
-    SchedulerRequest, SchedulingContext, ScriptRegistry, ScriptRegistryParts,
-    register_core_triggers,
+    SchedulerRequest, SchedulingContext, ScriptApiDeps, ScriptCatalog, register_core_triggers,
 };
 use forge_script::{ScriptError, SpeakRequester};
 use forge_storage::MockQueueRepo;
 use forge_storage::MockTriggerInstanceRepo;
-use forge_storage::{DataProvider, GlobalsRepo, MissedRunPolicy, SettingsRepo, StorageError};
+use forge_storage::{DataProvider, MissedRunPolicy, StorageError};
 use forge_storage_sqlite::SqliteBackend;
 use forge_types::{
     Action, ActionId, ArgStack, EventId, LatestScope, LatestValue, LatestValueReader, Queue,
@@ -37,9 +36,13 @@ const CATALOG_BUILT: &str = "catalog built";
 
 async fn sqlite() -> (Arc<SqliteBackend>, TempDir) {
     let (backend, media) = common::sqlite_backend().await;
-    forge_storage::write_setting(&backend, &forge_script::settings::TIMEOUT_MS, &10_000)
-        .await
-        .unwrap();
+    forge_storage::write_setting(
+        backend.settings_repo().as_ref(),
+        &forge_script::settings::TIMEOUT_MS,
+        &10_000,
+    )
+    .await
+    .unwrap();
     (Arc::new(backend), media)
 }
 
@@ -372,23 +375,23 @@ impl LatestValueReader for NoStoredValues {
     }
 }
 
-fn bare_parts() -> ScriptRegistryParts {
-    ScriptRegistryParts {
+fn bare_parts() -> ScriptApiDeps {
+    ScriptApiDeps {
         speak_requester: None,
         latest_values: None,
         scheduling: None,
     }
 }
 
-async fn script_outcome(registry: ScriptRegistry, body: &str) -> SubActionOutcome {
+async fn script_outcome(registry: ScriptCatalog, body: &str) -> SubActionOutcome {
     use forge_registry::SubActionRunner;
     let (backend, _media) = sqlite().await;
     let bus = bus();
     let runner = ScriptRunInlineRunner::new(
         Arc::new(registry),
-        Arc::clone(&backend) as Arc<dyn GlobalsRepo>,
+        backend.globals_repo(),
         Arc::clone(&bus) as Arc<dyn EventPublisher>,
-        Arc::clone(&backend) as Arc<dyn SettingsRepo>,
+        backend.settings_repo(),
     );
     let mut config = runner.default_config();
     config.insert(INLINE_BODY_KEY.to_owned(), Variant::String(body.to_owned()));
@@ -400,7 +403,7 @@ async fn script_outcome(registry: ScriptRegistry, body: &str) -> SubActionOutcom
 #[tokio::test]
 async fn a_script_speaks_through_the_voice_the_registry_was_built_with() {
     let voice = Arc::new(RecordingVoice::default());
-    let registry = ScriptRegistry::with_parts(ScriptRegistryParts {
+    let registry = ScriptCatalog::with_parts(ScriptApiDeps {
         speak_requester: Some(Arc::clone(&voice) as Arc<dyn SpeakRequester>),
         ..bare_parts()
     });
@@ -417,7 +420,7 @@ async fn a_script_speaks_through_the_voice_the_registry_was_built_with() {
 async fn a_script_reads_latest_values_only_from_a_registry_built_with_a_reader() {
     let reader: Arc<dyn LatestValueReader> = Arc::new(NoStoredValues);
     for (latest_values, succeeds) in [(Some(reader), true), (None, false)] {
-        let registry = ScriptRegistry::with_parts(ScriptRegistryParts {
+        let registry = ScriptCatalog::with_parts(ScriptApiDeps {
             latest_values,
             ..bare_parts()
         });
@@ -434,7 +437,7 @@ async fn a_script_reads_latest_values_only_from_a_registry_built_with_a_reader()
 
 #[test]
 fn a_registry_built_without_scheduling_offers_no_scheduler() {
-    let registry = ScriptRegistry::with_parts(bare_parts());
+    let registry = ScriptCatalog::with_parts(bare_parts());
 
     let scheduler = registry.action_scheduler(SchedulingContext::outside_any_run(ArgStack::new()));
 

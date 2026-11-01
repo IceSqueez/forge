@@ -33,7 +33,7 @@ fn unstarted_step_telemetry(
     SubActionTelemetry {
         args_in: BTreeMap::new(),
         produced: BTreeMap::new(),
-        index,
+        position: forge_types::StepPosition::TopLevel(index),
         kind: kind_id.to_owned(),
         started_at: OffsetDateTime::now_utc(),
         duration_ms: 0,
@@ -124,6 +124,7 @@ pub(crate) fn capture_produced(before: &ArgStack, after: &ArgStack) -> BTreeMap<
 pub(crate) fn publish_subaction_done(
     publisher: &dyn EventPublisher,
     caused_by: EventId,
+    step_index: usize,
     telemetry: &SubActionTelemetry,
 ) {
     let message = match &telemetry.outcome {
@@ -138,7 +139,7 @@ pub(crate) fn publish_subaction_done(
         _ => None,
     };
     SubActionDone {
-        step_index: telemetry.index,
+        step_index,
         kind: telemetry.kind.clone(),
         outcome: RunOutcome::from(&telemetry.outcome),
         duration_ms: telemetry.duration_ms,
@@ -327,7 +328,7 @@ impl ChainEngine {
             current = current.with_names_language(self.date_names.language());
             if !step.enabled {
                 let tel = disabled_telemetry(index, &step.kind_id);
-                telemetry.push(self.unstarted_step(tel, step, &current, parent_event_id));
+                telemetry.push(self.unstarted_step(tel, index, step, &current, parent_event_id));
                 continue;
             }
             if drive.cancel.is_cancelled() {
@@ -342,12 +343,24 @@ impl ChainEngine {
                 ConditionVerdict::Run => {}
                 ConditionVerdict::Skip => {
                     let tel = condition_skipped_telemetry(index, &step.kind_id);
-                    telemetry.push(self.unstarted_step(tel, step, &current, parent_event_id));
+                    telemetry.push(self.unstarted_step(
+                        tel,
+                        index,
+                        step,
+                        &current,
+                        parent_event_id,
+                    ));
                     continue;
                 }
                 ConditionVerdict::Fail(msg) => {
                     let tel = condition_failed_telemetry(index, &step.kind_id, msg.clone());
-                    telemetry.push(self.unstarted_step(tel, step, &current, parent_event_id));
+                    telemetry.push(self.unstarted_step(
+                        tel,
+                        index,
+                        step,
+                        &current,
+                        parent_event_id,
+                    ));
                     if !step.continue_on_error {
                         return ChainRun {
                             signal: ChainSignal::Error(msg),
@@ -396,12 +409,13 @@ impl ChainEngine {
     fn unstarted_step(
         &self,
         mut telemetry: SubActionTelemetry,
+        index: usize,
         step: &SubActionStep,
         scope: &ArgStack,
         parent_event_id: EventId,
     ) -> SubActionTelemetry {
         telemetry.args_in = capture_args_in(&self.registry, step, scope);
-        publish_subaction_done(self.publisher.as_ref(), parent_event_id, &telemetry);
+        publish_subaction_done(self.publisher.as_ref(), parent_event_id, index, &telemetry);
         telemetry
     }
 
@@ -459,7 +473,7 @@ impl ChainEngine {
 
         tel.args_in = args_in;
         tel.produced = produced;
-        publish_subaction_done(self.publisher.as_ref(), run_event_id, &tel);
+        publish_subaction_done(self.publisher.as_ref(), run_event_id, index, &tel);
 
         let failure = tel.outcome.failure_reason();
         telemetry.push(tel);
@@ -665,7 +679,7 @@ mod tests {
                 .as_ref()
                 .map(|(k, v)| ctx.arg_stack.clone().set(k.clone(), v.clone()));
             let tel = SubActionTelemetry {
-                index: ctx.index,
+                position: forge_types::StepPosition::TopLevel(ctx.index),
                 kind: self.id.clone(),
                 started_at: OffsetDateTime::now_utc(),
                 duration_ms: 0,
@@ -817,7 +831,7 @@ mod tests {
                 .push(ctx.arg_stack.names_language());
             self.date_names.set_language(self.switch_to);
             let tel = SubActionTelemetry {
-                index: ctx.index,
+                position: forge_types::StepPosition::TopLevel(ctx.index),
                 kind: self.id.to_owned(),
                 started_at: OffsetDateTime::now_utc(),
                 duration_ms: 0,
@@ -1052,7 +1066,7 @@ mod tests {
         assert_eq!(run.signal, ChainSignal::Completed);
         assert_eq!(run.telemetry.len(), 3);
         assert_eq!(run.telemetry[0].kind, "seq.before");
-        assert_eq!(run.telemetry[1].index, 1);
+        assert_eq!(run.telemetry[1].position.top_level(), Some(1));
         assert_eq!(run.telemetry[1].kind, "seq.disabled");
         assert!(
             matches!(&run.telemetry[1].outcome, SubActionOutcome::Skipped(m) if m.code_or_text() == "core.step_disabled"),
@@ -1438,7 +1452,7 @@ mod tests {
 
         assert_eq!(run.signal, ChainSignal::Completed);
         assert_eq!(run.telemetry.len(), 3);
-        assert_eq!(run.telemetry[1].index, 1);
+        assert_eq!(run.telemetry[1].position.top_level(), Some(1));
         assert_eq!(run.telemetry[1].kind, "c.gated");
         assert!(
             matches!(&run.telemetry[1].outcome, SubActionOutcome::Skipped(m) if m.code_or_text() == "core.condition_not_met"),

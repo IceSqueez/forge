@@ -3,9 +3,8 @@ use std::sync::Arc;
 
 use async_trait::async_trait;
 use forge_registry::{
-    BlankableSelectField, ConfigProblem, ConfigSpec, ENGINE_VOICE_OPTIONS_KEY, OptionalField,
-    OptionalSwitch, RunContext, StepCatalogEntry, StepTimer, SubActionCategory, SubActionRunner,
-    TypedField,
+    BlankableSelectField, ConfigProblem, ConfigSpec, OptionalField, OptionalSwitch, RunContext,
+    StepCatalogEntry, StepTimer, SubActionCategory, SubActionRunner, TypedField,
 };
 use forge_types::{
     ArgStack, MessageRef, PlatformId, SubActionConfig, SubActionOutcome, SubActionTelemetry,
@@ -21,7 +20,11 @@ const VOICE_KEY: &str = "voice";
 const REWARD_ID_VARIABLE: &str = "reward.id";
 
 const VOICE: OptionalField<BlankableSelectField<String>> = OptionalField {
-    field: BlankableSelectField::new(VOICE_KEY, "Voice", ENGINE_VOICE_OPTIONS_KEY),
+    field: BlankableSelectField::new(
+        VOICE_KEY,
+        "Voice",
+        forge_speech_types::ENGINE_VOICE_OPTIONS_KEY,
+    ),
     switch: OptionalSwitch::SharedKey {
         label: Some("Voice (leave empty for the default voice)"),
     },

@@ -227,7 +227,7 @@ fn decode_settings_row(row: SettingsRow) -> Result<TtsPipelineSettings, StorageE
             .map(|secs| decode_u32("output_max_duration_secs", secs))
             .transpose()?,
         output_max_duration_enabled: ext.output_max_duration_enabled != 0,
-        output_language_aware_voice: ext.output_language_aware_voice.map(|v| v != 0),
+        output_language_aware_voice: ext.output_language_aware_voice.map(|v| v != 0).into(),
     })
 }
 
@@ -327,7 +327,7 @@ pub(crate) async fn write_pipeline_settings<'e>(
     .bind(&skip_custom_regexes_json)
     .bind(settings.output_sanitize_punctuation as i64)
     .bind(settings.output_max_duration_secs.map(|v| v as i64))
-    .bind(settings.output_language_aware_voice.map(|v| v as i64))
+    .bind(Option::<bool>::from(settings.output_language_aware_voice).map(i64::from))
     .bind(settings.strip_emoji as i64)
     .bind(settings.skip_prefix_enabled as i64)
     .bind(settings.output_max_duration_enabled as i64)

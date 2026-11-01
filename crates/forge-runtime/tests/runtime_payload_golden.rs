@@ -13,7 +13,7 @@ use std::time::Duration;
 use forge_events::{Event, EventSubscription, EventsError};
 use forge_runtime::{
     EventBus, FrozenRuntime, NullEventLogRepo, QueueAdmission, QueueMode, SchedulerRequest,
-    ScriptRegistry,
+    ScriptCatalog,
 };
 use forge_storage::{DataProvider, ScriptRecord};
 use forge_types::{ArgStack, EventId, Queue, ScriptContract, SubActionStep, Variant};
@@ -220,7 +220,7 @@ async fn script_reload_payload_matches_the_golden() {
     let mut sub = bus.subscribe();
     let stamp = OffsetDateTime::from_unix_timestamp(1_790_000_000).unwrap();
 
-    ScriptRegistry::new()
+    ScriptCatalog::new()
         .reload(
             ScriptRecord {
                 id: serde_json::from_value(json!(SCRIPT_ID)).unwrap(),

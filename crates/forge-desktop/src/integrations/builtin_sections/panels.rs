@@ -3,11 +3,11 @@ use super::*;
 #[derive(Clone, Copy)]
 pub(crate) struct PanelIcon<'a> {
     name: &'a str,
-    tint: Option<&'a TokenColor>,
+    tint: Option<&'a Tone>,
 }
 
 impl<'a> PanelIcon<'a> {
-    pub(super) fn of(icon: &'a SectionIcon, tint: &'a Option<TokenColor>) -> Self {
+    pub(super) fn of(icon: &'a SectionIcon, tint: &'a Option<Tone>) -> Self {
         Self {
             name: icon.as_str(),
             tint: tint.as_ref(),

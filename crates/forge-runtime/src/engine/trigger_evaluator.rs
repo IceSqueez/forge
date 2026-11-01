@@ -511,6 +511,7 @@ pub fn spawn_trigger_evaluator(
 
 #[cfg(test)]
 mod tests {
+    use forge_registry::TriggerCatalogEntry;
     use std::collections::{BTreeMap, BTreeSet};
     use std::sync::Arc;
     use std::time::Duration;
@@ -868,24 +869,31 @@ mod tests {
         }
     }
 
-    impl TriggerKindDescriptor for CommandDescriptor {
-        fn id(&self) -> &str {
-            COMMAND_KIND
-        }
+    impl TriggerCatalogEntry for CommandDescriptor {
         fn category(&self) -> TriggerCategory {
             TriggerCategory::Chat
         }
+
         fn label(&self) -> &str {
             "fake"
         }
+
         fn summary(&self) -> &str {
             ""
         }
+
         fn search_text(&self) -> &str {
             ""
         }
+
         fn icon_name(&self) -> &str {
             ""
+        }
+    }
+
+    impl TriggerKindDescriptor for CommandDescriptor {
+        fn id(&self) -> &str {
+            COMMAND_KIND
         }
         fn platform_contract(&self) -> KindPlatformContract {
             KindPlatformContract::Universal
@@ -1434,24 +1442,31 @@ mod tests {
         prefix: &'static str,
     }
 
-    impl TriggerKindDescriptor for PrefixDescriptor {
-        fn id(&self) -> &str {
-            self.id
-        }
+    impl TriggerCatalogEntry for PrefixDescriptor {
         fn category(&self) -> TriggerCategory {
             TriggerCategory::Chat
         }
+
         fn label(&self) -> &str {
             ""
         }
+
         fn summary(&self) -> &str {
             ""
         }
+
         fn search_text(&self) -> &str {
             ""
         }
+
         fn icon_name(&self) -> &str {
             ""
+        }
+    }
+
+    impl TriggerKindDescriptor for PrefixDescriptor {
+        fn id(&self) -> &str {
+            self.id
         }
         fn platform_contract(&self) -> KindPlatformContract {
             KindPlatformContract::Universal

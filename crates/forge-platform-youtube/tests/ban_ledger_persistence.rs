@@ -8,7 +8,7 @@ mod support;
 use std::path::Path;
 use std::sync::Arc;
 
-use forge_platform_youtube::{LiveChatIdHandle, SharedQuota, YoutubeDataApi, YoutubeModeration};
+use forge_platform_youtube::{LiveChatIdHandle, SharedQuota, YouTubeDataApi, YouTubeModeration};
 use forge_storage::{BanLedgerKey, DataProvider};
 use forge_storage_sqlite::SqliteBackend;
 use forge_types::PlatformId;
@@ -30,16 +30,16 @@ async fn open_backend(dir: &Path) -> SqliteBackend {
         .expect("a sqlite backend")
 }
 
-fn moderation_over(server: &MockServer, backend: &SqliteBackend) -> YoutubeModeration {
+fn moderation_over(server: &MockServer, backend: &SqliteBackend) -> YouTubeModeration {
     let live_chat_id = LiveChatIdHandle::new();
     live_chat_id.set(Some("live-chat".to_owned()));
-    let api = YoutubeDataApi::new(
+    let api = YouTubeDataApi::new(
         &data_api_override(server),
         SharedQuota::default(),
         Arc::new(forge_events::test_support::NullPublisher),
     )
     .unwrap();
-    YoutubeModeration::new(
+    YouTubeModeration::new(
         api,
         fixed_token("token"),
         fixed_broadcaster(BROADCASTER, "Broadcaster"),

@@ -507,9 +507,8 @@ mod tests {
         let state = cx.new(|_| SpeakState::new());
         let shared = state.clone();
         let handle = rt.handle().clone();
-        let view = cx.new(|cx| {
-            TtsDashboardView::new(shared, speak, backend as Arc<dyn SettingsRepo>, handle, cx)
-        });
+        let view =
+            cx.new(|cx| TtsDashboardView::new(shared, speak, backend.settings_repo(), handle, cx));
         Dashboard { view, state }
     }
 

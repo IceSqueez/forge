@@ -5,7 +5,7 @@ use forge_platform_core::{
 
 use crate::error::MonobankError;
 use crate::integration::MONOBANK_INTEGRATION;
-use crate::jar::MonobankJar;
+use crate::jar::{JarId, MonobankJar};
 use crate::provider::MonobankProvider;
 
 const TOKEN_PAGE: &str = "https://api.monobank.ua/";
@@ -39,7 +39,7 @@ fn problem_of(error: MonobankError) -> TokenProblem {
 
 fn target_of(jar: MonobankJar) -> AccountTarget {
     AccountTarget {
-        id: jar.id,
+        id: jar.id.as_str().to_owned(),
         title: jar.title,
         currency: jar.currency.as_ref().map(ToString::to_string),
         goal: jar.goal.as_ref().map(|goal| goal.formatted()),
@@ -75,6 +75,7 @@ impl DonationAccountSetup for MonobankProvider {
         target: Option<&str>,
     ) -> Result<SavedAccount, TokenProblem> {
         let target = target.ok_or(TokenProblem::NoJarPicked)?;
+        let target = JarId::parse(target).map_err(problem_of)?;
         let jar = MonobankProvider::save_token(self, raw, target)
             .await
             .map_err(problem_of)?;
@@ -90,7 +91,7 @@ impl DonationAccountSetup for MonobankProvider {
 
     async fn stored_target(&self) -> Option<String> {
         match self.selected_jar_id().await {
-            Ok(jar) => jar,
+            Ok(jar) => jar.map(|jar| jar.as_str().to_owned()),
             Err(error) => {
                 tracing::warn!(%error, "could not read the selected Monobank jar");
                 None
@@ -103,6 +104,7 @@ impl DonationAccountSetup for MonobankProvider {
     }
 
     async fn select_target(&self, target: &str) -> Result<SavedAccount, TokenProblem> {
+        let target = JarId::parse(target).map_err(problem_of)?;
         let jar = self.select_jar(target).await.map_err(problem_of)?;
         Ok(SavedAccount::Target(target_of(jar)))
     }

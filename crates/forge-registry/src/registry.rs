@@ -162,6 +162,7 @@ impl OwnedSubActionRegistration<'_> {
 mod tests {
     use super::*;
     use crate::category::{SubActionCategory, TriggerCategory};
+    use crate::descriptor::TriggerCatalogEntry;
     use crate::event_filter::EventFilter;
     use crate::form::FormField;
     use crate::kind_platform_contract::KindPlatformContract;
@@ -177,24 +178,31 @@ mod tests {
         kind_id: &'static str,
     }
 
-    impl TriggerKindDescriptor for StubDescriptor {
-        fn id(&self) -> &str {
-            self.kind_id
-        }
+    impl TriggerCatalogEntry for StubDescriptor {
         fn category(&self) -> TriggerCategory {
             TriggerCategory::Core
         }
+
         fn label(&self) -> &str {
             "Stub"
         }
+
         fn summary(&self) -> &str {
             "stub"
         }
+
         fn search_text(&self) -> &str {
             ""
         }
+
         fn icon_name(&self) -> &str {
             "bolt"
+        }
+    }
+
+    impl TriggerKindDescriptor for StubDescriptor {
+        fn id(&self) -> &str {
+            self.kind_id
         }
         fn platform_contract(&self) -> KindPlatformContract {
             KindPlatformContract::Universal
@@ -224,24 +232,31 @@ mod tests {
         contract: KindPlatformContract,
     }
 
-    impl TriggerKindDescriptor for ContractStub {
-        fn id(&self) -> &str {
-            self.kind_id
-        }
+    impl TriggerCatalogEntry for ContractStub {
         fn category(&self) -> TriggerCategory {
             TriggerCategory::Core
         }
+
         fn label(&self) -> &str {
             "Stub"
         }
+
         fn summary(&self) -> &str {
             "stub"
         }
+
         fn search_text(&self) -> &str {
             ""
         }
+
         fn icon_name(&self) -> &str {
             "bolt"
+        }
+    }
+
+    impl TriggerKindDescriptor for ContractStub {
+        fn id(&self) -> &str {
+            self.kind_id
         }
         fn platform_contract(&self) -> KindPlatformContract {
             self.contract
@@ -311,7 +326,7 @@ mod tests {
                 SubActionTelemetry {
                     args_in: ::std::collections::BTreeMap::new(),
                     produced: ::std::collections::BTreeMap::new(),
-                    index: 0,
+                    position: forge_types::StepPosition::TopLevel(0),
                     kind: self.kind_id.to_owned(),
                     started_at: OffsetDateTime::now_utc(),
                     duration_ms: 0,

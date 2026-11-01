@@ -92,7 +92,7 @@ impl SubActionRunner for CoreStringSubstringRunner {
         SubActionIo {
             produces: vec![ProducedVariable {
                 output_name_key: INTO_VAR_KEY.to_owned(),
-                kind: VariantKind::String,
+                kind: Some(VariantKind::String),
                 label: "Substring".to_owned(),
             }],
             ..SubActionIo::default()

@@ -4,7 +4,7 @@ use forge_net::{GatewayRequest, RequestBody};
 use forge_platform_core::PlatformError;
 use forge_types::Secret;
 
-use crate::api::data_api::YoutubeDataApi;
+use crate::api::data_api::YouTubeDataApi;
 use crate::broadcast::active_broadcast_id::ActiveBroadcastIdHandle;
 
 const THUMBNAIL_SET_COST: u32 = 50;
@@ -17,15 +17,15 @@ const MISSING_SCOPE: &str = "thumbnail upload scope missing";
 
 use forge_platform_core::TokenSource;
 
-pub struct YoutubeThumbnail {
-    api: YoutubeDataApi,
+pub struct YouTubeThumbnail {
+    api: YouTubeDataApi,
     access_token_source: TokenSource,
     active_broadcast_id: ActiveBroadcastIdHandle,
 }
 
-impl YoutubeThumbnail {
+impl YouTubeThumbnail {
     pub fn new(
-        api: YoutubeDataApi,
+        api: YouTubeDataApi,
         access_token_source: TokenSource,
         active_broadcast_id: ActiveBroadcastIdHandle,
     ) -> Self {
@@ -142,11 +142,11 @@ mod tests {
     fn thumbnail_on(
         server: &MockServer,
         broadcast: Option<&str>,
-    ) -> (YoutubeThumbnail, SharedQuota) {
+    ) -> (YouTubeThumbnail, SharedQuota) {
         let handle = ActiveBroadcastIdHandle::new();
         handle.set(broadcast.map(|s| s.to_owned()));
         let quota = SharedQuota::default();
-        let thumb = YoutubeThumbnail::new(
+        let thumb = YouTubeThumbnail::new(
             data_api_charging(&server.uri(), quota.clone()),
             token_source(),
             handle,

@@ -1155,22 +1155,22 @@ use forge_storage::settings::core_settings::{
 #[tokio::test]
 async fn a_full_backup_restores_its_settings_without_the_schedule_progress() {
     let live = LiveData::new().await;
-    let repo: &dyn forge_storage::SettingsRepo = live.provider.as_ref();
+    let repo = live.provider.settings_repo();
     forge_storage::write_setting(
-        repo,
+        repo.as_ref(),
         &BACKUP_SCHEDULE_LAST_SUCCESS_AT,
         &Some("2026-10-21T12:00:00Z".to_owned()),
     )
     .await
     .unwrap();
     forge_storage::write_setting(
-        repo,
+        repo.as_ref(),
         &BACKUP_SCHEDULE_CONTENT_FINGERPRINT,
         &Some("abc123".to_owned()),
     )
     .await
     .unwrap();
-    forge_storage::write_setting(repo, &BACKUP_SCHEDULE_ENABLED, &true)
+    forge_storage::write_setting(repo.as_ref(), &BACKUP_SCHEDULE_ENABLED, &true)
         .await
         .unwrap();
     let bundle = write_full_backup(FullBackupRequest {

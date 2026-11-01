@@ -234,7 +234,7 @@ impl SettingsStorageView {
 
     fn load(&mut self, cx: &mut Context<Self>) {
         self.limits_load = Loadable::Loading;
-        let repo = Arc::clone(&self.backend) as Arc<dyn SettingsRepo>;
+        let repo = self.backend.settings_repo();
         async_bridge::run_async(
             &self.rt_handle,
             load_limits(repo),
@@ -318,7 +318,7 @@ impl SettingsStorageView {
         if limit == Limit::PerViewer {
             self.retention.set_per_viewer_limit(value);
         }
-        let repo = Arc::clone(&self.backend) as Arc<dyn SettingsRepo>;
+        let repo = self.backend.settings_repo();
         async_bridge::run_async(
             &self.rt_handle,
             persist_limit(repo, limit, value),
@@ -736,8 +736,7 @@ mod tests {
     use forge_runtime::{EventBus, spawn_chat_history_persistence};
     use forge_storage::MockChatHistoryRepo;
     use forge_storage::{
-        DataProvider, SettingsRepo, chat_history_per_viewer_limit,
-        set_action_history_retention_days,
+        DataProvider, chat_history_per_viewer_limit, set_action_history_retention_days,
     };
     use forge_types::{ChatPayload, ModerationMarks};
     use gpui::{AppContext, Entity, TestAppContext};
@@ -824,7 +823,7 @@ mod tests {
             spawn_chat_history_persistence(
                 Arc::clone(&bus),
                 Arc::new(repo),
-                Arc::clone(&backend) as Arc<dyn SettingsRepo>,
+                backend.settings_repo(),
             )
         });
         pump(&rt);
@@ -880,7 +879,9 @@ mod tests {
 
         fn stored_limit(&self) -> u32 {
             self.rt
-                .block_on(chat_history_per_viewer_limit(self.backend.as_ref()))
+                .block_on(chat_history_per_viewer_limit(
+                    self.backend.settings_repo().as_ref(),
+                ))
                 .unwrap()
         }
 
@@ -1167,7 +1168,7 @@ mod tests {
             if let Some(days) = stored_history {
                 rig.rt
                     .block_on(set_action_history_retention_days(
-                        rig.backend.as_ref(),
+                        rig.backend.settings_repo().as_ref(),
                         days,
                     ))
                     .unwrap();
@@ -1207,11 +1208,7 @@ mod tests {
         repo.expect_append_batch().returning(|_| Ok(()));
         repo.expect_apply_retention().returning(|_, _| Ok(0));
         let retention = schedule.rt.block_on(async {
-            spawn_chat_history_persistence(
-                bus,
-                Arc::new(repo),
-                Arc::clone(&provider) as Arc<dyn SettingsRepo>,
-            )
+            spawn_chat_history_persistence(bus, Arc::new(repo), provider.settings_repo())
         });
         let handle = schedule.rt.handle().clone();
         let schedule_view = schedule.view.clone();

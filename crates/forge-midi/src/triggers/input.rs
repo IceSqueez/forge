@@ -1,7 +1,7 @@
 use forge_events::{Event, EventSource};
 use forge_registry::{
-    EventFilter, FormField, KindPlatformContract, TriggerCategory, TriggerKindDescriptor,
-    joined_condition,
+    EventFilter, FormField, KindPlatformContract, TriggerCatalogEntry, TriggerCategory,
+    TriggerKindDescriptor, joined_condition,
 };
 use forge_types::{
     ArgStack, DeclaredVariable, MessageCode, MessageRef, SynthesisHint, TriggerConfig, UserText,
@@ -62,11 +62,7 @@ impl MidiInputTrigger {
     }
 }
 
-impl TriggerKindDescriptor for MidiInputTrigger {
-    fn id(&self) -> &str {
-        self.id
-    }
-
+impl TriggerCatalogEntry for MidiInputTrigger {
     fn category(&self) -> TriggerCategory {
         TriggerCategory::Integration
     }
@@ -85,6 +81,12 @@ impl TriggerKindDescriptor for MidiInputTrigger {
 
     fn icon_name(&self) -> &str {
         self.icon
+    }
+}
+
+impl TriggerKindDescriptor for MidiInputTrigger {
+    fn id(&self) -> &str {
+        self.id
     }
 
     fn platform_contract(&self) -> KindPlatformContract {

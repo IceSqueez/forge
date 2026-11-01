@@ -11,7 +11,7 @@ const HISTORY_LOOKBACK_HOURS: u64 = 1;
 const WINDOW_OVERLAP_MINUTES: u64 = 5;
 
 pub const CALL_INTERVAL: Duration = Duration::from_secs(SECONDS_PER_MINUTE);
-pub(crate) const MAX_STATEMENT_WINDOW: Duration =
+pub const MAX_STATEMENT_WINDOW: Duration =
     Duration::from_secs(MAX_STATEMENT_WINDOW_DAYS * SECONDS_PER_DAY + SECONDS_PER_HOUR);
 pub const DEFAULT_HISTORY_LOOKBACK: Duration =
     Duration::from_secs(HISTORY_LOOKBACK_HOURS * SECONDS_PER_HOUR);

@@ -137,7 +137,7 @@ mod tests {
                 io: SubActionIo {
                     produces: vec![ProducedVariable {
                         output_name_key: INTO_KEY.to_owned(),
-                        kind: VariantKind::String,
+                        kind: Some(VariantKind::String),
                         label: "Output".to_owned(),
                     }],
                     ..SubActionIo::default()

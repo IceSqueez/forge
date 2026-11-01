@@ -11,10 +11,10 @@ use forge_registry::SubActionRunner;
 use forge_runtime::ScriptRunInlineRunner;
 use forge_runtime::{
     ActionEngineHandle, CatchUpSettle, EventBus, NullEventLogRepo, QueueAdmission,
-    QueueSchedulerHandle, RuntimeWiringParts, ScheduledRunsHandle, SchedulerRequest,
-    ScriptRegistry, TriggerEvaluatorHandle,
+    QueueSchedulerHandle, RuntimeWiringParts, ScheduledRunsHandle, SchedulerRequest, ScriptCatalog,
+    TriggerEvaluatorHandle,
 };
-use forge_storage::{DataProvider, GlobalsRepo, SettingsRepo};
+use forge_storage::DataProvider;
 use forge_storage_sqlite::SqliteBackend;
 use forge_types::{ActionId, ArgStack, EventId, Queue, QueueId, Variant};
 use tempfile::TempDir;
@@ -43,7 +43,7 @@ impl Harness {
         let (backend, media) = common::sqlite_backend().await;
         let backend = Arc::new(backend);
         forge_storage::write_setting(
-            backend.as_ref(),
+            backend.settings_repo().as_ref(),
             &forge_script::settings::TIMEOUT_MS,
             &10_000,
         )
@@ -85,10 +85,10 @@ impl Harness {
 
     async fn action(&self, name: &str, script: Option<&str>) -> ActionId {
         let runner = ScriptRunInlineRunner::new(
-            Arc::new(ScriptRegistry::new()),
-            Arc::clone(&self.backend) as Arc<dyn GlobalsRepo>,
+            Arc::new(ScriptCatalog::new()),
+            self.backend.globals_repo(),
             Arc::clone(&self.bus) as Arc<dyn EventPublisher>,
-            Arc::clone(&self.backend) as Arc<dyn SettingsRepo>,
+            self.backend.settings_repo(),
         );
         let sub_actions = script
             .map(|body| {

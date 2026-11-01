@@ -1529,3 +1529,81 @@ async fn a_config_write_the_look_refuses_stores_nothing() {
 
     assert!(written.is_err(), "got {written:?}");
 }
+
+const REFUSED_FILE: &str = "../escape.html";
+
+#[tokio::test]
+async fn a_refused_source_write_takes_a_new_override_back_and_leaves_the_page_alone() {
+    let overlay = definition("override-new");
+    let id = overlay.id.clone();
+    let rig = harness(vec![overlay], true);
+
+    let written = rig
+        .service
+        .write_override(&id, REFUSED_FILE, "<p>edit</p>".to_owned())
+        .await;
+
+    let held: Vec<Vec<String>> = rig
+        .saved()
+        .into_iter()
+        .map(|saved| saved.source_overrides)
+        .collect();
+    assert!(written.is_err(), "{written:?}");
+    assert_eq!(held, vec![vec![REFUSED_FILE.to_owned()], Vec::new()]);
+    assert!(rig.sink.reloads().is_empty());
+}
+
+#[tokio::test]
+async fn a_refused_write_of_an_already_held_override_changes_no_record() {
+    let mut overlay = definition("override-held");
+    overlay.source_overrides = vec![REFUSED_FILE.to_owned()];
+    let id = overlay.id.clone();
+    let rig = harness(vec![overlay], true);
+
+    let written = rig
+        .service
+        .write_override(&id, REFUSED_FILE, "<p>edit</p>".to_owned())
+        .await;
+
+    assert!(written.is_err(), "{written:?}");
+    assert!(rig.saved().is_empty());
+}
+
+#[tokio::test]
+async fn an_override_of_an_unknown_overlay_reports_nothing_written() {
+    let rig = harness(Vec::new(), true);
+
+    let written = rig
+        .service
+        .write_override(&OverlayId::new("gone"), MARKUP_FILE, String::new())
+        .await;
+
+    assert!(!written.unwrap());
+    assert!(rig.saved().is_empty());
+}
+
+#[tokio::test]
+async fn a_landed_override_is_recorded_once_and_reloads_the_page() {
+    let overlay = definition("override-landed");
+    let id = overlay.id.clone();
+    let rig = harness(vec![overlay.clone()], true);
+    rig.service
+        .materialize(&id, &common::NeutralSamples)
+        .await
+        .unwrap();
+    let reloads_before = rig.sink.reloads().len();
+
+    let written = rig
+        .service
+        .write_override(&id, STYLE_FILE, "p {}".to_owned())
+        .await;
+
+    assert!(written.unwrap());
+    assert_eq!(
+        rig.saved()
+            .last()
+            .map(|saved| saved.source_overrides.clone()),
+        Some(vec![STYLE_FILE.to_owned()])
+    );
+    assert_eq!(rig.sink.reloads().len(), reloads_before + 1);
+}

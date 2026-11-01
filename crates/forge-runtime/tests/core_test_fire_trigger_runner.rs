@@ -64,7 +64,7 @@ async fn harness(queue: Queue) -> Harness {
     Harness {
         trigger_instances: backend.trigger_instance_repo(),
         actions: backend.action_repo(),
-        globals: Arc::clone(&backend) as Arc<dyn GlobalsRepo>,
+        globals: backend.globals_repo(),
         handle: runtime.scheduler.clone(),
         runtime,
         bus,

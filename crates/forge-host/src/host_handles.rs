@@ -7,7 +7,7 @@ use forge_runtime::{
     ActionEngineHandle, ActionsService, ChatHistoryRetentionHandle, EventBus,
     IntegrationSupervisor, LatestValues, LifecycleStates, LiveViewerAggregatorHandle,
     MaterializePass, NotificationPolicyHandle, OverlaySampleSource, OverlayServiceHandle,
-    QueueSchedulerHandle, RuntimeError, ScheduledRunsHandle, ScriptRegistry, TimerSchedulerHandle,
+    QueueSchedulerHandle, RuntimeError, ScheduledRunsHandle, ScriptCatalog, TimerSchedulerHandle,
     TriggerEvaluatorHandle,
 };
 use forge_server::ServerHandle;
@@ -34,7 +34,7 @@ pub struct CoreHandles {
 }
 
 pub struct AutomationHandles {
-    pub script_registry: Arc<ScriptRegistry>,
+    pub script_catalog: Arc<ScriptCatalog>,
     pub sub_action_registry: Arc<SubActionRegistry>,
     pub trigger_registry: Arc<TriggerRegistry>,
     pub action_engine: ActionEngineHandle,
@@ -58,7 +58,7 @@ pub struct IntegrationHandles {
     pub donation_services: DonationServices,
     pub twitch_bot: Option<Arc<forge_platform_twitch::TwitchBotAccount>>,
     pub twitch_sign_in: Option<forge_platform_twitch::TwitchSignIn>,
-    pub youtube_sign_in: Option<forge_platform_youtube::YoutubeSignIn>,
+    pub youtube_sign_in: Option<forge_platform_youtube::YouTubeSignIn>,
     pub kick_sign_in: Option<forge_platform_kick::KickSignIn>,
     pub sign_out: IntegrationSignOut,
 }

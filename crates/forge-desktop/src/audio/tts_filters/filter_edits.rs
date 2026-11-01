@@ -10,6 +10,7 @@ use forge_speak_queue::{
     EmoteTreatment, SpeakCommand, build_config, emote_treatment, repeat_window,
     store_emote_treatment,
 };
+use forge_storage::LanguageAwareVoice;
 use forge_storage::{BlocklistMode, FilterRule, FilterRuleKind, SkipRegex, TtsPipelineSettings};
 use gpui::prelude::*;
 use gpui::{App, Context, Entity};
@@ -242,16 +243,20 @@ impl TtsFiltersView {
     pub(super) fn toggle_output_lang(&mut self, cx: &mut Context<Self>) {
         self.edit(cx, |filters| {
             let language = &mut filters.settings.output_language_aware_voice;
-            *language = language.map(|enabled| !enabled);
+            *language = match *language {
+                LanguageAwareVoice::NotAdded => LanguageAwareVoice::NotAdded,
+                LanguageAwareVoice::Off => LanguageAwareVoice::On,
+                LanguageAwareVoice::On => LanguageAwareVoice::Off,
+            };
         });
     }
 
     pub(super) fn clear_output_lang(&mut self, cx: &mut Context<Self>) {
-        if self.shown().settings.output_language_aware_voice.is_none() {
+        if self.shown().settings.output_language_aware_voice == LanguageAwareVoice::NotAdded {
             return;
         }
         self.edit(cx, |filters| {
-            filters.settings.output_language_aware_voice = None
+            filters.settings.output_language_aware_voice = LanguageAwareVoice::NotAdded
         });
     }
 
@@ -446,7 +451,9 @@ impl TtsFiltersView {
                 filters.settings.output_max_duration_secs = max_duration;
                 filters.settings.output_max_duration_enabled = true;
             }
-            OutputPreset::Lang => filters.settings.output_language_aware_voice = Some(true),
+            OutputPreset::Lang => {
+                filters.settings.output_language_aware_voice = LanguageAwareVoice::On
+            }
         })
     }
 

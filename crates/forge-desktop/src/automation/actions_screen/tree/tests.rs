@@ -176,7 +176,7 @@ impl Fixture {
                         bus,
                         scheduler,
                     },
-                    Arc::clone(&backend) as Arc<dyn SettingsRepo>,
+                    backend.settings_repo(),
                     Arc::new(OverlayKindRegistry::new()),
                     None,
                     cx,
@@ -617,7 +617,7 @@ fn the_editor_pickers_star_into_the_app_wide_favorites_copies(cx: &mut gpui::Tes
     let handle = fixture.rt.handle().clone();
 
     let app_wide = cx.update(|cx| {
-        let repo = elsewhere as Arc<dyn SettingsRepo>;
+        let repo = elsewhere.settings_repo();
         (
             StoredFavorites::shared(SUB_ACTION_FAVORITES, Arc::clone(&repo), &handle, cx)
                 .entity_id(),

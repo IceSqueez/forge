@@ -63,13 +63,12 @@ pub(super) fn retag(
     children
         .into_iter()
         .map(|mut child| {
-            let trail = if child.is_nested() {
-                child.kind
-            } else {
-                format!("{}.{}", child.index, child.kind)
+            let trail = match child.position.top_level() {
+                Some(index) => format!("{index}.{}", child.kind),
+                None => child.kind,
             };
             child.kind = format!("{prefix}/{trail}");
-            child.index = SubActionTelemetry::NESTED;
+            child.position = forge_types::StepPosition::Nested;
             child
         })
         .collect()

@@ -1,5 +1,5 @@
 #![expect(clippy::expect_used, reason = "test fixtures")]
-use forge_storage::{DataProvider, GlobalsRepo};
+use forge_storage::DataProvider;
 use forge_types::Variant;
 
 mod common;
@@ -19,7 +19,9 @@ async fn export_produces_a_standalone_file_holding_writes_still_in_the_wal() {
     let export_path = export_dir.path().join("export.db");
 
     let backend = common::sandboxed_backend_at(&common::sqlite_url(&source_path), TEST_KEY).await;
-    GlobalsRepo::set(&*backend, "exported", Variant::Int(7), true)
+    backend
+        .globals_repo()
+        .set("exported", Variant::Int(7), true)
         .await
         .expect("set must succeed");
     let wal_len = std::fs::metadata(sibling(&source_path, "-wal"))
@@ -43,7 +45,9 @@ async fn export_produces_a_standalone_file_holding_writes_still_in_the_wal() {
     assert_eq!(exported_files, vec![std::ffi::OsString::from("export.db")]);
 
     let reopened = common::sandboxed_backend_at(&common::sqlite_url(&export_path), TEST_KEY).await;
-    let got = GlobalsRepo::get(&*reopened, "exported")
+    let got = reopened
+        .globals_repo()
+        .get("exported")
         .await
         .expect("get must succeed");
     assert_eq!(got, Some(Variant::Int(7)));
@@ -91,7 +95,9 @@ async fn database_unit_file_names_are_exactly_the_files_an_open_backend_keeps_on
     let dir = tempfile::tempdir().expect("a temporary database directory");
     let db_path = dir.path().join(forge_storage::DATABASE_FILE_NAME);
     let backend = common::sandboxed_backend_at(&common::sqlite_url(&db_path), TEST_KEY).await;
-    GlobalsRepo::set(&*backend, "touch", Variant::Bool(true), false)
+    backend
+        .globals_repo()
+        .set("touch", Variant::Bool(true), false)
         .await
         .expect("set must succeed");
 
@@ -116,7 +122,7 @@ async fn database_unit_file_names_are_exactly_the_files_an_open_backend_keeps_on
 async fn shutdown_closes_the_pool_so_later_queries_fail_instead_of_hanging() {
     let backend = common::migrated_backend(TEST_KEY).await;
     forge_storage::write_setting(
-        &*backend,
+        backend.settings_repo().as_ref(),
         &forge_storage::settings::core_settings::THEME,
         &Some("catppuccin_mocha".to_owned()),
     )
@@ -125,9 +131,11 @@ async fn shutdown_closes_the_pool_so_later_queries_fail_instead_of_hanging() {
 
     backend.shutdown().await;
 
-    let result =
-        forge_storage::read_setting(&*backend, &forge_storage::settings::core_settings::THEME)
-            .await;
+    let result = forge_storage::read_setting(
+        backend.settings_repo().as_ref(),
+        &forge_storage::settings::core_settings::THEME,
+    )
+    .await;
     assert!(
         result.is_err(),
         "queries after shutdown must error, not hang"

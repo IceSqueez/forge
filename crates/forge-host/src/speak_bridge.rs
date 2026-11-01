@@ -1130,7 +1130,7 @@ mod tests {
     #[tokio::test]
     async fn a_show_whose_speech_is_dropped_before_it_plays_is_revealed_silently_at_once() {
         use forge_overlay::kinds::alert::KIND_ID as ALERT;
-        use forge_storage::{MockOverlayRepo, OverlayConfig, OverlayId, OverlayRepo, SettingsRepo};
+        use forge_storage::{MockOverlayRepo, OverlayConfig, OverlayId, OverlayRepo};
         use forge_types::Variant;
 
         let (handle, _stream) = voiceless_queue();
@@ -1150,7 +1150,7 @@ mod tests {
                 date_names: forge_runtime::DateNamesHandle::default(),
                 tasks: forge_net::TaskOwner::new(),
                 repo: Arc::new(repo) as Arc<dyn OverlayRepo>,
-                settings: backend as Arc<dyn SettingsRepo>,
+                settings: backend.settings_repo(),
                 kinds: Arc::new(kinds),
                 bus: forge_runtime::EventBus::new(Arc::new(crate::test_support::StubEventLog)),
                 frames: Arc::clone(&pages) as Arc<dyn forge_runtime::OverlayFrameSink>,

@@ -59,7 +59,7 @@ impl IntegrationDetail {
 
     pub(crate) fn attach_youtube_sign_in(
         &mut self,
-        sign_in: forge_platform_youtube::YoutubeSignIn,
+        sign_in: forge_platform_youtube::YouTubeSignIn,
     ) {
         self.sign_in.youtube_sign_in = Some(sign_in);
     }

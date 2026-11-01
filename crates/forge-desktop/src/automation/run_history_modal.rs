@@ -12,7 +12,7 @@ use forge_components::{
     icon, integration_disabled_reason, modal, overlay, radius, scaled, spacing, status_dot,
     tooltip_builder, tr,
 };
-use forge_registry::{TriggerKindDescriptor, TriggerRegistry};
+use forge_registry::TriggerRegistry;
 use forge_types::{
     ActionId, ExecutionContext, ExecutionMetadata, ExecutionOutcome, IntegrationId,
     SubActionOutcome, SubActionTelemetry,
@@ -518,11 +518,8 @@ impl RunHistoryModal {
                 let descriptor = trigger_kind
                     .as_deref()
                     .and_then(|kind| self.trigger_registry.get(kind));
-                let glyph = Icon::from_name(
-                    descriptor
-                        .map(TriggerKindDescriptor::icon_name)
-                        .unwrap_or("bolt"),
-                );
+                let glyph =
+                    Icon::from_name(descriptor.map(|kind| kind.icon_name()).unwrap_or("bolt"));
                 let label = descriptor
                     .map(|d| SharedString::from(crate::shared::kind_copy::trigger_name(d)))
                     .unwrap_or_else(|| tr!("action_editor_run_history_trigger_fallback").into());
@@ -637,12 +634,11 @@ impl RunHistoryModal {
         cx: &mut Context<Self>,
     ) -> Div {
         let density = cx.density();
-        let nested = step.is_nested();
-        let marker = if nested {
-            tr!("action_editor_run_history_step_nested")
-        } else {
-            format!("#{}", step.index + 1)
-        };
+        let _nested = step.is_nested();
+        let marker = step.position.top_level().map_or_else(
+            || tr!("action_editor_run_history_step_nested"),
+            |index| format!("#{}", index + 1),
+        );
 
         div()
             .flex()
@@ -869,7 +865,7 @@ mod tests {
                 .into_iter()
                 .enumerate()
                 .map(|(index, outcome)| SubActionTelemetry {
-                    index,
+                    position: forge_types::StepPosition::TopLevel(index),
                     kind: "stub.step".to_owned(),
                     started_at: OffsetDateTime::UNIX_EPOCH,
                     duration_ms: 0,

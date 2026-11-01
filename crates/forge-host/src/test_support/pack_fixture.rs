@@ -6,8 +6,8 @@ use forge_overlay::{OverlayKindRegistry, register_builtin_kinds};
 use forge_paths::{CREDENTIALS_KEY_FILE_NAME, MEDIA_DIR_NAME, OVERLAYS_DIR_NAME};
 use forge_registry::{InternalNamespace, ReferenceCatalog, SubActionRegistry, TriggerRegistry};
 use forge_storage::{
-    CredentialId, DATABASE_FILE_NAME, DataProvider, GlobalsRepo, MediaBlobId, MediaReferrer,
-    MediaReferrerKind, OverlayId, ScriptRecord, ScriptRepo, StoredClip, clip_source_referrer,
+    CredentialId, DATABASE_FILE_NAME, DataProvider, MediaBlobId, MediaReferrer, MediaReferrerKind,
+    OverlayId, ScriptRecord, ScriptRepo, StoredClip, clip_source_referrer,
 };
 use forge_storage_sqlite::SqliteBackend;
 use forge_transfer::ClosureRegistries;
@@ -126,9 +126,7 @@ impl Store {
     }
 
     pub async fn script(&self, name: &str) -> Option<ScriptRecord> {
-        ScriptRepo::get_by_name(self.provider.as_ref(), name)
-            .await
-            .unwrap()
+        self.provider.script_repo().get_by_name(name).await.unwrap()
     }
 
     pub async fn overlay_named(&self, name: &str) -> forge_storage::OverlayDefinition {
@@ -165,7 +163,7 @@ impl Store {
                 .iter()
                 .any(|queue| queue.id.to_string() == value),
             InternalNamespace::Script => self.script(value).await.is_some(),
-            InternalNamespace::Global => GlobalsRepo::get(p, value).await.unwrap().is_some(),
+            InternalNamespace::Global => p.globals_repo().get(value).await.unwrap().is_some(),
             InternalNamespace::SoundboardClip => p
                 .soundboard_clips_repo()
                 .list()
@@ -210,14 +208,18 @@ pub async fn state_of(store: &Store) -> StoreState {
     for action in &actions {
         links.push((action.id, store.linked(action.id).await));
     }
-    let mut scripts: Vec<_> = ScriptRepo::list(p)
+    let mut scripts: Vec<_> = p
+        .script_repo()
+        .list()
         .await
         .unwrap()
         .into_iter()
         .map(|s| (s.id, s.name, s.body, s.enabled))
         .collect();
     scripts.sort();
-    let mut globals: Vec<_> = GlobalsRepo::list(p)
+    let mut globals: Vec<_> = p
+        .globals_repo()
+        .list()
         .await
         .unwrap()
         .into_iter()
@@ -367,7 +369,7 @@ pub async fn seed(store: &Store) -> Fixture {
     };
     p.queue_repo().save(&queue).await.unwrap();
     ScriptRepo::save(
-        p,
+        p.script_repo().as_ref(),
         ScriptRecord {
             id: ScriptId::new(),
             name: SCRIPT_NAME.to_owned(),
@@ -380,7 +382,8 @@ pub async fn seed(store: &Store) -> Fixture {
     )
     .await
     .unwrap();
-    GlobalsRepo::set(p, GLOBAL_NAME, Variant::Int(7), true)
+    p.globals_repo()
+        .set(GLOBAL_NAME, Variant::Int(7), true)
         .await
         .unwrap();
 
@@ -502,7 +505,8 @@ pub async fn seed(store: &Store) -> Fixture {
         .await
         .unwrap();
 
-    p.store(&CredentialId::new("twitch:broadcaster"), SECRET_TOKEN)
+    p.credentials_repo()
+        .store(&CredentialId::new("twitch:broadcaster"), SECRET_TOKEN)
         .await
         .unwrap();
     store

@@ -191,7 +191,8 @@ mod tests {
         settings.seed_raw(&DATE_FORMAT, "ymd");
         settings.seed_raw(&TIME_FORMAT, "bogus");
 
-        let choices = resolve_startup_display_formats(settings.as_ref(), Language::Uk).await;
+        let choices =
+            resolve_startup_display_formats(settings.settings_repo().as_ref(), Language::Uk).await;
 
         assert_eq!(
             (choices, writes.try_recv().ok()),
@@ -212,7 +213,8 @@ mod tests {
         let (settings, _writes) = test_backend();
         settings.seed_raw(&REGION, "ZZ");
 
-        let choices = resolve_startup_display_formats(settings.as_ref(), Language::Uk).await;
+        let choices =
+            resolve_startup_display_formats(settings.settings_repo().as_ref(), Language::Uk).await;
 
         assert_eq!(choices, DisplayFormatChoices::following(Region::Ukraine));
     }
@@ -221,9 +223,11 @@ mod tests {
     async fn a_first_run_region_is_stored_once_and_read_back_on_the_next_start() {
         let (settings, mut writes) = test_backend();
 
-        let first = resolve_startup_display_formats(settings.as_ref(), Language::En).await;
+        let first =
+            resolve_startup_display_formats(settings.settings_repo().as_ref(), Language::En).await;
         let stored = writes.try_recv().ok();
-        let second = resolve_startup_display_formats(settings.as_ref(), Language::Uk).await;
+        let second =
+            resolve_startup_display_formats(settings.settings_repo().as_ref(), Language::Uk).await;
 
         assert_eq!(
             (stored, second, writes.try_recv().ok()),

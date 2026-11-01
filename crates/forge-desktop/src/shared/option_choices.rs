@@ -7,8 +7,9 @@ use forge_platform_core::{
     BuiltinCollections, BuiltinOptionSource, CollectionId, CollectionItem, CollectionItemAccess,
     CollectionRevisions, OptionListId, RevisionWait,
 };
-use forge_registry::{ENGINE_VOICE_OPTIONS_KEY, FormField, ReferenceNamespace, ReferenceScope};
+use forge_registry::{FormField, ReferenceNamespace, ReferenceScope};
 use forge_runtime::{DONATION_PROVIDER_OPTIONS_KEY, ENGINE_OPTIONS_KEY, VOICE_OPTIONS_PREFIX};
+use forge_speech_types::ENGINE_VOICE_OPTIONS_KEY;
 use forge_types::IntegrationId;
 use futures_util::future::{self, Either, join, join_all};
 use futures_util::stream::{self, LocalBoxStream, SelectAll, StreamExt as _};

@@ -969,7 +969,7 @@ mod tests {
             overlay_named(CHOSEN, BLANK_OVERLAY_KIND),
         ]);
 
-        let loaded = load_routing(backend as Arc<dyn SettingsRepo>, overlays, true)
+        let loaded = load_routing(backend.settings_repo(), overlays, true)
             .await
             .expect("the routing settings load");
 
@@ -994,7 +994,7 @@ mod tests {
         });
 
         let refused = load_routing(
-            backend as Arc<dyn SettingsRepo>,
+            backend.settings_repo(),
             Arc::new(repo) as Arc<dyn OverlayRepo>,
             true,
         )
@@ -1010,7 +1010,7 @@ mod tests {
         backend.seed_raw(&AUDIO_OVERLAY_ID, CHOSEN);
         let overlays = catalog(vec![overlay_named(CHOSEN, BLANK_OVERLAY_KIND)]);
 
-        let loaded = load_routing(backend as Arc<dyn SettingsRepo>, overlays, false)
+        let loaded = load_routing(backend.settings_repo(), overlays, false)
             .await
             .expect("the routing settings load");
 
@@ -1036,7 +1036,7 @@ mod tests {
             date_names: forge_runtime::DateNamesHandle::default(),
             tasks: forge_net::TaskOwner::new(),
             repo: Arc::new(StubOverlays),
-            settings: Arc::clone(&backend) as Arc<dyn SettingsRepo>,
+            settings: backend.settings_repo(),
             kinds: Arc::new(forge_overlay::OverlayKindRegistry::new()),
             bus: forge_runtime::EventBus::new(Arc::new(StubEventLog)),
             frames: Arc::new(NoOverlayPages),
@@ -1068,7 +1068,7 @@ mod tests {
         let handle = rt.handle().clone();
         cx.new(|cx| {
             SettingsAudioRoutingView::new(
-                backend as Arc<dyn SettingsRepo>,
+                backend.settings_repo(),
                 catalog(Vec::new()),
                 overlay_service,
                 handle,

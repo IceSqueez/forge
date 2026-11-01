@@ -22,7 +22,7 @@ pub(crate) async fn build_core(
     data_dir: PathBuf,
     anonymous_donor: Shared<String>,
 ) -> CoreHandles {
-    let settings_repo: Arc<dyn SettingsRepo> = Arc::clone(backend) as Arc<dyn SettingsRepo>;
+    let settings_repo: Arc<dyn SettingsRepo> = backend.settings_repo();
     let viewer_repo = backend.viewer_repo();
     let stamps: Vec<Box<dyn EventStamp>> = match FirstChatLedger::load(viewer_repo.as_ref()).await {
         Ok(ledger) => vec![Box::new(ledger)],

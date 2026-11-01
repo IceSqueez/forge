@@ -1,7 +1,8 @@
 use forge_events::{Event, EventSource};
 use forge_registry::{
     ActorDeclaration, ActorIdentity, ActorRole, ActorSlot, CanonicalVariable, EventFilter,
-    KindPlatformContract, TriggerCategory, TriggerKindDescriptor, TriggerVariables,
+    KindPlatformContract, TriggerCatalogEntry, TriggerCategory, TriggerKindDescriptor,
+    TriggerVariables,
 };
 use forge_types::{
     DeclaredVariable, PlatformId, SynthesisHint, TriggerConfig, Variant, VariantKind,
@@ -15,11 +16,7 @@ const MAX_BAN_SECONDS: i64 = 1_209_600;
 
 pub(crate) struct BanDescriptor;
 
-impl TriggerKindDescriptor for BanDescriptor {
-    fn id(&self) -> &str {
-        trigger_ids::MODERATION_BANNED
-    }
-
+impl TriggerCatalogEntry for BanDescriptor {
     fn category(&self) -> TriggerCategory {
         TriggerCategory::Users
     }
@@ -38,6 +35,12 @@ impl TriggerKindDescriptor for BanDescriptor {
 
     fn icon_name(&self) -> &str {
         "user-x"
+    }
+}
+
+impl TriggerKindDescriptor for BanDescriptor {
+    fn id(&self) -> &str {
+        trigger_ids::MODERATION_BANNED
     }
 
     fn platform_contract(&self) -> KindPlatformContract {

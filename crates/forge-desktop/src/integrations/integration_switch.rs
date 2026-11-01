@@ -190,9 +190,8 @@ pub(crate) fn category_inactive_badge(
 
 #[cfg(test)]
 mod tests {
-    use std::sync::Arc;
 
-    use forge_storage::{SettingsRepo, integration_enabled_key};
+    use forge_storage::integration_enabled_key;
     use gpui::{AppContext, TestAppContext};
 
     use super::*;
@@ -429,7 +428,7 @@ mod tests {
     fn enabling_through_the_switch_persists_the_integration_as_enabled(cx: &mut TestAppContext) {
         let rt = runtime();
         let (settings, mut writes) = test_backend();
-        let supervisor = idle_supervisor(&rt, settings as Arc<dyn SettingsRepo>, &[obs()]);
+        let supervisor = idle_supervisor(&rt, settings.settings_repo(), &[obs()]);
         pump(&rt);
         drain(&mut writes);
         let switch = cx.update(|cx| {
@@ -452,7 +451,7 @@ mod tests {
     ) {
         let rt = runtime();
         let (settings, mut writes) = test_backend();
-        let supervisor = idle_supervisor(&rt, settings as Arc<dyn SettingsRepo>, &[obs()]);
+        let supervisor = idle_supervisor(&rt, settings.settings_repo(), &[obs()]);
         pump(&rt);
         drain(&mut writes);
         let switch = cx.update(|cx| {

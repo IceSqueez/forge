@@ -6,7 +6,8 @@ use std::sync::Arc;
 
 use forge_registry::{
     EventFilter, Finding, KindPlatformContract, StepHealth, SubActionRegistry, SubActionRunner,
-    TriggerCategory, TriggerKindDescriptor, TriggerRegistry, TriggerVariables, analyze,
+    TriggerCatalogEntry, TriggerCategory, TriggerKindDescriptor, TriggerRegistry, TriggerVariables,
+    analyze,
 };
 use forge_runtime::{ConditionGate, Config};
 use forge_runtime::{
@@ -24,11 +25,7 @@ const SEED_TRIGGER: &str = "stub.seed";
 
 struct SeedTrigger;
 
-impl TriggerKindDescriptor for SeedTrigger {
-    fn id(&self) -> &str {
-        SEED_TRIGGER
-    }
-
+impl TriggerCatalogEntry for SeedTrigger {
     fn category(&self) -> TriggerCategory {
         TriggerCategory::Chat
     }
@@ -47,6 +44,12 @@ impl TriggerKindDescriptor for SeedTrigger {
 
     fn icon_name(&self) -> &str {
         "chat"
+    }
+}
+
+impl TriggerKindDescriptor for SeedTrigger {
+    fn id(&self) -> &str {
+        SEED_TRIGGER
     }
 
     fn platform_contract(&self) -> KindPlatformContract {

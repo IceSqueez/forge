@@ -91,7 +91,7 @@ pub use services::donations::{
 pub use services::global_mutation::RuntimeScriptGlobals;
 pub use services::latest::{LatestValues, register_latest_sub_actions, spawn_latest_projector};
 pub use services::lifecycle_messages::LIFECYCLE_MESSAGES;
-pub use services::script_registry::{ScriptRegistry, ScriptRegistryParts};
+pub use services::script_catalog::{ScriptApiDeps, ScriptCatalog};
 pub use speech::audio_runners::register_speech_sub_actions;
 pub use speech::engine_voice_ref::EngineVoiceRef;
 pub use speech::speak_dispatcher::{
@@ -141,7 +141,7 @@ pub use services::catalog::CatalogBinding;
 pub use services::catalog::CatalogSnapshot;
 pub use services::dashboard::{DashboardStats, compute_stats};
 pub use services::donations::CatchUpWaker;
-pub use services::script_registry::CompiledScript;
+pub use services::script_catalog::LoadedScript;
 pub use speech::audio_runners::{
     ENGINE_OPTIONS_KEY, SPEAK_KIND_ID, SPEECH_TEXT_KEY, SpeakRunner, VOICE_OPTIONS_PREFIX,
 };

@@ -473,7 +473,7 @@ mod tests {
                 reconciler,
                 None,
                 backend,
-                settings as Arc<dyn SettingsRepo>,
+                settings.settings_repo(),
                 bus,
                 handle,
                 cx,
@@ -551,7 +551,7 @@ mod tests {
                 )
             };
             let backend = Arc::clone(&*self.storage);
-            let settings = Arc::clone(&self.settings) as Arc<dyn SettingsRepo>;
+            let settings = self.settings.settings_repo();
             let handle = self.rt.handle().clone();
             move |cx| HotkeysScreenView::new(reconciler, None, backend, settings, bus, handle, cx)
         }

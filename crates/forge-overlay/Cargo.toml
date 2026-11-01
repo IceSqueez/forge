@@ -14,6 +14,7 @@ workspace = true
 forge-durable = { path = "../forge-durable" }
 forge-types = { path = "../forge-types" }
 forge-registry = { path = "../forge-registry" }
+forge-speech-types = { path = "../forge-speech-types" }
 serde = { workspace = true }
 serde_json = { workspace = true }
 sha2 = { workspace = true }

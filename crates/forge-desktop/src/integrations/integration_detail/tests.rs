@@ -14,7 +14,7 @@ use forge_platform_core::{
 };
 use forge_registry::TriggerRegistry;
 use forge_runtime::EventBus;
-use forge_storage::{CredentialsRepo, SettingsRepo};
+use forge_storage::CredentialsRepo;
 use forge_types::VerbatimText;
 use std::sync::Arc;
 
@@ -397,7 +397,7 @@ mod quick_action_bridge {
         object: BuiltinObject,
     ) -> Entity<IntegrationDetail> {
         let (backend, _writes) = test_backend();
-        open_detail_with(cx, rt, object, backend)
+        open_detail_with(cx, rt, object, backend.credentials_repo())
     }
 
     pub(super) fn open_detail_with(
@@ -434,7 +434,7 @@ mod quick_action_bridge {
                     rt_handle: rt.handle().clone(),
                     action_engine: engine,
                     credentials,
-                    settings: backend as Arc<dyn SettingsRepo>,
+                    settings: backend.settings_repo(),
                     history: Arc::new(StubHistory),
                     trigger_registry: Arc::new(TriggerRegistry::new()),
                     bus: Arc::clone(&bus) as Arc<dyn EventPublisher>,
@@ -850,7 +850,7 @@ mod quick_action_bridge {
         let (backend, _writes) = test_backend();
         let bus = EventBus::new(Arc::new(StubEventLog));
         let bot = crate::test_support::default_twitch_bot(
-            backend as Arc<dyn CredentialsRepo>,
+            backend.credentials_repo(),
             bus as Arc<dyn EventPublisher>,
         );
         let presence = cx.new(|_| TwitchBotPresence::new());
@@ -1513,7 +1513,7 @@ mod sign_out {
                 journal: Arc::clone(journal),
             })
                 as Arc<dyn forge_runtime::IntegrationFactory<BuiltinObject>>],
-            settings as Arc<dyn SettingsRepo>,
+            settings.settings_repo(),
             forge_runtime::IntegrationGate::new(),
             Arc::new(forge_host::integrations::BuiltinRegistry::default()),
             forge_runtime::spawn_live_viewer_aggregator(&forge_net::TaskOwner::new()),
@@ -1701,7 +1701,12 @@ mod detail_lifetime {
             ban_list: None,
         };
         let (backend, _writes) = test_backend();
-        let view = super::quick_action_bridge::open_detail_with(cx, &rt, object, backend);
+        let view = super::quick_action_bridge::open_detail_with(
+            cx,
+            &rt,
+            object,
+            backend.credentials_repo(),
+        );
         cx.run_until_parked();
         assert!(
             !deltas_tx.is_closed(),

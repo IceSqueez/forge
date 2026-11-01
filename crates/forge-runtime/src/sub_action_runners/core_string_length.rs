@@ -94,7 +94,7 @@ impl SubActionRunner for CoreStringLengthRunner {
         SubActionIo {
             produces: vec![ProducedVariable {
                 output_name_key: INTO_VAR_KEY.to_owned(),
-                kind: VariantKind::Int,
+                kind: Some(VariantKind::Int),
                 label: "String length".to_owned(),
             }],
             ..SubActionIo::default()

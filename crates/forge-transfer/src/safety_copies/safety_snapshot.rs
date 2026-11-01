@@ -33,7 +33,7 @@ pub(crate) async fn write_safety_snapshot(
         tracing::debug!(%error, "partial safety snapshot could not be removed");
     }
     if written.is_ok() {
-        prune_after_safety_copy(provider.as_ref(), data_dir, &destination).await;
+        prune_after_safety_copy(provider.settings_repo().as_ref(), data_dir, &destination).await;
     }
     written.map(|()| destination)
 }

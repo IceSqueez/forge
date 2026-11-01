@@ -6,7 +6,7 @@ use forge_runtime::OverlayServiceHandle;
 use forge_server::ServerHandle;
 use forge_soundboard::SoundboardPlayer;
 use forge_speak_queue::SpeakQueueHandle;
-use forge_storage::{DataProvider, SettingsRepo};
+use forge_storage::DataProvider;
 
 use crate::audio_routes::{
     AudioDomain, RoutePlan, compose_routes, load_audio_routes, plan_route, report_plan,
@@ -67,8 +67,7 @@ impl AudioRouter {
             *latest
         };
 
-        let settings: &dyn SettingsRepo = self.parts.backend.as_ref();
-        let routes = load_audio_routes(settings).await;
+        let routes = load_audio_routes(self.parts.backend.settings_repo().as_ref()).await;
         let destination = resolve_destination(
             self.parts.backend.overlay_repo().as_ref(),
             self.parts.server.is_some(),
@@ -242,8 +241,11 @@ mod tests {
             unreachable!("routing never toggles an overlay")
         }
 
-        async fn delete(&self, _: &OverlayId) -> Result<bool, StorageError> {
-            unreachable!("routing never deletes an overlay")
+        async fn delete(&self, id: &OverlayId) -> Result<bool, StorageError> {
+            let mut stored = self.stored.lock().unwrap();
+            let before = stored.len();
+            stored.retain(|overlay| &overlay.id != id);
+            Ok(stored.len() != before)
         }
 
         async fn get_retained_content(
@@ -296,6 +298,7 @@ mod tests {
         local: Arc<RecordingSink>,
         announced: UnboundedReceiver<OverlayId>,
         router: Arc<AudioRouter>,
+        service: OverlayServiceHandle,
     }
 
     impl Rig {
@@ -319,7 +322,7 @@ mod tests {
                 date_names: forge_runtime::DateNamesHandle::default(),
                 tasks: forge_net::TaskOwner::new(),
                 repo: Arc::clone(&overlays) as Arc<dyn OverlayRepo>,
-                settings: Arc::clone(&backend) as Arc<dyn SettingsRepo>,
+                settings: backend.settings_repo(),
                 kinds: Arc::new(kinds),
                 bus: EventBus::new(Arc::new(StubEventLog)),
                 frames: Arc::new(Pages { announced: tx }) as Arc<dyn OverlayFrameSink>,
@@ -343,7 +346,7 @@ mod tests {
             let router = Arc::new(AudioRouter::new(AudioRouterParts {
                 backend: Arc::clone(&backend) as Arc<dyn DataProvider>,
                 server: Some(server),
-                overlays: service,
+                overlays: service.clone(),
                 speech_sink: Arc::new(RoutedSink::new(Arc::clone(&local) as Arc<dyn AudioSink>)),
                 speech_output: Arc::clone(&local) as Arc<dyn AudioSink>,
                 soundboard_player: Arc::new(player),
@@ -356,21 +359,29 @@ mod tests {
                 local,
                 announced,
                 router,
+                service,
             };
             rig.route_speech(AudioRoute::Overlay).await;
             rig
         }
 
         async fn route_speech(&self, route: AudioRoute) {
-            set_route(self.backend.as_ref(), AudioDomain::Speech, route)
-                .await
-                .expect("the speech route is stored");
+            set_route(
+                self.backend.settings_repo().as_ref(),
+                AudioDomain::Speech,
+                route,
+            )
+            .await
+            .expect("the speech route is stored");
         }
 
         async fn choose(&self, id: &str) {
-            set_destination(self.backend.as_ref(), Some(&OverlayId::new(id)))
-                .await
-                .expect("the receiver is stored");
+            set_destination(
+                self.backend.settings_repo().as_ref(),
+                Some(&OverlayId::new(id)),
+            )
+            .await
+            .expect("the receiver is stored");
         }
 
         async fn next_line_reaches(&mut self) -> Option<String> {
@@ -463,9 +474,13 @@ mod tests {
     async fn apply_reports_each_domain_with_the_plan_installed_for_it() {
         let rig = Rig::new().await;
         rig.choose(ALERT_RECEIVER).await;
-        set_route(rig.backend.as_ref(), AudioDomain::Clips, AudioRoute::Both)
-            .await
-            .expect("the clip route is stored");
+        set_route(
+            rig.backend.settings_repo().as_ref(),
+            AudioDomain::Clips,
+            AudioRoute::Both,
+        )
+        .await
+        .expect("the clip route is stored");
 
         let applied = rig.router.apply().await.expect("a lone apply installs");
 
@@ -473,6 +488,77 @@ mod tests {
             (applied.speech.route, applied.clips.route),
             (AudioRoute::Overlay, AudioRoute::Both),
             "the reported routing swapped or dropped a domain, so Settings shows the wrong one in effect"
+        );
+    }
+
+    async fn removing(rig: &Rig, id: &str) -> crate::overlay_removal::OverlayRemoval {
+        crate::overlay_removal::remove_overlay(
+            &rig.service,
+            rig.backend.settings_repo().as_ref(),
+            &rig.router,
+            &OverlayId::new(id),
+        )
+        .await
+        .expect("the removal reached the store")
+    }
+
+    async fn destination(rig: &Rig) -> Option<OverlayId> {
+        load_audio_routes(rig.backend.settings_repo().as_ref())
+            .await
+            .destination
+    }
+
+    #[tokio::test]
+    async fn removing_the_audio_receiver_clears_the_destination() {
+        let rig = Rig::new().await;
+        rig.choose(BLANK_RECEIVER).await;
+
+        let removal = removing(&rig, BLANK_RECEIVER).await;
+
+        assert!(
+            matches!(
+                removal,
+                crate::overlay_removal::OverlayRemoval::Removed { folder_left: None }
+            ),
+            "{removal:?}"
+        );
+        assert_eq!(destination(&rig).await, None);
+    }
+
+    #[tokio::test]
+    async fn removing_another_overlay_keeps_the_chosen_receiver() {
+        let rig = Rig::new().await;
+        rig.choose(BLANK_RECEIVER).await;
+
+        let removal = removing(&rig, ALERT_RECEIVER).await;
+
+        assert!(
+            matches!(
+                removal,
+                crate::overlay_removal::OverlayRemoval::Removed { .. }
+            ),
+            "{removal:?}"
+        );
+        assert_eq!(
+            destination(&rig).await,
+            Some(OverlayId::new(BLANK_RECEIVER))
+        );
+    }
+
+    #[tokio::test]
+    async fn a_receiver_the_store_no_longer_holds_is_put_back_after_the_miss() {
+        let rig = Rig::new().await;
+        rig.choose("already-gone").await;
+
+        let removal = removing(&rig, "already-gone").await;
+
+        assert!(
+            matches!(removal, crate::overlay_removal::OverlayRemoval::Missing),
+            "{removal:?}"
+        );
+        assert_eq!(
+            destination(&rig).await,
+            Some(OverlayId::new("already-gone"))
         );
     }
 }

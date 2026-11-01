@@ -51,9 +51,42 @@ impl SubActionOutcome {
     }
 }
 
+const RELEASED_NESTED_INDEX: usize = usize::MAX;
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(from = "Option<usize>", into = "Option<usize>")]
+pub enum StepPosition {
+    TopLevel(usize),
+    Nested,
+}
+
+impl StepPosition {
+    pub fn top_level(self) -> Option<usize> {
+        match self {
+            Self::TopLevel(index) => Some(index),
+            Self::Nested => None,
+        }
+    }
+}
+
+impl From<Option<usize>> for StepPosition {
+    fn from(index: Option<usize>) -> Self {
+        index
+            .filter(|index| *index != RELEASED_NESTED_INDEX)
+            .map_or(Self::Nested, Self::TopLevel)
+    }
+}
+
+impl From<StepPosition> for Option<usize> {
+    fn from(position: StepPosition) -> Self {
+        position.top_level()
+    }
+}
+
 #[derive(Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct SubActionTelemetry {
-    pub index: usize,
+    #[serde(rename = "index")]
+    pub position: StepPosition,
     pub kind: String,
     #[serde(with = "time::serde::rfc3339")]
     pub started_at: OffsetDateTime,
@@ -82,7 +115,7 @@ impl fmt::Debug for RedactedValues<'_> {
 impl fmt::Debug for SubActionTelemetry {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.debug_struct("SubActionTelemetry")
-            .field("index", &self.index)
+            .field("position", &self.position)
             .field("kind", &self.kind)
             .field("started_at", &self.started_at)
             .field("duration_ms", &self.duration_ms)
@@ -94,10 +127,8 @@ impl fmt::Debug for SubActionTelemetry {
 }
 
 impl SubActionTelemetry {
-    pub const NESTED: usize = usize::MAX;
-
     pub fn is_nested(&self) -> bool {
-        self.index == Self::NESTED
+        self.position == StepPosition::Nested
     }
 }
 
@@ -225,6 +256,26 @@ pub struct ExecutionContext {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn a_stored_position_decodes_to_top_level_or_nested() {
+        for (stored, expected) in [
+            ("3", StepPosition::TopLevel(3)),
+            ("null", StepPosition::Nested),
+            ("18446744073709551615", StepPosition::Nested),
+        ] {
+            let decoded: StepPosition = serde_json::from_str(stored).unwrap();
+            assert_eq!(decoded, expected, "{stored}");
+        }
+    }
+
+    #[test]
+    fn a_nested_position_is_written_as_null() {
+        assert_eq!(
+            serde_json::to_string(&StepPosition::Nested).unwrap(),
+            "null"
+        );
+    }
+
     use super::*;
     use crate::ids::{ActionId, EventId};
     use crate::message::MessageArg;
@@ -496,7 +547,7 @@ mod tests {
             started_at: OffsetDateTime::UNIX_EPOCH,
             completed_at: None,
             telemetry: vec![SubActionTelemetry {
-                index: 0,
+                position: StepPosition::TopLevel(0),
                 kind: "SendChat".to_string(),
                 started_at: OffsetDateTime::UNIX_EPOCH,
                 duration_ms: 5,
@@ -632,7 +683,7 @@ mod tests {
 
     fn telemetry_carrying_interpolated_text() -> SubActionTelemetry {
         SubActionTelemetry {
-            index: 0,
+            position: StepPosition::TopLevel(0),
             kind: "SendChat".to_string(),
             started_at: OffsetDateTime::UNIX_EPOCH,
             duration_ms: 5,

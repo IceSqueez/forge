@@ -19,7 +19,7 @@ use forge_components::{
 };
 use forge_runtime::ChatHistoryRetentionHandle;
 use forge_storage::settings::core_settings;
-use forge_storage::{DataProvider, Language, SettingsRepo, write_setting};
+use forge_storage::{DataProvider, Language, write_setting};
 use forge_transfer::{ScheduledBackupHandle, TransferExclusivity};
 use gpui::{
     AnyElement, App, ClickEvent, Context, Entity, FontWeight, Pixels, Rgba, SharedString,
@@ -258,7 +258,7 @@ impl SettingsView {
     ) -> Entity<SettingsRegionView> {
         cx.new(|cx| {
             SettingsRegionView::new(
-                Arc::clone(backend) as Arc<dyn SettingsRepo>,
+                backend.settings_repo(),
                 rt_handle.clone(),
                 cx.global::<LocaleState>().formats,
                 cx,
@@ -329,7 +329,7 @@ impl SettingsView {
         });
         let notifications = cx.new(|cx| {
             SettingsNotificationsView::new(
-                Arc::clone(&backend) as Arc<dyn SettingsRepo>,
+                backend.settings_repo(),
                 rt_handle.clone(),
                 notification_policy,
             )
@@ -508,7 +508,7 @@ impl SettingsView {
             FontTarget::Mono => presentation.fonts.set_mono_override(family.clone()),
         });
 
-        let backend = Arc::clone(&self.services.backend) as Arc<dyn SettingsRepo>;
+        let backend = self.services.backend.settings_repo();
         let persisted = family.map(|f| f.to_string());
         let target = pending.target;
         let writer_key = match target {
@@ -599,7 +599,7 @@ impl SettingsView {
         let restyled = cx.global::<Presentation>().restyled(theme, accent, density);
         cx.set_global(restyled);
 
-        let backend = Arc::clone(&self.services.backend) as Arc<dyn SettingsRepo>;
+        let backend = self.services.backend.settings_repo();
         let key = theme.storage_key().to_owned();
         self.appearance_writers.write_reporting(
             "theme",
@@ -620,7 +620,7 @@ impl SettingsView {
         let restyled = cx.global::<Presentation>().restyled(theme, accent, density);
         cx.set_global(restyled);
 
-        let backend = Arc::clone(&self.services.backend) as Arc<dyn SettingsRepo>;
+        let backend = self.services.backend.settings_repo();
         let key = accent.storage_key().to_owned();
         self.appearance_writers.write_reporting(
             "accent",
@@ -646,7 +646,7 @@ impl SettingsView {
             cx,
         );
 
-        let backend = Arc::clone(&self.services.backend) as Arc<dyn SettingsRepo>;
+        let backend = self.services.backend.settings_repo();
         self.appearance_writers.write_reporting(
             "language",
             async move {
@@ -671,7 +671,7 @@ impl SettingsView {
         let restyled = cx.global::<Presentation>().restyled(theme, accent, density);
         cx.set_global(restyled);
 
-        let backend = Arc::clone(&self.services.backend) as Arc<dyn SettingsRepo>;
+        let backend = self.services.backend.settings_repo();
         let key = density.storage_key().to_owned();
         self.appearance_writers.write_reporting(
             "density",

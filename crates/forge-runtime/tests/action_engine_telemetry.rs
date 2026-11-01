@@ -1,5 +1,6 @@
 #![expect(clippy::unwrap_used, reason = "test fixtures")]
 use forge_events::test_support::CapturingPublisher;
+use forge_storage::DataProvider;
 mod common;
 use common::runners::GateRunner;
 
@@ -14,7 +15,7 @@ use forge_registry::{
     SubActionRunner,
 };
 use forge_runtime::{
-    ActionCancelRegistry, Catalog, EventBus, ExecutionRequest, NullEventLogRepo, ScriptRegistry,
+    ActionCancelRegistry, Catalog, EventBus, ExecutionRequest, NullEventLogRepo, ScriptCatalog,
     spawn_action_engine,
 };
 use forge_runtime::{ChatSendMessageRunner, ScriptRunInlineRunner};
@@ -318,7 +319,7 @@ impl SubActionRunner for FailRunner {
             SubActionTelemetry {
                 args_in: ::std::collections::BTreeMap::new(),
                 produced: ::std::collections::BTreeMap::new(),
-                index: ctx.index,
+                position: forge_types::StepPosition::TopLevel(ctx.index),
                 kind: "test.fail".to_owned(),
                 started_at: OffsetDateTime::now_utc(),
                 duration_ms: 42,
@@ -765,7 +766,7 @@ impl ScriptHarness {
         let (backend, media) = common::sqlite_backend().await;
         let backend = Arc::new(backend);
         forge_storage::write_setting(
-            backend.as_ref(),
+            backend.settings_repo().as_ref(),
             &forge_script::settings::TIMEOUT_MS,
             &10_000,
         )
@@ -774,10 +775,10 @@ impl ScriptHarness {
         let published = CapturingPublisher::shared();
         let mut reg = SubActionRegistry::new();
         reg.register(Box::new(ScriptRunInlineRunner::new(
-            Arc::new(ScriptRegistry::new()),
-            Arc::clone(&backend) as Arc<dyn forge_storage::GlobalsRepo>,
+            Arc::new(ScriptCatalog::new()),
+            backend.globals_repo() as Arc<dyn forge_storage::GlobalsRepo>,
             Arc::clone(&published) as Arc<dyn forge_events::EventPublisher>,
-            Arc::clone(&backend) as Arc<dyn forge_storage::SettingsRepo>,
+            backend.settings_repo() as Arc<dyn forge_storage::SettingsRepo>,
         )))
         .unwrap();
         let history = Arc::new(SpyHistoryRepo::new());

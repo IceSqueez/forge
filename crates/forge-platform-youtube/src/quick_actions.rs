@@ -4,7 +4,7 @@ use forge_platform_core::{
 use forge_registry::ConfigChoice;
 use forge_types::{MessageCode, VerbatimText};
 
-use crate::builtin::YoutubeIntegrationBundle;
+use crate::builtin::YouTubeIntegrationBundle;
 use crate::sub_actions::PrivacyStatus;
 use crate::vocabulary::{config_keys, labels, sub_action_ids};
 
@@ -211,7 +211,7 @@ fn catalog() -> Vec<QuickAction> {
     ]
 }
 
-impl QuickActions for YoutubeIntegrationBundle {
+impl QuickActions for YouTubeIntegrationBundle {
     fn actions(&self) -> Vec<QuickAction> {
         let enabled = self.connection().is_connected();
         catalog()

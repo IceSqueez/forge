@@ -1,7 +1,8 @@
 use forge_events::{Event, EventSource};
 use forge_registry::{
     ActorDeclaration, ActorRole, ActorSlot, CanonicalCount, CanonicalVariable, EventFilter,
-    KindPlatformContract, TriggerCategory, TriggerKindDescriptor, TriggerVariables,
+    KindPlatformContract, TriggerCatalogEntry, TriggerCategory, TriggerKindDescriptor,
+    TriggerVariables,
 };
 use forge_types::PlatformId;
 use forge_types::TriggerConfig;
@@ -12,11 +13,7 @@ use crate::vocabulary::{event_kinds, trigger_ids, variables};
 
 pub(crate) struct ChannelMemberGiftDescriptor;
 
-impl TriggerKindDescriptor for ChannelMemberGiftDescriptor {
-    fn id(&self) -> &str {
-        trigger_ids::CHANNEL_MEMBER_GIFT
-    }
-
+impl TriggerCatalogEntry for ChannelMemberGiftDescriptor {
     fn category(&self) -> TriggerCategory {
         TriggerCategory::Users
     }
@@ -35,6 +32,12 @@ impl TriggerKindDescriptor for ChannelMemberGiftDescriptor {
 
     fn icon_name(&self) -> &str {
         "gift"
+    }
+}
+
+impl TriggerKindDescriptor for ChannelMemberGiftDescriptor {
+    fn id(&self) -> &str {
+        trigger_ids::CHANNEL_MEMBER_GIFT
     }
 
     fn platform_contract(&self) -> KindPlatformContract {

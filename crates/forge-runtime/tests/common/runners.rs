@@ -59,7 +59,7 @@ impl SubActionRunner for GateRunner {
             SubActionTelemetry {
                 args_in: ::std::collections::BTreeMap::new(),
                 produced: ::std::collections::BTreeMap::new(),
-                index: ctx.index,
+                position: forge_types::StepPosition::TopLevel(ctx.index),
                 kind: "test.gate".to_owned(),
                 started_at: OffsetDateTime::now_utc(),
                 duration_ms: 0,
@@ -163,7 +163,7 @@ impl SubActionRunner for FixedOutcomeRunner {
             SubActionTelemetry {
                 args_in: ::std::collections::BTreeMap::new(),
                 produced: ::std::collections::BTreeMap::new(),
-                index: ctx.index,
+                position: forge_types::StepPosition::TopLevel(ctx.index),
                 kind: self.id.to_owned(),
                 started_at: OffsetDateTime::now_utc(),
                 duration_ms: 0,

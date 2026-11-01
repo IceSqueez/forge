@@ -292,9 +292,12 @@ async fn an_event_burst_that_overflows_the_buffer_resyncs_the_catalog_on_the_sam
         recorder: recorder.clone(),
         gate: Mutex::new(Some(gate)),
     });
-    let client = ObsClient::connect(&format!("127.0.0.1:{}", fake.port), None, publisher)
-        .await
-        .unwrap();
+    let client = ObsClient::connect(
+        &forge_obs::ObsEndpoint::parse(&format!("127.0.0.1:{}", fake.port), "").unwrap(),
+        publisher,
+    )
+    .await
+    .unwrap();
     connected(&client).await;
     assert_eq!(fake.log.count(0, "GetSceneItemEnabled"), 1, "precondition");
 

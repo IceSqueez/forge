@@ -8,8 +8,7 @@ use forge_registry::{COMMAND_CASE_SENSITIVE_KEY, COMMAND_PHRASE_KEY};
 use forge_runtime::{OVERLAY_SEND_KIND_ID, OVERLAY_TARGET_KEY};
 use forge_server::ServerSettings;
 use forge_storage::{
-    CredentialId, DATABASE_FILE_NAME, DataProvider, SERVER_BEARER_CREDENTIAL_ID, SettingsRepo,
-    StorageError,
+    CredentialId, DATABASE_FILE_NAME, DataProvider, SERVER_BEARER_CREDENTIAL_ID, StorageError,
 };
 use forge_storage_sqlite::SqliteBackend;
 use forge_types::{
@@ -89,7 +88,8 @@ async fn write_fixture(
     port: u16,
     bearer_token: &str,
 ) -> Result<Written, EmulatorError> {
-    let settings: &dyn SettingsRepo = provider;
+    let settings_repo = provider.settings_repo();
+    let settings = settings_repo.as_ref();
     ServerSettings::save_enabled(settings, true)
         .await
         .map_err(storage_error)?;
@@ -100,6 +100,7 @@ async fn write_fixture(
         .await
         .map_err(storage_error)?;
     provider
+        .credentials_repo()
         .store(
             &CredentialId::new(SERVER_BEARER_CREDENTIAL_ID),
             bearer_token,
@@ -132,6 +133,7 @@ async fn write_fixture(
     if fixture.donatello.is_some() {
         let token = serde_json::json!({ "token": FAKE_DONATELLO_TOKEN }).to_string();
         provider
+            .credentials_repo()
             .store(&CredentialId::new(DONATELLO_CREDENTIAL_ID), &token)
             .await
             .map_err(storage_error)?;
@@ -141,6 +143,7 @@ async fn write_fixture(
             serde_json::json!({ "token": FAKE_MONOBANK_TOKEN, "jar_id": monobank.jar_id })
                 .to_string();
         provider
+            .credentials_repo()
             .store(&CredentialId::new(MONOBANK_CREDENTIAL_ID), &credential)
             .await
             .map_err(storage_error)?;
@@ -187,6 +190,7 @@ async fn seed_kick_account(
         reason: format!("Kick credentials could not be encoded: {e}"),
     })?;
     provider
+        .credentials_repo()
         .store(
             &CredentialId::new(forge_platform_kick::KICK_CREDENTIAL_ID),
             &stored,
@@ -200,7 +204,7 @@ async fn seed_youtube_account(
     account: &YouTubeAccount,
 ) -> Result<(), EmulatorError> {
     let now = time::OffsetDateTime::now_utc();
-    let credentials = forge_platform_youtube::YoutubeCredentials {
+    let credentials = forge_platform_youtube::YouTubeCredentials {
         access_token: forge_types::OAuthToken::new(account.access_token.clone()),
         refresh_token: forge_types::OAuthToken::new(account.refresh_token.clone()),
         client_id: YOUTUBE_SEEDED_CLIENT_ID.to_owned(),
@@ -217,6 +221,7 @@ async fn seed_youtube_account(
         reason: format!("YouTube credentials could not be encoded: {e}"),
     })?;
     provider
+        .credentials_repo()
         .store(
             &CredentialId::new(forge_platform_youtube::YOUTUBE_CREDENTIAL_ID),
             &stored,
@@ -256,6 +261,7 @@ async fn seed_discord_webhook(
     }
     let credential = serde_json::json!({ "url": webhook.url }).to_string();
     provider
+        .credentials_repo()
         .store(
             &CredentialId::new(format!("{DISCORD_CRED_PREFIX}{}", webhook.name)),
             &credential,
@@ -274,7 +280,8 @@ async fn seed_obs_connection(
                 .to_owned(),
         });
     }
-    forge_obs::credentials::store(provider, OBS_HOST, obs.port, &obs.password)
+    let endpoint = forge_obs::ObsEndpoint::new(OBS_HOST, obs.port, &obs.password);
+    forge_obs::credentials::store(provider.credentials_repo().as_ref(), &endpoint)
         .await
         .map_err(storage_error)
 }
@@ -290,9 +297,15 @@ async fn seed_vtube_connection(
                     .to_owned(),
         });
     }
-    forge_vtube::credentials::store(provider, &vtube.token, VTUBE_HOST, vtube.port, false)
-        .await
-        .map_err(storage_error)
+    forge_vtube::credentials::store(
+        provider.credentials_repo().as_ref(),
+        &vtube.token,
+        VTUBE_HOST,
+        vtube.port,
+        false,
+    )
+    .await
+    .map_err(storage_error)
 }
 
 fn builtin_overlay_kinds() -> Result<OverlayKindRegistry, EmulatorError> {
@@ -374,7 +387,7 @@ async fn seed_twitch_account(
         login: account.login.clone(),
         expires_at: Some(SystemTime::now() + TWITCH_TOKEN_LIFETIME),
     };
-    store_credential(provider, &credential)
+    store_credential(provider.credentials_repo().as_ref(), &credential)
         .await
         .map_err(storage_error)?;
     Ok(SeededTwitch {

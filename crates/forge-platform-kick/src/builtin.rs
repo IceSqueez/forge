@@ -408,7 +408,7 @@ impl BuiltinStatus for KickIntegrationBundle {
         vec![HeroBadge {
             label: messages::user_id_badge(&self.user_id.to_string()).into(),
             tone: HeroBadgeTone::Neutral,
-            monospace: true,
+            is_identifier: true,
         }]
     }
 

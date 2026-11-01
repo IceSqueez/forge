@@ -227,7 +227,7 @@ impl SettingsScriptingView {
     }
 
     fn settings_repo(&self) -> Arc<dyn SettingsRepo> {
-        Arc::clone(&self.backend) as Arc<dyn SettingsRepo>
+        self.backend.settings_repo()
     }
 
     fn load(&mut self, cx: &mut Context<Self>) {
@@ -915,7 +915,7 @@ mod tests {
                 typed_by_setting.push((setting, typed));
             }
 
-            let snapshot = load_scripting_settings(backend as Arc<dyn SettingsRepo>).await;
+            let snapshot = load_scripting_settings(backend.settings_repo()).await;
 
             for (setting, typed) in typed_by_setting {
                 let (_, stored) = snapshot
@@ -934,7 +934,7 @@ mod tests {
         let (backend, _writes) = test_backend();
         backend.seed_raw(&CORE_HTTP_ALLOW_LOCAL, "true");
 
-        let snapshot = load_scripting_settings(backend as Arc<dyn SettingsRepo>).await;
+        let snapshot = load_scripting_settings(backend.settings_repo()).await;
 
         assert!(snapshot.core_allow_local);
     }

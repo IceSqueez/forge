@@ -281,9 +281,9 @@ fn compute_sub_action_averages(
     let mut counts: Vec<u64> = vec![0; sub_action_count];
     for ctx in history {
         for t in &ctx.telemetry {
-            if !t.is_nested() && t.index < sub_action_count {
-                sums[t.index] += t.duration_ms;
-                counts[t.index] += 1;
+            if let Some(index) = t.position.top_level().filter(|i| *i < sub_action_count) {
+                sums[index] += t.duration_ms;
+                counts[index] += 1;
             }
         }
     }
@@ -300,8 +300,8 @@ fn compute_last_step_outcomes(
     let mut outcomes: Vec<Option<forge_types::SubActionOutcome>> = vec![None; sub_action_count];
     if let Some(latest) = history.first() {
         for t in &latest.telemetry {
-            if !t.is_nested() && t.index < sub_action_count {
-                outcomes[t.index] = Some(t.outcome.clone());
+            if let Some(index) = t.position.top_level().filter(|i| *i < sub_action_count) {
+                outcomes[index] = Some(t.outcome.clone());
             }
         }
     }
@@ -333,9 +333,16 @@ mod tests {
         }
     }
 
+    fn nested_step(duration_ms: u64, outcome: SubActionOutcome) -> SubActionTelemetry {
+        SubActionTelemetry {
+            position: forge_types::StepPosition::Nested,
+            ..step(0, duration_ms, outcome)
+        }
+    }
+
     fn step(index: usize, duration_ms: u64, outcome: SubActionOutcome) -> SubActionTelemetry {
         SubActionTelemetry {
-            index,
+            position: forge_types::StepPosition::TopLevel(index),
             kind: "core.wait".to_owned(),
             started_at: time::OffsetDateTime::UNIX_EPOCH,
             duration_ms,
@@ -383,7 +390,7 @@ mod tests {
     #[test]
     fn step_averages_ignore_nested_rows_and_steps_since_deleted() {
         let history = [run(vec![
-            step(SubActionTelemetry::NESTED, 1_000, SubActionOutcome::Success),
+            nested_step(1_000, SubActionOutcome::Success),
             step(2, 1_000, SubActionOutcome::Success),
             step(0, 4, SubActionOutcome::Success),
         ])];
@@ -419,7 +426,7 @@ mod tests {
     #[test]
     fn last_outcomes_ignore_nested_rows_and_steps_since_deleted() {
         let history = [run(vec![
-            step(SubActionTelemetry::NESTED, 1, failed()),
+            nested_step(1, failed()),
             step(1, 1, failed()),
             step(0, 1, SubActionOutcome::Success),
         ])];

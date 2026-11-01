@@ -5,10 +5,7 @@ use forge_net::TaskOwner;
 use forge_overlay::OverlayKindRegistry;
 use forge_registry::{RegistryError, SubActionRegistry, TriggerRegistry};
 use forge_script::SpeakRequester;
-use forge_storage::{
-    ActionRepo, CatalogRevision, DataProvider, GlobalsRepo, ScriptRepo, SettingsRepo,
-    UserGlobalsRepo,
-};
+use forge_storage::{ActionRepo, CatalogRevision, DataProvider};
 use forge_types::{LatestValueReader, Queue, WallClock};
 
 use crate::config::Config;
@@ -28,7 +25,7 @@ use crate::overlays::overlay_service::{
 use crate::services::catalog::Catalog;
 use crate::services::date_names::DateNamesHandle;
 use crate::services::latest::LatestValues;
-use crate::services::script_registry::{ScriptRegistry, ScriptRegistryParts};
+use crate::services::script_catalog::{ScriptApiDeps, ScriptCatalog};
 use crate::speech::speak_dispatcher::ShowSpeaker;
 use crate::sub_action_runners::{
     CoreSubActionDeps, OsPorts, register_core_sub_actions, register_scheduled_run_sub_actions,
@@ -54,7 +51,7 @@ pub struct RuntimeWiringParts {
 pub struct RuntimeWiring {
     bus: Arc<EventBus>,
     provider: Arc<dyn DataProvider>,
-    scripts: Arc<ScriptRegistry>,
+    scripts: Arc<ScriptCatalog>,
     cancel_registry: Arc<ActionCancelRegistry>,
     overlays: OverlayServiceHandle,
     date_names: DateNamesHandle,
@@ -93,7 +90,7 @@ impl RuntimeWiring {
         if script_speech.is_none() {
             tracing::warn!("no speak dispatcher available; scripts cannot speak");
         }
-        let scripts = Arc::new(ScriptRegistry::with_parts(ScriptRegistryParts {
+        let scripts = Arc::new(ScriptCatalog::with_parts(ScriptApiDeps {
             speak_requester: script_speech,
             latest_values: Some(Arc::clone(&latest)),
             scheduling: Some(ScriptScheduling::new(
@@ -103,7 +100,7 @@ impl RuntimeWiring {
         }));
         let overlays = OverlayServiceHandle::new(OverlayServiceParts {
             repo: provider.overlay_repo(),
-            settings: Arc::clone(&provider) as Arc<dyn SettingsRepo>,
+            settings: provider.settings_repo(),
             kinds: overlay_kinds,
             bus: Arc::clone(&bus),
             frames: overlay_frames,
@@ -136,7 +133,7 @@ impl RuntimeWiring {
         }
     }
 
-    pub fn scripts(&self) -> &Arc<ScriptRegistry> {
+    pub fn scripts(&self) -> &Arc<ScriptCatalog> {
         &self.scripts
     }
 
@@ -156,15 +153,15 @@ impl RuntimeWiring {
         register_core_sub_actions(
             &mut self.sub_actions,
             CoreSubActionDeps {
-                globals: Arc::clone(&self.provider) as Arc<dyn GlobalsRepo>,
-                user_globals: Arc::clone(&self.provider) as Arc<dyn UserGlobalsRepo>,
+                globals: self.provider.globals_repo(),
+                user_globals: self.provider.user_globals_repo(),
                 scripts: Arc::clone(&self.scripts),
                 publisher: Arc::clone(&self.bus) as Arc<dyn EventPublisher>,
-                settings: Arc::clone(&self.provider) as Arc<dyn SettingsRepo>,
+                settings: self.provider.settings_repo(),
                 scheduler: self.scheduler.clone(),
                 trigger_instances: self.provider.trigger_instance_repo(),
                 actions: self.provider.action_repo(),
-                script_repo: Arc::clone(&self.provider) as Arc<dyn ScriptRepo>,
+                script_repo: self.provider.script_repo(),
                 cancel_registry: Arc::clone(&self.cancel_registry),
                 overlays: self.overlays.clone(),
                 config: self.config.clone(),
@@ -283,7 +280,7 @@ async fn load_queues(provider: &dyn DataProvider) -> Option<Vec<Queue>> {
 
 pub struct FrozenRuntime {
     pub catalog: Arc<Catalog>,
-    pub scripts: Arc<ScriptRegistry>,
+    pub scripts: Arc<ScriptCatalog>,
     pub overlays: OverlayServiceHandle,
     pub sub_action_registry: Arc<SubActionRegistry>,
     pub trigger_registry: Arc<TriggerRegistry>,

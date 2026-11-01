@@ -15,10 +15,10 @@ use forge_emulator::vocabulary::REDACTED;
 use forge_events::Event;
 use forge_platform_core::{PlatformEndpoints, PlatformError, ViewerReport};
 use forge_platform_youtube::{
-    ActiveBroadcastIdHandle, ChatPollerStop, GOOGLE_OAUTH_BUDGET_CAPACITY, GOOGLE_OAUTH_BUDGET_WINDOW,
-    GoogleOAuthClient, LiveChatIdHandle, SharedQuota, YoutubeAuthBundle, YoutubeChatPoller,
-    YoutubeCredentialsManager, YoutubeDataApi, YoutubeSendChat, YoutubeViewerPoll,
-    google_oauth_gateway,
+    ActiveBroadcastIdHandle, ChatPollerStop, GOOGLE_OAUTH_BUDGET_CAPACITY,
+    GOOGLE_OAUTH_BUDGET_WINDOW, GoogleOAuthClient, LiveChatIdHandle, SharedQuota,
+    YouTubeAuthBundle, YouTubeChatPoller, YouTubeCredentialsManager, YouTubeDataApi,
+    YouTubeSendChat, YouTubeViewerPoll, google_oauth_gateway,
 };
 use forge_types::OAuthToken;
 use serde_json::{Map, Value, json};
@@ -71,8 +71,8 @@ fn data_api(fake: &FakeYouTube, route: &str) -> String {
     )
 }
 
-fn youtube_data_api(endpoints: &PlatformEndpoints) -> YoutubeDataApi {
-    YoutubeDataApi::new(
+fn youtube_data_api(endpoints: &PlatformEndpoints) -> YouTubeDataApi {
+    YouTubeDataApi::new(
         endpoints,
         SharedQuota::default(),
         Arc::new(forge_events::test_support::NullPublisher),
@@ -154,7 +154,7 @@ struct ForgePoller {
 impl ForgePoller {
     fn start(fake: &FakeYouTube) -> Self {
         let (tx, events) = mpsc::unbounded_channel();
-        let poller = YoutubeChatPoller::new(
+        let poller = YouTubeChatPoller::new(
             youtube_data_api(&endpoints(fake)),
             static_token_source(fake.access_token()),
             tx,
@@ -164,10 +164,7 @@ impl ForgePoller {
             Arc::new(forge_storage::MockBanLedgerRepo::new()),
         );
         let task = tokio::spawn(async move {
-            poller
-                .run_until_stopped(ChatPollerStop::new())
-                .await
-                .ok();
+            poller.run_until_stopped(ChatPollerStop::new()).await.ok();
         });
         Self {
             events,
@@ -207,16 +204,16 @@ async fn manager(
     fake: &FakeYouTube,
     expires_at: SystemTime,
     handle: Option<&str>,
-) -> YoutubeCredentialsManager {
+) -> YouTubeCredentialsManager {
     let endpoints = endpoints(fake);
-    let manager = YoutubeCredentialsManager::new(
+    let manager = YouTubeCredentialsManager::new(
         Arc::new(MemoryCredentials::default()),
         google_oauth(&endpoints),
         youtube_data_api(&endpoints),
     );
     let account = YouTubeAccount::default();
     manager
-        .save_from_bundle(YoutubeAuthBundle {
+        .save_from_bundle(YouTubeAuthBundle {
             access_token: OAuthToken::new(account.access_token),
             refresh_token: OAuthToken::new(account.refresh_token),
             channel_id: account.channel_id,
@@ -442,7 +439,7 @@ async fn forge_send_inserts_a_text_message_that_comes_back_as_the_owner() {
     let fake = start_live().await;
     let live_chat = LiveChatIdHandle::new();
     live_chat.set(Some(fake.config().live_chat_id.clone()));
-    let sender = YoutubeSendChat::new(
+    let sender = YouTubeSendChat::new(
         youtube_data_api(&endpoints(&fake)),
         static_token_source(fake.access_token()),
         live_chat,
@@ -466,7 +463,7 @@ async fn forge_send_into_an_ended_chat_is_refused_as_live_chat_ended() {
     fake.set_live(false);
     let live_chat = LiveChatIdHandle::new();
     live_chat.set(Some(fake.config().live_chat_id.clone()));
-    let sender = YoutubeSendChat::new(
+    let sender = YouTubeSendChat::new(
         youtube_data_api(&endpoints(&fake)),
         static_token_source(fake.access_token()),
         live_chat,
@@ -584,7 +581,7 @@ async fn forge_viewer_poll_reports_the_live_concurrent_viewers() {
     let broadcast = ActiveBroadcastIdHandle::new();
     broadcast.set(Some(fake.config().broadcast_id.clone()));
     let (reports_tx, mut reports) = watch::channel(ViewerReport::Absent);
-    let poll = YoutubeViewerPoll::new(
+    let poll = YouTubeViewerPoll::new(
         youtube_data_api(&endpoints(&fake)),
         static_token_source(fake.access_token()),
         broadcast,

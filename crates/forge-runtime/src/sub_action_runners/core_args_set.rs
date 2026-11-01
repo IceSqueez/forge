@@ -3,9 +3,7 @@ use forge_registry::{
     ConfigProblem, ConfigSpec, ProducedVariable, RunContext, StepCatalogEntry, StepTimer,
     SubActionCategory, SubActionIo, SubActionRunner, TextEditor, TextField, TypedField, ValueField,
 };
-use forge_types::{
-    ArgStack, SubActionConfig, SubActionTelemetry, Variant, VariantKind, strip_var_decoration,
-};
+use forge_types::{ArgStack, SubActionConfig, SubActionTelemetry, Variant, strip_var_decoration};
 
 const NAME_KEY: &str = "name";
 
@@ -74,7 +72,7 @@ impl SubActionRunner for CoreArgsSetRunner {
         SubActionIo {
             produces: vec![ProducedVariable {
                 output_name_key: NAME_KEY.to_owned(),
-                kind: VariantKind::String,
+                kind: None,
                 label: "Argument value".to_owned(),
             }],
             ..SubActionIo::default()

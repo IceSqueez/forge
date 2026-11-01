@@ -1,9 +1,9 @@
 use forge_events::{DeliveryLane, Event, EventSource};
 use forge_registry::{
     ActorDeclaration, ActorIdentity, ActorRole, ActorSlot, CanonicalVariable, ChatTriggerFamily,
-    EventFilter, FIRST_CHATTERS_ONLY, FormField, KindPlatformContract, TriggerCategory,
-    TriggerKindDescriptor, TriggerVariables, admits_chatter, chat_message_condition,
-    first_chatters_only_field,
+    EventFilter, FIRST_CHATTERS_ONLY, FormField, KindPlatformContract, TriggerCatalogEntry,
+    TriggerCategory, TriggerKindDescriptor, TriggerVariables, admits_chatter,
+    chat_message_condition, first_chatters_only_field,
 };
 use forge_types::{DeclaredVariable, PlatformId, TriggerConfig, UserText, Variant, VariantKind};
 
@@ -13,11 +13,7 @@ use crate::vocabulary::{event_kinds, trigger_ids, variables};
 
 pub(crate) struct ChatDescriptor;
 
-impl TriggerKindDescriptor for ChatDescriptor {
-    fn id(&self) -> &str {
-        trigger_ids::CHAT_MESSAGE_SENT
-    }
-
+impl TriggerCatalogEntry for ChatDescriptor {
     fn category(&self) -> TriggerCategory {
         TriggerCategory::Chat
     }
@@ -36,6 +32,12 @@ impl TriggerKindDescriptor for ChatDescriptor {
 
     fn icon_name(&self) -> &str {
         "message-circle"
+    }
+}
+
+impl TriggerKindDescriptor for ChatDescriptor {
+    fn id(&self) -> &str {
+        trigger_ids::CHAT_MESSAGE_SENT
     }
 
     fn platform_contract(&self) -> KindPlatformContract {

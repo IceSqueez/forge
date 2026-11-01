@@ -422,6 +422,7 @@ mod tests {
     use super::*;
     use crate::test_support::{Sandboxed, sandboxed_backend};
     use forge_events::test_support::NullPublisher;
+    use forge_storage::DataProvider;
 
     use forge_registry::ConfigProblem;
     use forge_registry::ConfigReason;
@@ -439,7 +440,7 @@ mod tests {
     fn runner(method: HttpMethod, dp: &Arc<SqliteBackend>) -> CoreHttpRunner {
         CoreHttpRunner::new(
             method,
-            Arc::clone(dp) as Arc<dyn SettingsRepo>,
+            dp.settings_repo(),
             Arc::new(EgressClient::new().unwrap()),
         )
     }
@@ -542,9 +543,13 @@ mod tests {
             .mount(&server)
             .await;
         let dp = backend().await;
-        write_setting(&**dp, &crate::settings::CORE_HTTP_ALLOW_LOCAL, &true)
-            .await
-            .unwrap();
+        write_setting(
+            dp.settings_repo().as_ref(),
+            &crate::settings::CORE_HTTP_ALLOW_LOCAL,
+            &true,
+        )
+        .await
+        .unwrap();
 
         let mut cfg = SubActionConfig::new();
         cfg.insert("url".to_owned(), Variant::String(server.uri()));
@@ -581,9 +586,13 @@ mod tests {
             .mount(&server)
             .await;
         let dp = backend().await;
-        write_setting(&**dp, &crate::settings::CORE_HTTP_ALLOW_LOCAL, &true)
-            .await
-            .unwrap();
+        write_setting(
+            dp.settings_repo().as_ref(),
+            &crate::settings::CORE_HTTP_ALLOW_LOCAL,
+            &true,
+        )
+        .await
+        .unwrap();
 
         let mut cfg = SubActionConfig::new();
         cfg.insert("url".to_owned(), Variant::String(server.uri()));
@@ -734,9 +743,13 @@ mod tests {
 
     async fn local_backend() -> Sandboxed<Arc<SqliteBackend>> {
         let dp = backend().await;
-        write_setting(&**dp, &crate::settings::CORE_HTTP_ALLOW_LOCAL, &true)
-            .await
-            .unwrap();
+        write_setting(
+            dp.settings_repo().as_ref(),
+            &crate::settings::CORE_HTTP_ALLOW_LOCAL,
+            &true,
+        )
+        .await
+        .unwrap();
         dp
     }
 

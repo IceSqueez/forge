@@ -10,8 +10,7 @@ use forge_components::{
     spacing, tr,
 };
 use forge_storage::{
-    DEFAULT_DIAGNOSTIC_LOG_LEVEL, DataProvider, SettingsRepo, diagnostic_log_level,
-    set_diagnostic_log_level,
+    DEFAULT_DIAGNOSTIC_LOG_LEVEL, DataProvider, diagnostic_log_level, set_diagnostic_log_level,
 };
 use forge_types::LogLevel;
 use gpui::{
@@ -129,7 +128,7 @@ impl SettingsDiagnosticsView {
 
     fn load_level(&mut self, cx: &mut Context<Self>) {
         self.level_load = Loadable::Loading;
-        let repo = Arc::clone(&self.backend) as Arc<dyn SettingsRepo>;
+        let repo = self.backend.settings_repo();
         async_bridge::run_async(
             &self.rt_handle,
             async move {
@@ -169,7 +168,7 @@ impl SettingsDiagnosticsView {
         }
         let previous = std::mem::replace(&mut self.level, level.clone());
         self.level_picked = true;
-        let repo = Arc::clone(&self.backend) as Arc<dyn SettingsRepo>;
+        let repo = self.backend.settings_repo();
         async_bridge::optimistic(
             &self.rt_handle,
             "diagnostics log level",
@@ -936,7 +935,7 @@ mod tests {
         let rt = crate::test_support::runtime();
         let (backend, mut writes) = crate::test_support::test_backend();
         rt.block_on(forge_storage::set_diagnostic_log_level(
-            backend.as_ref(),
+            backend.settings_repo().as_ref(),
             &stored,
         ))
         .unwrap();

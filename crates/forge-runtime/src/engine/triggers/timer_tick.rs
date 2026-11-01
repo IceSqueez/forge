@@ -3,7 +3,8 @@ use std::time::Duration;
 use forge_events::{Event, EventSource, TimerTick, TypedEvent};
 use forge_registry::{
     ActorDeclaration, DurationBounds, EventFilter, FormField, KindPlatformContract,
-    SubActionConfigExt, TriggerCategory, TriggerKindDescriptor, TriggerVariables, joined_condition,
+    SubActionConfigExt, TriggerCatalogEntry, TriggerCategory, TriggerKindDescriptor,
+    TriggerVariables, joined_condition,
 };
 use forge_types::{
     DeclaredVariable, MessageRef, SynthesisHint, TriggerConfig, TriggerInstanceId, UserText,
@@ -73,11 +74,7 @@ impl TimerSchedule {
 
 pub struct TimerTickDescriptor;
 
-impl TriggerKindDescriptor for TimerTickDescriptor {
-    fn id(&self) -> &str {
-        TIMER_TICK_KIND
-    }
-
+impl TriggerCatalogEntry for TimerTickDescriptor {
     fn category(&self) -> TriggerCategory {
         TriggerCategory::Timer
     }
@@ -96,6 +93,12 @@ impl TriggerKindDescriptor for TimerTickDescriptor {
 
     fn icon_name(&self) -> &str {
         "clock"
+    }
+}
+
+impl TriggerKindDescriptor for TimerTickDescriptor {
+    fn id(&self) -> &str {
+        TIMER_TICK_KIND
     }
 
     fn platform_contract(&self) -> KindPlatformContract {

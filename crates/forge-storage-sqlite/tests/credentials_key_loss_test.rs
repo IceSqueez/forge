@@ -1,5 +1,6 @@
 #![expect(clippy::expect_used, reason = "test fixtures")]
-use forge_storage::{CredentialId, CredentialsKeyLoss, CredentialsRepo, take_credentials_key_loss};
+use forge_storage::DataProvider;
+use forge_storage::{CredentialId, CredentialsKeyLoss, take_credentials_key_loss};
 use forge_storage_sqlite::SqliteBackend;
 
 async fn open(url: &str, dir: &std::path::Path) -> SqliteBackend {
@@ -18,11 +19,14 @@ async fn missing_key_file_over_an_existing_credential_reports_the_loss_once_and_
     {
         let backend = open(&url, dir.path()).await;
         backend
+            .credentials_repo()
             .store(&id, "secret")
             .await
             .expect("seed a credential under the first key");
         assert_eq!(
-            take_credentials_key_loss(&backend).await.expect("take"),
+            take_credentials_key_loss(backend.settings_repo().as_ref())
+                .await
+                .expect("take"),
             None,
             "the first boot mints the key with nothing stranded yet"
         );
@@ -32,18 +36,24 @@ async fn missing_key_file_over_an_existing_credential_reports_the_loss_once_and_
     let backend = open(&url, dir.path()).await;
 
     assert_eq!(
-        take_credentials_key_loss(&backend).await.expect("take"),
+        take_credentials_key_loss(backend.settings_repo().as_ref())
+            .await
+            .expect("take"),
         Some(CredentialsKeyLoss { stranded: 1 }),
         "the row written under the old key must be reported once"
     );
     assert_eq!(
-        take_credentials_key_loss(&backend)
+        take_credentials_key_loss(backend.settings_repo().as_ref())
             .await
             .expect("take again"),
         None,
         "the report must clear itself"
     );
-    let ids = backend.list_ids().await.expect("list_ids");
+    let ids = backend
+        .credentials_repo()
+        .list_ids()
+        .await
+        .expect("list_ids");
     assert!(
         ids.contains(&id),
         "the stranded row must stay in place, not be deleted"
@@ -58,7 +68,9 @@ async fn missing_key_file_over_an_empty_credentials_table_reports_nothing() {
     let backend = open(&url, dir.path()).await;
 
     assert_eq!(
-        take_credentials_key_loss(&backend).await.expect("take"),
+        take_credentials_key_loss(backend.settings_repo().as_ref())
+            .await
+            .expect("take"),
         None
     );
 }
@@ -72,6 +84,7 @@ async fn an_existing_key_file_over_an_existing_credential_reports_nothing() {
     {
         let backend = open(&url, dir.path()).await;
         backend
+            .credentials_repo()
             .store(&id, "secret")
             .await
             .expect("seed a credential");
@@ -79,7 +92,9 @@ async fn an_existing_key_file_over_an_existing_credential_reports_nothing() {
     let backend = open(&url, dir.path()).await;
 
     assert_eq!(
-        take_credentials_key_loss(&backend).await.expect("take"),
+        take_credentials_key_loss(backend.settings_repo().as_ref())
+            .await
+            .expect("take"),
         None
     );
 }
@@ -97,6 +112,7 @@ async fn missing_key_file_over_only_server_issued_tokens_reports_nothing() {
             forge_storage::SERVER_OVERLAY_TOKEN_CREDENTIAL_ID,
         ] {
             backend
+                .credentials_repo()
                 .store(&CredentialId::new(id), "server-issued")
                 .await
                 .expect("seed a server-issued token");
@@ -107,7 +123,9 @@ async fn missing_key_file_over_only_server_issued_tokens_reports_nothing() {
     let backend = open(&url, dir.path()).await;
 
     assert_eq!(
-        take_credentials_key_loss(&backend).await.expect("take"),
+        take_credentials_key_loss(backend.settings_repo().as_ref())
+            .await
+            .expect("take"),
         None,
         "the server re-issues its own tokens, so no login was lost"
     );

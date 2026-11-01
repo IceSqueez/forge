@@ -15,7 +15,7 @@ use time::OffsetDateTime;
 use crate::core_messages;
 use crate::engine::scheduled_runs::SchedulingContext;
 use crate::services::global_mutation::RuntimeScriptGlobals;
-use crate::services::script_registry::{SCRIPT_PANIC_ERROR_TYPE, ScriptRegistry};
+use crate::services::script_catalog::{SCRIPT_PANIC_ERROR_TYPE, ScriptCatalog};
 
 const INLINE_SCRIPT_KIND_ID: &str = "script.run.inline";
 
@@ -31,7 +31,7 @@ const BODY: CodeField = CodeField {
 const CONFIG: ConfigSpec = ConfigSpec::new(&[&BODY]);
 
 pub struct ScriptRunInlineRunner {
-    registry: Arc<ScriptRegistry>,
+    registry: Arc<ScriptCatalog>,
     globals: Arc<dyn ScriptGlobals>,
     publisher: Arc<dyn EventPublisher>,
     settings: Arc<dyn SettingsRepo>,
@@ -39,7 +39,7 @@ pub struct ScriptRunInlineRunner {
 
 impl ScriptRunInlineRunner {
     pub fn new(
-        registry: Arc<ScriptRegistry>,
+        registry: Arc<ScriptCatalog>,
         globals: Arc<dyn GlobalsRepo>,
         publisher: Arc<dyn EventPublisher>,
         settings: Arc<dyn SettingsRepo>,
@@ -172,7 +172,7 @@ impl SubActionRunner for ScriptRunInlineRunner {
                 started_at,
                 duration_ms,
                 outcome,
-                index: ctx.index,
+                position: forge_types::StepPosition::TopLevel(ctx.index),
             },
             None,
         )
@@ -185,22 +185,31 @@ mod tests {
     use crate::core_messages;
     use crate::test_support::failure::{detail_of, failure_message};
     use crate::test_support::{Sandboxed, sandboxed_backend};
-    use crate::{EventBus, NullEventLogRepo, ScriptRegistry};
+    use crate::{EventBus, NullEventLogRepo, ScriptCatalog};
     use forge_events::Event;
     use forge_events::EventPublisher;
-    use forge_storage::{GlobalsRepo, write_setting};
+    use forge_storage::DataProvider;
+    use forge_storage::write_setting;
     use forge_storage_sqlite::SqliteBackend;
     use forge_types::EventId;
     use forge_types::Variant;
 
     async fn make_backend() -> Sandboxed<Arc<SqliteBackend>> {
         let backend = sandboxed_backend([0xab; 32]).await.map(Arc::new);
-        write_setting(&**backend, &forge_script::settings::TIMEOUT_MS, &10_000)
-            .await
-            .unwrap();
-        write_setting(&**backend, &forge_script::settings::OP_LIMIT, &1_000)
-            .await
-            .unwrap();
+        write_setting(
+            backend.settings_repo().as_ref(),
+            &forge_script::settings::TIMEOUT_MS,
+            &10_000,
+        )
+        .await
+        .unwrap();
+        write_setting(
+            backend.settings_repo().as_ref(),
+            &forge_script::settings::OP_LIMIT,
+            &1_000,
+        )
+        .await
+        .unwrap();
         backend
     }
 
@@ -215,10 +224,10 @@ mod tests {
         let bus = EventBus::new(Arc::new(NullEventLogRepo));
         let publisher: Arc<dyn EventPublisher> = Arc::clone(&bus) as Arc<dyn EventPublisher>;
         let runner = ScriptRunInlineRunner::new(
-            Arc::new(ScriptRegistry::new()),
-            Arc::clone(&backend) as Arc<dyn GlobalsRepo>,
+            Arc::new(ScriptCatalog::new()),
+            backend.globals_repo(),
             publisher,
-            Arc::clone(&backend) as Arc<dyn SettingsRepo>,
+            backend.settings_repo(),
         );
 
         let mut config = runner.default_config();
@@ -267,15 +276,19 @@ mod tests {
             .await;
         let backend = make_backend().await;
         write_setting(
-            &**backend,
+            backend.settings_repo().as_ref(),
             &forge_script::settings::HTTP_ALLOWED_DOMAINS,
             &vec![server.address().ip().to_string()],
         )
         .await
         .unwrap();
-        write_setting(&**backend, &forge_script::settings::HTTP_ALLOW_LOCAL, &true)
-            .await
-            .unwrap();
+        write_setting(
+            backend.settings_repo().as_ref(),
+            &forge_script::settings::HTTP_ALLOW_LOCAL,
+            &true,
+        )
+        .await
+        .unwrap();
         let body = format!(
             r#"let r = forge::http::get("{}/ping"); if r.body != "pong" {{ throw "bad body"; }}"#,
             server.uri()

@@ -10,17 +10,17 @@ use forge_types::{ArgStack, SubActionTelemetry};
 
 use super::fields::CHANNEL_ID;
 use super::step_failure;
-use crate::chat::moderation::YoutubeModeration;
+use crate::chat::moderation::YouTubeModeration;
 use crate::vocabulary::sub_action_ids;
 
 const CONFIG: ConfigSpec = ConfigSpec::new(&[&CHANNEL_ID]);
 
 pub(crate) struct RemoveModeratorRunner {
-    moderation: Arc<YoutubeModeration>,
+    moderation: Arc<YouTubeModeration>,
 }
 
 impl RemoveModeratorRunner {
-    pub(crate) fn new(moderation: Arc<YoutubeModeration>) -> Self {
+    pub(crate) fn new(moderation: Arc<YouTubeModeration>) -> Self {
         Self { moderation }
     }
 }
@@ -84,7 +84,7 @@ mod tests {
                 + Send
                 + Sync,
         > = Arc::new(|| Box::pin(async { Ok(String::new()) }));
-        let moderation = YoutubeModeration::new(
+        let moderation = YouTubeModeration::new(
             crate::endpoints_test_support::unreachable_data_api(),
             source,
             crate::chat::ban_ledger_test_support::broadcaster_source(),

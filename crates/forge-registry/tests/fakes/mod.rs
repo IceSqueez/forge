@@ -2,8 +2,8 @@ use async_trait::async_trait;
 use forge_events::Event;
 use forge_registry::{
     EventFilter, FormField, KindPlatformContract, RegistryError, RunContext, StepCatalogEntry,
-    SubActionCategory, SubActionIo, SubActionRunner, TriggerCategory, TriggerKindDescriptor,
-    TriggerVariables,
+    SubActionCategory, SubActionIo, SubActionRunner, TriggerCatalogEntry, TriggerCategory,
+    TriggerKindDescriptor, TriggerVariables,
 };
 use forge_types::{
     Action, ActionId, ArgStack, ExecutionMode, PermissionRung, PlatformId, PlatformScope, QueueId,
@@ -90,11 +90,7 @@ pub(crate) struct FakeTrigger {
     pub variables: Option<fn() -> TriggerVariables>,
 }
 
-impl TriggerKindDescriptor for FakeTrigger {
-    fn id(&self) -> &str {
-        self.id
-    }
-
+impl TriggerCatalogEntry for FakeTrigger {
     fn category(&self) -> TriggerCategory {
         TriggerCategory::Chat
     }
@@ -114,9 +110,20 @@ impl TriggerKindDescriptor for FakeTrigger {
     fn icon_name(&self) -> &str {
         "chat"
     }
+}
+
+impl TriggerKindDescriptor for FakeTrigger {
+    fn id(&self) -> &str {
+        self.id
+    }
 
     fn platform_contract(&self) -> KindPlatformContract {
         KindPlatformContract::PlatformSpecific(PlatformId::Kick)
+    }
+
+    fn service_filter_field(&self) -> Option<&'static str> {
+        (self.id == forge_events::DONATION_RECEIVED_KIND)
+            .then_some(forge_events::DONATION_PROVIDER_CONFIG_KEY)
     }
 
     fn default_config(&self) -> TriggerConfig {

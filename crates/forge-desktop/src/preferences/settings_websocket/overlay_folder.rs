@@ -7,7 +7,6 @@ use forge_components::{
     ghost_button_with_icon, readonly_mono_field, spacing, tr,
 };
 use forge_server::ServerSettings;
-use forge_storage::SettingsRepo;
 use gpui::{ClickEvent, Context, div};
 
 use crate::app::async_bridge::{self};
@@ -22,7 +21,7 @@ impl SettingsWebSocketView {
         let prev = self.cors_any_origin;
         let value = !prev;
         self.cors_any_origin = value;
-        let repo = Arc::clone(&self.backend) as Arc<dyn SettingsRepo>;
+        let repo = self.backend.settings_repo();
         self.persist_field(
             prev,
             |this, prev, _| this.cors_any_origin = prev,
@@ -55,7 +54,7 @@ impl SettingsWebSocketView {
         }
         let path_str = path.to_string_lossy().into_owned();
         let prev_root = self.overlay_root.replace(path_str.clone());
-        let repo = Arc::clone(&self.backend) as Arc<dyn SettingsRepo>;
+        let repo = self.backend.settings_repo();
         let overlays = self.overlays.clone();
         let samples = Arc::clone(&self.overlay_samples);
         self.save_state = SaveState::Saving;

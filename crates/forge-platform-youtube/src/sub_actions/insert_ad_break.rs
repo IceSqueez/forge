@@ -9,7 +9,7 @@ use forge_registry::{
 use forge_types::{ArgStack, SubActionTelemetry};
 
 use super::step_failure;
-use crate::broadcast::ad_break::YoutubeAdBreak;
+use crate::broadcast::ad_break::YouTubeAdBreak;
 use crate::vocabulary::{config_keys, sub_action_ids};
 
 const MIN_DURATION_SECS: i64 = 1;
@@ -35,11 +35,11 @@ fn read_config(config: &SubActionConfig, args: &ArgStack) -> Result<u32, ConfigP
 }
 
 pub(crate) struct InsertAdBreakRunner {
-    ad_break: Arc<YoutubeAdBreak>,
+    ad_break: Arc<YouTubeAdBreak>,
 }
 
 impl InsertAdBreakRunner {
-    pub(crate) fn new(ad_break: Arc<YoutubeAdBreak>) -> Self {
+    pub(crate) fn new(ad_break: Arc<YouTubeAdBreak>) -> Self {
         Self { ad_break }
     }
 }
@@ -119,7 +119,7 @@ mod tests {
     fn runner_on(server: &MockServer) -> InsertAdBreakRunner {
         let handle = ActiveBroadcastIdHandle::new();
         handle.set(Some("bc".to_owned()));
-        let ad_break = YoutubeAdBreak::new(
+        let ad_break = YouTubeAdBreak::new(
             crate::endpoints_test_support::data_api_at(&server.uri()),
             token_source(),
             handle,
@@ -134,7 +134,7 @@ mod tests {
     #[test]
     fn validate_config_enforces_duration_bounds_and_accepts_numeric_text() {
         let handle = ActiveBroadcastIdHandle::new();
-        let ad_break = YoutubeAdBreak::new(
+        let ad_break = YouTubeAdBreak::new(
             crate::endpoints_test_support::data_api_at("http://127.0.0.1:0"),
             token_source(),
             handle,

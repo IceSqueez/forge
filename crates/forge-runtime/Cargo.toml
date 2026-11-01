@@ -14,6 +14,7 @@ workspace = true
 forge-types = { path = "../forge-types" }
 forge-events = { path = "../forge-events" }
 forge-registry = { path = "../forge-registry" }
+forge-speech-types = { path = "../forge-speech-types" }
 forge-storage = { path = "../forge-storage" }
 forge-paths = { path = "../forge-paths" }
 forge-script = { path = "../forge-script" }

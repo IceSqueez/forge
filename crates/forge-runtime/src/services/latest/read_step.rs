@@ -99,7 +99,7 @@ impl SubActionRunner for LatestGetRunner {
         SubActionIo {
             produces: vec![ProducedVariable {
                 output_name_key: INTO_VAR_KEY.to_owned(),
-                kind: VariantKind::Object,
+                kind: Some(VariantKind::Object),
                 label: "Latest value".to_owned(),
             }],
             ..SubActionIo::default()

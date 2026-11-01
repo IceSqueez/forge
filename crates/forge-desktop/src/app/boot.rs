@@ -107,9 +107,12 @@ fn open_boot_storage_with(
         let opened = open.await;
         let presentation = match &opened {
             Ok(backend) => BootPresentation {
-                appearance: load_appearance(backend.as_ref()).await,
-                window_placement: read_setting_or_default(backend.as_ref(), &WINDOW_PLACEMENT)
-                    .await,
+                appearance: load_appearance(backend.settings_repo().as_ref()).await,
+                window_placement: read_setting_or_default(
+                    backend.settings_repo().as_ref(),
+                    &WINDOW_PLACEMENT,
+                )
+                .await,
                 backend: Some(Arc::clone(backend)),
             },
             Err(_) => BootPresentation::default(),
@@ -270,7 +273,7 @@ pub(crate) struct PreBoot {
 }
 
 pub(crate) async fn run_pre_boot(backend: &Arc<dyn DataProvider>) -> PreBoot {
-    let settings_repo: Arc<dyn SettingsRepo> = Arc::clone(backend) as Arc<dyn SettingsRepo>;
+    let settings_repo: Arc<dyn SettingsRepo> = backend.settings_repo();
     let credentials_key_loss =
         match forge_storage::take_credentials_key_loss(settings_repo.as_ref()).await {
             Ok(loss) => loss,
@@ -342,7 +345,7 @@ pub(crate) async fn present_host(
         stop,
     } = host;
     let first_run = crate::app::first_run::resolve_first_run(
-        backend.as_ref() as &dyn SettingsRepo,
+        backend.settings_repo().as_ref(),
         &integration_states,
     )
     .await;
@@ -435,34 +438,42 @@ mod tests {
     async fn the_stored_theme_accent_density_and_both_fonts_come_back_in_their_own_slots() {
         let (backend, _writes) = test_backend();
         write_setting(
-            backend.as_ref(),
+            backend.settings_repo().as_ref(),
             &THEME,
             &Some(ThemeId::TokyoNight.storage_key().to_owned()),
         )
         .await
         .unwrap();
         write_setting(
-            backend.as_ref(),
+            backend.settings_repo().as_ref(),
             &ACCENT,
             &Some(AccentColor::Green.storage_key().to_owned()),
         )
         .await
         .unwrap();
         write_setting(
-            backend.as_ref(),
+            backend.settings_repo().as_ref(),
             &DENSITY,
             &Some(Density::Spacious.storage_key().to_owned()),
         )
         .await
         .unwrap();
-        write_setting(backend.as_ref(), &FONT_BODY, &Some("Inter".to_owned()))
-            .await
-            .unwrap();
-        write_setting(backend.as_ref(), &FONT_MONO, &Some("Iosevka".to_owned()))
-            .await
-            .unwrap();
+        write_setting(
+            backend.settings_repo().as_ref(),
+            &FONT_BODY,
+            &Some("Inter".to_owned()),
+        )
+        .await
+        .unwrap();
+        write_setting(
+            backend.settings_repo().as_ref(),
+            &FONT_MONO,
+            &Some("Iosevka".to_owned()),
+        )
+        .await
+        .unwrap();
 
-        let appearance = load_appearance(backend.as_ref()).await;
+        let appearance = load_appearance(backend.settings_repo().as_ref()).await;
 
         assert_eq!(
             (
@@ -489,7 +500,7 @@ mod tests {
         backend.seed_raw(&ACCENT, "teal");
         backend.seed_raw(&DENSITY, "roomy");
 
-        let appearance = load_appearance(backend.as_ref()).await;
+        let appearance = load_appearance(backend.settings_repo().as_ref()).await;
 
         assert_eq!(
             (
@@ -513,7 +524,7 @@ mod tests {
     async fn a_store_without_an_accent_boots_with_mauve() {
         let (backend, _writes) = test_backend();
 
-        let appearance = load_appearance(backend.as_ref()).await;
+        let appearance = load_appearance(backend.settings_repo().as_ref()).await;
 
         assert_eq!(appearance.accent, AccentColor::Mauve);
     }

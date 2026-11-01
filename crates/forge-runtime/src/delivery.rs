@@ -244,7 +244,8 @@ impl CriticalSubscription {
 #[cfg(test)]
 mod tests {
     use forge_registry::{
-        EventFilter, FormField, KindPlatformContract, TriggerCategory, TriggerKindDescriptor,
+        EventFilter, FormField, KindPlatformContract, TriggerCatalogEntry, TriggerCategory,
+        TriggerKindDescriptor,
     };
     use forge_types::{EventId, TriggerConfig};
     use tracing::Level;
@@ -265,24 +266,31 @@ mod tests {
         lane: DeliveryLane,
     }
 
-    impl TriggerKindDescriptor for LaneDescriptor {
-        fn id(&self) -> &str {
-            self.kind_prefix
-        }
+    impl TriggerCatalogEntry for LaneDescriptor {
         fn category(&self) -> TriggerCategory {
             TriggerCategory::Chat
         }
+
         fn label(&self) -> &str {
             ""
         }
+
         fn summary(&self) -> &str {
             ""
         }
+
         fn search_text(&self) -> &str {
             ""
         }
+
         fn icon_name(&self) -> &str {
             ""
+        }
+    }
+
+    impl TriggerKindDescriptor for LaneDescriptor {
+        fn id(&self) -> &str {
+            self.kind_prefix
         }
         fn platform_contract(&self) -> KindPlatformContract {
             KindPlatformContract::Universal

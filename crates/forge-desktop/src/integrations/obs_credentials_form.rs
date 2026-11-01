@@ -85,6 +85,12 @@ struct FormValues {
     password: Secret,
 }
 
+impl FormValues {
+    fn endpoint(&self) -> forge_obs::ObsEndpoint {
+        forge_obs::ObsEndpoint::new(&self.host, self.port, self.password.expose())
+    }
+}
+
 pub(crate) struct ObsCredentialsForm {
     rt_handle: tokio::runtime::Handle,
     credentials: Arc<dyn CredentialsRepo>,
@@ -404,11 +410,11 @@ async fn load_prefill(
         }
     };
     let (host, port, password) = match stored {
-        Some(cred) => {
-            let (host, port) = forge_obs::parse_endpoint(&cred.url)
-                .unwrap_or_else(|_| (DEFAULT_HOST.to_owned(), DEFAULT_PORT));
-            (host, port, cred.password)
-        }
+        Some(stored) => (
+            stored.host,
+            stored.port,
+            stored.password.unwrap_or_else(|| Secret::new("")),
+        ),
         None => (DEFAULT_HOST.to_owned(), DEFAULT_PORT, Secret::new("")),
     };
 
@@ -443,7 +449,7 @@ impl AttemptError {
 }
 
 async fn probe(form: FormValues) -> Result<ProbeReport, AttemptError> {
-    let result = forge_obs::probe_connection(&form.host, form.port, form.password.expose())
+    let result = forge_obs::probe_connection(&form.endpoint())
         .await
         .map_err(AttemptError::Obs)?;
     Ok(ProbeReport {
@@ -461,11 +467,12 @@ async fn connect_obs(
     form: FormValues,
     flags: ConnectFlags,
 ) -> Result<(), AttemptError> {
-    forge_obs::probe_connection(&form.host, form.port, form.password.expose())
+    let endpoint = form.endpoint();
+    forge_obs::probe_connection(&endpoint)
         .await
         .map_err(AttemptError::Obs)?;
 
-    forge_obs::credentials::store(&*credentials, &form.host, form.port, form.password.expose())
+    forge_obs::credentials::store(&*credentials, &endpoint)
         .await
         .map_err(|e| AttemptError::Stored(e.into()))?;
     write_setting(&*settings, &OBS_AUTO_RECONNECT, &flags.auto_reconnect)

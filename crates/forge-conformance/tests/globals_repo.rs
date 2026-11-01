@@ -30,7 +30,7 @@ async fn every_implementation() -> [Subject; 2] {
         },
         Subject {
             name: "sqlite",
-            repo: Arc::new(sqlite),
+            repo: forge_storage::DataProvider::globals_repo(&sqlite),
             _media_root: Some(media_root),
         },
     ]

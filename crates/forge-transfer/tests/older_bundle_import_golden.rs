@@ -245,7 +245,7 @@ async fn an_older_full_backup_restores_with_its_data_intact_and_retired_ids_rena
     restored_into(&data_dir, bundle).await;
     let provider = open_current(&data_dir).await;
 
-    let stored: BTreeMap<String, String> = load_setting_rows(provider.as_ref())
+    let stored: BTreeMap<String, String> = load_setting_rows(provider.settings_repo().as_ref())
         .await
         .unwrap()
         .into_iter()
@@ -265,10 +265,7 @@ async fn an_older_full_backup_restores_with_its_data_intact_and_retired_ids_rena
     for name in seed.globals.keys() {
         globals.insert(
             name.clone(),
-            GlobalsRepo::get(provider.as_ref(), name)
-                .await
-                .unwrap()
-                .unwrap(),
+            provider.globals_repo().get(name).await.unwrap().unwrap(),
         );
     }
     assert_eq!(

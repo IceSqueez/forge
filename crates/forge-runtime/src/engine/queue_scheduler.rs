@@ -1327,7 +1327,7 @@ mod tests {
                 forge_types::SubActionTelemetry {
                     args_in: std::collections::BTreeMap::new(),
                     produced: std::collections::BTreeMap::new(),
-                    index: ctx.index,
+                    position: forge_types::StepPosition::TopLevel(ctx.index),
                     kind: "test.held".to_owned(),
                     started_at: time::OffsetDateTime::now_utc(),
                     duration_ms: 0,

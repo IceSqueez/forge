@@ -102,12 +102,12 @@ impl SubActionRunner for CoreStringRegexMatchRunner {
             produces: vec![
                 ProducedVariable {
                     output_name_key: INTO_VAR_KEY.to_owned(),
-                    kind: VariantKind::Bool,
+                    kind: Some(VariantKind::Bool),
                     label: "Match found".to_owned(),
                 },
                 ProducedVariable {
                     output_name_key: CAPTURES_INTO_VAR_KEY.to_owned(),
-                    kind: VariantKind::Array,
+                    kind: Some(VariantKind::Array),
                     label: "Capture groups".to_owned(),
                 },
             ],

@@ -8,7 +8,7 @@ use forge_speech_types::{AliasId, AssignmentStrategy, IgnoreProfile, VoiceAlias}
 use forge_speech_types::{AliasState, EngineId, VoiceId};
 use forge_storage::settings::core_settings;
 use forge_storage::{
-    BanLedgerEntry, BanLedgerKey, BanOrigin, CredentialId, FilterRule, FilterRuleKind, GlobalsRepo,
+    BanLedgerEntry, BanLedgerKey, BanOrigin, CredentialId, FilterRule, FilterRuleKind,
     LatestRecord, MediaBlobId, OverlayId, ScriptRepo, StoredClip, StoredDonation,
     TtsPipelineSettings, Viewer, clip_source_referrer, load_setting_rows,
 };
@@ -79,7 +79,7 @@ async fn set_settings_stored_portable(store: &Store, pairs: &[(&str, &str)]) {
 }
 
 async fn settings_of(store: &Store) -> Settings {
-    load_setting_rows(store.provider.as_ref())
+    load_setting_rows(store.provider.settings_repo().as_ref())
         .await
         .unwrap()
         .into_iter()
@@ -88,7 +88,7 @@ async fn settings_of(store: &Store) -> Settings {
 }
 
 async fn stored_portable_settings_of(store: &Store) -> Settings {
-    load_setting_rows(store.provider.as_ref())
+    load_setting_rows(store.provider.settings_repo().as_ref())
         .await
         .unwrap()
         .into_iter()
@@ -126,10 +126,12 @@ fn filter_rule(id: &str, pattern: &str) -> FilterRule {
 
 async fn seed_source_extras(store: &Store, f: &Fixture) {
     let p = store.provider.as_ref();
-    GlobalsRepo::set(p, COUNTER, Variant::Int(42), true)
+    p.globals_repo()
+        .set(COUNTER, Variant::Int(42), true)
         .await
         .unwrap();
-    GlobalsRepo::set(p, SCRATCH, Variant::String("tmp".to_owned()), false)
+    p.globals_repo()
+        .set(SCRATCH, Variant::String("tmp".to_owned()), false)
         .await
         .unwrap();
     let clips = p.soundboard_clips_repo();
@@ -301,12 +303,13 @@ fn ban(marker: &str) -> BanLedgerEntry {
 
 async fn seed_history(store: &Store, marker: &str) {
     let p = store.provider.as_ref();
-    p.store(
-        &CredentialId::new("kick:broadcaster"),
-        &format!("{marker}-kick-token"),
-    )
-    .await
-    .unwrap();
+    p.credentials_repo()
+        .store(
+            &CredentialId::new("kick:broadcaster"),
+            &format!("{marker}-kick-token"),
+        )
+        .await
+        .unwrap();
     p.event_log_repo()
         .insert(&Event {
             id: EventId::new(),
@@ -366,10 +369,13 @@ struct History {
 async fn history_of(store: &Store) -> History {
     let p = store.provider.as_ref();
     let mut credentials = Vec::new();
-    let mut ids = p.list_ids().await.unwrap();
+    let mut ids = p.credentials_repo().list_ids().await.unwrap();
     ids.sort_by(|a, b| a.as_str().cmp(b.as_str()));
     for id in ids {
-        credentials.push((id.as_str().to_owned(), p.load(&id).await.unwrap()));
+        credentials.push((
+            id.as_str().to_owned(),
+            p.credentials_repo().load(&id).await.unwrap(),
+        ));
     }
     History {
         credentials,
@@ -469,7 +475,9 @@ async fn config_of(store: &Store) -> ConfigView {
     triggers.sort_by_key(|t| t.id);
     let mut queues = p.queue_repo().list().await.unwrap();
     queues.sort_by_key(|q| q.id);
-    let mut scripts: Vec<_> = forge_storage::ScriptRepo::list(p)
+    let mut scripts: Vec<_> = p
+        .script_repo()
+        .list()
         .await
         .unwrap()
         .into_iter()
@@ -481,7 +489,9 @@ async fn config_of(store: &Store) -> ConfigView {
         })
         .collect();
     scripts.sort();
-    let mut persisted_globals: Vec<_> = GlobalsRepo::list(p)
+    let mut persisted_globals: Vec<_> = p
+        .globals_repo()
+        .list()
         .await
         .unwrap()
         .into_iter()
@@ -729,8 +739,8 @@ async fn a_setup_carries_current_values_of_persisted_globals_only() {
     assert_eq!(
         (
             carried,
-            GlobalsRepo::get(p, COUNTER).await.unwrap(),
-            GlobalsRepo::get(p, SCRATCH).await.unwrap(),
+            p.globals_repo().get(COUNTER).await.unwrap(),
+            p.globals_repo().get(SCRATCH).await.unwrap(),
         ),
         (
             BTreeSet::from([COUNTER, GLOBAL_NAME]),
@@ -1139,20 +1149,28 @@ async fn a_portable_setting_only_the_target_holds_is_removed_and_recommends_a_re
 
 async fn archive_greet(store: &Store) -> forge_types::ScriptId {
     let id = ScriptRepo::get_by_name(
-        store.provider.as_ref(),
+        store.provider.script_repo().as_ref(),
         forge_host::test_support::pack_fixture::SCRIPT_NAME,
     )
     .await
     .unwrap()
     .unwrap()
     .id;
-    assert!(store.provider.archive_script(id).await.unwrap());
+    assert!(
+        store
+            .provider
+            .script_repo()
+            .archive_script(id)
+            .await
+            .unwrap()
+    );
     id
 }
 
 async fn archived_scripts(store: &Store) -> Vec<forge_types::ScriptId> {
     store
         .provider
+        .script_repo()
         .list_archived_scripts()
         .await
         .unwrap()
@@ -1163,7 +1181,7 @@ async fn archived_scripts(store: &Store) -> Vec<forge_types::ScriptId> {
 
 async fn live_greet(store: &Store) -> Option<forge_types::ScriptId> {
     ScriptRepo::get_by_name(
-        store.provider.as_ref(),
+        store.provider.script_repo().as_ref(),
         forge_host::test_support::pack_fixture::SCRIPT_NAME,
     )
     .await

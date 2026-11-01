@@ -133,11 +133,11 @@ mod tests {
         let (backend, _writes) = test_backend();
         backend.seed_raw(&SPEECH_ROUTE, AudioRoute::Both.as_str());
 
-        route_audio_to(backend.as_ref(), Some(&receiver()))
+        route_audio_to(backend.settings_repo().as_ref(), Some(&receiver()))
             .await
             .expect("every write lands");
 
-        let stored = load_audio_routes(backend.as_ref()).await;
+        let stored = load_audio_routes(backend.settings_repo().as_ref()).await;
         assert_eq!(
             (stored.speech, stored.clips, stored.destination),
             (AudioRoute::Both, AudioRoute::Overlay, Some(receiver()))
@@ -151,9 +151,9 @@ mod tests {
         backend.seed_raw(&CLIPS_ROUTE, AudioRoute::Local.as_str());
         backend.fail_writes(AUDIO_OVERLAY_ID.name());
 
-        let outcome = route_audio_to(backend.as_ref(), Some(&receiver())).await;
+        let outcome = route_audio_to(backend.settings_repo().as_ref(), Some(&receiver())).await;
 
-        let stored = load_audio_routes(backend.as_ref()).await;
+        let stored = load_audio_routes(backend.settings_repo().as_ref()).await;
         assert_eq!(
             (outcome.is_err(), stored.speech, stored.clips),
             (true, AudioRoute::Local, AudioRoute::Local)
@@ -166,9 +166,9 @@ mod tests {
         backend.seed_raw(&SPEECH_ROUTE, AudioRoute::Local.as_str());
         backend.fail_writes(CLIPS_ROUTE.name());
 
-        let outcome = route_audio_to(backend.as_ref(), Some(&receiver())).await;
+        let outcome = route_audio_to(backend.settings_repo().as_ref(), Some(&receiver())).await;
 
-        let stored = load_audio_routes(backend.as_ref()).await;
+        let stored = load_audio_routes(backend.settings_repo().as_ref()).await;
         assert_eq!(
             (outcome.is_err(), stored.speech, stored.destination),
             (true, AudioRoute::Local, None)
@@ -181,11 +181,11 @@ mod tests {
         backend.seed_raw(&SPEECH_ROUTE, AudioRoute::Overlay.as_str());
         backend.seed_raw(&AUDIO_OVERLAY_ID, RECEIVER);
 
-        route_audio_to(backend.as_ref(), None)
+        route_audio_to(backend.settings_repo().as_ref(), None)
             .await
             .expect("every write lands");
 
-        let stored = load_audio_routes(backend.as_ref()).await;
+        let stored = load_audio_routes(backend.settings_repo().as_ref()).await;
         assert_eq!(
             (stored.speech, stored.destination),
             (AudioRoute::Overlay, None)

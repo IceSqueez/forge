@@ -216,16 +216,16 @@ impl Stimuli<'_> {
                 Ok(ActionDetail::KickStreamSet { live: *live })
             }
             StepAction::KickChannelPolled { within_ms } => self.await_kick_poll(*within_ms).await,
-            StepAction::YoutubeChatPolled { within_ms } => {
+            StepAction::YouTubeChatPolled { within_ms } => {
                 self.await_youtube_poll(*within_ms).await
             }
-            StepAction::YoutubeChat(message) => self.youtube_chat(message),
-            StepAction::YoutubeChatEvent { author, snippet } => {
+            StepAction::YouTubeChat(message) => self.youtube_chat(message),
+            StepAction::YouTubeChatEvent { author, snippet } => {
                 self.youtube_chat_event(author, snippet)
             }
-            StepAction::YoutubeBroadcast { live } => {
+            StepAction::YouTubeBroadcast { live } => {
                 self.youtube()?.set_live(*live);
-                Ok(ActionDetail::YoutubeBroadcastSet { live: *live })
+                Ok(ActionDetail::YouTubeBroadcastSet { live: *live })
             }
             StepAction::ObsOnline {} => self.obs_online().await,
             StepAction::ObsIdentified { within_ms } => self.await_obs(*within_ms).await,
@@ -380,7 +380,7 @@ impl Stimuli<'_> {
                 },
             )
             .await
-            .map(|()| ActionDetail::YoutubeChatPolled)
+            .map(|()| ActionDetail::YouTubeChatPolled)
             .map_err(refused)
     }
 
@@ -395,7 +395,7 @@ impl Stimuli<'_> {
             .ok_or_else(|| plain("the YouTube chat event snippet must be an object".to_owned()))?;
         self.youtube()?
             .inject_chat_event(author, snippet)
-            .map(|message_id| ActionDetail::YoutubeChatSent { message_id })
+            .map(|message_id| ActionDetail::YouTubeChatSent { message_id })
             .map_err(refused)
     }
 
@@ -438,7 +438,7 @@ impl Stimuli<'_> {
     fn youtube_chat(&self, message: &YouTubeChatMessage) -> Result<ActionDetail, ActionFailure> {
         self.youtube()?
             .inject_chat_message(&message.author, &message.text)
-            .map(|message_id| ActionDetail::YoutubeChatSent { message_id })
+            .map(|message_id| ActionDetail::YouTubeChatSent { message_id })
             .map_err(refused)
     }
 

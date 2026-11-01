@@ -9,7 +9,7 @@ use crate::test_support::{
 };
 use forge_components::{Density, Presentation, ThemeId};
 use forge_runtime::{LifecycleState, LifecycleStates};
-use forge_storage::{MockTriggerInstanceRepo, SettingsRepo};
+use forge_storage::MockTriggerInstanceRepo;
 use forge_types::TriggerInstance;
 use std::sync::atomic::{AtomicBool, Ordering};
 
@@ -271,7 +271,7 @@ fn a_trigger_tracks_its_integration_switching_off_and_back_on(cx: &mut gpui::Tes
                 Arc::new(repo),
                 Arc::new(StubActions),
                 Arc::new(owned_triggers(&[(TWITCH_CHAT, "twitch")])),
-                settings as Arc<dyn SettingsRepo>,
+                settings.settings_repo(),
                 rt.handle().clone(),
                 None,
                 cx,
@@ -368,7 +368,7 @@ fn open_list_over(
                 Arc::new(repo),
                 Arc::new(StubActions),
                 Arc::new(forge_registry::TriggerRegistry::new()),
-                settings as Arc<dyn SettingsRepo>,
+                settings.settings_repo(),
                 handle,
                 None,
                 cx,

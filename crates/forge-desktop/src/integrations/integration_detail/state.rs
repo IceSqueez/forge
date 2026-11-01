@@ -88,7 +88,7 @@ pub(super) struct SignInState {
     pub(super) donation_settings: Option<DonationSettingsLink>,
     pub(super) twitch_bot: Option<Entity<TwitchBotSection>>,
     pub(super) twitch_sign_in: Option<forge_platform_twitch::TwitchSignIn>,
-    pub(super) youtube_sign_in: Option<forge_platform_youtube::YoutubeSignIn>,
+    pub(super) youtube_sign_in: Option<forge_platform_youtube::YouTubeSignIn>,
     pub(super) kick_sign_in: Option<forge_platform_kick::KickSignIn>,
     pub(super) _twitch_bot_subs: Vec<Subscription>,
 }

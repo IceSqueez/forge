@@ -15,7 +15,7 @@ use forge_events::{PlatformConnectionChanged, TypedEvent};
 use forge_net::{Gateway, TokenBucketRateLimiter};
 use forge_platform_core::{BuiltinControl, ChatPlatform, PlatformEndpoints};
 use forge_platform_twitch::{
-    ChatSessionState, ChatSessionConfig, HELIX_BUDGET_CAPACITY, HELIX_BUDGET_WINDOW,
+    ChatSessionConfig, ChatSessionState, HELIX_BUDGET_CAPACITY, HELIX_BUDGET_WINDOW,
     HelixHttpTransport, HelixTokenSource, SubscriptionTracker, TWITCH_OAUTH_BUDGET_CAPACITY,
     TWITCH_OAUTH_BUDGET_WINDOW, TwitchAssembly, TwitchChat, TwitchChatHandle,
     TwitchCredentialsManager, TwitchError, TwitchIntegrationBundle, TwitchLifecycle,

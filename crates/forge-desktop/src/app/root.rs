@@ -509,7 +509,7 @@ fn start_boot_notices(handles: &Arc<RuntimeHandles>, navigator: Navigator, cx: &
     crate::data_flows::scheduled_backup_notices::start_scheduled_backup_notices(
         cx,
         &handles.core.scheduled_backups,
-        Arc::clone(&handles.backend) as Arc<dyn forge_storage::SettingsRepo>,
+        handles.backend.settings_repo(),
         Arc::new(forge_host::os_adapters::SystemNotifyPort),
         handles.rt_handle.clone(),
         navigator,
@@ -572,7 +572,7 @@ async fn seed_chat_history(
     rt_handle: tokio::runtime::Handle,
 ) {
     let reply = crate::app::async_bridge::on_runtime(&rt_handle, async move {
-        let settings = Arc::clone(&backend) as Arc<dyn forge_storage::SettingsRepo>;
+        let settings = backend.settings_repo();
         let limit = forge_storage::chat_history_display_limit(settings.as_ref())
             .await
             .unwrap_or_else(|error| {

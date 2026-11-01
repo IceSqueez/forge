@@ -1,5 +1,6 @@
 #![expect(clippy::unwrap_used, reason = "test fixtures")]
 use forge_paths::MEDIA_DIR_NAME;
+use forge_storage::DataProvider;
 mod common;
 
 use std::collections::BTreeSet;
@@ -58,15 +59,19 @@ impl Store {
             keep_newest: KEEP,
             delete_after_days: DAYS,
         }
-        .save(&self.repo)
+        .save(self.repo.settings_repo().as_ref())
         .await
         .unwrap();
     }
 
     async fn prune(&self) -> SafetyCopyReport {
-        prune_safety_copies(&self.repo, self.data_dir(), &self.exclusivity)
-            .await
-            .unwrap()
+        prune_safety_copies(
+            self.repo.settings_repo().as_ref(),
+            self.data_dir(),
+            &self.exclusivity,
+        )
+        .await
+        .unwrap()
     }
 
     async fn clean_up(&self) -> SafetyCopyReport {
@@ -301,13 +306,20 @@ async fn changing_the_policy_saves_it_and_prunes_under_it_at_once() {
         delete_after_days: DAYS,
     };
 
-    change_safety_copy_settings(&store.repo, store.data_dir(), &store.exclusivity, changed)
-        .await
-        .unwrap();
+    change_safety_copy_settings(
+        store.repo.settings_repo().as_ref(),
+        store.data_dir(),
+        &store.exclusivity,
+        changed,
+    )
+    .await
+    .unwrap();
 
     assert_eq!(
         (
-            SafetyCopySettings::load(&store.repo).await.unwrap(),
+            SafetyCopySettings::load(store.repo.settings_repo().as_ref())
+                .await
+                .unwrap(),
             store.remaining()
         ),
         (changed, names([&newest]))
@@ -372,9 +384,14 @@ async fn a_running_transfer_defers_every_sweep_and_deletes_nothing() {
     let reports = [
         store.prune().await,
         store.clean_up().await,
-        change_safety_copy_settings(&store.repo, store.data_dir(), &store.exclusivity, changed)
-            .await
-            .unwrap(),
+        change_safety_copy_settings(
+            store.repo.settings_repo().as_ref(),
+            store.data_dir(),
+            &store.exclusivity,
+            changed,
+        )
+        .await
+        .unwrap(),
     ];
 
     assert_eq!(
@@ -399,12 +416,19 @@ async fn a_policy_change_during_a_running_transfer_is_still_saved() {
         delete_after_days: DAYS,
     };
 
-    change_safety_copy_settings(&store.repo, store.data_dir(), &store.exclusivity, changed)
-        .await
-        .unwrap();
+    change_safety_copy_settings(
+        store.repo.settings_repo().as_ref(),
+        store.data_dir(),
+        &store.exclusivity,
+        changed,
+    )
+    .await
+    .unwrap();
 
     assert_eq!(
-        SafetyCopySettings::load(&store.repo).await.unwrap(),
+        SafetyCopySettings::load(store.repo.settings_repo().as_ref())
+            .await
+            .unwrap(),
         changed
     );
 }

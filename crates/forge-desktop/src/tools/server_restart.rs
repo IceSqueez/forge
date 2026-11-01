@@ -25,7 +25,8 @@ mod tests {
     const LOOPBACK: &str = "127.0.0.1";
 
     async fn persist_bind(backend: &Arc<TestBackend>, port: u16) {
-        let repo: &dyn SettingsRepo = backend.as_ref();
+        let repo_handle = backend.settings_repo();
+        let repo = repo_handle.as_ref();
         ServerSettings::save_bind_address(repo, LOOPBACK)
             .await
             .expect("save bind address");
@@ -37,7 +38,7 @@ mod tests {
     #[tokio::test]
     async fn a_restart_the_settings_switch_refused_is_not_reported_to_the_user() {
         let (backend, _writes) = test_backend();
-        ServerSettings::save_enabled(backend.as_ref() as &dyn SettingsRepo, false)
+        ServerSettings::save_enabled(backend.settings_repo().as_ref() as &dyn SettingsRepo, false)
             .await
             .expect("save enabled");
         let handle = stopped_server_handle(&backend).await;

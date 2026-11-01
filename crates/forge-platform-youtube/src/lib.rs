@@ -20,34 +20,34 @@ pub mod vocabulary;
 
 pub use account::auth::LoopbackCode;
 pub use account::auth::{
-    GOOGLE_AUTHORIZE_ENDPOINT, GoogleAuthFlow, YoutubeAuthBundle, YoutubeSignIn, client_credentials,
+    GOOGLE_AUTHORIZE_ENDPOINT, GoogleAuthFlow, YouTubeAuthBundle, YouTubeSignIn, client_credentials,
 };
-pub use account::credentials::{YOUTUBE_CREDENTIAL_ID, YoutubeBroadcaster, YoutubeCredentials};
-pub use account::credentials_manager::YoutubeCredentialsManager;
+pub use account::credentials::{YOUTUBE_CREDENTIAL_ID, YouTubeBroadcaster, YouTubeCredentials};
+pub use account::credentials_manager::YouTubeCredentialsManager;
 pub use account::oauth_client::{
     GOOGLE_OAUTH_BUDGET_CAPACITY, GOOGLE_OAUTH_BUDGET_WINDOW, GoogleOAuthClient,
     google_oauth_gateway,
 };
-pub use api::data_api::YoutubeDataApi;
+pub use api::data_api::YouTubeDataApi;
 pub use api::quota_state::SharedQuota;
-pub use assembly::YoutubeAssembly;
-pub use assembly::YoutubeSession;
+pub use assembly::YouTubeAssembly;
+pub use assembly::YouTubeSession;
 pub use broadcast::active_broadcast_id::ActiveBroadcastIdHandle;
-pub use broadcast::ad_break::YoutubeAdBreak;
-pub use broadcast::channel_lookup::YoutubeChannelLookup;
-pub use broadcast::channel_lookup::YoutubeChannelProfile;
+pub use broadcast::ad_break::YouTubeAdBreak;
+pub use broadcast::channel_lookup::YouTubeChannelLookup;
+pub use broadcast::channel_lookup::YouTubeChannelProfile;
 pub use broadcast::live_chat_id::LiveChatIdHandle;
-pub use broadcast::stream_metadata::YoutubeStreamMetadata;
-pub use broadcast::stream_stats::YoutubeStreamDetails;
-pub use broadcast::stream_stats::YoutubeStreamStats;
-pub use broadcast::thumbnail::YoutubeThumbnail;
-pub use broadcast::viewer_poll::YoutubeViewerPoll;
-pub use builtin::YoutubeIntegrationBundle;
-pub use chat::chat_platform::YoutubePlatform;
+pub use broadcast::stream_metadata::YouTubeStreamMetadata;
+pub use broadcast::stream_stats::YouTubeStreamDetails;
+pub use broadcast::stream_stats::YouTubeStreamStats;
+pub use broadcast::thumbnail::YouTubeThumbnail;
+pub use broadcast::viewer_poll::YouTubeViewerPoll;
+pub use builtin::YouTubeIntegrationBundle;
+pub use chat::chat_platform::YouTubePlatform;
 pub use chat::chat_poller::ChatPollTimings;
-pub use chat::chat_poller::{ChatPollerStop, ChatPollerStopGuard, YoutubeChatPoller};
-pub use chat::moderation::YoutubeModeration;
-pub use chat::send_chat::YoutubeSendChat;
+pub use chat::chat_poller::{ChatPollerStop, ChatPollerStopGuard, YouTubeChatPoller};
+pub use chat::moderation::YouTubeModeration;
+pub use chat::send_chat::YouTubeSendChat;
 pub use integration::{YOUTUBE_CHAT_LIMITS, YOUTUBE_INTEGRATION};
 pub use sub_actions::register_youtube_sub_actions;
 pub use triggers::register_youtube_triggers;

@@ -1,12 +1,10 @@
 use super::*;
-use std::sync::Arc;
 
 use forge_components::{
     ActivePresentation, Density, FONT_XS, ForgePalette, Icon, Spacing, error_row,
     ghost_button_with_icon, icon, setting_block, spacing, tr,
 };
 use forge_server::ServerSettings;
-use forge_storage::SettingsRepo;
 use gpui::{App, ClickEvent, Context, Focusable, Pixels, Window, div, px};
 
 use crate::app::async_bridge::{self};
@@ -55,7 +53,7 @@ impl SettingsWebSocketView {
                     return;
                 }
                 let prev = std::mem::replace(&mut self.additional_origins, origins.clone());
-                let repo = Arc::clone(&self.backend) as Arc<dyn SettingsRepo>;
+                let repo = self.backend.settings_repo();
                 self.persist_field(
                     prev,
                     |this, prev, cx| {
@@ -92,7 +90,7 @@ impl SettingsWebSocketView {
         if origins == self.additional_origins {
             return;
         }
-        let repo = Arc::clone(&self.backend) as Arc<dyn SettingsRepo>;
+        let repo = self.backend.settings_repo();
         let reload = self.running || self.restarting;
         let server = self.server.clone().filter(|_| reload);
         async_bridge::detached(&self.rt_handle, ORIGINS_PERSIST_CONTEXT, async move {

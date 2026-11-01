@@ -440,8 +440,7 @@ mod tests {
         let builtins = BuiltinRegistry::default();
         let seed = ObsInstallSeed::new(forge_obs::SwitchableObsSink::new(), builtins.clone());
         let client = forge_obs::ObsClient::connect(
-            &format!("127.0.0.1:{port}"),
-            None,
+            &forge_obs::ObsEndpoint::parse(&format!("127.0.0.1:{port}"), "").unwrap(),
             Arc::new(forge_events::test_support::NullPublisher),
         )
         .await

@@ -27,8 +27,8 @@ impl ScriptDocument {
         record.body = body.clone();
         record.last_modified = OffsetDateTime::now_utc();
 
-        let repo = Arc::clone(&self.deps.backend) as Arc<dyn ScriptRepo>;
-        let registry = Arc::clone(&self.deps.script_registry);
+        let repo = self.deps.backend.script_repo();
+        let registry = Arc::clone(&self.deps.script_catalog);
         let bus = Arc::clone(&self.deps.bus);
         self.saving = true;
         async_bridge::run_async(

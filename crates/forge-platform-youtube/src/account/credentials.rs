@@ -6,7 +6,7 @@ pub const YOUTUBE_CREDENTIAL_ID: &str = "youtube:broadcaster";
 pub(crate) const DEFAULT_ACCESS_TOKEN_LIFETIME_SECS: u64 = 3600;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct YoutubeCredentials {
+pub struct YouTubeCredentials {
     #[serde(serialize_with = "OAuthToken::serialize_exposed")]
     pub access_token: OAuthToken,
     #[serde(serialize_with = "OAuthToken::serialize_exposed")]
@@ -20,7 +20,7 @@ pub struct YoutubeCredentials {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct YoutubeBroadcaster {
+pub struct YouTubeBroadcaster {
     pub channel_id: String,
     pub channel_title: String,
 }
@@ -33,7 +33,7 @@ mod tests {
     const REFRESH: &str = "1//refresh-sentinel";
     const SAVED_BUNDLE: &str = r#"{"access_token":"ya29.access-sentinel","refresh_token":"1//refresh-sentinel","client_id":"client.apps.example","channel_id":"UC123","channel_title":"Канал","channel_handle":"@handle","expires_at":[2026,264,14,13,20,123456789,0,0,0]}"#;
 
-    fn saved() -> YoutubeCredentials {
+    fn saved() -> YouTubeCredentials {
         serde_json::from_str(SAVED_BUNDLE).expect("a saved bundle loads")
     }
 
@@ -52,7 +52,7 @@ mod tests {
     fn a_bundle_saved_before_the_handle_existed_loads_without_one() {
         let without_handle = SAVED_BUNDLE.replace(r#""channel_handle":"@handle","#, "");
 
-        let loaded: YoutubeCredentials = serde_json::from_str(&without_handle).unwrap();
+        let loaded: YouTubeCredentials = serde_json::from_str(&without_handle).unwrap();
 
         assert_eq!(loaded.channel_handle, None);
     }

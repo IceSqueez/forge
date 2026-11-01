@@ -231,7 +231,7 @@ pub(crate) mod tests {
             list: FavoritesList,
             cx: &mut gpui::TestAppContext,
         ) -> Entity<StoredFavorites> {
-            let repo = Arc::clone(&self.backend) as Arc<dyn SettingsRepo>;
+            let repo = self.backend.settings_repo();
             let handle = self.rt.handle().clone();
             let store = cx.update(|cx| StoredFavorites::shared(list, repo, &handle, cx));
             self.settle(cx);

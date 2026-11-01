@@ -4,7 +4,7 @@ use std::sync::Arc;
 
 use forge_overlay::config::SOUND_OPTIONS_KEY;
 use forge_overlay::{SectionedField, effective_overlay_config};
-use forge_registry::ENGINE_VOICE_OPTIONS_KEY;
+use forge_speech_types::ENGINE_VOICE_OPTIONS_KEY;
 use gpui::{AppContext, Context, Entity, Subscription};
 
 use super::OverlaysView;

@@ -5,8 +5,8 @@ use std::sync::{Arc, Mutex};
 use async_trait::async_trait;
 use forge_events::{DeliveryLane, Event, EventSource};
 use forge_registry::{
-    EventFilter, KindPlatformContract, SubActionRegistry, TriggerCategory, TriggerKindDescriptor,
-    TriggerRegistry,
+    EventFilter, KindPlatformContract, SubActionRegistry, TriggerCatalogEntry, TriggerCategory,
+    TriggerKindDescriptor, TriggerRegistry,
 };
 use forge_runtime::{
     ActionCancelRegistry, Catalog, EventBus, ExecutionRequest, spawn_action_engine,
@@ -22,24 +22,31 @@ const RUN_DEADLINE: std::time::Duration = std::time::Duration::from_secs(30);
 
 struct ChatDescriptor;
 
-impl TriggerKindDescriptor for ChatDescriptor {
-    fn id(&self) -> &str {
-        CHAT_KIND
-    }
+impl TriggerCatalogEntry for ChatDescriptor {
     fn category(&self) -> TriggerCategory {
         TriggerCategory::Chat
     }
+
     fn label(&self) -> &str {
         ""
     }
+
     fn summary(&self) -> &str {
         ""
     }
+
     fn search_text(&self) -> &str {
         ""
     }
+
     fn icon_name(&self) -> &str {
         ""
+    }
+}
+
+impl TriggerKindDescriptor for ChatDescriptor {
+    fn id(&self) -> &str {
+        CHAT_KIND
     }
     fn platform_contract(&self) -> KindPlatformContract {
         KindPlatformContract::Universal

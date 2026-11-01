@@ -9,7 +9,7 @@ use forge_registry::{
 use forge_types::{ArgStack, SubActionTelemetry, Variant};
 
 use super::step_failure;
-use crate::chat::send_chat::YoutubeSendChat;
+use crate::chat::send_chat::YouTubeSendChat;
 use crate::vocabulary::{config_keys, sub_action_ids};
 
 const MIN_OPTIONS: usize = 2;
@@ -94,11 +94,11 @@ fn read_config(
 }
 
 pub(crate) struct CreatePollRunner {
-    sender: Arc<YoutubeSendChat>,
+    sender: Arc<YouTubeSendChat>,
 }
 
 impl CreatePollRunner {
-    pub(crate) fn new(sender: Arc<YoutubeSendChat>) -> Self {
+    pub(crate) fn new(sender: Arc<YouTubeSendChat>) -> Self {
         Self { sender }
     }
 }
@@ -181,7 +181,7 @@ mod tests {
         if live {
             handle.set(Some("lc".to_owned()));
         }
-        let sender = YoutubeSendChat::new(
+        let sender = YouTubeSendChat::new(
             crate::endpoints_test_support::data_api_at(&server.uri()),
             token_source(),
             handle,
@@ -197,7 +197,7 @@ mod tests {
     }
 
     fn offline_runner() -> CreatePollRunner {
-        let sender = YoutubeSendChat::new(
+        let sender = YouTubeSendChat::new(
             crate::endpoints_test_support::data_api_at("http://127.0.0.1:0"),
             token_source(),
             LiveChatIdHandle::new(),

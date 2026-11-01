@@ -1,6 +1,7 @@
 use forge_events::{CUSTOM_EVENT_PREFIX, Event, EventSource};
 use forge_registry::{
-    EventFilter, FormField, KindPlatformContract, TriggerCategory, TriggerKindDescriptor,
+    EventFilter, FormField, KindPlatformContract, TriggerCatalogEntry, TriggerCategory,
+    TriggerKindDescriptor,
 };
 use forge_types::{ArgStack, TriggerConfig, UserText, Variant};
 
@@ -9,11 +10,7 @@ use crate::sub_action_runners::EVENT_NAME_KEY;
 
 pub(crate) struct ScriptEventCustomDescriptor;
 
-impl TriggerKindDescriptor for ScriptEventCustomDescriptor {
-    fn id(&self) -> &str {
-        "script.event.custom"
-    }
-
+impl TriggerCatalogEntry for ScriptEventCustomDescriptor {
     fn category(&self) -> TriggerCategory {
         TriggerCategory::Core
     }
@@ -32,6 +29,12 @@ impl TriggerKindDescriptor for ScriptEventCustomDescriptor {
 
     fn icon_name(&self) -> &str {
         "bolt"
+    }
+}
+
+impl TriggerKindDescriptor for ScriptEventCustomDescriptor {
+    fn id(&self) -> &str {
+        "script.event.custom"
     }
 
     fn platform_contract(&self) -> KindPlatformContract {

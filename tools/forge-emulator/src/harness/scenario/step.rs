@@ -69,15 +69,19 @@ pub enum StepAction {
     KickChannelPolled {
         within_ms: u64,
     },
-    YoutubeChatPolled {
+    #[serde(rename = "youtube_chat_polled")]
+    YouTubeChatPolled {
         within_ms: u64,
     },
-    YoutubeChat(YouTubeChatMessage),
-    YoutubeChatEvent {
+    #[serde(rename = "youtube_chat")]
+    YouTubeChat(YouTubeChatMessage),
+    #[serde(rename = "youtube_chat_event")]
+    YouTubeChatEvent {
         author: YouTubeChatter,
         snippet: Value,
     },
-    YoutubeBroadcast {
+    #[serde(rename = "youtube_broadcast")]
+    YouTubeBroadcast {
         live: bool,
     },
     ObsOnline {},
@@ -195,10 +199,10 @@ impl StepAction {
             Self::KickPusherEvent { .. } => "kick_pusher_event",
             Self::KickStream { .. } => "kick_stream",
             Self::KickChannelPolled { .. } => "kick_channel_polled",
-            Self::YoutubeChatPolled { .. } => "youtube_chat_polled",
-            Self::YoutubeChat(_) => "youtube_chat",
-            Self::YoutubeChatEvent { .. } => "youtube_chat_event",
-            Self::YoutubeBroadcast { .. } => "youtube_broadcast",
+            Self::YouTubeChatPolled { .. } => "youtube_chat_polled",
+            Self::YouTubeChat(_) => "youtube_chat",
+            Self::YouTubeChatEvent { .. } => "youtube_chat_event",
+            Self::YouTubeBroadcast { .. } => "youtube_broadcast",
             Self::ObsOnline {} => "obs_online",
             Self::ObsIdentified { .. } => "obs_identified",
             Self::ObsRestart { .. } => "obs_restart",
@@ -247,10 +251,10 @@ impl StepAction {
     pub fn needs_fake_youtube(&self) -> bool {
         matches!(
             self,
-            Self::YoutubeChatPolled { .. }
-                | Self::YoutubeChat(_)
-                | Self::YoutubeChatEvent { .. }
-                | Self::YoutubeBroadcast { .. }
+            Self::YouTubeChatPolled { .. }
+                | Self::YouTubeChat(_)
+                | Self::YouTubeChatEvent { .. }
+                | Self::YouTubeBroadcast { .. }
         )
     }
 

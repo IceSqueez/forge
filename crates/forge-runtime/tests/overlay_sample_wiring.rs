@@ -16,8 +16,8 @@ use async_trait::async_trait;
 use forge_overlay::config::SPEECH;
 use forge_overlay::{OverlayKindRegistry, SAMPLE_FILE, register_builtin_kinds};
 use forge_registry::{
-    CancelSignal, EventFilter, KindPlatformContract, SubActionRegistry, TriggerCategory,
-    TriggerKindDescriptor, TriggerRegistry, TriggerVariables,
+    CancelSignal, EventFilter, KindPlatformContract, SubActionRegistry, TriggerCatalogEntry,
+    TriggerCategory, TriggerKindDescriptor, TriggerRegistry, TriggerVariables,
 };
 use forge_runtime::ActionsService;
 use forge_runtime::{
@@ -55,11 +55,7 @@ const HANG_GUARD: Duration = Duration::from_secs(60);
 
 struct ChatterTrigger;
 
-impl TriggerKindDescriptor for ChatterTrigger {
-    fn id(&self) -> &str {
-        CHATTER_KIND
-    }
-
+impl TriggerCatalogEntry for ChatterTrigger {
     fn category(&self) -> TriggerCategory {
         TriggerCategory::Chat
     }
@@ -78,6 +74,12 @@ impl TriggerKindDescriptor for ChatterTrigger {
 
     fn icon_name(&self) -> &str {
         "chat"
+    }
+}
+
+impl TriggerKindDescriptor for ChatterTrigger {
+    fn id(&self) -> &str {
+        CHATTER_KIND
     }
 
     fn platform_contract(&self) -> KindPlatformContract {

@@ -35,7 +35,7 @@ fn account_card(status: &PollStatus) -> DetailSection {
     let field = |label: MessageCode, value: Option<UserText>| InfoField {
         label: label.into(),
         value: value.unwrap_or_else(|| VerbatimText::new(NOT_SET).into()),
-        monospace_value: false,
+        value_is_identifier: false,
     };
     let known = |value: Option<&String>| value.map(|text| VerbatimText::new(text.as_str()).into());
     DetailSection::InfoCard {
@@ -64,7 +64,7 @@ fn account_card(status: &PollStatus) -> DetailSection {
                 value: MessageRef::new(messages::LABEL_POLL_INTERVAL_VALUE)
                     .with_arg("seconds", status.poll_interval.as_secs())
                     .into(),
-                monospace_value: true,
+                value_is_identifier: true,
             },
         ],
         health_bar: None,

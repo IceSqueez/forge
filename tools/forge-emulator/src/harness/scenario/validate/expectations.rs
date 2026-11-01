@@ -44,13 +44,13 @@ impl<'a> Validator<'a> {
             Expectation::TwitchNoUnexpectedRequests {} => {}
             Expectation::TwitchRequestCount(count)
             | Expectation::KickRequestCount(count)
-            | Expectation::YoutubeRequestCount(count) => {
+            | Expectation::YouTubeRequestCount(count) => {
                 self.check_request_count(location, count);
             }
             Expectation::KickRequest(request) => self.check_http_request(location, request),
             Expectation::KickNoUnexpectedRequests {} => {}
-            Expectation::YoutubeRequest(request) => self.check_http_request(location, request),
-            Expectation::YoutubeNoUnexpectedRequests {} => {}
+            Expectation::YouTubeRequest(request) => self.check_http_request(location, request),
+            Expectation::YouTubeNoUnexpectedRequests {} => {}
             Expectation::OverlayContent(content) => self.check_overlay_content(location, content),
             Expectation::LogLine(line) => self.check_log_line(location, line),
             Expectation::DiscordPost(post) => self.check_discord_post(location, post),

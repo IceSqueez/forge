@@ -66,7 +66,8 @@ pub use declared_fields::{
 pub use declared_fields_extra::{OptionalField, OptionalSwitch, PickedTextField, TextPicker};
 pub use declared_fields_more::{BoundedTextField, SeparatedListField};
 pub use descriptor::{
-    ChatTriggerFamily, IGNORE_BOT_MESSAGES_KEY, TriggerKindDescriptor, ignores_bot_messages,
+    ChatTriggerFamily, IGNORE_BOT_MESSAGES_KEY, TriggerCatalogEntry, TriggerKindDescriptor,
+    ignores_bot_messages,
 };
 pub use duration_bounds::{
     DURATION_UNIT_DAYS, DURATION_UNIT_HOURS, DURATION_UNIT_MILLISECONDS, DURATION_UNIT_MINUTES,
@@ -82,9 +83,7 @@ pub use first_chatter::{
     FIRST_CHATTERS_ONLY, admits_chatter, chat_message_condition, first_chatters_only_field,
 };
 pub use flow_kinds::{BREAK_LOOP_KIND_ID, CONTINUE_LOOP_KIND_ID, LOOP_KIND_ID, STOP_KIND_ID};
-pub use form::{
-    AmountUnit, CodeKind, CodeLanguage, ENGINE_VOICE_OPTIONS_KEY, FormField, UnitAmountBounds,
-};
+pub use form::{AmountUnit, CodeKind, CodeLanguage, FormField, UnitAmountBounds};
 pub use integration_references::{IntegrationReferences, ReferencingAction, tally_references};
 pub use kind_platform_contract::KindPlatformContract;
 pub use merge::effective_config;

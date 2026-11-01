@@ -1,7 +1,8 @@
 use forge_events::{Event, EventSource};
 use forge_registry::{
     ActorDeclaration, ActorIdentity, ActorRole, ActorSlot, CanonicalCount, CanonicalVariable,
-    EventFilter, KindPlatformContract, TriggerCategory, TriggerKindDescriptor, TriggerVariables,
+    EventFilter, KindPlatformContract, TriggerCatalogEntry, TriggerCategory, TriggerKindDescriptor,
+    TriggerVariables,
 };
 use forge_types::{DeclaredVariable, PlatformId, TriggerConfig, Variant, VariantKind};
 
@@ -12,11 +13,7 @@ use crate::vocabulary::{event_kinds, trigger_ids, variables};
 
 pub(crate) struct SubGiftDescriptor;
 
-impl TriggerKindDescriptor for SubGiftDescriptor {
-    fn id(&self) -> &str {
-        trigger_ids::CHANNEL_SUBSCRIPTION_GIFTS
-    }
-
+impl TriggerCatalogEntry for SubGiftDescriptor {
     fn category(&self) -> TriggerCategory {
         TriggerCategory::Subscriptions
     }
@@ -35,6 +32,12 @@ impl TriggerKindDescriptor for SubGiftDescriptor {
 
     fn icon_name(&self) -> &str {
         "gift"
+    }
+}
+
+impl TriggerKindDescriptor for SubGiftDescriptor {
+    fn id(&self) -> &str {
+        trigger_ids::CHANNEL_SUBSCRIPTION_GIFTS
     }
 
     fn platform_contract(&self) -> KindPlatformContract {

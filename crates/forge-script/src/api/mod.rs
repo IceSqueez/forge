@@ -286,7 +286,7 @@ mod tests {
     use crate::http_config::ScriptHttpConfig;
     use forge_events::Event;
     use forge_events::test_support::CapturingPublisher;
-    use forge_storage::GlobalsRepo;
+    use forge_storage::DataProvider;
     use forge_storage_sqlite::SqliteBackend;
 
     use crate::globals_port::ScriptGlobals;
@@ -316,7 +316,7 @@ mod tests {
         let caused_by = EventId::new();
         let api = ForgeApi::new(
             captured as Arc<dyn EventPublisher>,
-            repo_globals(dp.clone()),
+            repo_globals(dp.globals_repo()),
             caused_by,
             Instant::now() + std::time::Duration::from_secs(30),
         );
@@ -329,11 +329,12 @@ mod tests {
     ) -> (rhai::Dynamic, EventId, Arc<RepoGlobals>, Vec<Event>) {
         let dp = open_dp().await;
         for (key, value) in seeded {
-            GlobalsRepo::set(dp.as_ref(), key, value.clone(), false)
+            dp.globals_repo()
+                .set(key, value.clone(), false)
                 .await
                 .unwrap();
         }
-        let port = Arc::new(RepoGlobals::new(Arc::clone(&dp) as Arc<dyn GlobalsRepo>));
+        let port = Arc::new(RepoGlobals::new(dp.globals_repo()));
         let captured = CapturingPublisher::shared();
         let caused_by = EventId::new();
         let api = ForgeApi::new(
@@ -412,7 +413,7 @@ mod tests {
         let http_client = Arc::new(ScriptHttpClient::new(config).unwrap());
         let api = ForgeApi::new(
             captured as Arc<dyn EventPublisher>,
-            repo_globals(dp.clone()),
+            repo_globals(dp.globals_repo()),
             caused_by,
             Instant::now() + std::time::Duration::from_secs(30),
         )
@@ -505,7 +506,7 @@ mod tests {
             let script_id = ScriptId::new();
             let api = ForgeApi::new(
                 Arc::clone(&captured) as Arc<dyn EventPublisher>,
-                repo_globals(dp.clone()),
+                repo_globals(dp.globals_repo()),
                 caused_by,
                 Instant::now() + std::time::Duration::from_secs(30),
             )
@@ -548,7 +549,7 @@ mod tests {
         let caused_by = EventId::new();
         let api = ForgeApi::new(
             captured as Arc<dyn EventPublisher>,
-            repo_globals(dp.clone()),
+            repo_globals(dp.globals_repo()),
             caused_by,
             Instant::now() + std::time::Duration::from_secs(30),
         );

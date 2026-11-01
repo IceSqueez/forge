@@ -21,6 +21,8 @@ use crate::catalog::{read_lock, write_lock};
 use crate::catalog_revisions::CatalogRevisions;
 use crate::catalog_sync::{CatalogFeeds, CatalogSink, prime_session, snapshot_catalog};
 use crate::connect_failure::{connect_failure_message, credential_state_after};
+use crate::endpoint::ObsEndpoint;
+#[cfg(test)]
 use crate::endpoint::parse_endpoint;
 use crate::error::ObsError;
 use crate::event_dispatch::{changes_content_rows_only, changes_option_lists, handle_obs_event};
@@ -97,20 +99,18 @@ pub struct ObsClient {
 
 impl ObsClient {
     pub async fn connect(
-        endpoint: &str,
-        password: Option<&str>,
+        endpoint: &ObsEndpoint,
         publisher: Arc<dyn EventPublisher>,
     ) -> Result<Self, ObsError> {
-        Self::connect_with_timing(endpoint, password, publisher, ObsTiming::default()).await
+        Self::connect_with_timing(endpoint, publisher, ObsTiming::default()).await
     }
 
     pub async fn connect_with_timing(
-        endpoint: &str,
-        password: Option<&str>,
+        endpoint: &ObsEndpoint,
         publisher: Arc<dyn EventPublisher>,
         timing: ObsTiming,
     ) -> Result<Self, ObsError> {
-        let (host, port) = parse_endpoint(endpoint)?;
+        let (host, port) = (endpoint.host.clone(), endpoint.port);
 
         let inner: SessionSlot = Arc::new(tokio::sync::RwLock::new(None));
         let state = Arc::new(AtomicConnectionState::new(ConnectionState::Connecting));
@@ -123,7 +123,7 @@ impl ObsClient {
         let (health_tx, health_state) = make_health_channel();
         let catalog_revisions = Arc::new(CatalogRevisions::default());
 
-        let stored_password = password.map(str::to_owned);
+        let stored_password = endpoint.password().map(str::to_owned);
         let auto_reconnect = AutoReconnectSwitch::new(true);
         let last_failure = Arc::new(RwLock::new(None::<MessageRef>));
         let resync_nudge = Arc::new(Notify::new());
@@ -131,7 +131,7 @@ impl ObsClient {
 
         let client = Self {
             inner,
-            endpoint: endpoint.to_owned(),
+            endpoint: endpoint.url(),
             state,
             shutdown: Arc::new(tokio::sync::Mutex::new(Arc::clone(&notify))),
             supervisor: Arc::new(std::sync::Mutex::new(None)),
@@ -316,7 +316,7 @@ impl BuiltinStatus for ObsClient {
         vec![HeroBadge {
             label: label.into(),
             tone: HeroBadgeTone::Neutral,
-            monospace: true,
+            is_identifier: true,
         }]
     }
 }

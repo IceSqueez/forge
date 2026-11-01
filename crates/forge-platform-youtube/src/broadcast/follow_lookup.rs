@@ -6,8 +6,8 @@ use serde::Deserialize;
 use time::OffsetDateTime;
 use time::format_description::well_known::Rfc3339;
 
-use crate::api::data_api::{DataApiError, YoutubeDataApi};
-use crate::builtin::YoutubeIntegrationBundle;
+use crate::api::data_api::{DataApiError, YouTubeDataApi};
+use crate::builtin::YouTubeIntegrationBundle;
 
 const SUBSCRIPTION_LIST_COST: u32 = 1;
 const SUBSCRIPTIONS_PATH: &str = "/subscriptions";
@@ -37,15 +37,15 @@ struct SubscriptionSnippet {
     published_at: Option<String>,
 }
 
-pub(crate) struct YoutubeFollowLookup {
-    api: YoutubeDataApi,
+pub(crate) struct YouTubeFollowLookup {
+    api: YouTubeDataApi,
     access_token_source: TokenSource,
     broadcaster_channel_id: String,
 }
 
-impl YoutubeFollowLookup {
+impl YouTubeFollowLookup {
     pub(crate) fn new(
-        api: YoutubeDataApi,
+        api: YouTubeDataApi,
         access_token_source: TokenSource,
         broadcaster_channel_id: String,
     ) -> Self {
@@ -114,7 +114,7 @@ fn status_from_page(page: SubscriptionPage) -> FollowStatus {
 }
 
 #[async_trait]
-impl FollowLookup for YoutubeIntegrationBundle {
+impl FollowLookup for YouTubeIntegrationBundle {
     async fn follow_status(&self, viewer_id: &str) -> FollowStatus {
         self.follow_lookup().status_of(viewer_id).await
     }
@@ -160,8 +160,8 @@ mod tests {
         })
     }
 
-    fn lookup_at(base: &str, quota: &SharedQuota, broadcaster: &str) -> YoutubeFollowLookup {
-        YoutubeFollowLookup::new(
+    fn lookup_at(base: &str, quota: &SharedQuota, broadcaster: &str) -> YouTubeFollowLookup {
+        YouTubeFollowLookup::new(
             data_api_charging(base, quota.clone()),
             token_source(),
             broadcaster.to_owned(),
@@ -452,7 +452,7 @@ mod tests {
                 })
             })
         });
-        let lookup = YoutubeFollowLookup::new(
+        let lookup = YouTubeFollowLookup::new(
             data_api_charging(&server.uri(), fresh_quota()),
             failing,
             BROADCASTER.to_owned(),
@@ -547,7 +547,7 @@ mod tests {
         for (response, expected, request_fails) in cases {
             let server = server_answering(response).await;
             let bus = Arc::new(CapturingPublisher::default());
-            let lookup = YoutubeFollowLookup::new(
+            let lookup = YouTubeFollowLookup::new(
                 data_api_with(
                     &server.uri(),
                     fresh_quota(),

@@ -492,7 +492,7 @@ mod tests {
         let launch = DonationSettingsLaunch {
             service: build(vault),
             credentials: Arc::clone(vault) as Arc<dyn CredentialsRepo>,
-            settings: settings as Arc<dyn SettingsRepo>,
+            settings: settings.settings_repo(),
             rt_handle: rt.handle().clone(),
         };
         let view = cx.new(|cx| DonationSettingsView::new(launch, cx));

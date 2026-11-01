@@ -7,7 +7,7 @@ use forge_components::tr;
 use forge_events::EventPublisher;
 use forge_runtime::{RuntimeScriptGlobals, SchedulingContext};
 use forge_script::{RunResult, ScriptCapabilities, ScriptHost, run_inline};
-use forge_storage::{ExecutionStatus, GlobalsRepo, ScriptRepo, SettingsRepo};
+use forge_storage::ExecutionStatus;
 use forge_types::{ArgStack, ScriptId, VariantKind};
 use gpui::prelude::*;
 use gpui::{Context, Entity, SharedString};
@@ -77,22 +77,22 @@ impl ScriptDocument {
             .unwrap_or_default();
         let host = ScriptHost {
             globals: Arc::new(RuntimeScriptGlobals::new(
-                Arc::clone(&self.deps.backend) as Arc<dyn GlobalsRepo>,
+                self.deps.backend.globals_repo(),
                 Arc::clone(&self.deps.bus) as Arc<dyn EventPublisher>,
             )),
-            settings: Arc::clone(&self.deps.backend) as Arc<dyn SettingsRepo>,
+            settings: self.deps.backend.settings_repo(),
             bus: Arc::clone(&self.deps.bus) as Arc<dyn EventPublisher>,
             capabilities: ScriptCapabilities {
-                speak: self.deps.script_registry.speak_requester(),
+                speak: self.deps.script_catalog.speak_requester(),
                 integrations: Some(Arc::clone(&self.deps.integrations)),
-                latest_values: self.deps.script_registry.latest_values(),
+                latest_values: self.deps.script_catalog.latest_values(),
                 scheduler: self
                     .deps
-                    .script_registry
+                    .script_catalog
                     .action_scheduler(SchedulingContext::outside_any_run(args.clone())),
             },
         };
-        let scripts = Arc::clone(&self.deps.backend) as Arc<dyn ScriptRepo>;
+        let scripts = self.deps.backend.script_repo();
         async_bridge::run_async(
             &self.deps.rt_handle,
             async move {

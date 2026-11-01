@@ -3,7 +3,7 @@ use std::sync::Arc;
 use forge_overlay::OverlayKindRegistry;
 use forge_registry::{FormSchemaSource, SubActionRegistry, TriggerRegistry};
 use forge_runtime::{
-    OverlaySampleSource, OverlayServiceHandle, QueueSchedulerHandle, ScriptRegistry,
+    OverlaySampleSource, OverlayServiceHandle, QueueSchedulerHandle, ScriptCatalog,
 };
 use forge_storage::{DataProvider, SettingsCatalog};
 use forge_transfer::{ClosureRegistries, PackInventory, load_pack_inventory};
@@ -23,7 +23,7 @@ pub(crate) struct PackServices {
     pub overlays: OverlayServiceHandle,
     pub overlay_samples: Arc<dyn OverlaySampleSource>,
     pub scheduler: QueueSchedulerHandle,
-    pub scripts: Arc<ScriptRegistry>,
+    pub scripts: Arc<ScriptCatalog>,
     pub rt_handle: Handle,
 }
 
@@ -44,7 +44,7 @@ impl PackServices {
             overlays: handles.overlays.service.clone(),
             overlay_samples: Arc::clone(&handles.overlays.samples),
             scheduler: handles.automation.scheduler.clone(),
-            scripts: Arc::clone(&handles.automation.script_registry),
+            scripts: Arc::clone(&handles.automation.script_catalog),
             rt_handle: handles.rt_handle.clone(),
         }
     }

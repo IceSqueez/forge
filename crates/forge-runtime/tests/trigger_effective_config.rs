@@ -141,7 +141,7 @@ impl SubActionRunner for RecordingRunner {
             SubActionTelemetry {
                 args_in: ::std::collections::BTreeMap::new(),
                 produced: ::std::collections::BTreeMap::new(),
-                index: 0,
+                position: forge_types::StepPosition::TopLevel(0),
                 kind: "test.record".to_owned(),
                 started_at: OffsetDateTime::now_utc(),
                 duration_ms: 0,

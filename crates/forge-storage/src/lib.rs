@@ -115,8 +115,8 @@ pub use soundboard::{SoundboardClipsRepo, StoredClip, clip_source_referrer};
 pub use transit::{GlobalTransit, GlobalsExport};
 pub use trigger_instance::{TriggerChanges, TriggerInstanceRepo, TriggerWiring};
 pub use tts_filters::{
-    BlocklistMode, FilterRule, FilterRuleKind, SkipRegex, TtsFiltersRepo, TtsPipelineSettings,
-    UrlMode,
+    BlocklistMode, FilterRule, FilterRuleKind, LanguageAwareVoice, SkipRegex, TtsFiltersRepo,
+    TtsPipelineSettings, UrlMode,
 };
 pub use unit_of_work::StoreChange;
 pub use user_globals::{UserGlobalEntry, UserGlobalKey, UserGlobalsRepo};

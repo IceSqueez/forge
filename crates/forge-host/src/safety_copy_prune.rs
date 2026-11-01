@@ -12,7 +12,9 @@ pub(crate) fn spawn_boot_prune(
     let mut held = exclusivity.watch_held();
     tokio::spawn(async move {
         loop {
-            match prune_safety_copies(backend.as_ref(), &data_dir, &exclusivity).await {
+            match prune_safety_copies(backend.settings_repo().as_ref(), &data_dir, &exclusivity)
+                .await
+            {
                 Ok(report) if report.deferred_by_transfer => {
                     tracing::info!("safety copy pruning waits for the running transfer");
                     if held.changed().await.is_none() {

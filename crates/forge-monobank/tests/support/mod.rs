@@ -290,9 +290,13 @@ impl Respond for Bank {
             .filter(|item| (from..=to).contains(&item["time"].as_i64().unwrap()))
             .collect();
         listed.sort_by_key(|item| std::cmp::Reverse(item["time"].as_i64().unwrap()));
-        listed.truncate(500);
+        listed.truncate(forge_monobank::STATEMENT_PAGE_LIMIT);
         ResponseTemplate::new(reqwest::StatusCode::OK).set_body_json(listed)
     }
+}
+
+pub(crate) fn jar_id(raw: &str) -> forge_monobank::JarId {
+    forge_monobank::JarId::parse(raw).unwrap()
 }
 
 pub(crate) async fn mount(server: &MockServer, bank: &Bank) {

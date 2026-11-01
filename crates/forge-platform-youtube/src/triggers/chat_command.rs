@@ -2,8 +2,8 @@ use forge_events::{Event, EventSource};
 use forge_registry::{
     ActorDeclaration, ActorRole, ActorSlot, COMMAND_CASE_SENSITIVE_KEY, COMMAND_PHRASE_KEY,
     CanonicalVariable, ChatTriggerFamily, EventFilter, FormField, KindPlatformContract,
-    SubActionConfigExt, TriggerCategory, TriggerKindDescriptor, TriggerVariables,
-    command_phrase_matches,
+    SubActionConfigExt, TriggerCatalogEntry, TriggerCategory, TriggerKindDescriptor,
+    TriggerVariables, command_phrase_matches,
 };
 use forge_types::{PlatformId, TriggerConfig, UserText, Variant};
 
@@ -13,11 +13,7 @@ use crate::vocabulary::{event_kinds, trigger_ids, variables};
 
 pub(crate) struct ChatCommandDescriptor;
 
-impl TriggerKindDescriptor for ChatCommandDescriptor {
-    fn id(&self) -> &str {
-        trigger_ids::CHAT_COMMAND
-    }
-
+impl TriggerCatalogEntry for ChatCommandDescriptor {
     fn category(&self) -> TriggerCategory {
         TriggerCategory::Chat
     }
@@ -36,6 +32,12 @@ impl TriggerKindDescriptor for ChatCommandDescriptor {
 
     fn icon_name(&self) -> &str {
         "terminal-2"
+    }
+}
+
+impl TriggerKindDescriptor for ChatCommandDescriptor {
+    fn id(&self) -> &str {
+        trigger_ids::CHAT_COMMAND
     }
 
     fn platform_contract(&self) -> KindPlatformContract {

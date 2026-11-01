@@ -7,7 +7,7 @@ use forge_storage::{BAN_LEDGER_LIST_CAP, BanLedgerEntry};
 use forge_types::PlatformId;
 use time::OffsetDateTime;
 
-use crate::builtin::YoutubeIntegrationBundle;
+use crate::builtin::YouTubeIntegrationBundle;
 
 fn ban_entry_of(entry: BanLedgerEntry) -> BanEntry {
     BanEntry {
@@ -28,7 +28,7 @@ fn ban_entry_of(entry: BanLedgerEntry) -> BanEntry {
 }
 
 #[async_trait]
-impl BanListSource for YoutubeIntegrationBundle {
+impl BanListSource for YouTubeIntegrationBundle {
     async fn list_bans(&self, _after: Option<&BanPageToken>) -> BanListOutcome {
         let platform = self.platform();
         let broadcaster_channel_id = platform.channel_id();
@@ -74,24 +74,24 @@ mod tests {
     use time::Duration;
 
     use super::*;
-    use crate::account::credentials_manager::YoutubeCredentialsManager;
+    use crate::account::credentials_manager::YouTubeCredentialsManager;
     use crate::broadcast::active_broadcast_id::ActiveBroadcastIdHandle;
     use crate::broadcast::live_chat_id::LiveChatIdHandle;
     use crate::chat::ban_ledger_test_support::{LedgerOp, MemoryBanLedger};
-    use crate::chat::chat_platform::YoutubePlatform;
+    use crate::chat::chat_platform::YouTubePlatform;
 
     const BROADCASTER: &str = "UCbroadcaster";
 
     fn bundle_over(
         broadcaster_channel_id: &str,
         ledger: Arc<dyn BanLedgerRepo>,
-    ) -> Arc<YoutubeIntegrationBundle> {
-        let manager = Arc::new(YoutubeCredentialsManager::new(
+    ) -> Arc<YouTubeIntegrationBundle> {
+        let manager = Arc::new(YouTubeCredentialsManager::new(
             Arc::new(MockCredentialsRepo::new()),
             crate::endpoints_test_support::unreachable_oauth_client(),
             crate::endpoints_test_support::unreachable_data_api(),
         ));
-        let platform = Arc::new(YoutubePlatform::new(
+        let platform = Arc::new(YouTubePlatform::new(
             crate::endpoints_test_support::unreachable_data_api(),
             broadcaster_channel_id.to_owned(),
             Arc::clone(&manager),
@@ -100,8 +100,8 @@ mod tests {
             ledger,
         ));
         let bundle =
-            YoutubeIntegrationBundle::new(broadcaster_channel_id.to_owned(), platform, manager);
-        YoutubeIntegrationBundle::start_background_tasks(&bundle);
+            YouTubeIntegrationBundle::new(broadcaster_channel_id.to_owned(), platform, manager);
+        YouTubeIntegrationBundle::start_background_tasks(&bundle);
         bundle
     }
 

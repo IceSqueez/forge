@@ -79,20 +79,20 @@ pub(crate) fn story(action: &StepAction) -> String {
         StepAction::KickChannelPolled { within_ms } => {
             waits("Kick", *within_ms, "forge to read the channel")
         }
-        StepAction::YoutubeChatPolled { within_ms } => {
+        StepAction::YouTubeChatPolled { within_ms } => {
             waits("YouTube", *within_ms, "forge to read the live chat")
         }
-        StepAction::YoutubeChat(message) => format!(
+        StepAction::YouTubeChat(message) => format!(
             "As a YouTube viewer {} I send {} in the live chat",
             code(&message.author.display_name),
             quoted(&message.text)
         ),
-        StepAction::YoutubeChatEvent { author, snippet } => format!(
+        StepAction::YouTubeChatEvent { author, snippet } => format!(
             "As a YouTube viewer {} I cause a {} in the live chat",
             code(&author.display_name),
             code(snippet_kind(snippet))
         ),
-        StepAction::YoutubeBroadcast { live } => format!(
+        StepAction::YouTubeBroadcast { live } => format!(
             "As the streamer I {} the YouTube broadcast",
             if *live { "start" } else { "end" }
         ),
@@ -215,15 +215,15 @@ pub(crate) fn step_short(action: &StepAction) -> String {
             if *live { "starting" } else { "ending" }
         ),
         StepAction::KickChannelPolled { .. } => "a Kick channel poll".to_owned(),
-        StepAction::YoutubeChatPolled { .. } => "a YouTube chat poll".to_owned(),
-        StepAction::YoutubeChat(message) => format!(
+        StepAction::YouTubeChatPolled { .. } => "a YouTube chat poll".to_owned(),
+        StepAction::YouTubeChat(message) => format!(
             "YouTube chat message {}",
             quoted(&clip(&message.text, SHORT_TEXT_CHARS))
         ),
-        StepAction::YoutubeChatEvent { snippet, .. } => {
+        StepAction::YouTubeChatEvent { snippet, .. } => {
             format!("a YouTube {}", code(snippet_kind(snippet)))
         }
-        StepAction::YoutubeBroadcast { live } => format!(
+        StepAction::YouTubeBroadcast { live } => format!(
             "{} the YouTube broadcast",
             if *live { "starting" } else { "ending" }
         ),
@@ -285,11 +285,11 @@ pub(crate) fn action_title(action: &StepAction) -> String {
         }
         StepAction::KickStream { .. } => "The fake Kick could not change the stream".to_owned(),
         StepAction::KickChannelPolled { .. } => "forge did not read the Kick channel".to_owned(),
-        StepAction::YoutubeChatPolled { .. } => "forge did not read the YouTube chat".to_owned(),
-        StepAction::YoutubeChat(_) | StepAction::YoutubeChatEvent { .. } => {
+        StepAction::YouTubeChatPolled { .. } => "forge did not read the YouTube chat".to_owned(),
+        StepAction::YouTubeChat(_) | StepAction::YouTubeChatEvent { .. } => {
             "YouTube chat message not added to the live chat".to_owned()
         }
-        StepAction::YoutubeBroadcast { .. } => {
+        StepAction::YouTubeBroadcast { .. } => {
             "The fake YouTube could not change the broadcast".to_owned()
         }
         StepAction::ObsOnline {} => "The fake OBS could not start".to_owned(),
@@ -379,14 +379,14 @@ pub(crate) fn action_expected(action: &StepAction) -> String {
             "forge reads the channel from the public API within {}",
             span_ms(*within_ms)
         ),
-        StepAction::YoutubeChatPolled { within_ms } => format!(
+        StepAction::YouTubeChatPolled { within_ms } => format!(
             "forge resolves the live broadcast and reads its chat within {}",
             span_ms(*within_ms)
         ),
-        StepAction::YoutubeChat(_) | StepAction::YoutubeChatEvent { .. } => {
+        StepAction::YouTubeChat(_) | StepAction::YouTubeChatEvent { .. } => {
             "the fake YouTube serves the message on forge's next chat poll".to_owned()
         }
-        StepAction::YoutubeBroadcast { .. } => {
+        StepAction::YouTubeBroadcast { .. } => {
             "the fake YouTube reports the new broadcast state to forge's next poll".to_owned()
         }
         StepAction::ObsOnline {} => "the fake OBS accepts connections".to_owned(),

@@ -1,7 +1,8 @@
 use forge_events::{DeliveryLane, Event, EventSource};
 use forge_registry::{
     ActorDeclaration, ChatTriggerFamily, ConfigProblem, EventFilter, FormField,
-    KindPlatformContract, TriggerCategory, TriggerKindDescriptor, TriggerVariables, any_condition,
+    KindPlatformContract, TriggerCatalogEntry, TriggerCategory, TriggerKindDescriptor,
+    TriggerVariables, any_condition,
 };
 use forge_types::{
     DeclaredVariable, PlatformId, SynthesisHint, TriggerConfig, UserText, Variant, VariantKind,
@@ -74,11 +75,7 @@ impl TwitchTriggerSpec {
     };
 }
 
-impl TriggerKindDescriptor for TwitchTriggerSpec {
-    fn id(&self) -> &str {
-        self.id
-    }
-
+impl TriggerCatalogEntry for TwitchTriggerSpec {
     fn category(&self) -> TriggerCategory {
         self.category
     }
@@ -97,6 +94,12 @@ impl TriggerKindDescriptor for TwitchTriggerSpec {
 
     fn icon_name(&self) -> &str {
         self.icon
+    }
+}
+
+impl TriggerKindDescriptor for TwitchTriggerSpec {
+    fn id(&self) -> &str {
+        self.id
     }
 
     fn platform_contract(&self) -> KindPlatformContract {

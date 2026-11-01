@@ -5,9 +5,9 @@ mod fakes;
 
 use forge_events::{Event, EventSource};
 use forge_registry::{
-    CanonicalVariable, EventFilter, FormField, KindPlatformContract, SeedVariable, TriggerCategory,
-    TriggerCoverage, TriggerKindDescriptor, TriggerRegistry, TriggerSeed, TriggerVariables,
-    declared_variables,
+    CanonicalVariable, EventFilter, FormField, KindPlatformContract, SeedVariable,
+    TriggerCatalogEntry, TriggerCategory, TriggerCoverage, TriggerKindDescriptor, TriggerRegistry,
+    TriggerSeed, TriggerVariables, declared_variables,
 };
 use forge_types::{
     ArgStack, DeclaredVariable, PlatformId, TriggerConfig, VariableSchema, Variant, VariantKind,
@@ -58,11 +58,7 @@ fn aliased_variables() -> TriggerVariables {
 
 struct HandStacked;
 
-impl TriggerKindDescriptor for HandStacked {
-    fn id(&self) -> &str {
-        HAND_STACKED
-    }
-
+impl TriggerCatalogEntry for HandStacked {
     fn category(&self) -> TriggerCategory {
         TriggerCategory::Chat
     }
@@ -81,6 +77,12 @@ impl TriggerKindDescriptor for HandStacked {
 
     fn icon_name(&self) -> &str {
         "chat"
+    }
+}
+
+impl TriggerKindDescriptor for HandStacked {
+    fn id(&self) -> &str {
+        HAND_STACKED
     }
 
     fn platform_contract(&self) -> KindPlatformContract {

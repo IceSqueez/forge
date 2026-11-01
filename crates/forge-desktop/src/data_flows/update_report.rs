@@ -5,7 +5,7 @@ use std::sync::Arc;
 use forge_components::{Icon, ToastAction, ToastKind, tr};
 use forge_storage::SettingDisclosure::Verbatim;
 use forge_storage::SettingPortability::MachineLocal;
-use forge_storage::{DataProvider, OptionalText, Setting, SettingsRepo, write_setting};
+use forge_storage::{DataProvider, OptionalText, Setting, write_setting};
 use forge_update::{
     ApplyFailure, DatabaseRestore, GithubRepo, RollbackReason, UpdateError, UpdateReport,
     take_update_report, write_health_marker,
@@ -116,7 +116,7 @@ pub(crate) const ROLLED_BACK_VERSION: Setting<OptionalText> = Setting::new(
 
 fn remember_rolled_back(version: String, backend: Arc<dyn DataProvider>, rt_handle: &Handle) {
     detached(rt_handle, "remember the rolled back version", async move {
-        let repo = backend as Arc<dyn SettingsRepo>;
+        let repo = backend.settings_repo();
         write_setting(repo.as_ref(), &ROLLED_BACK_VERSION, &Some(version)).await
     });
 }

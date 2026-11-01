@@ -612,7 +612,7 @@ mod tests {
                 forge_platform_core::PlatformEndpoints::default()
                     .base_url(forge_discord::endpoint_surfaces::DISCORD_API),
                 Arc::clone(&bus) as Arc<dyn forge_events::EventPublisher>,
-                backend as Arc<dyn CredentialsRepo>,
+                backend.credentials_repo(),
             )
             .expect("the discord gateway builds")
         };

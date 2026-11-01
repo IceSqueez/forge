@@ -10,7 +10,7 @@ use std::time::Duration;
 use forge_registry::{RunContext, SubActionRegistry};
 use forge_runtime::{
     CatchUpSettle, EventBus, FrozenRuntime, NullEventLogRepo, RuntimeError, RuntimeWiringParts,
-    ScheduledRunsHandle, SchedulingContext, ScriptRegistry,
+    ScheduledRunsHandle, SchedulingContext, ScriptCatalog,
 };
 use forge_runtime::{MAX_SCHEDULE_DELAY, MIN_LATE_TOLERANCE};
 use forge_script::{
@@ -68,7 +68,7 @@ async fn fixed_clock_runtime(dp: Arc<dyn DataProvider>) -> FrozenRuntime {
     .await
 }
 
-fn script_scheduler(scripts: &ScriptRegistry, args: ArgStack) -> Arc<dyn ActionScheduler> {
+fn script_scheduler(scripts: &ScriptCatalog, args: ArgStack) -> Arc<dyn ActionScheduler> {
     scripts
         .action_scheduler(SchedulingContext::outside_any_run(args))
         .expect("the wired script registry can schedule")
@@ -79,7 +79,7 @@ struct Harness {
     _media: TempDir,
     queue_id: QueueId,
     scheduled_runs: ScheduledRunsHandle,
-    scripts: Arc<ScriptRegistry>,
+    scripts: Arc<ScriptCatalog>,
     steps: Arc<SubActionRegistry>,
 }
 
@@ -88,7 +88,7 @@ impl Harness {
         let (backend, media) = common::sqlite_backend().await;
         let backend = Arc::new(backend);
         forge_storage::write_setting(
-            backend.as_ref(),
+            backend.settings_repo().as_ref(),
             &forge_script::settings::TIMEOUT_MS,
             &10_000,
         )

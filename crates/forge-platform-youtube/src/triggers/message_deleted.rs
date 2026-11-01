@@ -1,8 +1,8 @@
 use forge_events::Event;
 use forge_events::EventSource;
 use forge_registry::{
-    ActorDeclaration, EventFilter, KindPlatformContract, TriggerCategory, TriggerKindDescriptor,
-    TriggerVariables,
+    ActorDeclaration, EventFilter, KindPlatformContract, TriggerCatalogEntry, TriggerCategory,
+    TriggerKindDescriptor, TriggerVariables,
 };
 use forge_types::PlatformId;
 use forge_types::TriggerConfig;
@@ -13,11 +13,7 @@ use crate::vocabulary::{event_kinds, trigger_ids};
 
 pub(crate) struct ChatMessageDeletedDescriptor;
 
-impl TriggerKindDescriptor for ChatMessageDeletedDescriptor {
-    fn id(&self) -> &str {
-        trigger_ids::CHAT_MESSAGE_DELETED
-    }
-
+impl TriggerCatalogEntry for ChatMessageDeletedDescriptor {
     fn category(&self) -> TriggerCategory {
         TriggerCategory::Chat
     }
@@ -36,6 +32,12 @@ impl TriggerKindDescriptor for ChatMessageDeletedDescriptor {
 
     fn icon_name(&self) -> &str {
         "trash-2"
+    }
+}
+
+impl TriggerKindDescriptor for ChatMessageDeletedDescriptor {
+    fn id(&self) -> &str {
+        trigger_ids::CHAT_MESSAGE_DELETED
     }
 
     fn platform_contract(&self) -> KindPlatformContract {

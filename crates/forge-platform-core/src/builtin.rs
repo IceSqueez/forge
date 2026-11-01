@@ -126,28 +126,28 @@ pub type HealthStream = Pin<Box<dyn futures_core::Stream<Item = HealthDelta> + S
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
-pub enum TokenColor {
-    Green,
-    Yellow,
-    Red,
+pub enum Tone {
+    Positive,
+    Caution,
+    Critical,
     Muted,
     Accent,
     Subtle,
     Info,
     ThemeBrand,
-    Pink,
+    Highlight,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum TrailingToken {
-    Badge(UserText, TokenColor),
-    Icon(SectionIcon, TokenColor),
+    Badge(UserText, Tone),
+    Icon(SectionIcon, Tone),
     Label(UserText),
-    TintedLabel(UserText, TokenColor),
+    TintedLabel(UserText, Tone),
     ActionIcon {
         icon: SectionIcon,
-        tint: TokenColor,
+        tint: Tone,
         step: SubActionStep,
     },
 }
@@ -162,9 +162,9 @@ pub enum RowAction {
 #[serde(rename_all = "snake_case")]
 pub struct ContentListItem {
     pub icon: SectionIcon,
-    pub icon_tint: Option<TokenColor>,
+    pub icon_tint: Option<Tone>,
     pub name: String,
-    pub monospace_name: bool,
+    pub name_is_identifier: bool,
     pub active: bool,
     pub active_label: Option<UserText>,
     pub trailing: Vec<TrailingToken>,
@@ -173,10 +173,12 @@ pub struct ContentListItem {
     pub on_click: Option<SubActionStep>,
 }
 
-pub const DEFAULT_ROW_PADDING_Y_PX: u8 = 7;
-
-fn default_row_padding_y_px() -> u8 {
-    DEFAULT_ROW_PADDING_Y_PX
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum RowSpacing {
+    #[default]
+    Standard,
+    Relaxed,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -184,13 +186,13 @@ pub struct ContentList {
     pub title: UserText,
     pub icon: SectionIcon,
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub icon_tint: Option<TokenColor>,
+    pub icon_tint: Option<Tone>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub inline_label: Option<UserText>,
     pub count_label: Option<UserText>,
     pub visible_rows: Option<u16>,
-    #[serde(default = "default_row_padding_y_px")]
-    pub row_padding_y_px: u8,
+    #[serde(default)]
+    pub row_spacing: RowSpacing,
     #[serde(default)]
     pub refreshable: bool,
     pub items: Arc<[ContentListItem]>,
@@ -249,7 +251,7 @@ pub enum HeroBadgeTone {
 pub struct HeroBadge {
     pub label: UserText,
     pub tone: HeroBadgeTone,
-    pub monospace: bool,
+    pub is_identifier: bool,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -262,7 +264,7 @@ pub struct ListFooter {
 pub struct InfoField {
     pub label: UserText,
     pub value: UserText,
-    pub monospace_value: bool,
+    pub value_is_identifier: bool,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -299,14 +301,14 @@ pub enum DetailSection {
         title: UserText,
         icon: SectionIcon,
         #[serde(default, skip_serializing_if = "Option::is_none")]
-        icon_tint: Option<TokenColor>,
+        icon_tint: Option<Tone>,
         items: Vec<KeyValueRow>,
     },
     ActiveItemList {
         title: UserText,
         icon: SectionIcon,
         #[serde(default, skip_serializing_if = "Option::is_none")]
-        icon_tint: Option<TokenColor>,
+        icon_tint: Option<Tone>,
         items: Vec<ActiveRow>,
     },
     WarningBanner {
@@ -319,7 +321,7 @@ pub enum DetailSection {
         title: UserText,
         icon: SectionIcon,
         #[serde(default, skip_serializing_if = "Option::is_none")]
-        icon_tint: Option<TokenColor>,
+        icon_tint: Option<Tone>,
         items: Arc<[SubscriptionRow]>,
         footer: Option<ListFooter>,
         #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -329,7 +331,7 @@ pub enum DetailSection {
         title: UserText,
         icon: SectionIcon,
         #[serde(default, skip_serializing_if = "Option::is_none")]
-        icon_tint: Option<TokenColor>,
+        icon_tint: Option<Tone>,
         scopes: Arc<[String]>,
         footer: Option<ListFooter>,
     },
@@ -343,7 +345,7 @@ pub enum DetailSection {
         title: UserText,
         icon: SectionIcon,
         #[serde(default, skip_serializing_if = "Option::is_none")]
-        icon_tint: Option<TokenColor>,
+        icon_tint: Option<Tone>,
         columns: Vec<StatColumn>,
     },
     TwoColumn {
@@ -354,7 +356,7 @@ pub enum DetailSection {
         title: UserText,
         icon: SectionIcon,
         #[serde(default, skip_serializing_if = "Option::is_none")]
-        icon_tint: Option<TokenColor>,
+        icon_tint: Option<Tone>,
         chip_icon: SectionIcon,
         items: Vec<String>,
     },
@@ -816,21 +818,18 @@ mod tests {
             inline_label: None,
             count_label: Some(VerbatimText::new("3").into()),
             visible_rows: Some(8),
-            row_padding_y_px: 7,
+            row_spacing: RowSpacing::Standard,
             refreshable: false,
             items: vec![ContentListItem {
                 icon: SectionIcon::new("camera"),
-                icon_tint: Some(TokenColor::Accent),
+                icon_tint: Some(Tone::Accent),
                 name: "Main Scene".to_owned(),
-                monospace_name: false,
+                name_is_identifier: false,
                 active: true,
                 active_label: Some(VerbatimText::new("LIVE").into()),
                 trailing: vec![
-                    TrailingToken::Badge(VerbatimText::new("HD").into(), TokenColor::Green),
-                    TrailingToken::TintedLabel(
-                        VerbatimText::new("-12.3 dB").into(),
-                        TokenColor::Subtle,
-                    ),
+                    TrailingToken::Badge(VerbatimText::new("HD").into(), Tone::Positive),
+                    TrailingToken::TintedLabel(VerbatimText::new("-12.3 dB").into(), Tone::Subtle),
                 ],
                 enabled: true,
                 on_click: None,
@@ -845,7 +844,7 @@ mod tests {
         let section = DetailSection::TwoColumnLists {
             left: Box::new(ContentList {
                 inline_label: Some(VerbatimText::new("in Gameplay").into()),
-                row_padding_y_px: 8,
+                row_spacing: RowSpacing::Relaxed,
                 refreshable: true,
                 ..content_list_fixture("Sources")
             }),
@@ -874,7 +873,7 @@ mod tests {
         }"#;
         let list: ContentList = serde_json::from_str(json).unwrap();
         assert_eq!(list.inline_label, None);
-        assert_eq!(list.row_padding_y_px, 7);
+        assert_eq!(list.row_spacing, RowSpacing::Standard);
         assert!(!list.refreshable);
     }
 
@@ -886,7 +885,7 @@ mod tests {
             fields: vec![InfoField {
                 label: VerbatimText::new("Viewers").into(),
                 value: VerbatimText::new("1 234").into(),
-                monospace_value: false,
+                value_is_identifier: false,
             }],
             health_bar: Some(HealthBar {
                 fraction: 0.72,

@@ -74,7 +74,7 @@ impl SettingsAudioView {
         } = launch;
         let routing = cx.new(|cx| {
             SettingsAudioRoutingView::new(
-                Arc::clone(&backend) as Arc<dyn SettingsRepo>,
+                backend.settings_repo(),
                 backend.overlay_repo(),
                 overlays,
                 rt_handle.clone(),
@@ -122,7 +122,7 @@ impl SettingsAudioView {
     fn load_devices(&mut self, uncached: bool, cx: &mut Context<Self>) {
         self.devices_load = Loadable::Loading;
         let ticket = self.devices_gen.next();
-        let settings = Arc::clone(&self.backend) as Arc<dyn SettingsRepo>;
+        let settings = self.backend.settings_repo();
         async_bridge::run_async(
             &self.rt_handle,
             enumerate_devices_and_preference(settings, uncached),
@@ -168,7 +168,7 @@ impl SettingsAudioView {
         self.speech_output
             .device_handle()
             .swap(stored_output_device(self.selected_id.clone()));
-        let settings = Arc::clone(&self.backend) as Arc<dyn SettingsRepo>;
+        let settings = self.backend.settings_repo();
         let device_id = self.selected_id.clone();
         async_bridge::run_async(
             &self.rt_handle,

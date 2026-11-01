@@ -33,7 +33,7 @@ fn producing(kind: VariantKind) -> SubActionIo {
     SubActionIo {
         produces: vec![ProducedVariable {
             output_name_key: INTO_KEY.to_owned(),
-            kind,
+            kind: Some(kind),
             label: "Output".to_owned(),
         }],
         ..SubActionIo::default()

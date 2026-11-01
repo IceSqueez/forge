@@ -1,8 +1,40 @@
+use forge_types::Secret;
+
 use crate::error::ObsError;
 
 pub(crate) const DEFAULT_OBS_PORT: u16 = 4455;
 
-pub fn parse_endpoint(endpoint: &str) -> Result<(String, u16), ObsError> {
+#[derive(Debug, Clone)]
+pub struct ObsEndpoint {
+    pub host: String,
+    pub port: u16,
+    pub password: Option<Secret>,
+}
+
+impl ObsEndpoint {
+    pub fn new(host: &str, port: u16, password: &str) -> Self {
+        Self {
+            host: host.to_owned(),
+            port,
+            password: (!password.is_empty()).then(|| Secret::new(password)),
+        }
+    }
+
+    pub fn parse(address: &str, password: &str) -> Result<Self, ObsError> {
+        let (host, port) = parse_endpoint(address)?;
+        Ok(Self::new(&host, port, password))
+    }
+
+    pub fn url(&self) -> String {
+        format!("ws://{}:{}", self.host, self.port)
+    }
+
+    pub(crate) fn password(&self) -> Option<&str> {
+        self.password.as_ref().map(Secret::expose)
+    }
+}
+
+pub(crate) fn parse_endpoint(endpoint: &str) -> Result<(String, u16), ObsError> {
     let invalid = || ObsError::Connect(format!("invalid endpoint '{endpoint}'"));
     let trimmed = endpoint.trim();
     if trimmed.starts_with("wss://") {

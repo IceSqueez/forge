@@ -5,7 +5,7 @@ use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
 use forge_registry::ReferenceNamespace;
-use forge_storage::{GlobalsRepo, ScriptRecord, ScriptRepo};
+use forge_storage::{ScriptRecord, ScriptRepo};
 use forge_storage_sqlite::SqliteDatabaseFileSchema;
 use forge_transfer::{
     ExecutableContent, PackConflict, PackExportRequest, PackImportOutcome, PackImportPlan,
@@ -322,8 +322,8 @@ async fn importing_a_global_brings_its_definition_with_the_type_default_not_the_
     let p = target.provider.as_ref();
     assert_eq!(
         (
-            GlobalsRepo::get(p, GLOBAL_NAME).await.unwrap(),
-            GlobalsRepo::persisted(p, GLOBAL_NAME).await.unwrap(),
+            p.globals_repo().get(GLOBAL_NAME).await.unwrap(),
+            p.globals_repo().persisted(GLOBAL_NAME).await.unwrap(),
         ),
         (Some(Variant::Int(0)), Some(true))
     );
@@ -583,7 +583,8 @@ async fn keep_both_renames_a_global_with_a_literal_percent_but_never_a_templated
     };
     p.queue_repo().save(&queue).await.unwrap();
     for name in [PERCENT_GLOBAL, TEMPLATED_GLOBAL] {
-        GlobalsRepo::set(p, name, Variant::Int(1), true)
+        p.globals_repo()
+            .set(name, Variant::Int(1), true)
             .await
             .unwrap();
     }
@@ -898,7 +899,7 @@ async fn a_failure_after_items_were_replaced_restores_every_local_version() {
         .unwrap();
     let script = target.script(SCRIPT_NAME).await.unwrap();
     ScriptRepo::save(
-        p,
+        p.script_repo().as_ref(),
         ScriptRecord {
             body: "let edited = 2;".to_owned(),
             ..script
@@ -906,7 +907,8 @@ async fn a_failure_after_items_were_replaced_restores_every_local_version() {
     )
     .await
     .unwrap();
-    GlobalsRepo::set(p, GLOBAL_NAME, Variant::Int(41), false)
+    p.globals_repo()
+        .set(GLOBAL_NAME, Variant::Int(41), false)
         .await
         .unwrap();
     let mut overlay = target.overlay_named(OVERLAY_NAME).await;
@@ -956,13 +958,21 @@ async fn a_failed_import_keeps_an_archived_action_that_shares_an_imported_id() {
 
 async fn archive_script(store: &Store) -> ScriptId {
     let id = store.script(SCRIPT_NAME).await.unwrap().id;
-    assert!(store.provider.archive_script(id).await.unwrap());
+    assert!(
+        store
+            .provider
+            .script_repo()
+            .archive_script(id)
+            .await
+            .unwrap()
+    );
     id
 }
 
 async fn archived_scripts(store: &Store) -> Vec<ScriptId> {
     store
         .provider
+        .script_repo()
         .list_archived_scripts()
         .await
         .unwrap()
@@ -1023,7 +1033,7 @@ async fn replacing_an_archived_local_script_brings_it_back_live_with_the_pack_bo
     let bundle = export(&store, &registries, &[f.root]).await;
     let local = store.script(SCRIPT_NAME).await.unwrap();
     ScriptRepo::save(
-        store.provider.as_ref(),
+        store.provider.script_repo().as_ref(),
         ScriptRecord {
             body: "let edited = 2;".to_owned(),
             ..local

@@ -1068,8 +1068,7 @@ async fn harness_with_obs(online_at_boot: bool) -> Harness {
 async fn forge_obs_client(harness: &Harness, password: &str) -> forge_obs::ObsClient {
     let url = harness.obs.as_ref().unwrap().url();
     forge_obs::ObsClient::connect(
-        &url,
-        Some(password),
+        &forge_obs::ObsEndpoint::parse(&url, password).unwrap(),
         std::sync::Arc::new(forge_events::test_support::NullPublisher),
     )
     .await
@@ -1808,8 +1807,8 @@ fn youtube_token(fake: &FakeYouTube) -> TokenSource {
 
 fn youtube_data_api(
     endpoints: &forge_platform_core::PlatformEndpoints,
-) -> forge_platform_youtube::YoutubeDataApi {
-    forge_platform_youtube::YoutubeDataApi::new(
+) -> forge_platform_youtube::YouTubeDataApi {
+    forge_platform_youtube::YouTubeDataApi::new(
         endpoints,
         forge_platform_youtube::SharedQuota::default(),
         Arc::new(forge_events::test_support::NullPublisher),
@@ -1833,7 +1832,7 @@ fn forge_youtube_echo(fake: &FakeYouTube) -> EchoForge {
     let live_chat = forge_platform_youtube::LiveChatIdHandle::new();
     let api = youtube_data_api(&endpoints);
     let (event_tx, mut event_rx) = tokio::sync::mpsc::unbounded_channel::<Event>();
-    let poller = forge_platform_youtube::YoutubeChatPoller::new(
+    let poller = forge_platform_youtube::YouTubeChatPoller::new(
         api.clone(),
         youtube_token(fake),
         event_tx,
@@ -1842,7 +1841,7 @@ fn forge_youtube_echo(fake: &FakeYouTube) -> EchoForge {
         forge_platform_youtube::ActiveBroadcastIdHandle::new(),
         Arc::new(forge_storage::MockBanLedgerRepo::new()),
     );
-    let sender = forge_platform_youtube::YoutubeSendChat::new(api, youtube_token(fake), live_chat);
+    let sender = forge_platform_youtube::YouTubeSendChat::new(api, youtube_token(fake), live_chat);
     let cancel = forge_platform_youtube::ChatPollerStop::new();
     let polling = tokio::spawn(poller.run_until_stopped(cancel.clone()));
     let echo = tokio::spawn(async move {

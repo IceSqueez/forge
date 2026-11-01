@@ -10,8 +10,8 @@ use forge_registry::{
 };
 use forge_registry::{
     EventFilter, KindPlatformContract, ReferenceField, RunContext, StepCatalogEntry,
-    SubActionCategory, SubActionRegistry, SubActionRunner, TriggerCategory, TriggerKindDescriptor,
-    TriggerRegistry,
+    SubActionCategory, SubActionRegistry, SubActionRunner, TriggerCatalogEntry, TriggerCategory,
+    TriggerKindDescriptor, TriggerRegistry,
 };
 use forge_storage::{GlobalEntry, OverlayDefinition, OverlayId, ScriptRecord, StoredClip};
 use forge_types::{
@@ -97,11 +97,7 @@ struct FixtureTrigger {
     id: &'static str,
 }
 
-impl TriggerKindDescriptor for FixtureTrigger {
-    fn id(&self) -> &str {
-        self.id
-    }
-
+impl TriggerCatalogEntry for FixtureTrigger {
     fn category(&self) -> TriggerCategory {
         TriggerCategory::Chat
     }
@@ -119,6 +115,12 @@ impl TriggerKindDescriptor for FixtureTrigger {
     }
 
     fn icon_name(&self) -> &str {
+        self.id
+    }
+}
+
+impl TriggerKindDescriptor for FixtureTrigger {
+    fn id(&self) -> &str {
         self.id
     }
 

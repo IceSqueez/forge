@@ -9,7 +9,7 @@ use forge_registry::{
 use forge_types::{ArgStack, SubActionTelemetry};
 
 use super::step_failure;
-use crate::chat::send_chat::YoutubeSendChat;
+use crate::chat::send_chat::YouTubeSendChat;
 use crate::vocabulary::{config_keys, messages, sub_action_ids};
 
 const KIND_ID: &str = sub_action_ids::CHAT_DELETE_MESSAGE;
@@ -29,11 +29,11 @@ const MESSAGE_ID: TextField = TextField {
 const CONFIG: ConfigSpec = ConfigSpec::new(&[&MESSAGE_ID]);
 
 pub(crate) struct DeleteMessageRunner {
-    sender: Arc<YoutubeSendChat>,
+    sender: Arc<YouTubeSendChat>,
 }
 
 impl DeleteMessageRunner {
-    pub(crate) fn new(sender: Arc<YoutubeSendChat>) -> Self {
+    pub(crate) fn new(sender: Arc<YouTubeSendChat>) -> Self {
         Self { sender }
     }
 }
@@ -119,7 +119,7 @@ mod tests {
 
     fn runner_on(server: &MockServer) -> DeleteMessageRunner {
         let handle = LiveChatIdHandle::new();
-        let sender = YoutubeSendChat::new(
+        let sender = YouTubeSendChat::new(
             crate::endpoints_test_support::data_api_at(&server.uri()),
             token_source(),
             handle,
@@ -222,7 +222,7 @@ mod tests {
 
     #[test]
     fn validate_config_accepts_an_id_or_a_missing_key_and_rejects_blank_or_non_string_ids() {
-        let runner = DeleteMessageRunner::new(Arc::new(YoutubeSendChat::new(
+        let runner = DeleteMessageRunner::new(Arc::new(YouTubeSendChat::new(
             crate::endpoints_test_support::unreachable_data_api(),
             token_source(),
             LiveChatIdHandle::new(),

@@ -219,12 +219,12 @@ impl SubActionRunner for CoreActionScheduleRunner {
             produces: vec![
                 ProducedVariable {
                     output_name_key: DUE_AT_INTO_KEY.to_owned(),
-                    kind: VariantKind::Datetime,
+                    kind: Some(VariantKind::Datetime),
                     label: "Due time".to_owned(),
                 },
                 ProducedVariable {
                     output_name_key: ID_INTO_KEY.to_owned(),
-                    kind: VariantKind::Int,
+                    kind: Some(VariantKind::Int),
                     label: "Scheduled run id".to_owned(),
                 },
             ],

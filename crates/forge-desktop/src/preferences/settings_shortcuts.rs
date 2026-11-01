@@ -8,7 +8,7 @@ use forge_components::{
     setting_block, setting_groups, setting_row, setting_rows, spacing, toggle, tr, with_alpha,
 };
 use forge_hotkey::{DEFAULT_HOLD_CEILING_SECS, HotkeyClient};
-use forge_storage::{DataProvider, SettingsRepo, StorageError};
+use forge_storage::{DataProvider, StorageError};
 use gpui::{
     AnyElement, App, ClickEvent, Context, Entity, Keystroke, Pixels, SharedString, Subscription,
     Window, div, prelude::*, px,
@@ -107,7 +107,7 @@ impl SettingsShortcutsView {
 
     fn load(&mut self, cx: &mut Context<Self>) {
         self.overrides = Loadable::Loading;
-        let repo = Arc::clone(&self.backend) as Arc<dyn SettingsRepo>;
+        let repo = self.backend.settings_repo();
         async_bridge::run_async(
             &self.rt_handle,
             load_overrides(repo),
@@ -119,7 +119,7 @@ impl SettingsShortcutsView {
 
     fn rollback(&mut self, cx: &mut Context<Self>) {
         self.overrides = Loadable::Loading;
-        let repo = Arc::clone(&self.backend) as Arc<dyn SettingsRepo>;
+        let repo = self.backend.settings_repo();
         async_bridge::run_async(
             &self.rt_handle,
             load_overrides(repo),
@@ -140,7 +140,7 @@ impl SettingsShortcutsView {
     }
 
     fn load_hold_ceiling(&mut self, cx: &mut Context<Self>) {
-        let repo = Arc::clone(&self.backend) as Arc<dyn SettingsRepo>;
+        let repo = self.backend.settings_repo();
         async_bridge::run_async(
             &self.rt_handle,
             async move { Ok::<_, RepoFailure>(load_hold_ceiling(repo.as_ref()).await) },
@@ -174,7 +174,7 @@ impl SettingsShortcutsView {
         if let Some(client) = &self.hotkey_client {
             client.set_hold_ceiling(ceiling);
         }
-        let repo = Arc::clone(&self.backend) as Arc<dyn SettingsRepo>;
+        let repo = self.backend.settings_repo();
         self.hold_ceiling_debounce.schedule_reporting(
             &self.rt_handle,
             tr!("settings_persist_failed"),
@@ -340,7 +340,7 @@ impl SettingsShortcutsView {
         };
         overrides.apply(cx);
         let map = overrides.snapshot();
-        let repo = Arc::clone(&self.backend) as Arc<dyn SettingsRepo>;
+        let repo = self.backend.settings_repo();
         self.writer
             .write(save_overrides(repo, map), Self::apply_save_result, cx);
         cx.notify();

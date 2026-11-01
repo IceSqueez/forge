@@ -20,9 +20,9 @@ pub enum AspectState {
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct AwakeStatus {
-    pub enabled: bool,
-    pub display: AspectState,
-    pub system: AspectState,
+    pub(crate) enabled: bool,
+    pub(crate) display: AspectState,
+    pub(crate) system: AspectState,
 }
 
 impl AwakeStatus {
@@ -37,6 +37,18 @@ impl AwakeStatus {
             display: state.clone(),
             system: state,
         }
+    }
+
+    pub fn new(enabled: bool, display: AspectState, system: AspectState) -> Self {
+        Self {
+            enabled,
+            display,
+            system,
+        }
+    }
+
+    pub fn enabled(&self) -> bool {
+        self.enabled
     }
 
     pub fn aspect(&self, aspect: Aspect) -> &AspectState {

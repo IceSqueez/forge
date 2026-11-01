@@ -12,7 +12,8 @@ use std::time::Duration;
 
 use forge_events::{Event, EventSource, EventSubscription, EventsError};
 use forge_registry::{
-    ChatTriggerFamily, EventFilter, KindPlatformContract, TriggerCategory, TriggerKindDescriptor,
+    ChatTriggerFamily, EventFilter, KindPlatformContract, TriggerCatalogEntry, TriggerCategory,
+    TriggerKindDescriptor,
 };
 use forge_runtime::TimerSchedule;
 use forge_runtime::{
@@ -58,24 +59,31 @@ const QUEUE_CONTROL_KINDS: &[&str] = &[
 
 struct CommandDescriptor;
 
-impl TriggerKindDescriptor for CommandDescriptor {
-    fn id(&self) -> &str {
-        COMMAND_DESCRIPTOR_ID
-    }
+impl TriggerCatalogEntry for CommandDescriptor {
     fn category(&self) -> TriggerCategory {
         TriggerCategory::Chat
     }
+
     fn label(&self) -> &str {
         "golden command"
     }
+
     fn summary(&self) -> &str {
         ""
     }
+
     fn search_text(&self) -> &str {
         ""
     }
+
     fn icon_name(&self) -> &str {
         ""
+    }
+}
+
+impl TriggerKindDescriptor for CommandDescriptor {
+    fn id(&self) -> &str {
+        COMMAND_DESCRIPTOR_ID
     }
     fn platform_contract(&self) -> KindPlatformContract {
         KindPlatformContract::Universal
@@ -212,9 +220,13 @@ async fn rig() -> Rig {
         .await
         .unwrap();
 
-    forge_storage::write_setting(dp.as_ref(), &forge_script::settings::TIMEOUT_MS, &10_000)
-        .await
-        .unwrap();
+    forge_storage::write_setting(
+        dp.settings_repo().as_ref(),
+        &forge_script::settings::TIMEOUT_MS,
+        &10_000,
+    )
+    .await
+    .unwrap();
     let bus = EventBus::new(Arc::new(NullEventLogRepo));
     let sub = bus.subscribe();
     let mut wiring = RuntimeWiring::new(common::wiring_parts(dp, Arc::clone(&bus)).await);

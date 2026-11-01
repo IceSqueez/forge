@@ -569,7 +569,7 @@ mod tests {
     use crate::test_support::{
         StubEventLog, action_running, runtime, step, test_backend_with_scripts_and_actions,
     };
-    use forge_runtime::ScriptRegistry;
+    use forge_runtime::ScriptCatalog;
     use forge_types::IntegrationAvailability;
 
     const STORED: [&str; 4] = ["zeta", "beta", "gamma", "alpha"];
@@ -659,7 +659,7 @@ mod tests {
             let view = cx.new(|cx| {
                 ScriptEditorView::new(
                     backend,
-                    Arc::new(ScriptRegistry::new()),
+                    Arc::new(ScriptCatalog::new()),
                     bus,
                     Arc::new(NothingDisabled),
                     handle,

@@ -1013,7 +1013,7 @@ mod tests {
             ("action.ids", false),
             (forge_runtime::ENGINE_OPTIONS_KEY, false),
             (forge_runtime::VOICE_OPTIONS_PREFIX, false),
-            (forge_registry::ENGINE_VOICE_OPTIONS_KEY, false),
+            (forge_speech_types::ENGINE_VOICE_OPTIONS_KEY, false),
         ] {
             let (_host, fields) = build(
                 cx,

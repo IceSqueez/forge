@@ -7,7 +7,7 @@ use forge_types::PlatformId;
 #[derive(Clone, Default)]
 pub struct PlatformCredentialManagers {
     pub twitch: Option<Arc<forge_platform_twitch::TwitchCredentialsManager>>,
-    pub youtube: Option<Arc<forge_platform_youtube::YoutubeCredentialsManager>>,
+    pub youtube: Option<Arc<forge_platform_youtube::YouTubeCredentialsManager>>,
     pub kick: Option<Arc<forge_platform_kick::KickCredentialsManager>>,
 }
 
@@ -170,14 +170,14 @@ mod tests {
             ),
             Arc::clone(&repo),
         );
-        let youtube = forge_platform_youtube::YoutubeCredentialsManager::new(
+        let youtube = forge_platform_youtube::YouTubeCredentialsManager::new(
             Arc::clone(&repo),
             forge_platform_youtube::GoogleOAuthClient::new(
                 forge_platform_youtube::google_oauth_gateway(&endpoints, limiter()).unwrap(),
                 "client".to_owned(),
                 forge_types::Secret::new("secret"),
             ),
-            forge_platform_youtube::YoutubeDataApi::new(
+            forge_platform_youtube::YouTubeDataApi::new(
                 &endpoints,
                 forge_platform_youtube::SharedQuota::default(),
                 Arc::new(forge_events::test_support::NullPublisher),

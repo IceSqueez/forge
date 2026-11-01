@@ -308,7 +308,7 @@ mod unsaved_work {
         let view = cx.new(|cx| {
             ScriptEditorView::new(
                 backend,
-                Arc::new(ScriptRegistry::new()),
+                Arc::new(ScriptCatalog::new()),
                 bus,
                 Arc::new(NothingDisabled),
                 handle,
@@ -347,7 +347,7 @@ mod unsaved_work {
             let view = cx.new(|cx| {
                 ScriptEditorView::new(
                     backend,
-                    Arc::new(ScriptRegistry::new()),
+                    Arc::new(ScriptCatalog::new()),
                     bus,
                     Arc::new(NothingDisabled),
                     handle,
@@ -690,7 +690,7 @@ mod lifecycle {
         rt: tokio::runtime::Runtime,
         view: Entity<ScriptEditorView>,
         scripts: Arc<MemoryScripts>,
-        registry: Arc<ScriptRegistry>,
+        registry: Arc<ScriptCatalog>,
         id: ScriptId,
     }
 
@@ -716,7 +716,7 @@ mod lifecycle {
                 }])
                 .referenced_by(OLD_NAME, uses),
             );
-            let registry = Arc::new(ScriptRegistry::new());
+            let registry = Arc::new(ScriptCatalog::new());
             rt.block_on(registry.load_all(scripts.as_ref())).unwrap();
             let bus = {
                 let _entered = rt.enter();

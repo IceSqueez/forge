@@ -578,7 +578,8 @@ mod tests {
             crate::test_support::ReadFault::Fails,
         );
 
-        let loaded = crate::test_support::runtime().block_on(load_overrides(backend));
+        let loaded =
+            crate::test_support::runtime().block_on(load_overrides(backend.settings_repo()));
 
         assert!(matches!(loaded, Err(StorageError::Connection { .. })));
     }

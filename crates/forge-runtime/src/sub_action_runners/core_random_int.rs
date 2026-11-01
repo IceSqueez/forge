@@ -117,7 +117,7 @@ impl SubActionRunner for CoreRandomIntRunner {
         SubActionIo {
             produces: vec![ProducedVariable {
                 output_name_key: TARGET_VAR_KEY.to_owned(),
-                kind: VariantKind::Int,
+                kind: Some(VariantKind::Int),
                 label: "Random integer".to_owned(),
             }],
             ..SubActionIo::default()

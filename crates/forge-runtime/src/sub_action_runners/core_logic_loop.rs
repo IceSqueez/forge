@@ -366,7 +366,7 @@ impl SubActionRunner for CoreLogicLoopRunner {
                 "{}.body#{MAX_RECORDED_ITERATIONS}-{last_iteration}",
                 ctx.index
             );
-            summary.index = SubActionTelemetry::NESTED;
+            summary.position = forge_types::StepPosition::Nested;
             ctx.telemetry.extend([summary]);
         }
 

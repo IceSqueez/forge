@@ -1,6 +1,6 @@
+use forge_platform_core::RowSpacing;
 use forge_platform_core::{
-    BuiltinContent, ContentList, ContentListItem, DEFAULT_ROW_PADDING_Y_PX, DetailSection,
-    SectionIcon, TrailingToken,
+    BuiltinContent, ContentList, ContentListItem, DetailSection, SectionIcon, TrailingToken,
 };
 
 use forge_types::{UserText, VerbatimText};
@@ -19,7 +19,7 @@ impl BuiltinContent for HotkeyClient {
                 icon: SectionIcon::new("keyboard"),
                 icon_tint: None,
                 name: combo.as_str().to_owned(),
-                monospace_name: true,
+                name_is_identifier: true,
                 active: true,
                 active_label: Some(labels::ACTIVE.into()),
                 trailing: vec![],
@@ -37,7 +37,7 @@ impl BuiltinContent for HotkeyClient {
                 icon: SectionIcon::new("bolt"),
                 icon_tint: None,
                 name: record.combo.clone(),
-                monospace_name: true,
+                name_is_identifier: true,
                 active: true,
                 active_label: None,
                 trailing: vec![TrailingToken::Label(
@@ -58,7 +58,7 @@ impl BuiltinContent for HotkeyClient {
                 inline_label: None,
                 count_label: Some(hotkey_count),
                 visible_rows: None,
-                row_padding_y_px: DEFAULT_ROW_PADDING_Y_PX,
+                row_spacing: RowSpacing::Standard,
                 refreshable: false,
                 items: hotkey_items.into(),
                 footer: None,
@@ -70,7 +70,7 @@ impl BuiltinContent for HotkeyClient {
                 inline_label: None,
                 count_label: Some(trigger_count),
                 visible_rows: None,
-                row_padding_y_px: DEFAULT_ROW_PADDING_Y_PX,
+                row_spacing: RowSpacing::Standard,
                 refreshable: false,
                 items: trigger_items.into(),
                 footer: None,
@@ -105,7 +105,7 @@ mod tests {
             .iter()
             .find(|item| item.name == "Ctrl+H")
             .expect("the registered combo is listed");
-        assert!(listed.monospace_name);
+        assert!(listed.name_is_identifier);
     }
 
     #[test]

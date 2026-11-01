@@ -11,7 +11,8 @@ use forge_overlay::{EventWiringTrigger, PageAssets, suggested_content};
 use forge_registry::ActorRole;
 use forge_registry::{
     ActorBlock, ActorIdentity, EventFilter, KindPlatformContract, LoginSlot, SubActionRegistry,
-    TriggerCategory, TriggerKindDescriptor, TriggerVariables, declared_variables,
+    TriggerCatalogEntry, TriggerCategory, TriggerKindDescriptor, TriggerVariables,
+    declared_variables,
 };
 use forge_runtime::{
     ActionsService, OVERLAY_ALERT_QUEUE, OverlayWiringOutcome, OverlayWiringPlan,
@@ -71,11 +72,7 @@ fn uncurated(declares: Declares) -> StubTrigger {
     }
 }
 
-impl TriggerKindDescriptor for StubTrigger {
-    fn id(&self) -> &str {
-        self.id
-    }
-
+impl TriggerCatalogEntry for StubTrigger {
     fn category(&self) -> TriggerCategory {
         TriggerCategory::Chat
     }
@@ -94,6 +91,12 @@ impl TriggerKindDescriptor for StubTrigger {
 
     fn icon_name(&self) -> &str {
         "bell"
+    }
+}
+
+impl TriggerKindDescriptor for StubTrigger {
+    fn id(&self) -> &str {
+        self.id
     }
 
     fn platform_contract(&self) -> KindPlatformContract {

@@ -801,10 +801,10 @@ fn switchable_rows() -> [SwitchableRow; 5] {
         },
         SwitchableRow {
             name: "language aware voice",
-            seed: |s| s.output_language_aware_voice = Some(true),
+            seed: |s| s.output_language_aware_voice = forge_storage::LanguageAwareVoice::On,
             toggle: |v, cx| v.toggle_output_lang(cx),
             remove: |v, cx| v.clear_output_lang(cx),
-            state: |s| s.output_language_aware_voice,
+            state: |s| s.output_language_aware_voice.into(),
         },
     ]
 }

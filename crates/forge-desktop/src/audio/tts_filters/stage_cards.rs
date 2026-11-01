@@ -373,7 +373,7 @@ impl TtsFiltersView {
         let rows = self.output_option_rows();
 
         let max_duration = settings.output_max_duration_secs;
-        let language = settings.output_language_aware_voice;
+        let language = Option::<bool>::from(settings.output_language_aware_voice);
         let total =
             rows.len() + usize::from(max_duration.is_some()) + usize::from(language.is_some());
         let mut body = div().flex().flex_col();

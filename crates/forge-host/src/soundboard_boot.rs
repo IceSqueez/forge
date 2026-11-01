@@ -31,7 +31,7 @@ pub(crate) async fn build_soundboard(
         audio_sinks,
         hotkey_reconciler,
     } = inputs;
-    let settings_repo: Arc<dyn SettingsRepo> = Arc::clone(backend) as Arc<dyn SettingsRepo>;
+    let settings_repo: Arc<dyn SettingsRepo> = backend.settings_repo();
     let settings =
         SoundboardSettingsHandle::new(load_soundboard_settings(settings_repo.as_ref()).await);
     let library = Arc::new(ClipLibrary::new(

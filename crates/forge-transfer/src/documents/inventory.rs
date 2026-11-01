@@ -1,9 +1,8 @@
 use std::collections::BTreeMap;
 
 use forge_storage::{
-    DataProvider, GlobalEntry, GlobalsRepo, MediaBlob, MediaBlobId, OVERLAY_ALERT_QUEUE_NAME,
-    OverlayDefinition, OverlayId, QueueRole, ScriptRecord, ScriptRepo, StoredClip,
-    clip_source_referrer,
+    DataProvider, GlobalEntry, MediaBlob, MediaBlobId, OVERLAY_ALERT_QUEUE_NAME, OverlayDefinition,
+    OverlayId, QueueRole, ScriptRecord, StoredClip, clip_source_referrer,
 };
 use forge_types::{
     Action, ActionId, ClipId, Queue, QueueId, ScriptId, TriggerInstance, TriggerInstanceId,
@@ -106,16 +105,17 @@ pub async fn load_pack_inventory(
             .overlay_alert_queue(OVERLAY_ALERT_QUEUE_NAME)
             .await?
             .map(|queue| queue.id),
-        scripts: keyed(ScriptRepo::list(provider).await?, |script| {
+        scripts: keyed(provider.script_repo().list().await?, |script| {
             script.name.clone()
         }),
-        archived_scripts: keyed(provider.list_archived_scripts().await?, |script| {
-            script.name.clone()
-        }),
-        globals: keyed(GlobalsRepo::list(provider).await?, |global| {
+        archived_scripts: keyed(
+            provider.script_repo().list_archived_scripts().await?,
+            |script| script.name.clone(),
+        ),
+        globals: keyed(provider.globals_repo().list().await?, |global| {
             global.name.clone()
         }),
-        archived_globals: keyed(GlobalsRepo::list_archived(provider).await?, |global| {
+        archived_globals: keyed(provider.globals_repo().list_archived().await?, |global| {
             global.name.clone()
         }),
         clips: keyed(clips, |clip| clip.id),

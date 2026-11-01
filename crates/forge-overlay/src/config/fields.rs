@@ -1,4 +1,5 @@
-use forge_registry::{ENGINE_VOICE_OPTIONS_KEY, FormField};
+use forge_registry::FormField;
+use forge_speech_types::ENGINE_VOICE_OPTIONS_KEY;
 use forge_types::Variant;
 
 use super::keys::*;

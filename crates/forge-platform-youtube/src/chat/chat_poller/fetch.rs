@@ -25,7 +25,7 @@ pub(super) struct ChatMessagesResponse {
     pub(super) polling_interval_millis: u64,
 }
 
-impl YoutubeChatPoller {
+impl YouTubeChatPoller {
     pub(super) async fn fetch_live_chat_id(
         &self,
         token: &str,

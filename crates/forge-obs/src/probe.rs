@@ -1,5 +1,6 @@
 use std::time::{Duration, Instant};
 
+use crate::endpoint::ObsEndpoint;
 use crate::error::ObsError;
 use crate::obws_error::map_obws_error;
 
@@ -13,22 +14,17 @@ pub struct ObsProbeResult {
     pub round_trip_ms: u64,
 }
 
-pub async fn probe_connection(
-    host: &str,
-    port: u16,
-    password: &str,
-) -> Result<ObsProbeResult, ObsError> {
-    tokio::time::timeout(PROBE_TIMEOUT, run_probe(host, port, password))
+pub async fn probe_connection(endpoint: &ObsEndpoint) -> Result<ObsProbeResult, ObsError> {
+    tokio::time::timeout(PROBE_TIMEOUT, run_probe(endpoint))
         .await
         .unwrap_or(Err(ObsError::Timeout))
 }
 
-async fn run_probe(host: &str, port: u16, password: &str) -> Result<ObsProbeResult, ObsError> {
-    let password = (!password.is_empty()).then_some(password);
+async fn run_probe(endpoint: &ObsEndpoint) -> Result<ObsProbeResult, ObsError> {
     let connect_config = obws::client::ConnectConfig {
-        host,
-        port,
-        password,
+        host: endpoint.host.as_str(),
+        port: endpoint.port,
+        password: endpoint.password(),
         event_subscriptions: Some(obws::requests::EventSubscription::NONE),
         broadcast_capacity: obws::client::DEFAULT_BROADCAST_CAPACITY,
         connect_timeout: PROBE_TIMEOUT,
@@ -79,7 +75,7 @@ mod tests {
     }
 
     async fn probe_error(port: u16, password: &str) -> ObsError {
-        match probe_connection("127.0.0.1", port, password).await {
+        match probe_connection(&ObsEndpoint::new("127.0.0.1", port, password)).await {
             Err(e) => e,
             Ok(_) => panic!("probe unexpectedly reached an obs-websocket server on port {port}"),
         }

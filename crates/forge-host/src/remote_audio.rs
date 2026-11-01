@@ -270,7 +270,7 @@ mod tests {
     use forge_overlay::kinds::alert::KIND_ID as RECEIVER_KIND;
     use forge_overlay::{OverlayKindRegistry, config, register_builtin_kinds};
     use forge_runtime::{EventBus, OverlayFrameSink, OverlayReceivers};
-    use forge_storage::{MockOverlayRepo, OverlayRepo, SettingsRepo};
+    use forge_storage::{MockOverlayRepo, OverlayRepo};
 
     use super::*;
     use crate::test_support::{StubEventLog, overlay_named, stopped_server_handle, test_backend};
@@ -359,7 +359,7 @@ mod tests {
             date_names: forge_runtime::DateNamesHandle::default(),
             tasks: forge_net::TaskOwner::new(),
             repo: Arc::new(repo) as Arc<dyn OverlayRepo>,
-            settings: Arc::clone(&backend) as Arc<dyn SettingsRepo>,
+            settings: backend.settings_repo(),
             kinds: Arc::new(kinds),
             bus: EventBus::new(Arc::new(StubEventLog)),
             frames: Arc::clone(&pages) as Arc<dyn OverlayFrameSink>,

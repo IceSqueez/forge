@@ -24,12 +24,14 @@ mod wire;
 pub use api::MonobankGateways;
 pub use api::{MonobankRateLimits, monobank_gateways};
 pub use config::{
-    CALL_INTERVAL, DEFAULT_HISTORY_LOOKBACK, DEFAULT_WINDOW_OVERLAP, MonobankConfig, MonobankTiming,
+    CALL_INTERVAL, DEFAULT_HISTORY_LOOKBACK, DEFAULT_WINDOW_OVERLAP, MAX_STATEMENT_WINDOW,
+    MonobankConfig, MonobankTiming,
 };
 pub use credentials::MONOBANK_CREDENTIAL_ID;
 pub use error::MonobankError;
 pub use integration::MONOBANK_INTEGRATION;
-pub use jar::MonobankJar;
+pub use jar::{JarId, MonobankJar};
 pub use messages::MONOBANK_MESSAGES;
 pub use provider::MonobankProvider;
 pub use status::{PollFailure, PollStatus, PollerPhase};
+pub use window::STATEMENT_PAGE_LIMIT;

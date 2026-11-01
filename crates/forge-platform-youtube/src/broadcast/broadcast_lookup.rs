@@ -5,7 +5,7 @@ use forge_platform_core::PlatformError;
 use forge_types::Secret;
 use tokio_util::sync::CancellationToken;
 
-use crate::api::data_api::{DataApiError, YoutubeDataApi, malformed};
+use crate::api::data_api::{DataApiError, YouTubeDataApi, malformed};
 use crate::api::quota_state::BROADCAST_COST;
 use crate::chat::chat_poller::MISSING_SCOPE;
 
@@ -25,7 +25,7 @@ pub(crate) enum LookupFailure {
 }
 
 pub(crate) async fn fetch_active_broadcast(
-    api: &YoutubeDataApi,
+    api: &YouTubeDataApi,
     token: &str,
     cancel: Option<&CancellationToken>,
 ) -> Result<Option<ActiveBroadcast>, LookupFailure> {
@@ -63,12 +63,12 @@ fn active_broadcast_of(body: &serde_json::Value) -> Option<ActiveBroadcast> {
 
 #[derive(Clone)]
 pub(crate) struct BroadcastLookup {
-    api: YoutubeDataApi,
+    api: YouTubeDataApi,
     access_token_source: TokenSource,
 }
 
 impl BroadcastLookup {
-    pub(crate) fn new(api: YoutubeDataApi, access_token_source: TokenSource) -> Self {
+    pub(crate) fn new(api: YouTubeDataApi, access_token_source: TokenSource) -> Self {
         Self {
             api,
             access_token_source,
@@ -104,7 +104,7 @@ mod tests {
     use crate::api::quota_state::SharedQuota;
     use crate::broadcast::active_broadcast_id::ActiveBroadcastIdHandle;
     use crate::broadcast::live_chat_id::LiveChatIdHandle;
-    use crate::chat::send_chat::YoutubeSendChat;
+    use crate::chat::send_chat::YouTubeSendChat;
     use crate::endpoints_test_support::{data_api_charging, unreachable_data_api, used_today};
 
     fn token_source() -> TokenSource {
@@ -334,7 +334,7 @@ mod tests {
             .mount(&server)
             .await;
         let quota = SharedQuota::default();
-        let sender = YoutubeSendChat::new(
+        let sender = YouTubeSendChat::new(
             data_api_charging(&server.uri(), quota.clone()),
             token_source(),
             chat_handle(lookup_on(&server, &quota)),
@@ -352,7 +352,7 @@ mod tests {
         )
         .await;
         let quota = SharedQuota::default();
-        let sender = YoutubeSendChat::new(
+        let sender = YouTubeSendChat::new(
             unreachable_data_api(),
             token_source(),
             chat_handle(lookup_on(&server, &quota)),

@@ -7,8 +7,7 @@ use forge_registry::{
 };
 use forge_storage::{GlobalsRepo, UserGlobalKey, UserGlobalsRepo};
 use forge_types::{
-    ArgStack, SubActionConfig, SubActionOutcome, SubActionTelemetry, VariantKind,
-    strip_var_decoration,
+    ArgStack, SubActionConfig, SubActionOutcome, SubActionTelemetry, strip_var_decoration,
 };
 
 use super::core_users_shared::{USER_LOGIN, VAR_NAME, resolve_broadcaster_id, resolve_user_login};
@@ -98,7 +97,7 @@ impl SubActionRunner for CoreUsersGetVarRunner {
         SubActionIo {
             produces: vec![ProducedVariable {
                 output_name_key: INTO_VAR_KEY.to_owned(),
-                kind: VariantKind::String,
+                kind: None,
                 label: "User variable value".to_owned(),
             }],
             ..SubActionIo::default()

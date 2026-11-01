@@ -73,6 +73,7 @@ mod tests {
     };
     use crate::delivery::ws_client::WsClient;
     use crate::test_helpers::TestDataProvider;
+    use forge_storage::DataProvider;
 
     async fn accounts_for(ids: &[&'static str]) -> Vec<serde_json::Value> {
         let ids: Vec<forge_storage::CredentialId> = ids
@@ -84,7 +85,7 @@ mod tests {
             .credentials()
             .expect_list_ids()
             .returning(move || Ok(ids.clone()));
-        build_connected_accounts(&provider).await
+        build_connected_accounts(provider.credentials_repo().as_ref()).await
     }
 
     #[tokio::test]
@@ -121,7 +122,11 @@ mod tests {
             })
         });
 
-        assert!(build_connected_accounts(&provider).await.is_empty());
+        assert!(
+            build_connected_accounts(provider.credentials_repo().as_ref())
+                .await
+                .is_empty()
+        );
     }
 
     #[tokio::test]

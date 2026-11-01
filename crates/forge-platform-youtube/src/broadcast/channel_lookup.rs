@@ -2,7 +2,7 @@ use forge_net::GatewayRequest;
 use forge_platform_core::PlatformError;
 use forge_types::Secret;
 
-use crate::api::data_api::{YoutubeDataApi, malformed};
+use crate::api::data_api::{YouTubeDataApi, malformed};
 
 const LOOKUP_COST: u32 = 1;
 const CHANNEL_ID_LEN: usize = 24;
@@ -12,27 +12,27 @@ const MISSING_SCOPE: &str = "channel lookup scope missing";
 use forge_platform_core::TokenSource;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct YoutubeChannelProfile {
+pub struct YouTubeChannelProfile {
     pub channel_id: String,
     pub title: String,
     pub subscriber_count: Option<i64>,
     pub view_count: i64,
 }
 
-pub struct YoutubeChannelLookup {
-    api: YoutubeDataApi,
+pub struct YouTubeChannelLookup {
+    api: YouTubeDataApi,
     access_token_source: TokenSource,
 }
 
-impl YoutubeChannelLookup {
-    pub fn new(api: YoutubeDataApi, access_token_source: TokenSource) -> Self {
+impl YouTubeChannelLookup {
+    pub fn new(api: YouTubeDataApi, access_token_source: TokenSource) -> Self {
         Self {
             api,
             access_token_source,
         }
     }
 
-    pub async fn lookup(&self, identifier: &str) -> Result<YoutubeChannelProfile, PlatformError> {
+    pub async fn lookup(&self, identifier: &str) -> Result<YouTubeChannelProfile, PlatformError> {
         let is_channel_id = identifier.starts_with("UC") && identifier.len() == CHANNEL_ID_LEN;
         let filter_key = if is_channel_id { "id" } else { "forHandle" };
 
@@ -80,7 +80,7 @@ impl YoutubeChannelLookup {
             .and_then(|s| s.parse::<i64>().ok())
             .unwrap_or(0);
 
-        Ok(YoutubeChannelProfile {
+        Ok(YouTubeChannelProfile {
             channel_id: channel_id.to_owned(),
             title: title.to_owned(),
             subscriber_count,
@@ -104,8 +104,8 @@ mod tests {
         Arc::new(|| Box::pin(async { Ok("yt-lookup-token".to_owned()) }))
     }
 
-    fn lookup_on(server: &MockServer) -> YoutubeChannelLookup {
-        YoutubeChannelLookup::new(data_api_at(&server.uri()), token_source())
+    fn lookup_on(server: &MockServer) -> YouTubeChannelLookup {
+        YouTubeChannelLookup::new(data_api_at(&server.uri()), token_source())
     }
 
     fn one_channel() -> serde_json::Value {
@@ -167,7 +167,7 @@ mod tests {
         let profile = lookup_on(&server).lookup("@creator").await.unwrap();
         assert_eq!(
             profile,
-            YoutubeChannelProfile {
+            YouTubeChannelProfile {
                 channel_id: "UCxyzchannelid".to_owned(),
                 title: "Creator Name".to_owned(),
                 subscriber_count: Some(500),

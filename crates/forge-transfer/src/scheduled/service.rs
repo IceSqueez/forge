@@ -2,7 +2,7 @@ use std::path::PathBuf;
 use std::sync::Arc;
 use std::time::Duration as StdDuration;
 
-use forge_storage::{DataProvider, SettingsRepo};
+use forge_storage::DataProvider;
 use time::OffsetDateTime;
 use tokio::sync::{Notify, watch};
 use tokio_util::sync::CancellationToken;
@@ -253,19 +253,15 @@ impl Service {
         self.publish();
     }
 
-    fn settings_repo(&self) -> &dyn SettingsRepo {
-        self.parts.provider.as_ref()
-    }
-
     async fn reload_settings(&mut self) {
-        match ScheduleSettings::load(self.settings_repo()).await {
+        match ScheduleSettings::load(self.parts.provider.settings_repo().as_ref()).await {
             Ok(loaded) => self.settings = loaded,
             Err(error) => tracing::warn!(%error, "backup schedule settings could not be reloaded"),
         }
     }
 
     async fn reload_progress(&mut self) {
-        match Progress::load(self.settings_repo()).await {
+        match Progress::load(self.parts.provider.settings_repo().as_ref()).await {
             Ok(loaded) => self.progress = loaded,
             Err(error) => tracing::warn!(%error, "backup schedule progress could not be reloaded"),
         }
@@ -312,6 +308,7 @@ impl Service {
 
 #[cfg(test)]
 mod tests {
+    use forge_storage::DataProvider;
     use std::sync::Arc;
 
     use forge_storage::DATABASE_FILE_NAME;
@@ -521,12 +518,20 @@ mod tests {
             .unwrap();
         let key = create_schedule_key(&Passphrase::new("correct horse battery staple".to_owned()))
             .unwrap();
-        write_setting(&backend, &BACKUP_SCHEDULE_ENABLED, &true)
-            .await
-            .unwrap();
-        write_setting(&backend, &BACKUP_SCHEDULE_KEY, &Some(key.encode().unwrap()))
-            .await
-            .unwrap();
+        write_setting(
+            backend.settings_repo().as_ref(),
+            &BACKUP_SCHEDULE_ENABLED,
+            &true,
+        )
+        .await
+        .unwrap();
+        write_setting(
+            backend.settings_repo().as_ref(),
+            &BACKUP_SCHEDULE_KEY,
+            &Some(key.encode().unwrap()),
+        )
+        .await
+        .unwrap();
         let handle = super::spawn_scheduled_backups(ScheduledBackupParts {
             provider: Arc::new(backend),
             data_dir: dir.path().to_path_buf(),

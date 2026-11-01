@@ -75,9 +75,8 @@ impl TtsView {
                 this.voice_catalog_changed(cx);
             }
         });
-        let credentials: Arc<dyn CredentialsRepo> =
-            Arc::clone(&backend) as Arc<dyn CredentialsRepo>;
-        let settings: Arc<dyn SettingsRepo> = Arc::clone(&backend) as Arc<dyn SettingsRepo>;
+        let credentials: Arc<dyn CredentialsRepo> = backend.credentials_repo();
+        let settings: Arc<dyn SettingsRepo> = backend.settings_repo();
         let dashboard = cx.new(|cx| {
             TtsDashboardView::new(
                 speak_state,

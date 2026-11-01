@@ -9,7 +9,7 @@ use forge_components::{
 };
 use forge_runtime::{OverlaySampleSource, OverlayServiceHandle};
 use forge_server::{DEFAULT_PORT, ServerHandle, ServerSettings};
-use forge_storage::{CredentialsRepo, DataProvider, SettingsRepo};
+use forge_storage::{DataProvider, SettingsRepo};
 use forge_types::Secret;
 use gpui::{
     ClickEvent, Context, Entity, Pixels, SharedString, Subscription, Task, Window, div, prelude::*,
@@ -233,7 +233,7 @@ impl SettingsWebSocketView {
         self.loading = true;
         self.load_failure = None;
         self.save_state = SaveState::Saved;
-        let repo = Arc::clone(&self.backend) as Arc<dyn SettingsRepo>;
+        let repo = self.backend.settings_repo();
         async_bridge::run_async(
             &self.rt_handle,
             load_websocket_settings(repo),
@@ -281,7 +281,7 @@ impl SettingsWebSocketView {
     }
 
     fn fetch_token(&self, cx: &mut Context<Self>) {
-        let credentials = Arc::clone(&self.backend) as Arc<dyn CredentialsRepo>;
+        let credentials = self.backend.credentials_repo();
         let server = self.server.clone();
         async_bridge::run_async(
             &self.rt_handle,
@@ -358,7 +358,7 @@ impl SettingsWebSocketView {
         let prev = self.enable_server;
         let value = !prev;
         self.enable_server = value;
-        let repo = Arc::clone(&self.backend) as Arc<dyn SettingsRepo>;
+        let repo = self.backend.settings_repo();
         self.persist_field(
             prev,
             |this, prev, _| this.enable_server = prev,
@@ -654,7 +654,7 @@ mod tests {
             date_names: forge_runtime::DateNamesHandle::default(),
             tasks: forge_net::TaskOwner::new(),
             repo: Arc::new(StubOverlays),
-            settings: Arc::clone(&backend) as Arc<dyn SettingsRepo>,
+            settings: backend.settings_repo(),
             kinds: Arc::new(OverlayKindRegistry::new()),
             bus: EventBus::new(Arc::new(StubEventLog)),
             frames: Arc::new(crate::test_support::NoOverlayPages),

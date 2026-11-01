@@ -641,7 +641,7 @@ async fn run_quick_action(
         None => ::std::collections::BTreeMap::new(),
     };
 
-    crate::engine::chain::publish_subaction_done(publisher.as_ref(), run_event_id, &telemetry);
+    crate::engine::chain::publish_subaction_done(publisher.as_ref(), run_event_id, 0, &telemetry);
 
     bus.publish(
         QuickActionDone {
@@ -764,7 +764,7 @@ mod tests {
                 SubActionTelemetry {
                     args_in: ::std::collections::BTreeMap::new(),
                     produced: ::std::collections::BTreeMap::new(),
-                    index: 0,
+                    position: forge_types::StepPosition::TopLevel(0),
                     kind: "test.record".to_owned(),
                     started_at: OffsetDateTime::now_utc(),
                     duration_ms: 0,
@@ -824,7 +824,7 @@ mod tests {
                 SubActionTelemetry {
                     args_in: ::std::collections::BTreeMap::new(),
                     produced: ::std::collections::BTreeMap::new(),
-                    index: ctx.index,
+                    position: forge_types::StepPosition::TopLevel(ctx.index),
                     kind: self.id.clone(),
                     started_at: OffsetDateTime::now_utc(),
                     duration_ms: 0,
@@ -1433,7 +1433,7 @@ mod tests {
                 SubActionTelemetry {
                     args_in: BTreeMap::new(),
                     produced: BTreeMap::new(),
-                    index: ctx.index,
+                    position: forge_types::StepPosition::TopLevel(ctx.index),
                     kind: self.id.to_owned(),
                     started_at: OffsetDateTime::now_utc(),
                     duration_ms: 0,

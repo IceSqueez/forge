@@ -15,13 +15,10 @@ use forge_components::{
     ActivePresentation, Confirm, FONT_XS, Icon, Radius, SearchState, TextInput, tr,
 };
 use forge_script::validate_syntax;
-use forge_storage::{
-    SCRIPT_NAME_KEY, SCRIPT_RUN_NAMED_KIND, ScriptRecord, ScriptReferences, ScriptRepo,
-};
+use forge_storage::{SCRIPT_NAME_KEY, SCRIPT_RUN_NAMED_KIND, ScriptRecord, ScriptReferences};
 use forge_types::{Action, ActionId, ScriptId};
 use gpui::prelude::*;
 use gpui::{Context, Entity, EventEmitter, Pixels, ScrollHandle, Subscription, Window, px};
-use std::sync::Arc;
 
 const LEFT_PANE_W: Pixels = px(200.0);
 
@@ -162,7 +159,7 @@ impl ScriptList {
 
     pub(super) fn load_scripts(&mut self, cx: &mut Context<Self>) {
         self.list_load = Loadable::Loading;
-        let repo = Arc::clone(&self.deps.backend) as Arc<dyn ScriptRepo>;
+        let repo = self.deps.backend.script_repo();
         let action_repo = self.deps.backend.action_repo();
         async_bridge::run_async(
             &self.deps.rt_handle,

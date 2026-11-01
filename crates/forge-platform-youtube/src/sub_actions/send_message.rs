@@ -10,7 +10,7 @@ use forge_registry::{
 use forge_types::{ArgStack, PlatformId, SubActionOutcome, SubActionTelemetry};
 
 use super::step_failure;
-use crate::chat::send_chat::YoutubeSendChat;
+use crate::chat::send_chat::YouTubeSendChat;
 use crate::vocabulary::{config_keys, sub_action_ids};
 
 const MESSAGE: TextField = TextField {
@@ -24,11 +24,11 @@ const MESSAGE: TextField = TextField {
 const CONFIG: ConfigSpec = ConfigSpec::new(&[&MESSAGE]);
 
 pub(crate) struct SendMessageRunner {
-    sender: Arc<YoutubeSendChat>,
+    sender: Arc<YouTubeSendChat>,
 }
 
 impl SendMessageRunner {
-    pub(crate) fn new(sender: Arc<YoutubeSendChat>) -> Self {
+    pub(crate) fn new(sender: Arc<YouTubeSendChat>) -> Self {
         Self { sender }
     }
 }
@@ -125,7 +125,7 @@ mod tests {
     fn runner_on(server: &MockServer) -> SendMessageRunner {
         let handle = LiveChatIdHandle::new();
         handle.set(Some("lc-test".to_owned()));
-        let sender = YoutubeSendChat::new(
+        let sender = YouTubeSendChat::new(
             crate::endpoints_test_support::data_api_at(&server.uri()),
             token_source(),
             handle,
@@ -252,7 +252,7 @@ mod tests {
     fn validate_config_rejects_empty_or_non_string_message_and_accepts_valid() {
         let server_uri = "http://127.0.0.1:0".to_owned();
         let handle = LiveChatIdHandle::new();
-        let sender = YoutubeSendChat::new(
+        let sender = YouTubeSendChat::new(
             crate::endpoints_test_support::data_api_at(&server_uri),
             token_source(),
             handle,

@@ -544,7 +544,7 @@ pub(in crate::automation::actions_screen) mod tests {
                         bus,
                         scheduler,
                     },
-                    Arc::clone(&backend) as Arc<dyn SettingsRepo>,
+                    backend.settings_repo(),
                     Arc::new(OverlayKindRegistry::new()),
                     None,
                     cx,

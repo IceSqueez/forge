@@ -7,8 +7,7 @@ use forge_registry::{
 };
 use forge_storage::GlobalsRepo;
 use forge_types::{
-    ArgStack, SubActionConfig, SubActionOutcome, SubActionTelemetry, Variant, VariantKind,
-    strip_var_decoration,
+    ArgStack, SubActionConfig, SubActionOutcome, SubActionTelemetry, Variant, strip_var_decoration,
 };
 
 use super::core_globals_shared::{GLOBAL_BY_NAME, global_name};
@@ -80,7 +79,7 @@ impl SubActionRunner for CoreGlobalsGetRunner {
         SubActionIo {
             produces: vec![ProducedVariable {
                 output_name_key: INTO_ARG_KEY.to_owned(),
-                kind: VariantKind::String,
+                kind: None,
                 label: "Global value".to_owned(),
             }],
             ..SubActionIo::default()

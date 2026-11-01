@@ -1677,6 +1677,55 @@ mod tests {
     }
 
     #[test]
+    fn a_saved_queue_goes_live_and_a_refused_save_stays_out_of_the_scheduler() {
+        let rt = runtime();
+        let scheduler = held_queue_scheduler(&rt, named(QueueId::new(), "Alerts"));
+        let mut accepting = MockQueueRepo::new();
+        accepting.expect_save().returning(|_| Ok(()));
+        let mut refusing = MockQueueRepo::new();
+        refusing.expect_save().returning(|_| {
+            Err(forge_storage::StorageError::Connection {
+                reason: STORE_FAILURE.to_owned(),
+            })
+        });
+        let saved = named(QueueId::new(), "Saved");
+        let refused = named(QueueId::new(), "Refused");
+
+        let accepted = rt.block_on(
+            QueueService::new(Arc::new(accepting), scheduler.clone()).save_live(saved.clone()),
+        );
+        let turned_down = rt.block_on(
+            QueueService::new(Arc::new(refusing), scheduler.clone()).save_live(refused.clone()),
+        );
+
+        assert!(matches!(accepted, Ok(Ok(_))), "{accepted:?}");
+        assert!(turned_down.is_err(), "{turned_down:?}");
+        assert!(live_mode(&rt, &scheduler, saved.id).is_some());
+        assert_eq!(live_mode(&rt, &scheduler, refused.id), None);
+    }
+
+    #[test]
+    fn applying_a_queue_needs_it_in_the_store() {
+        let rt = runtime();
+        let known = named(QueueId::new(), "Known");
+        let scheduler = held_queue_scheduler(&rt, named(QueueId::new(), "Alerts"));
+        let listed = vec![known.clone()];
+        let mut repo = MockQueueRepo::new();
+        repo.expect_list().returning(move || Ok(listed.clone()));
+        let service = QueueService::new(Arc::new(repo), scheduler.clone());
+
+        let applied = rt.block_on(service.apply_live(known.id));
+        let missing = rt.block_on(service.apply_live(QueueId::new()));
+
+        assert!(applied.is_ok(), "{applied:?}");
+        assert!(live_mode(&rt, &scheduler, known.id).is_some());
+        assert!(
+            matches!(missing, Err(forge_runtime::QueueApplyError::Missing)),
+            "{missing:?}"
+        );
+    }
+
+    #[test]
     fn a_delete_of_a_queue_already_gone_from_the_store_leaves_the_scheduler_alone() {
         let rt = runtime();
         let id = QueueId::new();

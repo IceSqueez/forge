@@ -13,7 +13,7 @@ use forge_components::{
 };
 use forge_storage::settings::core_settings::AUDIO_OUTPUT_DEVICE_ID;
 use forge_storage::{
-    DEFAULT_DIAGNOSTIC_LOG_LEVEL, DataProvider, SettingsRepo, diagnostic_log_level, read_setting,
+    DEFAULT_DIAGNOSTIC_LOG_LEVEL, DataProvider, diagnostic_log_level, read_setting,
 };
 use forge_types::LogLevel;
 use gpui::{
@@ -428,7 +428,7 @@ async fn gather(
     integrations: Vec<diagnostic_bundle::IntegrationFacts>,
     env_overridden: bool,
 ) -> Result<Gathered, RepoFailure> {
-    let settings = Arc::clone(&backend) as Arc<dyn SettingsRepo>;
+    let settings = backend.settings_repo();
     let level = diagnostic_log_level(settings.as_ref())
         .await
         .unwrap_or_else(|error| {

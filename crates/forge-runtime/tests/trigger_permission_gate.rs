@@ -12,8 +12,8 @@ use std::time::Duration;
 use forge_events::EventSubscription;
 use forge_events::{Event, EventSource, EventsError};
 use forge_registry::{
-    ChatTriggerFamily, EventFilter, KindPlatformContract, TriggerCategory, TriggerKindDescriptor,
-    TriggerRegistry,
+    ChatTriggerFamily, EventFilter, KindPlatformContract, TriggerCatalogEntry, TriggerCategory,
+    TriggerKindDescriptor, TriggerRegistry,
 };
 use forge_runtime::{EventBus, FrozenRuntime, NullEventLogRepo, RuntimeWiring};
 use forge_storage::DataProvider;
@@ -34,24 +34,31 @@ struct FakeDescriptor {
     family: Option<ChatTriggerFamily>,
 }
 
-impl TriggerKindDescriptor for FakeDescriptor {
-    fn id(&self) -> &str {
-        self.id
-    }
+impl TriggerCatalogEntry for FakeDescriptor {
     fn category(&self) -> TriggerCategory {
         TriggerCategory::Chat
     }
+
     fn label(&self) -> &str {
         "fake"
     }
+
     fn summary(&self) -> &str {
         ""
     }
+
     fn search_text(&self) -> &str {
         ""
     }
+
     fn icon_name(&self) -> &str {
         ""
+    }
+}
+
+impl TriggerKindDescriptor for FakeDescriptor {
+    fn id(&self) -> &str {
+        self.id
     }
     fn platform_contract(&self) -> KindPlatformContract {
         KindPlatformContract::Universal

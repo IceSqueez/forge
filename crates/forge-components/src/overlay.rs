@@ -564,9 +564,10 @@ mod tests {
         px,
     };
 
-    use super::{ease_out_cubic, focus_inside_modal, overlay};
+    use super::{confine_tab, ease_out_cubic, focus_inside_modal, overlay};
     use crate::palette::FORGE_DEFAULT;
     use crate::test_support::install_presentation;
+    use crate::text_input::{FocusNextField, FocusPreviousField};
     use crate::text_input::{TextInput, bind_text_input_keys};
     use gpui::ParentElement;
 
@@ -967,5 +968,75 @@ mod tests {
             assert!(y >= prev, "curve dipped at t={t}: {y} < {prev}");
             prev = y;
         }
+    }
+
+    struct TabHost {
+        scope: FocusHandle,
+        first: FocusHandle,
+        second: FocusHandle,
+        outside: FocusHandle,
+    }
+
+    impl Render for TabHost {
+        fn render(&mut self, _window: &mut Window, _cx: &mut Context<Self>) -> impl IntoElement {
+            div()
+                .child(div().track_focus(&self.outside).size(px(10.0)))
+                .child(
+                    confine_tab(div().track_focus(&self.scope), &self.scope)
+                        .child(div().track_focus(&self.first).size(px(10.0)))
+                        .child(div().track_focus(&self.second).size(px(10.0))),
+                )
+        }
+    }
+
+    fn tab_host(cx: &mut TestAppContext) -> (Entity<TabHost>, &mut VisualTestContext) {
+        let (host, vcx) = cx.add_window_view(|_, cx| TabHost {
+            scope: cx.focus_handle(),
+            first: cx.focus_handle().tab_stop(true),
+            second: cx.focus_handle().tab_stop(true),
+            outside: cx.focus_handle().tab_stop(true),
+        });
+        vcx.update(|window, cx| {
+            let first = host.read(cx).first.clone();
+            window.focus(&first, cx);
+        });
+        vcx.run_until_parked();
+        (host, vcx)
+    }
+
+    fn focused_stop(host: &Entity<TabHost>, vcx: &mut VisualTestContext) -> &'static str {
+        vcx.update(|window, cx| {
+            let host = host.read(cx);
+            [
+                (&host.first, "first"),
+                (&host.second, "second"),
+                (&host.outside, "outside"),
+            ]
+            .into_iter()
+            .find_map(|(handle, name)| handle.is_focused(window).then_some(name))
+            .unwrap_or("none")
+        })
+    }
+
+    #[gpui::test]
+    fn tab_cycles_inside_a_modal_both_ways_and_never_reaches_the_page_behind(
+        cx: &mut TestAppContext,
+    ) {
+        let (host, vcx) = tab_host(cx);
+
+        let mut visited = Vec::new();
+        for _ in 0..3 {
+            vcx.dispatch_action(FocusNextField);
+            vcx.run_until_parked();
+            visited.push(focused_stop(&host, vcx));
+        }
+        assert_eq!(visited, ["second", "first", "second"]);
+
+        vcx.dispatch_action(FocusPreviousField);
+        vcx.run_until_parked();
+        assert_eq!(focused_stop(&host, vcx), "first");
+        vcx.dispatch_action(FocusPreviousField);
+        vcx.run_until_parked();
+        assert_eq!(focused_stop(&host, vcx), "second");
     }
 }

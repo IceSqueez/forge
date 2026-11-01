@@ -168,7 +168,7 @@ impl SubActionRunner for CoreTimeAddRunner {
         SubActionIo {
             produces: vec![ProducedVariable {
                 output_name_key: INTO_VAR_KEY.to_owned(),
-                kind: VariantKind::Datetime,
+                kind: Some(VariantKind::Datetime),
                 label: "Shifted datetime".to_owned(),
             }],
             ..SubActionIo::default()

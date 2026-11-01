@@ -4,11 +4,10 @@ use std::sync::Arc;
 use forge_overlay::{OverlayKindRegistry, register_builtin_kinds};
 use forge_paths::{CREDENTIALS_KEY_FILE_NAME, MEDIA_DIR_NAME, OVERLAYS_DIR_NAME};
 use forge_registry::{SubActionRegistry, TriggerRegistry};
-use forge_runtime::{EventBus, OverlayServiceHandle, QueueScheduler, ScriptRegistry};
+use forge_runtime::{EventBus, OverlayServiceHandle, QueueScheduler, ScriptCatalog};
 use forge_storage::settings::core_settings::SERVER_OVERLAY_ROOT;
 use forge_storage::{
-    DATABASE_FILE_NAME, DataProvider, OverlayConfig, OverlayDefinition, OverlayId, SettingsRepo,
-    write_setting,
+    DATABASE_FILE_NAME, DataProvider, OverlayConfig, OverlayDefinition, OverlayId, write_setting,
 };
 use forge_storage_sqlite::SqliteBackend;
 use forge_transfer::{
@@ -63,7 +62,7 @@ pub(crate) fn pack_world(rt: &tokio::runtime::Runtime) -> PackWorld {
         let provider: Arc<dyn DataProvider> = Arc::new(backend);
         let overlay_root = dir.path().join(OVERLAYS_DIR_NAME);
         write_setting(
-            provider.as_ref(),
+            provider.settings_repo().as_ref(),
             &SERVER_OVERLAY_ROOT,
             &Some(overlay_root.display().to_string()),
         )
@@ -78,7 +77,7 @@ pub(crate) fn pack_world(rt: &tokio::runtime::Runtime) -> PackWorld {
             date_names: forge_runtime::DateNamesHandle::default(),
             tasks: forge_net::TaskOwner::new(),
             repo: provider.overlay_repo(),
-            settings: Arc::clone(&provider) as Arc<dyn SettingsRepo>,
+            settings: provider.settings_repo(),
             kinds: Arc::clone(&kinds),
             bus: Arc::clone(&bus),
             frames: Arc::new(crate::test_support::NoOverlayPages),
@@ -100,7 +99,7 @@ pub(crate) fn pack_world(rt: &tokio::runtime::Runtime) -> PackWorld {
                 overlays,
                 overlay_samples: Arc::new(crate::test_support::NeutralOverlaySamples),
                 scheduler,
-                scripts: Arc::new(ScriptRegistry::new()),
+                scripts: Arc::new(ScriptCatalog::new()),
                 rt_handle: rt.handle().clone(),
             },
             dir,

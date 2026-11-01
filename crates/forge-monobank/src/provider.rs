@@ -81,19 +81,18 @@ impl MonobankProvider {
         self.jars.jars(&self.api, &credential.token).await
     }
 
-    pub async fn selected_jar_id(&self) -> Result<Option<String>, MonobankError> {
+    pub async fn selected_jar_id(&self) -> Result<Option<JarId>, MonobankError> {
         Ok(credentials::load(self.creds.as_ref())
             .await?
-            .and_then(|credential| credential.jar_id)
-            .map(|jar| jar.as_str().to_owned()))
+            .and_then(|credential| credential.jar_id))
     }
 
-    pub async fn save_token(&self, raw: &str, jar_id: &str) -> Result<MonobankJar, MonobankError> {
+    pub async fn save_token(&self, raw: &str, jar_id: JarId) -> Result<MonobankJar, MonobankError> {
         let token = parse_token(raw)?;
         self.store_selection(token, jar_id).await
     }
 
-    pub async fn select_jar(&self, jar_id: &str) -> Result<MonobankJar, MonobankError> {
+    pub async fn select_jar(&self, jar_id: JarId) -> Result<MonobankJar, MonobankError> {
         let credential = self.stored_credential().await?;
         self.store_selection(credential.token, jar_id).await
     }
@@ -114,9 +113,8 @@ impl MonobankProvider {
     async fn store_selection(
         &self,
         token: Secret,
-        jar_id: &str,
+        jar_id: JarId,
     ) -> Result<MonobankJar, MonobankError> {
-        let jar_id = JarId::parse(jar_id)?;
         let jar = self.jars.find(&self.api, &token, &jar_id).await?;
         credentials::store(
             self.creds.as_ref(),

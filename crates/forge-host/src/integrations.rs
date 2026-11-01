@@ -167,7 +167,7 @@ pub struct Integrations {
     pub donation_services: DonationServices,
     pub twitch_bot: Option<Arc<forge_platform_twitch::TwitchBotAccount>>,
     pub twitch_sign_in: Option<forge_platform_twitch::TwitchSignIn>,
-    pub youtube_sign_in: Option<forge_platform_youtube::YoutubeSignIn>,
+    pub youtube_sign_in: Option<forge_platform_youtube::YouTubeSignIn>,
     pub kick_sign_in: Option<forge_platform_kick::KickSignIn>,
     pub sign_out_routes: SignOutRoutes,
 }
@@ -338,7 +338,7 @@ pub fn twitch_builtin_object(
 }
 
 pub fn youtube_builtin_object(
-    bundle: Arc<forge_platform_youtube::YoutubeIntegrationBundle>,
+    bundle: Arc<forge_platform_youtube::YouTubeIntegrationBundle>,
 ) -> BuiltinObject {
     BuiltinObject::of(bundle.clone())
         .with_control(bundle.clone())
@@ -440,7 +440,9 @@ pub async fn build_integrations(
     let mut donation_services = DonationServices::default();
     if let Some(donatello) = wire_donatello(backend, endpoints, donations, bus) {
         let service = donatello_service(donatello.provider());
-        service.restore_poll_interval(backend.as_ref()).await;
+        service
+            .restore_poll_interval(backend.settings_repo().as_ref())
+            .await;
         donation_services.register(service);
         factories.push(Arc::new(donatello));
     }
@@ -505,7 +507,7 @@ pub(crate) fn publisher(bus: &Arc<EventBus>) -> Arc<dyn EventPublisher> {
 }
 
 pub(crate) fn creds_of(backend: &Arc<dyn DataProvider>) -> Arc<dyn CredentialsRepo> {
-    Arc::clone(backend) as Arc<dyn CredentialsRepo>
+    backend.credentials_repo()
 }
 
 pub(crate) struct EventRelay {
@@ -607,8 +609,7 @@ mod tests {
 
     async fn silent_client(port: u16) -> Arc<forge_obs::ObsClient> {
         let client = forge_obs::ObsClient::connect(
-            &format!("127.0.0.1:{port}"),
-            None,
+            &forge_obs::ObsEndpoint::parse(&format!("127.0.0.1:{port}"), "").unwrap(),
             Arc::new(forge_events::test_support::NullPublisher),
         )
         .await
@@ -737,8 +738,7 @@ mod tests {
         );
         let client = Arc::new(
             forge_obs::ObsClient::connect(
-                &format!("127.0.0.1:{port}"),
-                None,
+                &forge_obs::ObsEndpoint::parse(&format!("127.0.0.1:{port}"), "").unwrap(),
                 Arc::new(forge_events::test_support::NullPublisher),
             )
             .await
@@ -775,8 +775,7 @@ mod tests {
         let port = closed_port().await;
         let client = Arc::new(
             forge_obs::ObsClient::connect(
-                &format!("127.0.0.1:{port}"),
-                None,
+                &forge_obs::ObsEndpoint::parse(&format!("127.0.0.1:{port}"), "").unwrap(),
                 Arc::new(forge_events::test_support::NullPublisher),
             )
             .await
@@ -809,7 +808,7 @@ mod tests {
                 endpoint: format!("ws://127.0.0.1:{port}/"),
             },
             Arc::new(forge_events::test_support::NullPublisher),
-            backend as Arc<dyn forge_storage::CredentialsRepo>,
+            backend.credentials_repo(),
         ));
         client.set_auto_reconnect(false);
         seed.install(Arc::clone(&client));

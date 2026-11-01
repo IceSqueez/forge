@@ -1,10 +1,12 @@
 #![expect(clippy::expect_used, reason = "test fixtures")]
+use std::sync::Arc;
+
 use async_trait::async_trait;
 use forge_storage::settings::core_settings::{INTEGRATION_ENABLED, SERVER_OVERLAY_ROOT, THEME};
 use forge_storage::test_support::{FAIL_CLOSED_CLASSES, MemorySettings, StoredSettingRow};
 use forge_storage::{
-    RowClasses, SettingDisclosure, SettingPortability, SettingsRepo, write_family_setting,
-    write_setting,
+    DataProvider, RowClasses, SettingDisclosure, SettingPortability, SettingsRepo,
+    write_family_setting, write_setting,
 };
 use forge_storage_sqlite::SqliteBackend;
 
@@ -30,15 +32,15 @@ const FOREIGN_CLASSES: RowClasses = RowClasses {
 
 #[async_trait]
 trait Store {
-    fn repo(&self) -> &dyn SettingsRepo;
+    fn repo(&self) -> Arc<dyn SettingsRepo>;
     async fn seed(&self, key: &str, value: &str, classes: Option<RowClasses>);
     async fn row(&self, key: &str) -> Option<StoredSettingRow>;
 }
 
 #[async_trait]
 impl Store for MemorySettings {
-    fn repo(&self) -> &dyn SettingsRepo {
-        self
+    fn repo(&self) -> Arc<dyn SettingsRepo> {
+        Arc::new(self.clone())
     }
 
     async fn seed(&self, key: &str, value: &str, classes: Option<RowClasses>) {
@@ -52,8 +54,8 @@ impl Store for MemorySettings {
 
 #[async_trait]
 impl Store for Sandboxed<SqliteBackend> {
-    fn repo(&self) -> &dyn SettingsRepo {
-        &**self
+    fn repo(&self) -> Arc<dyn SettingsRepo> {
+        self.settings_repo()
     }
 
     async fn seed(&self, key: &str, value: &str, classes: Option<RowClasses>) {
@@ -87,9 +89,13 @@ async fn a_typed_write_restamps_a_fail_closed_row_with_the_declared_classes(stor
         Some(FAIL_CLOSED_CLASSES)
     );
 
-    write_setting(store.repo(), &SERVER_OVERLAY_ROOT, &Some("/new".to_owned()))
-        .await
-        .expect("typed write");
+    write_setting(
+        store.repo().as_ref(),
+        &SERVER_OVERLAY_ROOT,
+        &Some("/new".to_owned()),
+    )
+    .await
+    .expect("typed write");
 
     let row = store
         .row(SERVER_OVERLAY_ROOT.name())
@@ -101,7 +107,7 @@ async fn a_typed_write_restamps_a_fail_closed_row_with_the_declared_classes(stor
 async fn a_typed_write_overrides_foreign_non_default_classes(store: &dyn Store) {
     store.seed(THEME.name(), "old", Some(FOREIGN_CLASSES)).await;
 
-    write_setting(store.repo(), &THEME, &Some("mocha".to_owned()))
+    write_setting(store.repo().as_ref(), &THEME, &Some("mocha".to_owned()))
         .await
         .expect("typed write");
 
@@ -109,7 +115,7 @@ async fn a_typed_write_overrides_foreign_non_default_classes(store: &dyn Store) 
 }
 
 async fn a_family_write_stamps_the_family_classes_on_a_new_member(store: &dyn Store) {
-    write_family_setting(store.repo(), &INTEGRATION_ENABLED, "twitch", &true)
+    write_family_setting(store.repo().as_ref(), &INTEGRATION_ENABLED, "twitch", &true)
         .await
         .expect("family write");
 
@@ -121,10 +127,10 @@ async fn a_family_write_stamps_the_family_classes_on_a_new_member(store: &dyn St
 }
 
 async fn optional_text_none_removes_the_row(store: &dyn Store) {
-    write_setting(store.repo(), &THEME, &Some("mocha".to_owned()))
+    write_setting(store.repo().as_ref(), &THEME, &Some("mocha".to_owned()))
         .await
         .expect("typed write");
-    write_setting(store.repo(), &THEME, &None)
+    write_setting(store.repo().as_ref(), &THEME, &None)
         .await
         .expect("typed clear");
 

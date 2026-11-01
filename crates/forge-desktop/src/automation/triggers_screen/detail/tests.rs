@@ -265,7 +265,7 @@ impl Fixture {
                     Arc::clone(&repo) as Arc<dyn TriggerInstanceRepo>,
                     Arc::new(StubActions),
                     Arc::new(registry),
-                    backend as Arc<dyn forge_storage::SettingsRepo>,
+                    backend.settings_repo(),
                     rt.handle().clone(),
                     None,
                     cx,

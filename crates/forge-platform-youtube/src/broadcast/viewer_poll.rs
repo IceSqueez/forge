@@ -6,7 +6,7 @@ use forge_types::Secret;
 use tokio::sync::watch;
 use tokio_stream::wrappers::WatchStream;
 
-use crate::api::data_api::{YoutubeDataApi, malformed};
+use crate::api::data_api::{YouTubeDataApi, malformed};
 use crate::api::poll_health::CONSECUTIVE_POLL_FAILURES_FOR_LOSS;
 use crate::broadcast::active_broadcast_id::ActiveBroadcastIdHandle;
 
@@ -17,32 +17,32 @@ const MISSING_SCOPE: &str = "viewer read scope missing";
 
 use forge_platform_core::TokenSource;
 
-pub(crate) struct YoutubeViewerSource {
+pub(crate) struct YouTubeViewerSource {
     reports: watch::Receiver<ViewerReport>,
 }
 
-impl YoutubeViewerSource {
+impl YouTubeViewerSource {
     pub(crate) fn new(reports: watch::Receiver<ViewerReport>) -> Self {
         Self { reports }
     }
 }
 
-impl LiveViewerSource for YoutubeViewerSource {
+impl LiveViewerSource for YouTubeViewerSource {
     fn viewer_reports(&self) -> ViewerReportStream {
         Box::pin(WatchStream::new(self.reports.clone()))
     }
 }
 
-pub struct YoutubeViewerPoll {
-    api: YoutubeDataApi,
+pub struct YouTubeViewerPoll {
+    api: YouTubeDataApi,
     access_token_source: TokenSource,
     active_broadcast_id: ActiveBroadcastIdHandle,
     reports_tx: watch::Sender<ViewerReport>,
 }
 
-impl YoutubeViewerPoll {
+impl YouTubeViewerPoll {
     pub fn new(
-        api: YoutubeDataApi,
+        api: YouTubeDataApi,
         access_token_source: TokenSource,
         active_broadcast_id: ActiveBroadcastIdHandle,
         reports_tx: watch::Sender<ViewerReport>,
@@ -129,7 +129,7 @@ mod tests {
 
     use crate::endpoints_test_support::{data_api_at, unreachable_data_api};
 
-    fn make_poll(api: YoutubeDataApi, video_id: Option<String>) -> YoutubeViewerPoll {
+    fn make_poll(api: YouTubeDataApi, video_id: Option<String>) -> YouTubeViewerPoll {
         let broadcast = ActiveBroadcastIdHandle::new();
         broadcast.set(video_id);
         let (tx, _rx) = watch::channel(ViewerReport::Absent);
@@ -137,7 +137,7 @@ mod tests {
             Box::pin(async { Ok("test-token".to_owned()) })
                 as BoxFuture<'static, Result<String, PlatformError>>
         });
-        YoutubeViewerPoll::new(api, source, broadcast, tx)
+        YouTubeViewerPoll::new(api, source, broadcast, tx)
     }
 
     #[test]
@@ -229,7 +229,7 @@ mod tests {
     ) -> (
         watch::Receiver<ViewerReport>,
         tokio::sync::mpsc::UnboundedReceiver<()>,
-        YoutubeViewerPoll,
+        YouTubeViewerPoll,
     ) {
         let broadcast = ActiveBroadcastIdHandle::new();
         broadcast.set(Some("vid".to_owned()));
@@ -243,7 +243,7 @@ mod tests {
                 })
             }) as BoxFuture<'static, Result<String, PlatformError>>
         });
-        let poll = YoutubeViewerPoll::new(unreachable_data_api(), source, broadcast, tx);
+        let poll = YouTubeViewerPoll::new(unreachable_data_api(), source, broadcast, tx);
         (rx, attempt_rx, poll)
     }
 

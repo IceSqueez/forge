@@ -41,8 +41,8 @@ fn serverless_console(
         ServerConsoleView::new(
             None,
             rt.handle().clone(),
-            Arc::clone(&backend) as Arc<dyn CredentialsRepo>,
-            backend as Arc<dyn SettingsRepo>,
+            backend.credentials_repo(),
+            backend.settings_repo(),
             cx,
         )
     })
@@ -623,8 +623,8 @@ fn console_hosting_a_folder(cx: &mut TestAppContext) -> HostingConsole {
         ServerConsoleView::new(
             Some(server),
             handle,
-            Arc::clone(&backend) as Arc<dyn CredentialsRepo>,
-            backend as Arc<dyn SettingsRepo>,
+            backend.credentials_repo(),
+            backend.settings_repo(),
             cx,
         )
     });
@@ -814,7 +814,7 @@ fn an_unreadable_enabled_setting_keeps_the_state_already_shown(cx: &mut TestAppC
         ServerConsoleView::new(
             None,
             rt.handle().clone(),
-            backend as Arc<dyn CredentialsRepo>,
+            backend.credentials_repo(),
             Arc::new(settings) as Arc<dyn SettingsRepo>,
             cx,
         )

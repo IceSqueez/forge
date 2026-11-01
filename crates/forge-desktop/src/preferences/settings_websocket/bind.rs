@@ -1,5 +1,4 @@
 use super::*;
-use std::sync::Arc;
 
 use forge_components::focus_inside_modal;
 use forge_components::{
@@ -8,7 +7,6 @@ use forge_components::{
     overlay, radio_row, radius, scaled, setting_block, spacing, tr, type_to_confirm,
 };
 use forge_server::{LAN_BIND_ADDRESS, LOCALHOST_BIND_ADDRESS, ServerSettings};
-use forge_storage::SettingsRepo;
 use gpui::{
     AnyElement, App, ClickEvent, Context, Div, Entity, FontWeight, Pixels, Rgba, SharedString,
     Window, div, px,
@@ -86,7 +84,7 @@ impl SettingsWebSocketView {
         let prev = self.bind_choice;
         self.bind_choice = BindChoice::Localhost;
         self.close_lan_modal();
-        let repo = Arc::clone(&self.backend) as Arc<dyn SettingsRepo>;
+        let repo = self.backend.settings_repo();
         self.persist_field(
             prev,
             |this, prev, _| this.bind_choice = prev,
@@ -146,7 +144,7 @@ impl SettingsWebSocketView {
         }
         self.bind_choice = BindChoice::Lan;
         self.close_lan_modal();
-        let repo = Arc::clone(&self.backend) as Arc<dyn SettingsRepo>;
+        let repo = self.backend.settings_repo();
         self.persist_field(
             BindChoice::Localhost,
             |this, prev, _| this.bind_choice = prev,
@@ -185,7 +183,7 @@ impl SettingsWebSocketView {
             Some(port) => {
                 let prev = self.port;
                 self.port = port;
-                let repo = Arc::clone(&self.backend) as Arc<dyn SettingsRepo>;
+                let repo = self.backend.settings_repo();
                 self.persist_field(
                     prev,
                     |this, prev, cx| {

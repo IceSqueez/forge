@@ -5,16 +5,15 @@ use std::time::Duration;
 use async_trait::async_trait;
 use forge_paths::AppPaths;
 use forge_storage::{
-    ActionRepo, ActionTelemetry, BanLedgerRepo, CatalogRevision, ChatHistoryRepo, CredentialId,
+    ActionRepo, ActionTelemetry, BanLedgerRepo, CatalogRevision, ChatHistoryRepo,
     CredentialsKeyLoss, CredentialsRepo, DataProvider, DonationRepo, EXPECTED_SCHEMA_VERSION,
-    EventLogRepo, ExecutionStatus, GlobalEntry, GlobalTransit, GlobalsRepo, HistoryRepo,
-    LatestValueRepo, MediaRepo, OverlayRepo, QueueRepo, RevisingActionRepo, RevisingQueueRepo,
-    RevisingScheduledRunRepo, RevisingScriptRepo, RevisingTriggerInstanceRepo, RowClasses, RowGate,
-    ScheduledRunRepo, ScriptRecord, ScriptReferences, ScriptRepo, ScriptTelemetry, SettingRow,
-    SettingsRepo, SoundboardClipsRepo, StorageError, StoreChange, TriggerInstanceRepo,
-    TtsFiltersRepo, UserGlobalEntry, UserGlobalKey, UserGlobalsRepo, ViewerRepo, VoiceAliasRepo,
+    EventLogRepo, GlobalsRepo, HistoryRepo, LatestValueRepo, MediaRepo, OverlayRepo, QueueRepo,
+    RevisingActionRepo, RevisingQueueRepo, RevisingScheduledRunRepo, RevisingScriptRepo,
+    RevisingTriggerInstanceRepo, ScheduledRunRepo, ScriptRepo, SettingsRepo, SoundboardClipsRepo,
+    StorageError, StoreChange, TriggerInstanceRepo, TtsFiltersRepo, UserGlobalsRepo, ViewerRepo,
+    VoiceAliasRepo,
 };
-use forge_types::{ActionId, ScriptId, Variant};
+use forge_types::ActionId;
 use time::OffsetDateTime;
 use tokio::sync::{Notify, watch};
 use tokio::task::AbortHandle;
@@ -75,9 +74,9 @@ async fn report_stranded_credentials(
 
 pub struct SqliteBackend {
     pub(crate) pool: SqlitePools,
-    globals: SqliteGlobalsRepo,
-    user_globals: SqliteUserGlobalsRepo,
-    settings: RetentionAwareSettings,
+    globals: Arc<SqliteGlobalsRepo>,
+    user_globals: Arc<SqliteUserGlobalsRepo>,
+    settings: Arc<RetentionAwareSettings>,
     action: Arc<dyn ActionRepo>,
     trigger_instance: Arc<dyn TriggerInstanceRepo>,
     queue: Arc<dyn QueueRepo>,
@@ -85,7 +84,7 @@ pub struct SqliteBackend {
     scheduled_run: Arc<dyn ScheduledRunRepo>,
     scheduled_run_revision: CatalogRevision,
     script: Arc<dyn ScriptRepo>,
-    credentials: SqliteCredentialsRepo,
+    credentials: Arc<SqliteCredentialsRepo>,
     history: Arc<SqliteHistoryRepo>,
     event_log: Arc<SqliteEventLogRepo>,
     soundboard: Arc<SqliteSoundboardClipsRepo>,
@@ -186,14 +185,20 @@ impl SqliteBackend {
             pool.writer().clone(),
             pool.busy_timeout(),
         );
+        let settings = Arc::new(RetentionAwareSettings::new(
+            SqliteSettingsRepo::new(pool.clone()),
+            Arc::clone(&retention_window_changed),
+        ));
+        let history = Arc::new(SqliteHistoryRepo::new(pool.clone()));
+        let event_log = Arc::new(SqliteEventLogRepo::new(pool.clone()));
         let (retention_alive, retention_running) = watch::channel(());
         spawn_retention_task(
             RetentionTargets {
-                event_log: Arc::new(SqliteEventLogRepo::new(pool.clone())),
-                history: Arc::new(SqliteHistoryRepo::new(pool.clone())),
+                event_log: Arc::clone(&event_log),
+                history: Arc::clone(&history),
                 action: Arc::new(SqliteActionRepo::new(pool.clone())),
                 script: Arc::new(SqliteScriptRepo::new(pool.clone())),
-                settings: Arc::new(SqliteSettingsRepo::new(pool.clone())),
+                settings: Arc::clone(&settings) as Arc<dyn SettingsRepo>,
                 scheduled_run: Arc::clone(&scheduled_run),
             },
             prune_interval,
@@ -207,17 +212,14 @@ impl SqliteBackend {
         let media = Arc::new(SqliteMediaRepo::new(pool.clone(), media_root));
         spawn_stale_incoming_sweep(Arc::clone(&media));
 
-        let globals = SqliteGlobalsRepo::new(pool.clone());
+        let globals = Arc::new(SqliteGlobalsRepo::new(pool.clone()));
         spawn_read_flush_task(Arc::clone(globals.read_tally()), pool.writer().clone());
 
         Self {
             checkpoint,
             globals,
-            user_globals: SqliteUserGlobalsRepo::new(pool.clone()),
-            settings: RetentionAwareSettings::new(
-                SqliteSettingsRepo::new(pool.clone()),
-                Arc::clone(&retention_window_changed),
-            ),
+            user_globals: Arc::new(SqliteUserGlobalsRepo::new(pool.clone())),
+            settings,
             action: RevisingActionRepo::wrap_cascading_scheduled_runs(
                 Arc::new(SqliteActionRepo::new(pool.clone())),
                 catalog_revision.clone(),
@@ -238,8 +240,8 @@ impl SqliteBackend {
                 Arc::new(SqliteScriptRepo::new(pool.clone())),
                 catalog_revision.clone(),
             ),
-            history: Arc::new(SqliteHistoryRepo::new(pool.clone())),
-            event_log: Arc::new(SqliteEventLogRepo::new(pool.clone())),
+            history,
+            event_log,
             soundboard: Arc::new(SqliteSoundboardClipsRepo::new(pool.clone())),
             voice_alias: Arc::new(SqliteVoiceAliasRepo::new(pool.clone())),
             viewer: Arc::new(SqliteViewerRepo::new(pool.clone())),
@@ -250,7 +252,7 @@ impl SqliteBackend {
             donation: Arc::new(SqliteDonationRepo::new(pool.clone())),
             latest_value: Arc::new(SqliteLatestValueRepo::new(pool.clone())),
             ban_ledger: Arc::new(SqliteBanLedgerRepo::new(pool.clone())),
-            credentials,
+            credentials: Arc::new(credentials),
             shutdown,
             retention_running,
             pool,
@@ -304,276 +306,27 @@ impl SqliteBackend {
 }
 
 #[async_trait]
-impl GlobalsRepo for SqliteBackend {
-    async fn get(&self, name: &str) -> Result<Option<Variant>, StorageError> {
-        self.globals.get(name).await
-    }
-
-    async fn peek(&self, name: &str) -> Result<Option<Variant>, StorageError> {
-        self.globals.peek(name).await
-    }
-
-    async fn set(&self, name: &str, value: Variant, persisted: bool) -> Result<(), StorageError> {
-        self.globals.set(name, value, persisted).await
-    }
-
-    async fn persisted(&self, name: &str) -> Result<Option<bool>, StorageError> {
-        self.globals.persisted(name).await
-    }
-
-    async fn set_persisted(&self, name: &str, persisted: bool) -> Result<bool, StorageError> {
-        self.globals.set_persisted(name, persisted).await
-    }
-
-    async fn rename(&self, old_name: &str, new_name: &str) -> Result<(), StorageError> {
-        self.globals.rename(old_name, new_name).await
-    }
-
-    async fn rename_and_set(
-        &self,
-        old_name: &str,
-        new_name: &str,
-        value: Variant,
-        persisted: bool,
-    ) -> Result<(), StorageError> {
-        self.globals
-            .rename_and_set(old_name, new_name, value, persisted)
-            .await
-    }
-
-    async fn delete(&self, name: &str) -> Result<bool, StorageError> {
-        self.globals.delete(name).await
-    }
-
-    async fn list(&self) -> Result<Vec<GlobalEntry>, StorageError> {
-        self.globals.list().await
-    }
-
-    async fn count(&self) -> Result<usize, StorageError> {
-        self.globals.count().await
-    }
-
-    async fn archive(&self, name: &str) -> Result<bool, StorageError> {
-        self.globals.archive(name).await
-    }
-
-    async fn restore(&self, name: &str) -> Result<bool, StorageError> {
-        self.globals.restore(name).await
-    }
-
-    async fn list_archived(&self) -> Result<Vec<GlobalEntry>, StorageError> {
-        self.globals.list_archived().await
-    }
-
-    async fn storage_bytes(&self) -> Result<u64, StorageError> {
-        self.globals.storage_bytes().await
-    }
-
-    async fn last_save_at(&self) -> Result<Option<OffsetDateTime>, StorageError> {
-        self.globals.last_save_at().await
-    }
-
-    async fn incr(&self, name: &str, amount: i64) -> Result<Variant, StorageError> {
-        self.globals.incr(name, amount).await
-    }
-
-    async fn array_append(
-        &self,
-        name: &str,
-        item: Variant,
-        max_len: Option<usize>,
-    ) -> Result<usize, StorageError> {
-        self.globals.array_append(name, item, max_len).await
-    }
-
-    async fn array_remove(
-        &self,
-        name: &str,
-        item: &Variant,
-        remove_all: bool,
-    ) -> Result<usize, StorageError> {
-        self.globals.array_remove(name, item, remove_all).await
-    }
-
-    async fn toggle(&self, name: &str) -> Result<bool, StorageError> {
-        self.globals.toggle(name).await
-    }
-
-    async fn export_all(&self) -> Result<Vec<GlobalTransit>, StorageError> {
-        self.globals.export_all().await
-    }
-}
-
-#[async_trait]
-impl UserGlobalsRepo for SqliteBackend {
-    async fn get(&self, key: &UserGlobalKey) -> Result<Option<Variant>, StorageError> {
-        self.user_globals.get(key).await
-    }
-
-    async fn set(&self, key: &UserGlobalKey, value: Variant) -> Result<(), StorageError> {
-        self.user_globals.set(key, value).await
-    }
-
-    async fn delete(&self, key: &UserGlobalKey) -> Result<bool, StorageError> {
-        self.user_globals.delete(key).await
-    }
-
-    async fn list_for_user(
-        &self,
-        broadcaster_id: &str,
-        user_id: &str,
-    ) -> Result<Vec<UserGlobalEntry>, StorageError> {
-        self.user_globals
-            .list_for_user(broadcaster_id, user_id)
-            .await
-    }
-
-    async fn list_for_broadcaster(
-        &self,
-        broadcaster_id: &str,
-    ) -> Result<Vec<UserGlobalEntry>, StorageError> {
-        self.user_globals.list_for_broadcaster(broadcaster_id).await
-    }
-
-    async fn incr(&self, key: &UserGlobalKey, amount: i64) -> Result<Variant, StorageError> {
-        self.user_globals.incr(key, amount).await
-    }
-}
-
-#[async_trait]
-impl SettingsRepo for SqliteBackend {
-    async fn get_raw(&self, gate: RowGate, key: &str) -> Result<Option<String>, StorageError> {
-        self.settings.get_raw(gate, key).await
-    }
-
-    async fn put_row(
-        &self,
-        gate: RowGate,
-        key: &str,
-        value: &str,
-        classes: RowClasses,
-    ) -> Result<(), StorageError> {
-        self.settings.put_row(gate, key, value, classes).await
-    }
-
-    async fn load_rows(&self, gate: RowGate) -> Result<Vec<SettingRow>, StorageError> {
-        self.settings.load_rows(gate).await
-    }
-
-    async fn delete_raw(&self, gate: RowGate, key: &str) -> Result<bool, StorageError> {
-        self.settings.delete_raw(gate, key).await
-    }
-}
-
-#[async_trait]
-impl ScriptRepo for SqliteBackend {
-    async fn get(&self, id: ScriptId) -> Result<Option<ScriptRecord>, StorageError> {
-        self.script.get(id).await
-    }
-
-    async fn get_by_name(&self, name: &str) -> Result<Option<ScriptRecord>, StorageError> {
-        self.script.get_by_name(name).await
-    }
-
-    async fn save(&self, record: ScriptRecord) -> Result<(), StorageError> {
-        self.script.save(record).await
-    }
-
-    async fn delete(&self, id: ScriptId) -> Result<bool, StorageError> {
-        self.script.delete(id).await
-    }
-
-    async fn list(&self) -> Result<Vec<ScriptRecord>, StorageError> {
-        self.script.list().await
-    }
-
-    async fn list_enabled(&self) -> Result<Vec<ScriptRecord>, StorageError> {
-        self.script.list_enabled().await
-    }
-
-    async fn record_execution(
-        &self,
-        script_id: ScriptId,
-        started_at: OffsetDateTime,
-        duration_ms: u64,
-        status: ExecutionStatus,
-    ) -> Result<(), StorageError> {
-        self.script
-            .record_execution(script_id, started_at, duration_ms, status)
-            .await
-    }
-
-    async fn telemetry(&self, id: ScriptId) -> Result<ScriptTelemetry, StorageError> {
-        self.script.telemetry(id).await
-    }
-
-    async fn prune_executions_before(
-        &self,
-        cutoff: OffsetDateTime,
-        chunk_rows: u32,
-    ) -> Result<u64, StorageError> {
-        self.script
-            .prune_executions_before(cutoff, chunk_rows)
-            .await
-    }
-
-    async fn rename_cascading(
-        &self,
-        id: ScriptId,
-        new_name: &str,
-    ) -> Result<ScriptReferences, StorageError> {
-        self.script.rename_cascading(id, new_name).await
-    }
-
-    async fn referrers(&self, name: &str) -> Result<ScriptReferences, StorageError> {
-        self.script.referrers(name).await
-    }
-
-    async fn archive_script(&self, id: ScriptId) -> Result<bool, StorageError> {
-        self.script.archive_script(id).await
-    }
-
-    async fn restore_script(&self, id: ScriptId) -> Result<bool, StorageError> {
-        self.script.restore_script(id).await
-    }
-
-    async fn list_archived_scripts(&self) -> Result<Vec<ScriptRecord>, StorageError> {
-        self.script.list_archived_scripts().await
-    }
-}
-
-#[async_trait]
-impl CredentialsRepo for SqliteBackend {
-    async fn store(&self, id: &CredentialId, plaintext_bundle: &str) -> Result<(), StorageError> {
-        self.credentials.store(id, plaintext_bundle).await
-    }
-
-    async fn load(&self, id: &CredentialId) -> Result<Option<String>, StorageError> {
-        self.credentials.load(id).await
-    }
-
-    async fn delete(&self, id: &CredentialId) -> Result<bool, StorageError> {
-        self.credentials.delete(id).await
-    }
-
-    async fn list_ids(&self) -> Result<Vec<CredentialId>, StorageError> {
-        self.credentials.list_ids().await
-    }
-
-    async fn last_refresh(
-        &self,
-        id: &CredentialId,
-    ) -> Result<Option<OffsetDateTime>, StorageError> {
-        self.credentials.last_refresh(id).await
-    }
-
-    async fn mark_refreshed(&self, id: &CredentialId) -> Result<(), StorageError> {
-        self.credentials.mark_refreshed(id).await
-    }
-}
-
-#[async_trait]
 impl DataProvider for SqliteBackend {
+    fn globals_repo(&self) -> Arc<dyn GlobalsRepo> {
+        Arc::clone(&self.globals) as Arc<dyn GlobalsRepo>
+    }
+
+    fn user_globals_repo(&self) -> Arc<dyn UserGlobalsRepo> {
+        Arc::clone(&self.user_globals) as Arc<dyn UserGlobalsRepo>
+    }
+
+    fn settings_repo(&self) -> Arc<dyn SettingsRepo> {
+        Arc::clone(&self.settings) as Arc<dyn SettingsRepo>
+    }
+
+    fn script_repo(&self) -> Arc<dyn ScriptRepo> {
+        Arc::clone(&self.script)
+    }
+
+    fn credentials_repo(&self) -> Arc<dyn CredentialsRepo> {
+        Arc::clone(&self.credentials) as Arc<dyn CredentialsRepo>
+    }
+
     fn action_repo(&self) -> Arc<dyn ActionRepo> {
         Arc::clone(&self.action)
     }

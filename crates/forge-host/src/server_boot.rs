@@ -63,7 +63,7 @@ pub(crate) async fn build_server(
         delivery_hub,
         default_overlay_root,
     } = inputs;
-    let settings = match ServerSettings::load(backend.as_ref()).await {
+    let settings = match ServerSettings::load(backend.settings_repo().as_ref()).await {
         Ok(settings) => settings,
         Err(e) => {
             boot_signal::server_settings_unavailable(&e);
@@ -83,11 +83,10 @@ pub(crate) async fn build_server(
     };
 
     let build_config = || {
-        let settings_repo: Arc<dyn SettingsRepo> = Arc::clone(backend) as Arc<dyn SettingsRepo>;
-        let credentials: Arc<dyn CredentialsRepo> = Arc::clone(backend) as Arc<dyn CredentialsRepo>;
-        let globals: Arc<dyn GlobalsRepo> = Arc::clone(backend) as Arc<dyn GlobalsRepo>;
-        let user_globals: Arc<dyn UserGlobalsRepo> =
-            Arc::clone(backend) as Arc<dyn UserGlobalsRepo>;
+        let settings_repo: Arc<dyn SettingsRepo> = backend.settings_repo();
+        let credentials: Arc<dyn CredentialsRepo> = backend.credentials_repo();
+        let globals: Arc<dyn GlobalsRepo> = backend.globals_repo();
+        let user_globals: Arc<dyn UserGlobalsRepo> = backend.user_globals_repo();
         let event_history: Arc<dyn EventHistory> = Arc::clone(bus) as Arc<dyn EventHistory>;
         let mut config = ServerConfig::new(
             default_overlay_root.clone(),

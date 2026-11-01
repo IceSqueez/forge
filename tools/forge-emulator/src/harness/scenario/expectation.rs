@@ -15,9 +15,12 @@ pub enum Expectation {
     KickRequest(HttpRequestSeen),
     KickRequestCount(RequestCount),
     KickNoUnexpectedRequests {},
-    YoutubeRequest(HttpRequestSeen),
-    YoutubeRequestCount(RequestCount),
-    YoutubeNoUnexpectedRequests {},
+    #[serde(rename = "youtube_request")]
+    YouTubeRequest(HttpRequestSeen),
+    #[serde(rename = "youtube_request_count")]
+    YouTubeRequestCount(RequestCount),
+    #[serde(rename = "youtube_no_unexpected_requests")]
+    YouTubeNoUnexpectedRequests {},
     OverlayContent(OverlayContent),
     LogLine(LogLine),
     DiscordPost(DiscordPost),
@@ -217,9 +220,9 @@ impl Expectation {
             Self::KickRequest(_) => "kick_request",
             Self::KickRequestCount(_) => "kick_request_count",
             Self::KickNoUnexpectedRequests {} => "kick_no_unexpected_requests",
-            Self::YoutubeRequest(_) => "youtube_request",
-            Self::YoutubeRequestCount(_) => "youtube_request_count",
-            Self::YoutubeNoUnexpectedRequests {} => "youtube_no_unexpected_requests",
+            Self::YouTubeRequest(_) => "youtube_request",
+            Self::YouTubeRequestCount(_) => "youtube_request_count",
+            Self::YouTubeNoUnexpectedRequests {} => "youtube_no_unexpected_requests",
             Self::OverlayContent(_) => "overlay_content",
             Self::LogLine(_) => "log_line",
             Self::DiscordPost(_) => "discord_post",
@@ -248,9 +251,9 @@ impl Expectation {
             | Self::KickRequest(_)
             | Self::KickRequestCount(_)
             | Self::KickNoUnexpectedRequests {}
-            | Self::YoutubeRequest(_)
-            | Self::YoutubeRequestCount(_)
-            | Self::YoutubeNoUnexpectedRequests {} => false,
+            | Self::YouTubeRequest(_)
+            | Self::YouTubeRequestCount(_)
+            | Self::YouTubeNoUnexpectedRequests {} => false,
         }
     }
 
@@ -268,9 +271,9 @@ impl Expectation {
     pub fn needs_fake_youtube(&self) -> bool {
         matches!(
             self,
-            Self::YoutubeRequest(_)
-                | Self::YoutubeRequestCount(_)
-                | Self::YoutubeNoUnexpectedRequests {}
+            Self::YouTubeRequest(_)
+                | Self::YouTubeRequestCount(_)
+                | Self::YouTubeNoUnexpectedRequests {}
         )
     }
 

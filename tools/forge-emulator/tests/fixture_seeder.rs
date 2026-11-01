@@ -16,7 +16,7 @@ use forge_events::{Event, EventSource};
 use forge_platform_twitch::TwitchCredentialsManager;
 use forge_registry::TriggerRegistry;
 use forge_server::{ServerSettings, settings as server_settings};
-use forge_storage::{CredentialId, CredentialsRepo, DataProvider, SERVER_BEARER_CREDENTIAL_ID};
+use forge_storage::{CredentialId, DataProvider, SERVER_BEARER_CREDENTIAL_ID};
 use forge_storage_sqlite::SqliteBackend;
 use forge_storage_sqlite::test_support::open_existing;
 use forge_types::{SubActionStep, Variant};
@@ -36,6 +36,7 @@ async fn seed_fresh(fixture: &Fixture) -> (TempDir, SeedReport) {
 
 async fn stored_bearer_token(backend: &SqliteBackend) -> Option<String> {
     backend
+        .credentials_repo()
         .load(&CredentialId::new(SERVER_BEARER_CREDENTIAL_ID))
         .await
         .unwrap()
@@ -47,9 +48,10 @@ async fn seed_and_reopen(
 ) -> (TempDir, Arc<SqliteBackend>, bool) {
     let (dir, _) = seed_fresh(fixture).await;
     let backend = Arc::new(open_existing(dir.path()).await);
-    let configured = forge_storage::has_credentials_for(backend.as_ref(), integration)
-        .await
-        .unwrap();
+    let configured =
+        forge_storage::has_credentials_for(backend.credentials_repo().as_ref(), integration)
+            .await
+            .unwrap();
     (dir, backend, configured)
 }
 
@@ -83,7 +85,9 @@ fn entries(dir: &Path) -> Vec<PathBuf> {
 async fn seeded_server_is_explicitly_enabled_on_the_reported_loopback_port() {
     let (dir, report) = seed_fresh(&Fixture::default()).await;
     let backend = open_existing(dir.path()).await;
-    let loaded = ServerSettings::load(&backend).await.unwrap();
+    let loaded = ServerSettings::load(backend.settings_repo().as_ref())
+        .await
+        .unwrap();
     let stored = backend.stored_setting_rows().await.unwrap();
     backend.shutdown().await;
 
@@ -126,7 +130,7 @@ async fn seeded_twitch_credential_loads_with_the_fixture_identity_and_no_refresh
     };
     let (dir, report) = seed_fresh(&fixture).await;
     let backend = open_existing(dir.path()).await;
-    let stored = forge_platform_twitch::credentials::load(&backend)
+    let stored = forge_platform_twitch::credentials::load(backend.credentials_repo().as_ref())
         .await
         .unwrap()
         .expect("twitch credential is stored");
@@ -167,8 +171,7 @@ async fn seeded_twitch_access_token_is_served_without_entering_the_refresh_path(
         .unwrap(),
         client_id,
     );
-    let manager =
-        TwitchCredentialsManager::new(oauth, Arc::clone(&backend) as Arc<dyn CredentialsRepo>);
+    let manager = TwitchCredentialsManager::new(oauth, backend.credentials_repo());
     let served = manager.get_valid_access_token().await;
     backend.shutdown().await;
 
@@ -180,7 +183,7 @@ async fn seeded_twitch_access_token_is_served_without_entering_the_refresh_path(
 async fn server_only_fixture_stores_no_twitch_credential() {
     let (dir, report) = seed_fresh(&Fixture::default()).await;
     let backend = open_existing(dir.path()).await;
-    let stored = forge_platform_twitch::credentials::load(&backend)
+    let stored = forge_platform_twitch::credentials::load(backend.credentials_repo().as_ref())
         .await
         .unwrap();
     backend.shutdown().await;
@@ -635,7 +638,7 @@ async fn a_seeded_discord_webhook_is_the_one_forge_discord_lists_and_loads() {
         forge_platform_core::PlatformEndpoints::default()
             .base_url(forge_discord::endpoint_surfaces::DISCORD_API),
         Arc::new(forge_events::test_support::NullPublisher),
-        Arc::clone(&backend) as Arc<dyn CredentialsRepo>,
+        backend.credentials_repo(),
     )
     .unwrap();
 
@@ -674,9 +677,12 @@ async fn a_seeded_obs_connection_is_the_one_forge_obs_dials_at_boot() {
     let (dir, _) = seed_fresh(&obs_connection(4455)).await;
     let backend = open_existing(dir.path()).await;
 
-    let configured =
-        forge_storage::has_credentials_for(&backend, &forge_obs::OBS_INTEGRATION.id).await;
-    let stored = forge_obs::credentials::load(&backend)
+    let configured = forge_storage::has_credentials_for(
+        backend.credentials_repo().as_ref(),
+        &forge_obs::OBS_INTEGRATION.id,
+    )
+    .await;
+    let stored = forge_obs::credentials::load(backend.credentials_repo().as_ref())
         .await
         .unwrap()
         .unwrap();
@@ -685,8 +691,11 @@ async fn a_seeded_obs_connection_is_the_one_forge_obs_dials_at_boot() {
     assert_eq!(
         (
             configured.unwrap(),
-            stored.url.as_str(),
-            stored.password.expose()
+            stored.url().as_str(),
+            stored
+                .password
+                .as_ref()
+                .map_or("", forge_types::Secret::expose)
         ),
         (true, "ws://127.0.0.1:4455", "obs-seed-secret")
     );
@@ -719,9 +728,12 @@ async fn a_seeded_vtube_connection_is_the_one_forge_vtube_dials_at_boot() {
     let (dir, _) = seed_fresh(&vtube_connection(8123)).await;
     let backend = open_existing(dir.path()).await;
 
-    let configured =
-        forge_storage::has_credentials_for(&backend, &forge_vtube::VTUBE_INTEGRATION.id).await;
-    let stored = forge_vtube::credentials::load(&backend)
+    let configured = forge_storage::has_credentials_for(
+        backend.credentials_repo().as_ref(),
+        &forge_vtube::VTUBE_INTEGRATION.id,
+    )
+    .await;
+    let stored = forge_vtube::credentials::load(backend.credentials_repo().as_ref())
         .await
         .unwrap()
         .unwrap();
@@ -798,7 +810,7 @@ async fn a_seeded_kick_account_is_served_by_forges_manager_refreshing_only_when_
         )
         .unwrap();
         let manager = forge_platform_kick::KickCredentialsManager::new(
-            Arc::clone(&backend) as Arc<dyn CredentialsRepo>,
+            backend.credentials_repo(),
             oauth,
             api,
         );
@@ -853,14 +865,14 @@ async fn a_seeded_youtube_account_is_served_by_forges_manager_refreshing_only_wh
             support::YOUTUBE_CLIENT_ID.to_owned(),
             forge_types::Secret::new("emulator-youtube-secret"),
         );
-        let api = forge_platform_youtube::YoutubeDataApi::new(
+        let api = forge_platform_youtube::YouTubeDataApi::new(
             &endpoints,
             forge_platform_youtube::SharedQuota::default(),
             Arc::new(forge_events::test_support::NullPublisher),
         )
         .unwrap();
-        let manager = forge_platform_youtube::YoutubeCredentialsManager::new(
-            Arc::clone(&backend) as Arc<dyn CredentialsRepo>,
+        let manager = forge_platform_youtube::YouTubeCredentialsManager::new(
+            backend.credentials_repo(),
             oauth,
             api,
         );

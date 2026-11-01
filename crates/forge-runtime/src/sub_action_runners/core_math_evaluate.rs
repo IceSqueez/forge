@@ -8,7 +8,6 @@ use forge_registry::{
 use forge_script::{BoundExpression, EngineConfig, MathEvaluator};
 use forge_types::{
     ArgStack, MessageRef, SubActionConfig, SubActionOutcome, SubActionTelemetry, Variant,
-    VariantKind,
 };
 
 const INTO_VAR_KEY: &str = "into_var";
@@ -144,7 +143,7 @@ impl SubActionRunner for CoreMathEvaluateRunner {
         SubActionIo {
             produces: vec![ProducedVariable {
                 output_name_key: INTO_VAR_KEY.to_owned(),
-                kind: VariantKind::Float,
+                kind: None,
                 label: "Result".to_owned(),
             }],
             ..SubActionIo::default()

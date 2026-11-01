@@ -11,7 +11,7 @@ use forge_components::{
     GridPickerEvent, GridPickerGroup, GridPickerItem, GridPickerItemState, GridPickerSubtitle,
     Icon, OverlayPosition, overlay, tr,
 };
-use forge_registry::{TriggerKindDescriptor, TriggerRegistry};
+use forge_registry::TriggerRegistry;
 use forge_types::{TriggerInstance, TriggerInstanceId};
 use gpui::{AnyElement, Context, Entity, SharedString, Window};
 use std::collections::HashMap;
@@ -33,11 +33,7 @@ fn build_recent_group(
         let descriptor = registry.get(&instance.kind_id);
         let id = SharedString::from(format!("recent-{}", instance.id));
         picks.insert(id.clone(), instance.id);
-        let glyph = Icon::from_name(
-            descriptor
-                .map(TriggerKindDescriptor::icon_name)
-                .unwrap_or("bolt"),
-        );
+        let glyph = Icon::from_name(descriptor.map(|kind| kind.icon_name()).unwrap_or("bolt"));
         let kind_label = descriptor
             .map(crate::shared::kind_copy::trigger_name)
             .unwrap_or_else(|| instance.kind_id.clone());

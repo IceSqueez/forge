@@ -326,7 +326,7 @@ mod tests {
         let (backend, _writes) = test_backend();
 
         assert_eq!(
-            load_audio_routes(backend.as_ref()).await,
+            load_audio_routes(backend.settings_repo().as_ref()).await,
             AudioRoutes {
                 speech: AudioRoute::Local,
                 clips: AudioRoute::Local,
@@ -338,14 +338,22 @@ mod tests {
     #[tokio::test]
     async fn each_domain_is_read_back_from_its_own_key() {
         let (backend, _writes) = test_backend();
-        set_route(backend.as_ref(), AudioDomain::Speech, AudioRoute::Overlay)
-            .await
-            .expect("the route is stored");
-        set_route(backend.as_ref(), AudioDomain::Clips, AudioRoute::Both)
-            .await
-            .expect("the route is stored");
+        set_route(
+            backend.settings_repo().as_ref(),
+            AudioDomain::Speech,
+            AudioRoute::Overlay,
+        )
+        .await
+        .expect("the route is stored");
+        set_route(
+            backend.settings_repo().as_ref(),
+            AudioDomain::Clips,
+            AudioRoute::Both,
+        )
+        .await
+        .expect("the route is stored");
 
-        let routes = load_audio_routes(backend.as_ref()).await;
+        let routes = load_audio_routes(backend.settings_repo().as_ref()).await;
 
         assert_eq!(routes.speech, AudioRoute::Overlay);
         assert_eq!(routes.clips, AudioRoute::Both);
@@ -356,11 +364,11 @@ mod tests {
         for domain in [AudioDomain::Speech, AudioDomain::Clips] {
             for route in [AudioRoute::Local, AudioRoute::Overlay, AudioRoute::Both] {
                 let (backend, _writes) = test_backend();
-                set_route(backend.as_ref(), domain, route)
+                set_route(backend.settings_repo().as_ref(), domain, route)
                     .await
                     .expect("the route is stored");
 
-                let stored = load_audio_routes(backend.as_ref()).await;
+                let stored = load_audio_routes(backend.settings_repo().as_ref()).await;
                 let read_back = match domain {
                     AudioDomain::Speech => stored.speech,
                     AudioDomain::Clips => stored.clips,
@@ -378,7 +386,9 @@ mod tests {
             backend.seed_raw(&SPEECH_ROUTE, stored);
 
             assert_eq!(
-                load_audio_routes(backend.as_ref()).await.speech,
+                load_audio_routes(backend.settings_repo().as_ref())
+                    .await
+                    .speech,
                 AudioRoute::Local,
                 "{stored:?} was not treated as unusable"
             );
@@ -400,7 +410,9 @@ mod tests {
             backend.seed_raw(&AUDIO_OVERLAY_ID, blank);
 
             assert_eq!(
-                load_audio_routes(backend.as_ref()).await.destination,
+                load_audio_routes(backend.settings_repo().as_ref())
+                    .await
+                    .destination,
                 None,
                 "{blank:?} was read as a destination"
             );
@@ -411,13 +423,19 @@ mod tests {
     async fn a_destination_that_names_nothing_removes_the_key_rather_than_blanking_it() {
         for cleared in [None, Some(""), Some("   ")] {
             let (backend, _writes) = test_backend();
-            set_destination(backend.as_ref(), Some(&OverlayId::new(CHOSEN)))
-                .await
-                .expect("the destination is written");
+            set_destination(
+                backend.settings_repo().as_ref(),
+                Some(&OverlayId::new(CHOSEN)),
+            )
+            .await
+            .expect("the destination is written");
 
-            set_destination(backend.as_ref(), cleared.map(OverlayId::new).as_ref())
-                .await
-                .expect("the destination is cleared");
+            set_destination(
+                backend.settings_repo().as_ref(),
+                cleared.map(OverlayId::new).as_ref(),
+            )
+            .await
+            .expect("the destination is cleared");
 
             assert_eq!(
                 backend.row(AUDIO_OVERLAY_ID.name()),
@@ -431,13 +449,18 @@ mod tests {
     async fn choosing_a_second_receiver_moves_the_audio_off_the_first() {
         let (backend, _writes) = test_backend();
         for receiver in ["sub-alert", CHOSEN] {
-            set_destination(backend.as_ref(), Some(&OverlayId::new(receiver)))
-                .await
-                .expect("the receiver is chosen");
+            set_destination(
+                backend.settings_repo().as_ref(),
+                Some(&OverlayId::new(receiver)),
+            )
+            .await
+            .expect("the receiver is chosen");
         }
 
         assert_eq!(
-            load_audio_routes(backend.as_ref()).await.destination,
+            load_audio_routes(backend.settings_repo().as_ref())
+                .await
+                .destination,
             Some(OverlayId::new(CHOSEN)),
             "two overlays both believe they receive the audio, so every clip plays twice"
         );
@@ -446,12 +469,17 @@ mod tests {
     #[tokio::test]
     async fn a_padded_destination_is_stored_and_read_without_its_padding() {
         let (backend, _writes) = test_backend();
-        set_destination(backend.as_ref(), Some(&OverlayId::new("  stage-audio  ")))
-            .await
-            .expect("the destination is written");
+        set_destination(
+            backend.settings_repo().as_ref(),
+            Some(&OverlayId::new("  stage-audio  ")),
+        )
+        .await
+        .expect("the destination is written");
 
         assert_eq!(
-            load_audio_routes(backend.as_ref()).await.destination,
+            load_audio_routes(backend.settings_repo().as_ref())
+                .await
+                .destination,
             Some(OverlayId::new(CHOSEN))
         );
     }

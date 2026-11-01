@@ -11,7 +11,7 @@ use forge_components::{
 use forge_events::EventPublisher;
 use forge_registry::TriggerRegistry;
 use forge_runtime::compute_stats;
-use forge_storage::{CredentialsRepo, DataProvider, GlobalsRepo, SettingsRepo};
+use forge_storage::{DataProvider, GlobalsRepo};
 use forge_types::IntegrationId;
 use gpui::{
     AnyElement, AnyView, App, AppContext, AsyncApp, ClickEvent, Context, Entity, EventEmitter,
@@ -557,7 +557,7 @@ impl AppShell {
     fn enter(&mut self, screen: Screen, cx: &mut Context<Self>) {
         if self.router.screen == Screen::Welcome {
             first_run::spawn_record_completed(
-                Arc::clone(&self.handles.backend) as Arc<dyn SettingsRepo>,
+                self.handles.backend.settings_repo(),
                 &self.handles.rt_handle,
             );
         }
@@ -722,7 +722,7 @@ pub(crate) async fn refresh_dashboard_stats(
     cx: &mut AsyncApp,
 ) {
     let actions = backend.action_repo();
-    let globals: Arc<dyn GlobalsRepo> = Arc::clone(&backend) as Arc<dyn GlobalsRepo>;
+    let globals: Arc<dyn GlobalsRepo> = backend.globals_repo();
     let history = backend.history_repo();
     let triggers = backend.trigger_instance_repo();
     let reply = crate::app::async_bridge::on_runtime(&rt_handle, async move {

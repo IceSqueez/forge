@@ -3,7 +3,7 @@ use forge_platform_core::PlatformError;
 use forge_types::Secret;
 use time::OffsetDateTime;
 
-use crate::api::data_api::{YoutubeDataApi, malformed};
+use crate::api::data_api::{YouTubeDataApi, malformed};
 use crate::broadcast::active_broadcast_id::ActiveBroadcastIdHandle;
 use forge_platform_core::parse_timestamp_logged;
 
@@ -14,22 +14,22 @@ const MISSING_SCOPE: &str = "stream stats scope missing";
 use forge_platform_core::TokenSource;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct YoutubeStreamDetails {
+pub struct YouTubeStreamDetails {
     pub concurrent_viewers: i64,
     pub live_chat_id: String,
     pub actual_start: Option<OffsetDateTime>,
     pub scheduled_start: Option<OffsetDateTime>,
 }
 
-pub struct YoutubeStreamStats {
-    api: YoutubeDataApi,
+pub struct YouTubeStreamStats {
+    api: YouTubeDataApi,
     access_token_source: TokenSource,
     active_broadcast_id: ActiveBroadcastIdHandle,
 }
 
-impl YoutubeStreamStats {
+impl YouTubeStreamStats {
     pub fn new(
-        api: YoutubeDataApi,
+        api: YouTubeDataApi,
         access_token_source: TokenSource,
         active_broadcast_id: ActiveBroadcastIdHandle,
     ) -> Self {
@@ -40,7 +40,7 @@ impl YoutubeStreamStats {
         }
     }
 
-    pub async fn fetch(&self) -> Result<YoutubeStreamDetails, PlatformError> {
+    pub async fn fetch(&self) -> Result<YouTubeStreamDetails, PlatformError> {
         let broadcast_id = self.active_broadcast_id.resolve().await?.ok_or_else(|| {
             PlatformError::Unsupported {
                 feature: "stream stats - no active YouTube broadcast".to_owned(),
@@ -88,7 +88,7 @@ impl YoutubeStreamStats {
             .and_then(|v| v.as_str())
             .unwrap_or_default();
 
-        Ok(YoutubeStreamDetails {
+        Ok(YouTubeStreamDetails {
             concurrent_viewers,
             live_chat_id: active_live_chat_id.to_owned(),
             actual_start: actual_start_time,
@@ -114,10 +114,10 @@ mod tests {
         Arc::new(|| Box::pin(async { Ok("yt-stats-token".to_owned()) }))
     }
 
-    fn stats_on(server: &MockServer, broadcast: Option<&str>) -> YoutubeStreamStats {
+    fn stats_on(server: &MockServer, broadcast: Option<&str>) -> YouTubeStreamStats {
         let handle = ActiveBroadcastIdHandle::new();
         handle.set(broadcast.map(|s| s.to_owned()));
-        YoutubeStreamStats::new(data_api_at(&server.uri()), token_source(), handle)
+        YouTubeStreamStats::new(data_api_at(&server.uri()), token_source(), handle)
     }
 
     fn details_body(extra: serde_json::Value) -> serde_json::Value {
@@ -157,7 +157,7 @@ mod tests {
         let details = stats_on(&server, Some("bc-live")).fetch().await.unwrap();
         assert_eq!(
             details,
-            YoutubeStreamDetails {
+            YouTubeStreamDetails {
                 concurrent_viewers: 1234,
                 live_chat_id: "lc-abc".to_owned(),
                 actual_start: Some(instant("2026-07-24T10:00:00Z")),

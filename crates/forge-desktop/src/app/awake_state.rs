@@ -31,11 +31,11 @@ impl AwakeState {
     }
 
     pub(crate) fn enabled(&self) -> Option<bool> {
-        self.status.as_ref().map(|status| status.enabled)
+        self.status.as_ref().map(|status| status.enabled())
     }
 
     pub(crate) fn indicator(&self) -> Option<AwakeIndicator> {
-        let status = self.status.as_ref().filter(|status| status.enabled)?;
+        let status = self.status.as_ref().filter(|status| status.enabled())?;
         let held: Vec<Aspect> = Aspect::ALL
             .into_iter()
             .filter(|aspect| *status.aspect(*aspect) == AspectState::Held)
@@ -79,11 +79,7 @@ mod tests {
     use super::*;
 
     fn status(enabled: bool, display: AspectState, system: AspectState) -> AwakeStatus {
-        AwakeStatus {
-            enabled,
-            display,
-            system,
-        }
+        AwakeStatus::new(enabled, display, system)
     }
 
     fn refused() -> AspectState {

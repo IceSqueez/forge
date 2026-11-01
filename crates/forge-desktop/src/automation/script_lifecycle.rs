@@ -1,7 +1,7 @@
 use std::sync::Arc;
 
 use forge_components::tr;
-use forge_runtime::{EventBus, ScriptRegistry};
+use forge_runtime::{EventBus, ScriptCatalog};
 use forge_storage::{ScriptReferences, ScriptReferrer, ScriptRepo};
 use forge_types::ScriptId;
 
@@ -10,7 +10,7 @@ use crate::shared::repo_failure::RepoFailure;
 #[derive(Clone)]
 pub(crate) struct ScriptLifecycle {
     repo: Arc<dyn ScriptRepo>,
-    registry: Arc<ScriptRegistry>,
+    registry: Arc<ScriptCatalog>,
     bus: Arc<EventBus>,
 }
 
@@ -23,7 +23,7 @@ pub(crate) struct ScriptRenamed {
 impl ScriptLifecycle {
     pub(crate) fn new(
         repo: Arc<dyn ScriptRepo>,
-        registry: Arc<ScriptRegistry>,
+        registry: Arc<ScriptCatalog>,
         bus: Arc<EventBus>,
     ) -> Self {
         Self {

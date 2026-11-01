@@ -11,7 +11,7 @@ use forge_registry::{
 use forge_types::{ArgStack, SubActionTelemetry, Variant};
 
 use super::step_failure;
-use crate::broadcast::stream_metadata::YoutubeStreamMetadata;
+use crate::broadcast::stream_metadata::YouTubeStreamMetadata;
 use crate::vocabulary::{config_keys, sub_action_ids};
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -92,11 +92,11 @@ impl TypedField for PrivacyStatusField {
 const CONFIG: ConfigSpec = ConfigSpec::new(&[&PRIVACY_STATUS]);
 
 pub(crate) struct UpdatePrivacyRunner {
-    metadata: Arc<YoutubeStreamMetadata>,
+    metadata: Arc<YouTubeStreamMetadata>,
 }
 
 impl UpdatePrivacyRunner {
-    pub(crate) fn new(metadata: Arc<YoutubeStreamMetadata>) -> Self {
+    pub(crate) fn new(metadata: Arc<YouTubeStreamMetadata>) -> Self {
         Self { metadata }
     }
 }
@@ -177,7 +177,7 @@ mod tests {
     fn runner_on(server: &MockServer) -> UpdatePrivacyRunner {
         let handle = ActiveBroadcastIdHandle::new();
         handle.set(Some("vid-1".to_owned()));
-        let meta = YoutubeStreamMetadata::new(
+        let meta = YouTubeStreamMetadata::new(
             crate::endpoints_test_support::data_api_at(&server.uri()),
             token_source(),
             handle,
@@ -284,7 +284,7 @@ mod tests {
      {
         let server_uri = "http://127.0.0.1:0".to_owned();
         let handle = ActiveBroadcastIdHandle::new();
-        let meta = YoutubeStreamMetadata::new(
+        let meta = YouTubeStreamMetadata::new(
             crate::endpoints_test_support::data_api_at(&server_uri),
             token_source(),
             handle,

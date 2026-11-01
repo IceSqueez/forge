@@ -4,10 +4,10 @@ use forge_platform_core::{
     PlatformError, disconnect_credentialed, reconnect_credentialed, refresh_credentialed,
 };
 
-use crate::builtin::YoutubeIntegrationBundle;
+use crate::builtin::YouTubeIntegrationBundle;
 
 #[async_trait]
-impl BuiltinControl for YoutubeIntegrationBundle {
+impl BuiltinControl for YouTubeIntegrationBundle {
     async fn reconnect(&self) -> ControlOutcome {
         reconnect_credentialed(self).await
     }
@@ -22,7 +22,7 @@ impl BuiltinControl for YoutubeIntegrationBundle {
 }
 
 #[async_trait]
-impl CredentialedChatBundle for YoutubeIntegrationBundle {
+impl CredentialedChatBundle for YouTubeIntegrationBundle {
     fn chat_platform(&self) -> &dyn ChatPlatform {
         self.platform().as_ref()
     }

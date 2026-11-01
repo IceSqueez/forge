@@ -5,16 +5,17 @@ use crate::integrations::donation_services::donation_provider_options;
 use crate::shared::config_form::dependent_options_key;
 use crate::shared::option_choices::ChoiceOption;
 use forge_components::tr;
+use forge_registry::FormSchemaSource;
 pub(super) use forge_registry::SOUNDBOARD_CLIP_OPTIONS_KEY as CLIP_OPTIONS_KEY;
 use forge_registry::{
     ACTION_OPTIONS_KEY, GLOBAL_OPTIONS_KEY, OVERLAY_OPTIONS_KEY, QUEUE_OPTIONS_KEY,
     SCRIPT_OPTIONS_KEY, TRIGGER_INSTANCE_OPTIONS_KEY,
 };
-use forge_registry::{ENGINE_VOICE_OPTIONS_KEY, FormSchemaSource};
 use forge_runtime::DONATION_PROVIDER_OPTIONS_KEY;
 use forge_runtime::{ENGINE_OPTIONS_KEY, VOICE_OPTIONS_PREFIX};
 use forge_soundboard::ClipLibrary;
 use forge_speak_queue::SpeakQueueHandle;
+use forge_speech_types::ENGINE_VOICE_OPTIONS_KEY;
 use forge_storage::{GlobalsRepo, OverlayRepo, QueueRepo, ScriptRepo};
 use gpui::Context;
 use std::collections::HashMap;

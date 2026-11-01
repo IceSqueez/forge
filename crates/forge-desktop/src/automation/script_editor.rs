@@ -15,8 +15,8 @@ use forge_components::{
     OverlayPosition, Spacing, confirm_modal, drive_overlay_focus, icon, overlay, page_frame,
     spacing, tr,
 };
-use forge_runtime::{EventBus, ScriptRegistry};
-use forge_storage::{DataProvider, ScriptRepo};
+use forge_runtime::{EventBus, ScriptCatalog};
+use forge_storage::DataProvider;
 use forge_types::{IntegrationAvailability, ScriptId};
 use gpui::prelude::*;
 use gpui::{
@@ -32,7 +32,7 @@ const SCRIPT_LANGUAGE_LABEL: &str = "Rhai";
 #[derive(Clone)]
 struct ScriptDeps {
     backend: Arc<dyn DataProvider>,
-    script_registry: Arc<ScriptRegistry>,
+    script_catalog: Arc<ScriptCatalog>,
     bus: Arc<EventBus>,
     integrations: Arc<dyn IntegrationAvailability>,
     rt_handle: tokio::runtime::Handle,
@@ -41,8 +41,8 @@ struct ScriptDeps {
 impl ScriptDeps {
     fn lifecycle(&self) -> ScriptLifecycle {
         ScriptLifecycle::new(
-            Arc::clone(&self.backend) as Arc<dyn ScriptRepo>,
-            Arc::clone(&self.script_registry),
+            self.backend.script_repo(),
+            Arc::clone(&self.script_catalog),
             Arc::clone(&self.bus),
         )
     }
@@ -109,7 +109,7 @@ impl ScreenShortcuts for ScriptEditorView {
 impl ScriptEditorView {
     pub(crate) fn new(
         backend: Arc<dyn DataProvider>,
-        script_registry: Arc<ScriptRegistry>,
+        script_catalog: Arc<ScriptCatalog>,
         bus: Arc<EventBus>,
         integrations: Arc<dyn IntegrationAvailability>,
         rt_handle: tokio::runtime::Handle,
@@ -117,7 +117,7 @@ impl ScriptEditorView {
     ) -> Self {
         let deps = ScriptDeps {
             backend,
-            script_registry,
+            script_catalog,
             bus,
             integrations,
             rt_handle,

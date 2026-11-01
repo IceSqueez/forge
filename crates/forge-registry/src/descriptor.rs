@@ -27,13 +27,16 @@ pub enum ChatTriggerFamily {
     Message,
 }
 
-pub trait TriggerKindDescriptor: Send + Sync {
-    fn id(&self) -> &str;
+pub trait TriggerCatalogEntry {
     fn category(&self) -> TriggerCategory;
     fn label(&self) -> &str;
     fn summary(&self) -> &str;
     fn search_text(&self) -> &str;
     fn icon_name(&self) -> &str;
+}
+
+pub trait TriggerKindDescriptor: TriggerCatalogEntry + Send + Sync {
+    fn id(&self) -> &str;
     fn platform_contract(&self) -> KindPlatformContract;
     fn default_config(&self) -> TriggerConfig {
         TriggerConfig::new()
@@ -55,6 +58,9 @@ pub trait TriggerKindDescriptor: Send + Sync {
     }
     fn event_filter(&self) -> EventFilter;
     fn targeted_instance_field(&self) -> Option<&'static str> {
+        None
+    }
+    fn service_filter_field(&self) -> Option<&'static str> {
         None
     }
     fn matches_trigger(&self, config: &TriggerConfig, event: &Event) -> bool;

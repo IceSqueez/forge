@@ -102,7 +102,7 @@ impl SubActionRunner for CoreStringSplitRunner {
         SubActionIo {
             produces: vec![ProducedVariable {
                 output_name_key: INTO_VAR_KEY.to_owned(),
-                kind: VariantKind::Array,
+                kind: Some(VariantKind::Array),
                 label: "Split parts".to_owned(),
             }],
             ..SubActionIo::default()

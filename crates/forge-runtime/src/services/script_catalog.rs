@@ -14,41 +14,41 @@ use crate::engine::scheduled_runs::{SchedulingContext, ScriptScheduling};
 
 pub(crate) const SCRIPT_PANIC_ERROR_TYPE: &str = "panic";
 
-pub struct CompiledScript {
+pub struct LoadedScript {
     pub record: ScriptRecord,
 }
 
-pub struct ScriptRegistry {
-    inner: Arc<RwLock<HashMap<ScriptId, Arc<CompiledScript>>>>,
+pub struct ScriptCatalog {
+    by_name: RwLock<HashMap<String, Arc<LoadedScript>>>,
     speak_requester: Option<Arc<dyn SpeakRequester>>,
     latest_values: Option<Arc<dyn LatestValueReader>>,
     scheduling: Option<ScriptScheduling>,
 }
 
-pub struct ScriptRegistryParts {
+pub struct ScriptApiDeps {
     pub speak_requester: Option<Arc<dyn SpeakRequester>>,
     pub latest_values: Option<Arc<dyn LatestValueReader>>,
     pub scheduling: Option<ScriptScheduling>,
 }
 
-impl ScriptRegistry {
+impl ScriptCatalog {
     pub fn new() -> Self {
         Self {
-            inner: Arc::new(RwLock::new(HashMap::new())),
+            by_name: RwLock::new(HashMap::new()),
             speak_requester: None,
             latest_values: None,
             scheduling: None,
         }
     }
 
-    pub fn with_parts(parts: ScriptRegistryParts) -> Self {
-        let ScriptRegistryParts {
+    pub fn with_parts(parts: ScriptApiDeps) -> Self {
+        let ScriptApiDeps {
             speak_requester,
             latest_values,
             scheduling,
         } = parts;
         Self {
-            inner: Arc::new(RwLock::new(HashMap::new())),
+            by_name: RwLock::new(HashMap::new()),
             speak_requester,
             latest_values,
             scheduling,
@@ -77,11 +77,10 @@ impl ScriptRegistry {
             if !has_valid_syntax(&record) {
                 continue;
             }
-            new_map.insert(record.id, Arc::new(CompiledScript { record }));
+            new_map.insert(record.name.clone(), Arc::new(LoadedScript { record }));
         }
 
-        let mut guard = self.inner.write().await;
-        *guard = new_map;
+        *self.by_name.write().await = new_map;
         Ok(())
     }
 
@@ -93,11 +92,10 @@ impl ScriptRegistry {
         let script_name = record.name.clone();
 
         {
-            let mut guard = self.inner.write().await;
+            let mut guard = self.by_name.write().await;
+            guard.retain(|_, loaded| loaded.record.id != script_id);
             if record.enabled {
-                guard.insert(script_id, Arc::new(CompiledScript { record }));
-            } else {
-                guard.remove(&script_id);
+                guard.insert(script_name.clone(), Arc::new(LoadedScript { record }));
             }
         }
 
@@ -113,30 +111,32 @@ impl ScriptRegistry {
     }
 
     pub async fn remove(&self, id: ScriptId) -> bool {
-        self.inner.write().await.remove(&id).is_some()
+        let mut guard = self.by_name.write().await;
+        let before = guard.len();
+        guard.retain(|_, loaded| loaded.record.id != id);
+        guard.len() != before
     }
 
     pub async fn current(
         &self,
         name: &str,
         repo: &dyn ScriptRepo,
-    ) -> Result<Option<Arc<CompiledScript>>, StorageError> {
+    ) -> Result<Option<Arc<LoadedScript>>, StorageError> {
         let runnable = repo
             .get_by_name(name)
             .await?
             .filter(|record| record.enabled && has_valid_syntax(record));
-        let mut guard = self.inner.write().await;
-        guard.retain(|_, compiled| compiled.record.name != name);
+        let mut guard = self.by_name.write().await;
+        guard.remove(name);
         Ok(runnable.map(|record| {
-            let compiled = Arc::new(CompiledScript { record });
-            guard.insert(compiled.record.id, Arc::clone(&compiled));
-            compiled
+            let loaded = Arc::new(LoadedScript { record });
+            guard.insert(name.to_owned(), Arc::clone(&loaded));
+            loaded
         }))
     }
 
-    pub async fn get_by_name(&self, name: &str) -> Option<Arc<CompiledScript>> {
-        let guard = self.inner.read().await;
-        guard.values().find(|c| c.record.name == name).cloned()
+    pub async fn get_by_name(&self, name: &str) -> Option<Arc<LoadedScript>> {
+        self.by_name.read().await.get(name).cloned()
     }
 }
 
@@ -155,7 +155,7 @@ fn has_valid_syntax(record: &ScriptRecord) -> bool {
     }
 }
 
-impl Default for ScriptRegistry {
+impl Default for ScriptCatalog {
     fn default() -> Self {
         Self::new()
     }
@@ -166,7 +166,7 @@ mod tests {
     use super::*;
     use crate::test_support::{Sandboxed, sandboxed_backend};
     use crate::{EventBus, NullEventLogRepo};
-    use forge_storage::ScriptRepo;
+    use forge_storage::DataProvider;
     use forge_storage_sqlite::SqliteBackend;
     use forge_types::{ScriptContract, ScriptId};
     use std::sync::Arc;
@@ -196,12 +196,12 @@ mod tests {
         let r2 = make_record("farewell", "let y = 2;", true);
         let r3 = make_record("disabled_script", "let z = 3;", false);
 
-        ScriptRepo::save(dp.as_ref(), r1).await.unwrap();
-        ScriptRepo::save(dp.as_ref(), r2).await.unwrap();
-        ScriptRepo::save(dp.as_ref(), r3).await.unwrap();
+        dp.script_repo().save(r1).await.unwrap();
+        dp.script_repo().save(r2).await.unwrap();
+        dp.script_repo().save(r3).await.unwrap();
 
-        let registry = ScriptRegistry::new();
-        registry.load_all(dp.as_ref()).await.unwrap();
+        let registry = ScriptCatalog::new();
+        registry.load_all(dp.script_repo().as_ref()).await.unwrap();
 
         assert!(registry.get_by_name("greet").await.is_some());
         assert!(registry.get_by_name("farewell").await.is_some());
@@ -214,12 +214,12 @@ mod tests {
         let kept = make_record("kept", "let x = 1;", true);
         let shelved = make_record("shelved", "let y = 2;", true);
         let shelved_id = shelved.id;
-        ScriptRepo::save(dp.as_ref(), kept).await.unwrap();
-        ScriptRepo::save(dp.as_ref(), shelved).await.unwrap();
-        assert!(dp.archive_script(shelved_id).await.unwrap());
+        dp.script_repo().save(kept).await.unwrap();
+        dp.script_repo().save(shelved).await.unwrap();
+        assert!(dp.script_repo().archive_script(shelved_id).await.unwrap());
 
-        let registry = ScriptRegistry::new();
-        registry.load_all(dp.as_ref()).await.unwrap();
+        let registry = ScriptCatalog::new();
+        registry.load_all(dp.script_repo().as_ref()).await.unwrap();
 
         assert_eq!(
             (
@@ -235,9 +235,9 @@ mod tests {
         let dp = make_dp().await;
         let record = make_record("greet", "let x = 1;", true);
         let id = record.id;
-        ScriptRepo::save(dp.as_ref(), record).await.unwrap();
-        let registry = ScriptRegistry::new();
-        registry.load_all(dp.as_ref()).await.unwrap();
+        dp.script_repo().save(record).await.unwrap();
+        let registry = ScriptCatalog::new();
+        registry.load_all(dp.script_repo().as_ref()).await.unwrap();
 
         let removals = [registry.remove(id).await, registry.remove(id).await];
 
@@ -253,11 +253,11 @@ mod tests {
         let valid = make_record("valid_script", "let x = 1;", true);
         let invalid = make_record("broken_script", "@@@not valid rhai@@@", true);
 
-        ScriptRepo::save(dp.as_ref(), valid).await.unwrap();
-        ScriptRepo::save(dp.as_ref(), invalid).await.unwrap();
+        dp.script_repo().save(valid).await.unwrap();
+        dp.script_repo().save(invalid).await.unwrap();
 
-        let registry = ScriptRegistry::new();
-        registry.load_all(dp.as_ref()).await.unwrap();
+        let registry = ScriptCatalog::new();
+        registry.load_all(dp.script_repo().as_ref()).await.unwrap();
 
         assert!(registry.get_by_name("valid_script").await.is_some());
         assert!(registry.get_by_name("broken_script").await.is_none());
@@ -267,10 +267,10 @@ mod tests {
     async fn get_by_name_finds_loaded_script() {
         let dp = make_dp().await;
         let record = make_record("my_script", "let x = 42;", true);
-        ScriptRepo::save(dp.as_ref(), record).await.unwrap();
+        dp.script_repo().save(record).await.unwrap();
 
-        let registry = ScriptRegistry::new();
-        registry.load_all(dp.as_ref()).await.unwrap();
+        let registry = ScriptCatalog::new();
+        registry.load_all(dp.script_repo().as_ref()).await.unwrap();
 
         let found = registry.get_by_name("my_script").await;
         assert!(found.is_some());
@@ -280,8 +280,8 @@ mod tests {
     #[tokio::test]
     async fn get_by_name_returns_none_for_unknown() {
         let dp = make_dp().await;
-        let registry = ScriptRegistry::new();
-        registry.load_all(dp.as_ref()).await.unwrap();
+        let registry = ScriptCatalog::new();
+        registry.load_all(dp.script_repo().as_ref()).await.unwrap();
 
         let found = registry.get_by_name("nonexistent").await;
         assert!(found.is_none());
@@ -289,7 +289,7 @@ mod tests {
 
     #[tokio::test]
     async fn reload_adds_new_entry_and_emits_event() {
-        let registry = ScriptRegistry::new();
+        let registry = ScriptCatalog::new();
         let bus = EventBus::new(Arc::new(NullEventLogRepo));
         let mut sub = bus.subscribe();
 
@@ -314,7 +314,7 @@ mod tests {
 
     #[tokio::test]
     async fn reload_replaces_existing_entry() {
-        let registry = ScriptRegistry::new();
+        let registry = ScriptCatalog::new();
         let bus = EventBus::new(Arc::new(NullEventLogRepo));
         let id = ScriptId::new();
         let ts = OffsetDateTime::now_utc();
@@ -347,7 +347,7 @@ mod tests {
 
     #[tokio::test]
     async fn concurrent_reads_and_reload_do_not_deadlock() {
-        let registry = Arc::new(ScriptRegistry::new());
+        let registry = Arc::new(ScriptCatalog::new());
         let bus = EventBus::new(Arc::new(NullEventLogRepo));
 
         let seed = make_record("concurrent_script", "let v = 99;", true);
@@ -389,7 +389,7 @@ mod tests {
 
     #[tokio::test]
     async fn reload_rejects_invalid_syntax() {
-        let registry = ScriptRegistry::new();
+        let registry = ScriptCatalog::new();
         let bus = EventBus::new(Arc::new(NullEventLogRepo));
         let mut sub = bus.subscribe();
 
@@ -409,7 +409,7 @@ mod tests {
 
     #[tokio::test]
     async fn reload_of_a_disabled_script_takes_it_out_of_reach() {
-        let registry = ScriptRegistry::new();
+        let registry = ScriptCatalog::new();
         let bus = EventBus::new(Arc::new(NullEventLogRepo));
         let enabled = make_record("greet", "1", true);
         registry.reload(enabled.clone(), &bus).await.unwrap();

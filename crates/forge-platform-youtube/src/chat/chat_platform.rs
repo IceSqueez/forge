@@ -11,25 +11,25 @@ use forge_storage::BanLedgerRepo;
 use tokio::sync::{mpsc, watch};
 use tokio_util::sync::CancellationToken;
 
-use crate::account::credentials_manager::YoutubeCredentialsManager;
-use crate::api::data_api::YoutubeDataApi;
+use crate::account::credentials_manager::YouTubeCredentialsManager;
+use crate::api::data_api::YouTubeDataApi;
 use crate::api::poll_health::{PollHealthReporter, PollLinkHealth};
 use crate::broadcast::active_broadcast_id::ActiveBroadcastIdHandle;
 use crate::broadcast::live_chat_id::LiveChatIdHandle;
-use crate::chat::chat_poller::YoutubeChatPoller;
-use crate::chat::send_chat::YoutubeSendChat;
+use crate::chat::chat_poller::YouTubeChatPoller;
+use crate::chat::send_chat::YouTubeSendChat;
 
 use crate::vocabulary::INTEGRATION_ID as PLATFORM_ID;
 pub(crate) const EVENT_CHANNEL_CAPACITY: usize = forge_events::PLATFORM_EVENT_CHANNEL_CAPACITY;
 
 use forge_platform_core::TokenSource;
 
-pub struct YoutubePlatform {
-    api: YoutubeDataApi,
+pub struct YouTubePlatform {
+    api: YouTubeDataApi,
     channel_id: String,
     events: Arc<EventChannel>,
-    credentials_manager: Arc<YoutubeCredentialsManager>,
-    sender: YoutubeSendChat,
+    credentials_manager: Arc<YouTubeCredentialsManager>,
+    sender: YouTubeSendChat,
     live_chat_id: LiveChatIdHandle,
     active_broadcast_id: ActiveBroadcastIdHandle,
     ban_ledger: Arc<dyn BanLedgerRepo>,
@@ -38,16 +38,16 @@ pub struct YoutubePlatform {
     cancel: Mutex<Option<CancellationToken>>,
 }
 
-impl YoutubePlatform {
+impl YouTubePlatform {
     pub fn new(
-        api: YoutubeDataApi,
+        api: YouTubeDataApi,
         channel_id: String,
-        credentials_manager: Arc<YoutubeCredentialsManager>,
+        credentials_manager: Arc<YouTubeCredentialsManager>,
         live_chat_id: LiveChatIdHandle,
         active_broadcast_id: ActiveBroadcastIdHandle,
         ban_ledger: Arc<dyn BanLedgerRepo>,
     ) -> Self {
-        let sender = YoutubeSendChat::new(
+        let sender = YouTubeSendChat::new(
             api.clone(),
             token_source(Arc::clone(&credentials_manager)),
             live_chat_id.clone(),
@@ -80,7 +80,7 @@ impl YoutubePlatform {
         &self.ban_ledger
     }
 
-    pub(crate) fn api(&self) -> &YoutubeDataApi {
+    pub(crate) fn api(&self) -> &YouTubeDataApi {
         &self.api
     }
 
@@ -90,7 +90,7 @@ impl YoutubePlatform {
 }
 
 #[async_trait]
-impl ChatPlatform for YoutubePlatform {
+impl ChatPlatform for YouTubePlatform {
     fn connection_state(&self) -> ConnectionState {
         *self.state.lock_recover()
     }
@@ -124,7 +124,7 @@ impl ChatPlatform for YoutubePlatform {
         });
 
         let cancel = CancellationToken::new();
-        let poller = YoutubeChatPoller::new(
+        let poller = YouTubeChatPoller::new(
             self.api.clone(),
             token_source(Arc::clone(&self.credentials_manager)),
             tx,
@@ -199,7 +199,7 @@ impl ChatPlatform for YoutubePlatform {
     }
 }
 
-pub(crate) fn token_source(manager: Arc<YoutubeCredentialsManager>) -> TokenSource {
+pub(crate) fn token_source(manager: Arc<YouTubeCredentialsManager>) -> TokenSource {
     Arc::new(move || {
         let manager = Arc::clone(&manager);
         Box::pin(async move { manager.get_valid_access_token().await })
@@ -276,7 +276,7 @@ mod tests {
     use super::*;
 
     fn stored_credentials() -> String {
-        serde_json::to_string(&crate::account::credentials::YoutubeCredentials {
+        serde_json::to_string(&crate::account::credentials::YouTubeCredentials {
             access_token: forge_types::OAuthToken::new("access"),
             refresh_token: forge_types::OAuthToken::new("refresh"),
             client_id: "client".to_owned(),
@@ -290,14 +290,14 @@ mod tests {
 
     fn platform_with(
         credentials: MemoryCredentials,
-        api: crate::api::data_api::YoutubeDataApi,
-    ) -> YoutubePlatform {
-        let manager = Arc::new(YoutubeCredentialsManager::new(
+        api: crate::api::data_api::YouTubeDataApi,
+    ) -> YouTubePlatform {
+        let manager = Arc::new(YouTubeCredentialsManager::new(
             Arc::new(credentials),
             crate::endpoints_test_support::unreachable_oauth_client(),
             crate::endpoints_test_support::unreachable_data_api(),
         ));
-        YoutubePlatform::new(
+        YouTubePlatform::new(
             api,
             "UCtest".to_owned(),
             manager,
@@ -307,14 +307,14 @@ mod tests {
         )
     }
 
-    fn signed_out_platform() -> YoutubePlatform {
+    fn signed_out_platform() -> YouTubePlatform {
         platform_with(
             MemoryCredentials::default(),
             crate::endpoints_test_support::unreachable_data_api(),
         )
     }
 
-    fn platform() -> YoutubePlatform {
+    fn platform() -> YouTubePlatform {
         platform_with(
             MemoryCredentials::holding(
                 crate::account::credentials::YOUTUBE_CREDENTIAL_ID,
@@ -381,7 +381,7 @@ mod tests {
         );
     }
 
-    fn platform_polling(server: &crate::endpoints_test_support::StubServer) -> YoutubePlatform {
+    fn platform_polling(server: &crate::endpoints_test_support::StubServer) -> YouTubePlatform {
         platform_with(
             MemoryCredentials::holding(
                 crate::account::credentials::YOUTUBE_CREDENTIAL_ID,
@@ -516,7 +516,7 @@ mod tests {
         );
     }
 
-    fn reporter_for(p: &YoutubePlatform, cancel: &CancellationToken) -> PollHealthReporter {
+    fn reporter_for(p: &YouTubePlatform, cancel: &CancellationToken) -> PollHealthReporter {
         health_reporter(
             Arc::clone(&p.state),
             p.state_tx.clone(),

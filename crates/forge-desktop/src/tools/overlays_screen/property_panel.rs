@@ -13,8 +13,9 @@ use forge_components::{
 };
 use forge_overlay::config::{ACCENT, SOUND_OPTIONS_KEY, SPEECH_VOICE};
 use forge_overlay::{ConfigSection, MediaIssue, MediaSlot, SectionedField, media_slot};
-use forge_registry::{ENGINE_VOICE_OPTIONS_KEY, FormField};
+use forge_registry::FormField;
 use forge_runtime::{OverlaySampleSource, OverlayServiceHandle};
+use forge_speech_types::ENGINE_VOICE_OPTIONS_KEY;
 use forge_storage::{OverlayConfig, OverlayId};
 use forge_types::ClipId;
 use gpui::{
@@ -1016,7 +1017,7 @@ pub(crate) mod tests {
             date_names: forge_runtime::DateNamesHandle::default(),
             tasks: forge_net::TaskOwner::new(),
             repo: Arc::clone(&repo) as Arc<dyn OverlayRepo>,
-            settings: backend as Arc<dyn forge_storage::SettingsRepo>,
+            settings: backend.settings_repo(),
             kinds: Arc::new(kinds),
             bus: EventBus::new(Arc::new(StubEventLog)),
             frames: Arc::new(crate::test_support::NoOverlayPages),

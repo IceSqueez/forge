@@ -10,7 +10,7 @@ use forge_storage::settings::core_settings::{
     BACKUP_SCHEDULE_KEEP_DAILY_DAYS, BACKUP_SCHEDULE_KEEP_NEWEST, BACKUP_SCHEDULE_KEY,
     BACKUP_SCHEDULE_LAST_SUCCESS_AT,
 };
-use forge_storage::{DataProvider, RowClasses, Setting, SettingCodec, SettingsRepo, write_setting};
+use forge_storage::{DataProvider, RowClasses, Setting, SettingCodec, write_setting};
 use forge_storage_sqlite::SqliteBackend;
 use forge_transfer::{
     BUNDLE_EXTENSION, BackupClock, FailureCategory, Passphrase, ScheduleKey, ScheduleState,
@@ -88,8 +88,8 @@ impl Fixture {
     }
 
     async fn write<C: SettingCodec>(&self, setting: &Setting<C>, value: &C::Value) {
-        let repo: &dyn SettingsRepo = self.provider.as_ref();
-        write_setting(repo, setting, value).await.unwrap();
+        let repo = self.provider.settings_repo();
+        write_setting(repo.as_ref(), setting, value).await.unwrap();
     }
 
     async fn seed_raw<C: SettingCodec>(&self, setting: &Setting<C>, raw: &str) {

@@ -849,6 +849,49 @@ async fn tombstone_emits_message_deleted_with_message_id_and_deleted_mark() {
     assert!(chat.moderation.deleted);
     assert!(!chat.moderation.banned);
     assert!(!chat.moderation.timed_out);
+
+    assert_eq!(
+        moderation_action(&event),
+        ChatModerationAction::DeleteMessage {
+            message_id: "del-1".to_owned()
+        }
+    );
+}
+
+fn moderation_action(event: &Event) -> ChatModerationAction {
+    let envelope = event.payload[ChatModerationPayload::KEY].clone();
+    serde_json::from_value::<ChatModerationPayload>(envelope)
+        .unwrap()
+        .action
+}
+
+#[tokio::test]
+async fn a_temporary_ban_names_the_channel_to_time_out_and_a_permanent_one_to_ban() {
+    for (item, removal) in [
+        (
+            banned_item("ban-t", "Troll", "temporary", json!(600)),
+            UserRemoval::Timeout,
+        ),
+        (
+            banned_item("ban-p", "Troll", "permanent", json!(null)),
+            UserRemoval::Ban,
+        ),
+    ] {
+        let server = MockServer::start().await;
+        mount_broadcast_mock(&server, broadcast_response("chat-ban-mod")).await;
+        mount_chat_mock(&server, chat_response(json!([item]), 3000)).await;
+
+        let event = first_event_from(&server).await;
+
+        assert_eq!(
+            moderation_action(&event),
+            ChatModerationAction::RemoveUser {
+                user_id: Some("UCbanned".to_owned()),
+                user_name: "Troll".to_owned(),
+                removal,
+            }
+        );
+    }
 }
 
 #[tokio::test]

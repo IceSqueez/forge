@@ -182,6 +182,37 @@ mod tests {
     }
 
     #[test]
+    fn a_chat_row_carries_the_ids_a_removal_will_name() {
+        let content = delivered_content(
+            &ChatOverlayKind,
+            &OverlayConfig::new(),
+            &OverlayConfig::new(),
+            &args(&[
+                ("user_platform", "youtube"),
+                ("message_id", "m-9"),
+                ("user_id", "UC9"),
+            ]),
+        );
+
+        assert_eq!(text_at(&content, config::PLATFORM), "youtube");
+        assert_eq!(text_at(&content, config::MESSAGE_ID), "m-9");
+        assert_eq!(text_at(&content, config::USER_ID), "UC9");
+    }
+
+    #[test]
+    fn a_chat_row_without_ids_in_the_event_carries_empty_ids() {
+        let content = delivered_content(
+            &ChatOverlayKind,
+            &OverlayConfig::new(),
+            &OverlayConfig::new(),
+            &ArgStack::new(),
+        );
+
+        assert_eq!(text_at(&content, config::MESSAGE_ID), "");
+        assert_eq!(text_at(&content, config::USER_ID), "");
+    }
+
+    #[test]
     fn a_kind_without_implied_content_never_gains_a_platform_field() {
         let content = delivered_content(
             &AlertOverlayKind,

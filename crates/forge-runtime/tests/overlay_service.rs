@@ -8,7 +8,8 @@ use std::sync::{Arc, Mutex};
 use async_trait::async_trait;
 use forge_overlay::{
     AudioAnnouncement, CONFIG_FILE, GENERATOR_VERSION, MARKUP_FILE, OverlayKindRegistry,
-    RESERVED_DIRECTORY, STYLE_FILE, announcement_content, register_builtin_kinds,
+    RESERVED_DIRECTORY, RowRemoval, RowRemovalScope, STYLE_FILE, announcement_content,
+    register_builtin_kinds,
 };
 use forge_runtime::OVERLAY_TEST_FIRE_KIND;
 use forge_runtime::{
@@ -69,9 +70,14 @@ struct RecordingSink {
     frames: Mutex<Vec<ContentFrame>>,
     reloads: Mutex<Vec<OverlayId>>,
     revoked: Mutex<Vec<OverlayId>>,
+    removals: Mutex<Vec<(OverlayId, RowRemoval)>>,
 }
 
 impl RecordingSink {
+    fn removals(&self) -> Vec<(OverlayId, RowRemoval)> {
+        self.removals.lock().unwrap().clone()
+    }
+
     fn frames(&self) -> Vec<ContentFrame> {
         self.frames.lock().unwrap().clone()
     }
@@ -110,6 +116,13 @@ impl OverlayFrameSink for RecordingSink {
 
     async fn revoke(&self, identity: &OverlayId) {
         self.revoked.lock().unwrap().push(identity.clone());
+    }
+
+    async fn deliver_removal(&self, identity: &OverlayId, removal: &RowRemoval) {
+        self.removals
+            .lock()
+            .unwrap()
+            .push((identity.clone(), removal.clone()));
     }
 }
 
@@ -1606,4 +1619,31 @@ async fn a_landed_override_is_recorded_once_and_reloads_the_page() {
         Some(vec![STYLE_FILE.to_owned()])
     );
     assert_eq!(rig.sink.reloads().len(), reloads_before + 1);
+}
+
+#[tokio::test]
+async fn a_chat_removal_reaches_every_enabled_chat_overlay_and_no_other_kind() {
+    let chat = definition_of_kind("chat", CHAT_KIND);
+    let other_chat = definition_of_kind("other-chat", CHAT_KIND);
+    let mut disabled_chat = definition_of_kind("off-chat", CHAT_KIND);
+    disabled_chat.enabled = false;
+    let alert = definition_of_kind("alert", ALERT_KIND);
+    let rig = harness(
+        vec![chat.clone(), other_chat.clone(), disabled_chat, alert],
+        true,
+    );
+    let removal = RowRemoval {
+        platform: forge_types::PlatformId::Twitch,
+        scope: RowRemovalScope::Message {
+            message_id: "m-1".to_owned(),
+        },
+    };
+
+    rig.service.remove_chat_rows(&removal).await;
+
+    assert_eq!(
+        rig.sink.removals(),
+        vec![(chat.id, removal.clone()), (other_chat.id, removal)]
+    );
+    assert!(rig.sink.frames().is_empty());
 }

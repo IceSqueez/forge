@@ -263,6 +263,7 @@ fn the_runtime_listens_for_exactly_the_frame_names_the_server_pushes() {
         ("CONTENT_FRAME", forge_overlay::CONTENT_FRAME),
         ("RELOAD_FRAME", forge_overlay::RELOAD_FRAME),
         ("CLEAR_FRAME", forge_overlay::CLEAR_FRAME),
+        ("REMOVE_FRAME", forge_overlay::REMOVE_FRAME),
     ] {
         let declaration = format!("var {variable} = \"{pushed}\";");
         assert!(

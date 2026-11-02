@@ -8,7 +8,8 @@ use common::{
 use std::collections::BTreeMap;
 
 use forge_overlay::config::{
-    AUTHOR, AUTHOR_COLOR, BADGES, HEADLINE, LABEL, MESSAGE, PLATFORM, SUBLINE, TARGET, VALUE,
+    AUTHOR, AUTHOR_COLOR, BADGES, HEADLINE, LABEL, MESSAGE, MESSAGE_ID, PLATFORM, SUBLINE, TARGET,
+    USER_ID, VALUE,
 };
 use forge_overlay::{OverlayInstance, sample_document};
 use serde_json::Value;
@@ -39,7 +40,9 @@ const EXPECTED_SAMPLE_CONTENT: &[(&str, &[(&str, &str)])] = &[
             (AUTHOR_COLOR, "#89dceb"),
             (BADGES, ""),
             (MESSAGE, "hey, great stream!"),
+            (MESSAGE_ID, "messageid_sample"),
             (PLATFORM, ""),
+            (USER_ID, "37402112"),
         ],
     ),
     (FRAME_KIND, &[(HEADLINE, ""), (SUBLINE, "LIVE")]),

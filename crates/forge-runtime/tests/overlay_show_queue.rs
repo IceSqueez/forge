@@ -638,6 +638,38 @@ fn step(wait: bool) -> SubActionConfig {
     ])
 }
 
+#[tokio::test]
+async fn a_send_step_whose_chat_row_the_filters_hide_is_skipped_as_withheld() {
+    for wait in [false, true] {
+        let filtering = OverlayConfig::from([("hide_commands".to_owned(), Variant::Bool(true))]);
+        let (harness, runtime) =
+            wired_stage(vec![definition_with(STAGE, CHAT_KIND, filtering)]).await;
+        let stack = ArgStack::new()
+            .set(
+                "user_login".to_owned(),
+                Variant::String("viewer".to_owned()),
+            )
+            .set(
+                "message_text".to_owned(),
+                Variant::String("!so ada".to_owned()),
+            );
+        let ctx = RunContext::leaf(&stack, 0, EventId::new(), &NullPublisher);
+
+        let (telemetry, _) = send_step(&runtime).execute(&step(wait), &ctx).await;
+
+        assert!(
+            matches!(
+                &telemetry.outcome,
+                SubActionOutcome::Skipped(reason)
+                    if reason.code_or_text() == "core.overlay_row_withheld"
+            ) && harness.sink.frames().is_empty(),
+            "a hidden command with wait_for_show={wait} reported {:?} and sent {:?}",
+            telemetry.outcome,
+            harness.sink.frames()
+        );
+    }
+}
+
 #[tokio::test(start_paused = true)]
 async fn a_waiting_step_returns_when_its_show_leaves_the_screen_and_a_plain_one_at_once() {
     for (wait, returns_after) in [

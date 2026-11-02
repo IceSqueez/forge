@@ -947,6 +947,111 @@ async fn sending_content_refuses_an_unknown_identity_or_an_overlay_type_this_bui
     );
 }
 
+fn filtering_chat(id: &str) -> OverlayDefinition {
+    let mut stored = definition_of_kind(id, CHAT_KIND);
+    stored.config = OverlayConfig::from([
+        ("hide_commands".to_owned(), Variant::Bool(true)),
+        (
+            "hidden_accounts".to_owned(),
+            Variant::String("Nightbot".to_owned()),
+        ),
+    ]);
+    stored
+}
+
+fn chat_row(login: &str, message: &str) -> ArgStack {
+    ArgStack::new()
+        .set("user_login".to_owned(), Variant::String(login.to_owned()))
+        .set(
+            "message_text".to_owned(),
+            Variant::String(message.to_owned()),
+        )
+}
+
+#[tokio::test]
+async fn a_filtered_chat_row_is_withheld_and_never_reaches_the_page() {
+    for (args, case) in [
+        (chat_row("nightbot", "hello"), "a hidden account"),
+        (chat_row("viewer", "!so ada"), "a command"),
+    ] {
+        let stored = filtering_chat("chat");
+        let harness = harness(vec![stored.clone()], true);
+
+        let dispatch = harness
+            .service
+            .send_to(
+                &stored.id,
+                &OverlayConfig::new(),
+                &args,
+                forge_runtime::OverlaySendOptions::default(),
+            )
+            .await
+            .expect("a filtered row is not an error");
+
+        assert!(
+            matches!(dispatch, OverlayDispatch::Withheld),
+            "{case} was dispatched as {dispatch:?}"
+        );
+        assert!(
+            harness.sink.frames().is_empty(),
+            "{case} still reached the page as {:?}",
+            harness.sink.frames()
+        );
+    }
+}
+
+#[tokio::test]
+async fn a_chat_row_the_filters_pass_reaches_the_page() {
+    let stored = filtering_chat("chat");
+    let harness = harness(vec![stored.clone()], true);
+
+    let dispatch = harness
+        .service
+        .send_to(
+            &stored.id,
+            &OverlayConfig::new(),
+            &chat_row("viewer", "hello"),
+            forge_runtime::OverlaySendOptions::default(),
+        )
+        .await
+        .expect("a stored chat overlay accepts a send");
+
+    assert!(
+        matches!(dispatch, OverlayDispatch::Applied(_)) && harness.sink.frames().len() == 1,
+        "a row no filter matches was dispatched as {dispatch:?} with frames {:?}",
+        harness.sink.frames()
+    );
+}
+
+#[tokio::test]
+async fn a_test_fire_of_a_chat_overlay_is_shown_even_when_its_sample_matches_the_filters() {
+    let sample_login = forge_overlay::SampleContext::neutral()
+        .args()
+        .get("user_login")
+        .and_then(Variant::as_str)
+        .expect("the neutral sample names a sender")
+        .to_owned();
+    let mut stored = filtering_chat("chat");
+    stored.config.extend(text_config(&[
+        ("hidden_accounts", &sample_login),
+        ("author", &sample_login),
+        ("message", "!so ada"),
+    ]));
+    let harness = harness(vec![stored.clone()], true);
+
+    harness
+        .service
+        .test_fire(&stored.id, &common::NeutralSamples)
+        .await
+        .expect("a stored chat overlay samples a row");
+
+    assert_eq!(
+        harness.sink.frames().len(),
+        1,
+        "the preview of a filtering chat overlay never reached the page"
+    );
+}
+
 fn announcement() -> OverlayConfig {
     announcement_content(&AudioAnnouncement {
         clip_id: CLIP_ID,

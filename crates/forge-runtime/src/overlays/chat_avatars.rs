@@ -1,6 +1,6 @@
 use std::collections::{BTreeSet, HashMap, HashSet, VecDeque};
 use std::sync::{Arc, Mutex, RwLock};
-use std::time::{Duration, Instant};
+use std::time::Duration;
 
 use forge_net::TaskOwner;
 use forge_overlay::kinds::chat::KIND_ID as CHAT_KIND_ID;
@@ -8,6 +8,8 @@ use forge_overlay::{ChatAvatarSlot, RowAvatar, page_avatar_url};
 use forge_platform_core::{AvatarLookup, ViewerAvatarSource};
 use forge_storage::OverlayRepo;
 use forge_types::{PlatformId, RecoverMutex, RecoverRwLock};
+
+use tokio::time::Instant;
 
 use crate::overlays::overlay_service::OverlayFrameSink;
 
@@ -66,11 +68,6 @@ pub struct ChatAvatars {
 impl ChatAvatars {
     pub fn register(&self, platform: PlatformId, source: Arc<dyn ViewerAvatarSource>) {
         self.sources.write_recover().insert(platform, source);
-    }
-
-    pub fn unregister(&self, platform: PlatformId) {
-        self.sources.write_recover().remove(&platform);
-        self.book.lock_recover().forget_waiting(platform);
     }
 
     fn source(&self, platform: PlatformId) -> Option<Arc<dyn ViewerAvatarSource>> {
@@ -162,6 +159,7 @@ impl ChatAvatars {
             tracing::debug!(platform = %platform.as_str(), "viewer avatars unavailable; pausing lookups");
             book.paused_until
                 .insert(platform, Instant::now() + UNAVAILABLE_PAUSE);
+            book.forget_waiting(platform);
         }
         Some(fills)
     }

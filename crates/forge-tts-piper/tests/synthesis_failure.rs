@@ -10,6 +10,8 @@ use forge_tts_piper::PiperEngine;
 
 const VOICE_STEM: &str = "en_US-amy-medium";
 
+static ONE_FAKE_BINARY_AT_A_TIME: tokio::sync::Mutex<()> = tokio::sync::Mutex::const_new(());
+
 fn install_voice(dir: &Path) {
     std::fs::write(dir.join(format!("{VOICE_STEM}.onnx")), b"fake onnx").expect("write onnx");
     std::fs::write(
@@ -40,6 +42,7 @@ fn request() -> SynthesisRequest {
 #[tokio::test]
 async fn a_piper_process_that_exits_with_failure_is_a_synthesis_failure_not_an_unavailable_engine()
 {
+    let _exclusive = ONE_FAKE_BINARY_AT_A_TIME.lock().await;
     for (body, detail_part) in [
         (
             "cat > /dev/null; echo 'model is corrupt' >&2; exit 3",
@@ -109,6 +112,7 @@ impl Rig {
 
 #[tokio::test]
 async fn little_endian_stdout_becomes_samples_at_the_voice_rate_and_a_stray_byte_is_dropped() {
+    let _exclusive = ONE_FAKE_BINARY_AT_A_TIME.lock().await;
     let rig = rig(r"cat > /dev/null; printf '\001\000\377\177\000\200\007'");
 
     let pcm = rig.engine.synthesize(request()).await.expect("pcm");
@@ -119,6 +123,7 @@ async fn little_endian_stdout_becomes_samples_at_the_voice_rate_and_a_stray_byte
 
 #[tokio::test]
 async fn a_speed_change_passes_the_inverse_length_scale_and_neutral_speed_passes_none() {
+    let _exclusive = ONE_FAKE_BINARY_AT_A_TIME.lock().await;
     let rig = rig(RECORD_ARGV);
 
     rig.engine
@@ -136,6 +141,7 @@ async fn a_speed_change_passes_the_inverse_length_scale_and_neutral_speed_passes
 
 #[tokio::test]
 async fn a_multi_speaker_voice_passes_its_speaker_and_a_single_speaker_voice_passes_none() {
+    let _exclusive = ONE_FAKE_BINARY_AT_A_TIME.lock().await;
     let rig = rig(RECORD_ARGV);
 
     rig.engine
@@ -153,6 +159,7 @@ async fn a_multi_speaker_voice_passes_its_speaker_and_a_single_speaker_voice_pas
 
 #[tokio::test]
 async fn the_text_reaches_stdin_ending_in_exactly_one_newline() {
+    let _exclusive = ONE_FAKE_BINARY_AT_A_TIME.lock().await;
     for text in ["hello", "hello\n"] {
         let rig = rig("cat > $OUT/stdin");
 
@@ -173,6 +180,7 @@ async fn the_text_reaches_stdin_ending_in_exactly_one_newline() {
 
 #[tokio::test]
 async fn ssml_is_refused_before_the_process_starts() {
+    let _exclusive = ONE_FAKE_BINARY_AT_A_TIME.lock().await;
     let rig = rig("touch $OUT/started");
 
     let result = rig
@@ -189,6 +197,7 @@ async fn ssml_is_refused_before_the_process_starts() {
 
 #[tokio::test]
 async fn a_voice_outside_the_catalog_is_refused_before_the_process_starts() {
+    let _exclusive = ONE_FAKE_BINARY_AT_A_TIME.lock().await;
     let rig = rig("touch $OUT/started");
 
     let result = rig
@@ -205,6 +214,7 @@ async fn a_voice_outside_the_catalog_is_refused_before_the_process_starts() {
 
 #[tokio::test]
 async fn a_process_that_never_finishes_is_a_timeout_carrying_the_budget() {
+    let _exclusive = ONE_FAKE_BINARY_AT_A_TIME.lock().await;
     const BUDGET_MS: u64 = 50;
     let rig = rig_with_budget("exec sleep 600", Duration::from_millis(BUDGET_MS));
 

@@ -52,3 +52,39 @@ pub(crate) fn absolute_https(raw: &str) -> String {
         None => raw.to_owned(),
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn an_emote_code_is_kept_trimmed_up_to_the_length_cap() {
+        let at_cap = "a".repeat(100);
+        for (code, kept) in [
+            (" KEKW ", "KEKW"),
+            ("привіт", "привіт"),
+            (at_cap.as_str(), at_cap.as_str()),
+        ] {
+            assert_eq!(
+                emote(code, String::new()).map(|e| e.code).as_deref(),
+                Some(kept),
+                "{code:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn an_emote_code_that_is_blank_split_or_past_the_cap_is_refused() {
+        let past_cap = "a".repeat(101);
+        for code in [
+            "",
+            "   ",
+            "two words",
+            "tab\tbed",
+            "line\nbreak",
+            past_cap.as_str(),
+        ] {
+            assert_eq!(emote(code, String::new()), None, "{code:?}");
+        }
+    }
+}

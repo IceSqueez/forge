@@ -155,6 +155,73 @@ mod tests {
     }
 
     #[test]
+    fn chat_emote_ids_map_each_native_emote_name_to_its_id_and_skip_cheermotes() {
+        let event = chat_event(chat_with(json!([
+            { "type": "emote", "id": "425618", "name": "LUL" },
+            { "type": "text", "text": " and " },
+            { "type": "emote", "id": "emotesv2_dcd06b30a5c24f6eb871e8f5edbd44f7", "name": "DinoDance" },
+            { "type": "emote", "id": "Cheer", "name": "Cheer100" },
+            { "type": "emote", "id": "cheer", "name": "Cheer500" },
+            { "type": "emote", "id": "", "name": "Blank" },
+            { "type": "emote", "id": "3", "name": "  " },
+        ])));
+
+        assert_eq!(
+            chat_emote_ids(&event),
+            BTreeMap::from([
+                (
+                    "DinoDance".to_owned(),
+                    "emotesv2_dcd06b30a5c24f6eb871e8f5edbd44f7".to_owned()
+                ),
+                ("LUL".to_owned(), "425618".to_owned()),
+            ])
+        );
+    }
+
+    #[test]
+    fn an_emote_named_after_its_id_without_a_bit_amount_is_not_a_cheermote() {
+        let event = chat_event(chat_with(json!([
+            { "type": "emote", "id": "Kappa", "name": "Kappa" },
+            { "type": "emote", "id": "Cheer", "name": "CheerHype" },
+        ])));
+
+        assert_eq!(
+            chat_emote_ids(&event).into_keys().collect::<Vec<_>>(),
+            ["CheerHype", "Kappa"]
+        );
+    }
+
+    #[test]
+    fn message_emote_ids_read_only_the_string_ids_of_the_variable() {
+        let ids = |value: Option<Variant>| {
+            let stack = match value {
+                Some(value) => ArgStack::new().set(MESSAGE_EMOTE_IDS_VARIABLE.to_owned(), value),
+                None => ArgStack::new(),
+            };
+            message_emote_ids(&stack)
+        };
+        let mixed = Variant::Object(BTreeMap::from([
+            ("LUL".to_owned(), Variant::String("425618".to_owned())),
+            ("Kappa".to_owned(), Variant::Int(25)),
+        ]));
+        for (label, value, expected) in [
+            (
+                "mixed id types",
+                Some(mixed),
+                BTreeMap::from([("LUL".to_owned(), "425618".to_owned())]),
+            ),
+            (
+                "not an object",
+                Some(Variant::String("LUL".to_owned())),
+                BTreeMap::new(),
+            ),
+            ("missing", None, BTreeMap::new()),
+        ] {
+            assert_eq!(ids(value), expected, "{label}");
+        }
+    }
+
+    #[test]
     fn message_emote_codes_read_the_string_items_of_the_variable() {
         let codes = |value: Option<Variant>| {
             let stack = match value {

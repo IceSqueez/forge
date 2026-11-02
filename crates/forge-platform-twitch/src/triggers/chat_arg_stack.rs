@@ -146,7 +146,13 @@ mod tests {
             stack.get("message_emotes"),
             Some(&Variant::Array(vec![Variant::String("LUL".to_owned())]))
         );
-        assert_eq!(stack.snapshot().len(), expected.len() + 2);
+        assert_eq!(
+            stack.get("message_emote_ids"),
+            Some(&Variant::Object(
+                [("LUL".to_owned(), Variant::String("425618".to_owned()))].into()
+            ))
+        );
+        assert_eq!(stack.snapshot().len(), expected.len() + 3);
     }
 
     #[test]
@@ -171,6 +177,7 @@ mod tests {
                 "user_color",
                 "first_message",
                 "message_emotes",
+                "message_emote_ids",
                 "chat.message_id",
             ]
         );

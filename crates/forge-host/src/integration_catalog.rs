@@ -95,7 +95,7 @@ mod endpoint_tests {
 
     use super::endpoint_surfaces;
 
-    const PRODUCTION: [(&str, &str); 13] = [
+    const PRODUCTION: [(&str, &str); 16] = [
         ("FORGE_TWITCH_API_BASE_URL", "https://api.twitch.tv"),
         (
             "FORGE_TWITCH_EVENTSUB_WS_URL",
@@ -124,6 +124,15 @@ mod endpoint_tests {
         ),
         ("FORGE_MONOBANK_API_BASE_URL", "https://api.monobank.ua"),
         ("FORGE_DISCORD_API_BASE_URL", "https://discord.com/api"),
+        ("FORGE_SEVEN_TV_API_BASE_URL", "https://7tv.io/v3"),
+        (
+            "FORGE_BETTER_TTV_API_BASE_URL",
+            "https://api.betterttv.net/3",
+        ),
+        (
+            "FORGE_FRANKER_FACE_Z_API_BASE_URL",
+            "https://api.frankerfacez.com/v1",
+        ),
     ];
 
     #[test]

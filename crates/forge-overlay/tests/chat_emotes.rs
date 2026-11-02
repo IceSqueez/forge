@@ -356,3 +356,19 @@ fn the_chat_page_reads_the_settled_parts_under_the_keys_the_runtime_writes() {
         );
     }
 }
+
+#[test]
+fn a_twitch_row_whose_platform_carries_padding_still_gets_its_emotes() {
+    for platform in [" twitch", "twitch ", "\ttwitch\n"] {
+        assert!(
+            parts_of(
+                platform,
+                "KEKW LUL",
+                &native(&[("LUL", LUL_ID)]),
+                &OverlayConfig::new()
+            )
+            .is_some(),
+            "{platform:?}"
+        );
+    }
+}

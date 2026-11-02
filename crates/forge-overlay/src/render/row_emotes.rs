@@ -4,9 +4,10 @@ use forge_registry::message_emote_ids;
 use forge_types::{ArgStack, PlatformId, Variant};
 
 use super::page_image::vetted_image_url;
+use super::row_avatar::row_platform;
 use crate::catalog::descriptor::{OverlayConfig, OverlayKindDescriptor};
 use crate::config::{
-    MESSAGE, MESSAGE_PARTS, PLATFORM, THIRD_PARTY_EMOTES, effective_overlay_config, read_str,
+    MESSAGE, MESSAGE_PARTS, THIRD_PARTY_EMOTES, effective_overlay_config, read_str,
 };
 use crate::kinds::chat::KIND_ID;
 
@@ -78,9 +79,7 @@ pub fn settle_message_parts(
     args: &ArgStack,
     third_party: &dyn Fn(&str) -> Option<String>,
 ) {
-    if descriptor.id() != KIND_ID
-        || PlatformId::from_wire(read_str(content, PLATFORM)) != Some(PlatformId::Twitch)
-    {
+    if descriptor.id() != KIND_ID || row_platform(content) != Some(PlatformId::Twitch) {
         return;
     }
     let third_party_shown = effective_overlay_config(descriptor, stored).get(THIRD_PARTY_EMOTES)

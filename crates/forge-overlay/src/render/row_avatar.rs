@@ -48,6 +48,10 @@ fn image_hosts(platform: PlatformId) -> &'static [&'static str] {
     }
 }
 
+pub(crate) fn row_platform(content: &OverlayConfig) -> Option<PlatformId> {
+    PlatformId::from_wire(read_str(content, PLATFORM).trim())
+}
+
 pub fn page_avatar_url(platform: PlatformId, raw: &str) -> Option<String> {
     vetted_image_url(raw, image_hosts(platform))
 }
@@ -60,7 +64,7 @@ pub fn settle_chat_avatar(
     if descriptor.id() != KIND_ID {
         return None;
     }
-    let platform = PlatformId::from_wire(read_str(content, PLATFORM).trim());
+    let platform = row_platform(content);
     let given = read_str(content, AVATAR).trim().to_owned();
     if !given.is_empty() {
         match platform.and_then(|platform| page_avatar_url(platform, &given)) {

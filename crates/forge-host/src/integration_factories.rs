@@ -162,12 +162,19 @@ impl IntegrationFactory<BuiltinObject> for TwitchFactory {
         };
         tasks.track(spawn_connect(chat_platform, "twitch"));
         let channel_emotes = self.channel_emotes.clone();
-        if let (Some(channel_emotes), Some(broadcaster_id)) = (&channel_emotes, broadcaster_id) {
-            tasks.track(tokio::spawn(channel_emotes.follow(broadcaster_id)));
-        }
+        let emote_follow = match (&channel_emotes, broadcaster_id) {
+            (Some(channel_emotes), Some(broadcaster_id)) => {
+                Some(tokio::spawn(channel_emotes.follow(broadcaster_id)))
+            }
+            _ => None,
+        };
         let viewers = bundle.viewer_source();
         let object = twitch_builtin_object(Arc::clone(&bundle));
         let teardown = platform_teardown(tasks, relay, async move {
+            if let Some(emote_follow) = emote_follow {
+                emote_follow.abort();
+                let _stopped = emote_follow.await;
+            }
             if let Some(channel_emotes) = channel_emotes {
                 channel_emotes.forget();
             }

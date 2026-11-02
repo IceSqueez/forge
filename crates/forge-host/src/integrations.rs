@@ -861,6 +861,7 @@ mod tests {
             forge_discord::DISCORD_INTEGRATION.id,
             forge_midi::MIDI_INTEGRATION.id,
             forge_hotkey::HOTKEY_INTEGRATION.id,
+            forge_monobank::MONOBANK_INTEGRATION.id,
         ]
     }
 
@@ -920,7 +921,7 @@ mod tests {
         assert!(violations.is_empty(), "{violations:#?}");
         for integration in declared_integrations()
             .into_iter()
-            .filter(|id| id.as_str() != "hotkey")
+            .filter(|id| !matches!(id.as_str(), "hotkey" | "monobank"))
         {
             assert!(
                 sub_actions

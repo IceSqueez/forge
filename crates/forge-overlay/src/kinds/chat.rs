@@ -17,7 +17,7 @@ use crate::render::preview::{PreviewComposition, PreviewShape, compose};
 
 pub const KIND_ID: &str = "overlay.chat";
 
-pub const CONFIG_SCHEMA_VERSION: u32 = 3;
+pub const CONFIG_SCHEMA_VERSION: u32 = 4;
 
 const ROW_ENTRANCE_MS: i64 = 300;
 const ROW_TEMPLATE_ID: &str = "row-template";
@@ -95,6 +95,7 @@ impl OverlayKindDescriptor for ChatOverlayKind {
         defaults.insert(config::PLATFORM.to_owned(), config::text(""));
         defaults.insert(config::MESSAGE_ID.to_owned(), config::text(""));
         defaults.insert(config::USER_ID.to_owned(), config::text(""));
+        defaults.extend(config::chat_row_defaults());
         defaults
     }
 
@@ -110,6 +111,7 @@ impl OverlayKindDescriptor for ChatOverlayKind {
         ];
         fields.extend(config::shared_style_fields());
         fields.push(config::position_field("Newest message at"));
+        fields.extend(config::chat_row_fields());
         fields
     }
 

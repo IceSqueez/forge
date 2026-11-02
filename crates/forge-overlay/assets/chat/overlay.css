@@ -51,6 +51,11 @@ body[data-position="top"] #stage {
   background: rgba(20, 20, 28, 0.78);
 }
 
+.row.leaving {
+  opacity: 0;
+  transition: opacity 300ms ease-in;
+}
+
 .badges {
   color: var(--accent);
   font-size: calc(11px * var(--text-scale));

@@ -32,6 +32,9 @@ pub const BADGES: &str = "badges";
 pub const MESSAGE: &str = "message";
 pub const MESSAGE_ID: &str = "message_id";
 pub const USER_ID: &str = "user_id";
+pub const ROW_LIMIT: &str = "row_limit";
+pub const HIDE_ROWS: &str = "hide_rows";
+pub const HIDE_ROWS_AFTER_SECS: &str = "hide_rows_after_secs";
 
 pub const LABEL: &str = "label";
 pub const VALUE: &str = "value";
@@ -123,6 +126,14 @@ pub const DEFAULT_IMAGE_HEIGHT_PX: i64 = 120;
 
 pub const DURATION_MIN_SECS: i64 = 1;
 pub const DURATION_MAX_SECS: i64 = 15;
+
+pub const ROW_LIMIT_MIN: i64 = 1;
+pub const ROW_LIMIT_MAX: i64 = 100;
+pub const DEFAULT_ROW_LIMIT: i64 = 15;
+
+pub const HIDE_ROWS_AFTER_MIN_SECS: i64 = 1;
+pub const HIDE_ROWS_AFTER_MAX_SECS: i64 = 300;
+pub const DEFAULT_HIDE_ROWS_AFTER_SECS: i64 = 30;
 
 pub const DESIGN_SIZE_MIN_PX: i64 = 40;
 pub const DESIGN_SIZE_MAX_PX: i64 = 7680;

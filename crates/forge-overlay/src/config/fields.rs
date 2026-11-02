@@ -192,6 +192,48 @@ pub(crate) fn chat_user_id_field() -> SectionedField {
     )
 }
 
+pub(crate) fn chat_row_fields() -> [SectionedField; 3] {
+    [
+        in_section(
+            ConfigSection::Behavior,
+            FormField::Integer {
+                key: ROW_LIMIT,
+                label: "Messages kept",
+                min: ROW_LIMIT_MIN,
+                max: ROW_LIMIT_MAX,
+            },
+        ),
+        in_section(
+            ConfigSection::Behavior,
+            FormField::Toggle {
+                key: HIDE_ROWS,
+                label: "Hide messages",
+            },
+        ),
+        in_section(
+            ConfigSection::Behavior,
+            FormField::Slider {
+                key: HIDE_ROWS_AFTER_SECS,
+                label: "Hide after",
+                min: HIDE_ROWS_AFTER_MIN_SECS,
+                max: HIDE_ROWS_AFTER_MAX_SECS,
+                unit: "s",
+            },
+        ),
+    ]
+}
+
+pub(crate) fn chat_row_defaults() -> OverlayConfig {
+    OverlayConfig::from([
+        (ROW_LIMIT.to_owned(), Variant::Int(DEFAULT_ROW_LIMIT)),
+        (HIDE_ROWS.to_owned(), Variant::Bool(false)),
+        (
+            HIDE_ROWS_AFTER_SECS.to_owned(),
+            Variant::Int(DEFAULT_HIDE_ROWS_AFTER_SECS),
+        ),
+    ])
+}
+
 pub(crate) fn label_field() -> SectionedField {
     in_section(
         ConfigSection::Content,

@@ -8,9 +8,10 @@ use forge_components::{
     toggle, tr,
 };
 use forge_overlay::config::{
-    BACKGROUND_COLOR, BACKGROUND_OPACITY, DESIGN_HEIGHT, DESIGN_WIDTH, DURATION, IMAGE,
-    IMAGE_HEIGHT, IMAGE_POSITION, LABEL_OFFSET_X, LABEL_OFFSET_Y, LABEL_SIDE, MARGIN_BOTTOM,
-    MARGIN_LEFT, MARGIN_RIGHT, MARGIN_TOP, SOUND, SPEECH, SPEECH_VOICE,
+    BACKGROUND_COLOR, BACKGROUND_OPACITY, DESIGN_HEIGHT, DESIGN_WIDTH, DURATION, HIDE_ROWS,
+    HIDE_ROWS_AFTER_SECS, IMAGE, IMAGE_HEIGHT, IMAGE_POSITION, LABEL_OFFSET_X, LABEL_OFFSET_Y,
+    LABEL_SIDE, MARGIN_BOTTOM, MARGIN_LEFT, MARGIN_RIGHT, MARGIN_TOP, ROW_LIMIT, SOUND, SPEECH,
+    SPEECH_VOICE,
 };
 use forge_overlay::{ConfigSection, DeliveryDisposition, OverlayConfig};
 use forge_runtime::{OverlayDelivery, OverlayDispatch, ShowEnd, ShowTicket};
@@ -89,6 +90,9 @@ pub(super) fn base_label(key: &str) -> Option<String> {
         IMAGE => Some(tr!("overlays_alert_image")),
         IMAGE_POSITION => Some(tr!("overlays_alert_image_position")),
         IMAGE_HEIGHT => Some(tr!("overlays_alert_image_height")),
+        ROW_LIMIT => Some(tr!("overlays_chat_row_limit")),
+        HIDE_ROWS => Some(tr!("overlays_chat_hide_rows")),
+        HIDE_ROWS_AFTER_SECS => Some(tr!("overlays_chat_hide_rows_after")),
         LABEL_SIDE => Some(tr!("overlays_frame_label_side")),
         LABEL_OFFSET_X => Some(tr!("overlays_frame_label_offset_x")),
         LABEL_OFFSET_Y => Some(tr!("overlays_frame_label_offset_y")),
@@ -109,6 +113,8 @@ pub(super) fn base_hint(key: &str) -> Option<String> {
         DURATION => Some(tr!("overlays_base_duration_hint")),
         BACKGROUND_COLOR => Some(tr!("overlays_alert_background_color_hint")),
         IMAGE => Some(tr!("overlays_alert_image_hint")),
+        ROW_LIMIT => Some(tr!("overlays_chat_row_limit_hint")),
+        HIDE_ROWS => Some(tr!("overlays_chat_hide_rows_hint")),
         LABEL_OFFSET_X => Some(tr!("overlays_frame_label_offset_x_hint")),
         LABEL_OFFSET_Y => Some(tr!("overlays_frame_label_offset_y_hint")),
         _ => None,

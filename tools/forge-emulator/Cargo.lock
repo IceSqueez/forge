@@ -883,6 +883,19 @@ name = "forge-durable"
 version = "0.7.1"
 
 [[package]]
+name = "forge-emotes"
+version = "0.7.1"
+dependencies = [
+ "forge-net",
+ "forge-platform-core",
+ "forge-types",
+ "serde_json",
+ "thiserror",
+ "tokio",
+ "tracing",
+]
+
+[[package]]
 name = "forge-emulator"
 version = "0.0.0"
 dependencies = [
@@ -893,6 +906,7 @@ dependencies = [
  "directories",
  "forge-discord",
  "forge-donatello",
+ "forge-emotes",
  "forge-events",
  "forge-monobank",
  "forge-net",

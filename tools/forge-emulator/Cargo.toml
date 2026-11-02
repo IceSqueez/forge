@@ -30,6 +30,7 @@ workspace = true
 [dependencies]
 forge-discord = { path = "../../crates/forge-discord" }
 forge-donatello = { path = "../../crates/forge-donatello" }
+forge-emotes = { path = "../../crates/forge-emotes" }
 forge-events = { path = "../../crates/forge-events" }
 forge-monobank = { path = "../../crates/forge-monobank" }
 forge-net = { path = "../../crates/forge-net" }

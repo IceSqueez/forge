@@ -1,6 +1,7 @@
 pub mod console;
 pub mod discord;
 pub mod donatello;
+pub mod emotes;
 pub mod kick;
 pub mod monobank;
 pub mod obs;

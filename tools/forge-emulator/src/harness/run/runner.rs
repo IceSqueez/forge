@@ -78,12 +78,14 @@ pub async fn run_scenario(
         seed,
         attempts,
         spec,
+        emotes,
     } = launched;
     let attached = match attach(scenario, &client, events, &seed).await {
         Ok(attached) => attached,
         Err(e) => {
             drop(client);
             let error = abandon(process, grace, e).await;
+            emotes.shutdown().await;
             fakes.shutdown().await;
             return Err(error);
         }
@@ -131,6 +133,7 @@ pub async fn run_scenario(
 
     let pid = forge.last_pid();
     let teardown = tear_down(forge, grace).await;
+    emotes.shutdown().await;
     fakes.shutdown().await;
 
     let exited_during_run = teardown.exited_during_run;

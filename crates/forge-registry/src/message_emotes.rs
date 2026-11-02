@@ -1,7 +1,10 @@
+use std::collections::BTreeMap;
+
 use forge_events::Event;
 use forge_types::{ArgStack, ChatPayload, ChatSegment, DeclaredVariable, Variant, VariantKind};
 
 pub(crate) const MESSAGE_EMOTES_VARIABLE: &str = "message_emotes";
+pub(crate) const MESSAGE_EMOTE_IDS_VARIABLE: &str = "message_emote_ids";
 
 pub(crate) fn message_emotes_declaration() -> DeclaredVariable {
     DeclaredVariable {
@@ -35,6 +38,52 @@ pub fn message_emote_codes(args: &ArgStack) -> Vec<String> {
                 .iter()
                 .filter_map(Variant::as_str)
                 .map(str::to_owned)
+                .collect()
+        })
+        .unwrap_or_default()
+}
+
+pub(crate) fn message_emote_ids_declaration() -> DeclaredVariable {
+    DeclaredVariable {
+        name: MESSAGE_EMOTE_IDS_VARIABLE.to_owned(),
+        kind: VariantKind::Object,
+        synthesis: None,
+    }
+}
+
+fn is_cheer(id: &str, name: &str) -> bool {
+    name.get(..id.len())
+        .filter(|prefix| prefix.eq_ignore_ascii_case(id))
+        .and_then(|_| name.get(id.len()..))
+        .is_some_and(|amount| !amount.is_empty() && amount.chars().all(|c| c.is_ascii_digit()))
+}
+
+pub fn chat_emote_ids(event: &Event) -> BTreeMap<String, String> {
+    let Some(envelope) = event.payload.get(ChatPayload::KEY) else {
+        return BTreeMap::new();
+    };
+    let Ok(chat) = serde_json::from_value::<ChatPayload>(envelope.clone()) else {
+        return BTreeMap::new();
+    };
+    chat.segments
+        .into_iter()
+        .filter_map(|segment| match segment {
+            ChatSegment::Emote { id, name }
+                if !id.trim().is_empty() && !name.trim().is_empty() && !is_cheer(&id, &name) =>
+            {
+                Some((name, id))
+            }
+            _ => None,
+        })
+        .collect()
+}
+
+pub fn message_emote_ids(args: &ArgStack) -> BTreeMap<String, String> {
+    args.get(MESSAGE_EMOTE_IDS_VARIABLE)
+        .and_then(Variant::as_object)
+        .map(|ids| {
+            ids.iter()
+                .filter_map(|(name, id)| Some((name.clone(), id.as_str()?.to_owned())))
                 .collect()
         })
         .unwrap_or_default()

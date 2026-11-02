@@ -10,7 +10,9 @@ use crate::command_phrase::{
 };
 use crate::descriptor::TriggerKindDescriptor;
 use crate::first_chatter::{first_message_declaration, is_first_chat_message};
-use crate::message_emotes::{chat_emote_codes, message_emotes_declaration};
+use crate::message_emotes::{
+    chat_emote_codes, chat_emote_ids, message_emote_ids_declaration, message_emotes_declaration,
+};
 use crate::vocabulary::{
     ActorRole, ActorSlot, CanonicalCount, CanonicalVariable, MoneySlot, VariableStanding,
 };
@@ -231,6 +233,17 @@ impl TriggerVariables {
                 chat_emote_codes(event)
                     .into_iter()
                     .map(Variant::String)
+                    .collect(),
+            )
+        })
+    }
+
+    pub fn message_emote_ids(self) -> Self {
+        self.event_specific(message_emote_ids_declaration(), |event| {
+            Variant::Object(
+                chat_emote_ids(event)
+                    .into_iter()
+                    .map(|(name, id)| (name, Variant::String(id)))
                     .collect(),
             )
         })

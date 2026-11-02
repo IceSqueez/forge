@@ -2820,6 +2820,19 @@ dependencies = [
 ]
 
 [[package]]
+name = "forge-emotes"
+version = "0.7.1"
+dependencies = [
+ "forge-net",
+ "forge-platform-core",
+ "forge-types",
+ "serde_json",
+ "thiserror 2.0.21",
+ "tokio",
+ "tracing",
+]
+
+[[package]]
 name = "forge-events"
 version = "0.7.1"
 dependencies = [
@@ -2841,6 +2854,7 @@ dependencies = [
  "forge-audio",
  "forge-discord",
  "forge-donatello",
+ "forge-emotes",
  "forge-events",
  "forge-host",
  "forge-hotkey",

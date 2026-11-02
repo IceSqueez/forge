@@ -2,6 +2,7 @@ mod auth;
 mod ban_list;
 mod builtin;
 mod chat;
+mod chat_emote_book;
 mod collections;
 mod connection_announcer;
 mod credential_errors;
@@ -44,6 +45,7 @@ pub use chat::{
     AtomicConnectionState, ChatPlatform, ConnectionState, ConnectionTransition,
     connection_state_changed_event,
 };
+pub use chat_emote_book::ChatEmoteBook;
 pub use collections::{
     BuiltinCollections, CollectionFailure, CollectionField, CollectionId, CollectionItem,
     CollectionItemAccess, CollectionItemId, CollectionMetadata, CollectionOutcome,

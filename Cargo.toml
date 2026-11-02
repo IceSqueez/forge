@@ -15,6 +15,7 @@ members = [
   "crates/forge-platform-twitch",
   "crates/forge-platform-youtube",
   "crates/forge-platform-kick",
+  "crates/forge-emotes",
   "crates/forge-obs",
   "crates/forge-vtube",
   "crates/forge-discord",

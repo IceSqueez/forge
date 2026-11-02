@@ -13,19 +13,20 @@ use forge_overlay::{
     RowRemoval, SampleContext, delivered_content, ensure_shared_directory, joined_to_show,
     latest_binding, latest_content, materialize_overlay, read_overlay_source,
     refresh_config_credential, remove_overlay_directory, sample_content, settle_chat_avatar,
-    show_timing, take_speech, write_overlay_source,
+    settle_message_parts, show_timing, take_speech, write_overlay_source,
 };
 use forge_registry::CancelSignal;
 use forge_storage::{
     OverlayConfig, OverlayDefinition, OverlayId, OverlayRepo, SettingsRepo, read_setting,
     settings::core_settings,
 };
-use forge_types::{ArgStack, EventId, LatestValueReader};
+use forge_types::{ArgStack, EventId, LatestValueReader, PlatformId};
 use serde_json::json;
 use ulid::Ulid;
 
 use crate::event_flow::bus::EventBus;
 use crate::overlays::chat_avatars::{ChatAvatars, KnownAvatar};
+use crate::overlays::chat_emotes::ChatEmotes;
 use crate::overlays::overlay_definition_revision::{
     OverlayDefinitionChanges, OverlayDefinitionRevision,
 };
@@ -167,6 +168,7 @@ struct OverlayService {
     speaker: Option<Arc<dyn ShowSpeaker>>,
     latest: Option<Arc<dyn LatestValueReader>>,
     avatars: ChatAvatars,
+    emotes: ChatEmotes,
     definitions: OverlayDefinitionRevision,
     date_names: DateNamesHandle,
     tasks: TaskOwner,
@@ -225,6 +227,7 @@ impl OverlayServiceHandle {
                 speaker,
                 latest,
                 avatars: ChatAvatars::default(),
+                emotes: ChatEmotes::default(),
                 definitions: OverlayDefinitionRevision::default(),
                 date_names,
                 tasks,
@@ -235,6 +238,10 @@ impl OverlayServiceHandle {
 
     pub fn chat_avatars(&self) -> ChatAvatars {
         self.inner.avatars.clone()
+    }
+
+    pub fn chat_emotes(&self) -> ChatEmotes {
+        self.inner.emotes.clone()
     }
 
     pub fn definition_changes(&self) -> OverlayDefinitionChanges {
@@ -554,6 +561,14 @@ impl OverlayServiceHandle {
         if let Some(slot) = settle_chat_avatar(descriptor, &definition.config, &mut content) {
             self.fill_avatar(slot, &mut content);
         }
+        let emotes = &self.inner.emotes;
+        settle_message_parts(
+            descriptor,
+            &definition.config,
+            &mut content,
+            args,
+            &|code| emotes.image(PlatformId::Twitch, code),
+        );
         let speech = take_speech(descriptor, &definition.config, &mut content)
             .filter(|_| self.inner.speaker.is_some())
             .map(|program| ShowSpeech {

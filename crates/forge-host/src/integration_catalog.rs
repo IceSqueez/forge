@@ -76,6 +76,7 @@ pub fn endpoint_surfaces() -> Vec<EndpointSurface> {
         forge_donatello::endpoint_surfaces::ENDPOINT_SURFACES,
         forge_monobank::endpoint_surfaces::ENDPOINT_SURFACES,
         forge_discord::endpoint_surfaces::ENDPOINT_SURFACES,
+        forge_emotes::endpoint_surfaces::ENDPOINT_SURFACES,
     ]
     .concat()
 }

@@ -224,6 +224,16 @@ pub(crate) fn show_avatars_field() -> SectionedField {
     )
 }
 
+pub(crate) fn third_party_emotes_field() -> SectionedField {
+    in_section(
+        ConfigSection::Style,
+        FormField::Toggle {
+            key: THIRD_PARTY_EMOTES,
+            label: "Third-party emotes",
+        },
+    )
+}
+
 pub(crate) fn chat_row_fields() -> [SectionedField; 3] {
     [
         in_section(

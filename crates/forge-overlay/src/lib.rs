@@ -81,5 +81,6 @@ pub use render::page_contract::{
     SHOW_FUNCTION, SOUND_FUNCTION,
 };
 pub use render::row_avatar::{ChatAvatarSlot, RowAvatar, page_avatar_url, settle_chat_avatar};
+pub use render::row_emotes::settle_message_parts;
 pub use render::row_filter::ChatRowFilter;
 pub use render::row_removal::{RowRemoval, RowRemovalScope};

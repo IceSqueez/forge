@@ -10,7 +10,7 @@ use forge_platform_core::{
     PlatformEndpoints, QuickActions,
 };
 use forge_registry::{SubActionRegistry, TriggerRegistry};
-use forge_runtime::{ChatAvatars, DonationIngest, EventBus};
+use forge_runtime::{ChatAvatars, ChatEmotes, DonationIngest, EventBus};
 use forge_storage::{CredentialsRepo, DataProvider};
 use tokio::sync::watch;
 use tokio::task::JoinHandle;
@@ -20,8 +20,8 @@ use crate::donation_factories::{wire_donatello, wire_monobank};
 use crate::donation_services::{DonationService, DonationServices, donatello_service};
 use crate::integration_catalog::declarations;
 use crate::integration_factories::{
-    wire_discord, wire_hotkey, wire_kick, wire_midi, wire_obs, wire_twitch, wire_vtube,
-    wire_youtube,
+    ChatImageBooks, wire_discord, wire_hotkey, wire_kick, wire_midi, wire_obs, wire_twitch,
+    wire_vtube, wire_youtube,
 };
 use crate::integration_sign_out::{SignOutRoute, SignOutRoutes};
 use crate::platform_credentials::PlatformCredentialManagers;
@@ -359,6 +359,7 @@ pub struct IntegrationInputs {
     pub hotkey_main_thread: forge_hotkey::MainThreadLink,
     pub platform_identities: PlatformIdentities,
     pub chat_avatars: ChatAvatars,
+    pub chat_emotes: ChatEmotes,
 }
 
 pub async fn build_integrations(
@@ -374,6 +375,7 @@ pub async fn build_integrations(
         hotkey_main_thread,
         platform_identities,
         chat_avatars,
+        chat_emotes,
     } = inputs;
     let endpoints = &endpoints;
     register_platform_triggers(triggers);
@@ -390,7 +392,10 @@ pub async fn build_integrations(
             bus,
             endpoints,
             client_id,
-            &chat_avatars,
+            ChatImageBooks {
+                avatars: &chat_avatars,
+                emotes: &chat_emotes,
+            },
         )
     }) {
         twitch_bot = Some(twitch.bot());

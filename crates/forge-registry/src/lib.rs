@@ -91,7 +91,9 @@ pub use form::{AmountUnit, CodeKind, CodeLanguage, FormField, UnitAmountBounds};
 pub use integration_references::{IntegrationReferences, ReferencingAction, tally_references};
 pub use kind_platform_contract::KindPlatformContract;
 pub use merge::effective_config;
-pub use message_emotes::{chat_emote_codes, message_emote_codes};
+pub use message_emotes::{
+    chat_emote_codes, chat_emote_ids, message_emote_codes, message_emote_ids,
+};
 pub use references::{
     ConfigReference, InternalNamespace, ReferenceCatalog, ReferenceField, ReferenceListing,
     ReferenceNamespace, ReferenceRemap, ReferenceScope, UnknownKind,

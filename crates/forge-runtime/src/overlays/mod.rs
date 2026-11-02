@@ -1,4 +1,5 @@
 pub(crate) mod chat_avatars;
+pub(crate) mod chat_emotes;
 pub(crate) mod chat_removal_feed;
 pub(crate) mod latest_overlay_feed;
 pub(crate) mod overlay_definition_revision;

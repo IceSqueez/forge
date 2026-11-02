@@ -144,6 +144,7 @@ pub async fn build_host(inputs: HostInputs) -> Host {
     }
 
     let chat_avatars = wiring.chat_avatars();
+    let chat_emotes = wiring.chat_emotes();
     let (sub_action_reg, trigger_reg) = wiring.registries_mut();
     let integrations = build_integrations(
         sub_action_reg,
@@ -156,6 +157,7 @@ pub async fn build_host(inputs: HostInputs) -> Host {
             hotkey_main_thread,
             platform_identities,
             chat_avatars,
+            chat_emotes,
         },
     )
     .await;

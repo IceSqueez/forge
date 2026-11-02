@@ -15,6 +15,7 @@ var SCOPE_MESSAGE = "message";
 var SCOPE_USER = "user";
 var SCOPE_PLATFORM = "platform";
 var SECURE_SCHEME = "https://";
+var EMOTE_CLASS = "emote";
 
 function wholeIn(value, min, max) {
   return typeof value === "number" && Math.floor(value) === value && value >= min && value <= max;
@@ -69,6 +70,38 @@ function showAvatar(row, url) {
   image.hidden = false;
 }
 
+function emoteImage(part) {
+  var image = document.createElement("img");
+  image.className = EMOTE_CLASS;
+  image.alt = part.emote;
+  image.onerror = function () {
+    image.replaceWith(document.createTextNode(part.emote));
+  };
+  image.src = part.url;
+  return image;
+}
+
+function fillMessage(target, values) {
+  var parts = values.message_parts;
+  if (!Array.isArray(parts) || parts.length === 0) {
+    target.textContent = values.message || "";
+    return;
+  }
+  target.textContent = "";
+  parts.forEach(function (part) {
+    if (!part || typeof part !== "object") {
+      return;
+    }
+    if (typeof part.emote === "string" && isPageImage(part.url)) {
+      target.appendChild(emoteImage(part));
+    } else if (typeof part.emote === "string") {
+      target.appendChild(document.createTextNode(part.emote));
+    } else if (typeof part.text === "string") {
+      target.appendChild(document.createTextNode(part.text));
+    }
+  });
+}
+
 function awaitsAvatar(row, avatar) {
   var image = row.querySelector(".avatar");
   return (
@@ -112,7 +145,7 @@ forge.ready(function (config) {
     author.style.color = values.author_color || "";
 
     row.querySelector(".badges").textContent = values.badges || "";
-    row.querySelector('[data-bind="message"]').textContent = values.message || "";
+    fillMessage(row.querySelector('[data-bind="message"]'), values);
 
     var event = (values.event || "").trim();
     row.querySelector(".event").textContent = event;

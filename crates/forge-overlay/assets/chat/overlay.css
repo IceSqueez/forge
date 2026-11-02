@@ -116,3 +116,9 @@ body[data-position="top"] #stage {
   min-width: 0;
   overflow-wrap: anywhere;
 }
+
+.emote {
+  height: calc(24px * var(--text-scale));
+  width: auto;
+  vertical-align: middle;
+}

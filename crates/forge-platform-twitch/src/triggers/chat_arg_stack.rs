@@ -33,6 +33,7 @@ pub(super) fn base_chat_variables() -> TriggerVariables {
         )
         .first_chat_message()
         .message_emotes()
+        .message_emote_ids()
 }
 
 fn chatter_identity(event: &Event) -> ActorIdentity {

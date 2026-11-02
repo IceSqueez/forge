@@ -44,6 +44,7 @@ pub struct TwitchAssembly {
 pub struct TwitchSession {
     platform: Arc<TwitchPlatform>,
     login: Option<Option<String>>,
+    broadcaster_id: Option<String>,
 }
 
 impl TwitchAssembly {
@@ -134,8 +135,11 @@ impl TwitchAssembly {
                 return Err(e);
             }
         };
-        self.broadcaster
-            .replace(stored.as_ref().and_then(BroadcasterIdentity::from_stored));
+        let broadcaster = stored.as_ref().and_then(BroadcasterIdentity::from_stored);
+        let broadcaster_id = broadcaster
+            .as_ref()
+            .map(|identity| identity.user_id().to_owned());
+        self.broadcaster.replace(broadcaster);
         let platform = Arc::new(
             TwitchPlatform::new(
                 ClientSettings {
@@ -152,13 +156,21 @@ impl TwitchAssembly {
             .with_bot(Arc::clone(&self.bot)),
         );
         let login = stored.map(|stored| (!stored.login.is_empty()).then_some(stored.login));
-        Ok(TwitchSession { platform, login })
+        Ok(TwitchSession {
+            platform,
+            login,
+            broadcaster_id,
+        })
     }
 }
 
 impl TwitchSession {
     pub fn chat_platform(&self) -> Arc<dyn ChatPlatform> {
         Arc::clone(&self.platform) as _
+    }
+
+    pub fn broadcaster_id(&self) -> Option<&str> {
+        self.broadcaster_id.as_deref()
     }
 
     pub fn into_bundle(self) -> Option<Arc<TwitchIntegrationBundle>> {

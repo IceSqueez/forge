@@ -73,6 +73,7 @@ pub use overlays::chat_avatars::{
     AVATAR_BATCH_SPACING, AVATAR_BATCH_WINDOW, ChatAvatars, KNOWN_AVATARS_CAPACITY, KnownAvatar,
     WAITING_AVATARS_CAPACITY,
 };
+pub use overlays::chat_emotes::ChatEmotes;
 pub use overlays::chat_removal_feed::{removal_of, spawn_chat_removal_feed};
 pub use overlays::latest_overlay_feed::spawn_latest_overlay_feed;
 pub use overlays::overlay_definition_revision::OverlayDefinitionChanges;

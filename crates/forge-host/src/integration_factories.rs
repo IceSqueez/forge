@@ -8,8 +8,8 @@ use forge_obs::{OBS_AUTO_RECONNECT, OBS_CONNECT_ON_LAUNCH};
 use forge_platform_core::{ChatPlatform, PlatformEndpoints};
 use forge_registry::SubActionRegistry;
 use forge_runtime::{
-    ChatAvatars, EventBus, IntegrationFactory, IntegrationStartError, RunningIntegration,
-    TaskGroup, spawn_chat_send_router,
+    ChatAvatars, ChatEmotes, EventBus, IntegrationFactory, IntegrationStartError,
+    RunningIntegration, TaskGroup, spawn_chat_send_router,
 };
 use forge_storage::{
     CredentialsRepo, DataProvider, Flag, Setting, SettingsRepo, SoundboardClipsRepo, StorageError,
@@ -60,6 +60,12 @@ pub(crate) fn platform_teardown(
 pub(crate) struct TwitchFactory {
     bus: Arc<EventBus>,
     assembly: forge_platform_twitch::TwitchAssembly,
+    channel_emotes: Option<forge_emotes::ChannelEmotes>,
+}
+
+pub(crate) struct ChatImageBooks<'a> {
+    pub(crate) avatars: &'a ChatAvatars,
+    pub(crate) emotes: &'a ChatEmotes,
 }
 
 pub(crate) fn wire_twitch(
@@ -68,7 +74,7 @@ pub(crate) fn wire_twitch(
     bus: &Arc<EventBus>,
     endpoints: &PlatformEndpoints,
     client_id: String,
-    avatars: &ChatAvatars,
+    books: ChatImageBooks<'_>,
 ) -> Option<TwitchFactory> {
     let assembly = forge_platform_twitch::TwitchAssembly::new(
         sub_actions,
@@ -77,10 +83,21 @@ pub(crate) fn wire_twitch(
         endpoints,
         client_id,
     )?;
-    avatars.register(PlatformId::Twitch, assembly.viewer_avatars());
+    books
+        .avatars
+        .register(PlatformId::Twitch, assembly.viewer_avatars());
+    let channel_emotes = forge_emotes::ChannelEmotes::new(endpoints)
+        .inspect_err(|error| tracing::warn!(%error, "third-party emotes unavailable"))
+        .ok();
+    if let Some(channel_emotes) = &channel_emotes {
+        books
+            .emotes
+            .register(PlatformId::Twitch, channel_emotes.book());
+    }
     Some(TwitchFactory {
         bus: Arc::clone(bus),
         assembly,
+        channel_emotes,
     })
 }
 
@@ -135,6 +152,7 @@ impl IntegrationFactory<BuiltinObject> for TwitchFactory {
         );
         let bot = self.assembly.bot();
         tasks.track(tokio::spawn(async move { bot.sync_status().await }));
+        let broadcaster_id = session.broadcaster_id().map(str::to_owned);
         let Some(bundle) = session.into_bundle() else {
             return Ok(RunningIntegration::idle().with_teardown(platform_teardown(
                 tasks,
@@ -143,9 +161,18 @@ impl IntegrationFactory<BuiltinObject> for TwitchFactory {
             )));
         };
         tasks.track(spawn_connect(chat_platform, "twitch"));
+        let channel_emotes = self.channel_emotes.clone();
+        if let (Some(channel_emotes), Some(broadcaster_id)) = (&channel_emotes, broadcaster_id) {
+            tasks.track(tokio::spawn(channel_emotes.follow(broadcaster_id)));
+        }
         let viewers = bundle.viewer_source();
         let object = twitch_builtin_object(Arc::clone(&bundle));
-        let teardown = platform_teardown(tasks, relay, async move { bundle.shutdown().await });
+        let teardown = platform_teardown(tasks, relay, async move {
+            if let Some(channel_emotes) = channel_emotes {
+                channel_emotes.forget();
+            }
+            bundle.shutdown().await;
+        });
         Ok(RunningIntegration::idle()
             .with_object(object)
             .with_viewers(PlatformId::Twitch, viewers)
@@ -975,7 +1002,11 @@ mod tests {
             "factory-test-client".to_owned(),
         )
         .unwrap();
-        let factory = TwitchFactory { bus, assembly };
+        let factory = TwitchFactory {
+            bus,
+            assembly,
+            channel_emotes: None,
+        };
 
         let Err(error) = factory.start().await else {
             panic!("an unreadable sign-in must not start as signed out");

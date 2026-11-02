@@ -8,7 +8,7 @@ use std::sync::{Arc, Mutex};
 use async_trait::async_trait;
 use forge_overlay::{
     AudioAnnouncement, CONFIG_FILE, GENERATOR_VERSION, MARKUP_FILE, OverlayKindRegistry,
-    RESERVED_DIRECTORY, RowRemoval, RowRemovalScope, STYLE_FILE, announcement_content,
+    RESERVED_DIRECTORY, RowAvatar, RowRemoval, RowRemovalScope, STYLE_FILE, announcement_content,
     register_builtin_kinds,
 };
 use forge_runtime::OVERLAY_TEST_FIRE_KIND;
@@ -71,9 +71,14 @@ struct RecordingSink {
     reloads: Mutex<Vec<OverlayId>>,
     revoked: Mutex<Vec<OverlayId>>,
     removals: Mutex<Vec<(OverlayId, RowRemoval)>>,
+    avatars: Mutex<Vec<(OverlayId, RowAvatar)>>,
 }
 
 impl RecordingSink {
+    fn avatars(&self) -> Vec<(OverlayId, RowAvatar)> {
+        self.avatars.lock().unwrap().clone()
+    }
+
     fn removals(&self) -> Vec<(OverlayId, RowRemoval)> {
         self.removals.lock().unwrap().clone()
     }
@@ -123,6 +128,13 @@ impl OverlayFrameSink for RecordingSink {
             .lock()
             .unwrap()
             .push((identity.clone(), removal.clone()));
+    }
+
+    async fn deliver_avatar(&self, identity: &OverlayId, avatar: &RowAvatar) {
+        self.avatars
+            .lock()
+            .unwrap()
+            .push((identity.clone(), avatar.clone()));
     }
 }
 
@@ -1751,4 +1763,123 @@ async fn a_chat_removal_reaches_every_enabled_chat_overlay_and_no_other_kind() {
         vec![(chat.id, removal.clone()), (other_chat.id, removal)]
     );
     assert!(rig.sink.frames().is_empty());
+}
+
+const AVATAR_KEY: &str = "avatar";
+const VIEWER_ID: &str = "42";
+const VIEWER_IMAGE: &str = "https://static-cdn.jtvnw.net/jtv_user_pictures/42.png";
+
+struct OneViewerSource;
+
+#[async_trait]
+impl forge_platform_core::ViewerAvatarSource for OneViewerSource {
+    fn batch_limit(&self) -> usize {
+        100
+    }
+
+    async fn avatars(&self, viewer_ids: &[String]) -> forge_platform_core::AvatarLookup {
+        forge_platform_core::AvatarLookup::Answered(
+            viewer_ids
+                .iter()
+                .filter(|id| id.as_str() == VIEWER_ID)
+                .map(|id| (id.clone(), VIEWER_IMAGE.to_owned()))
+                .collect(),
+        )
+    }
+}
+
+fn avatar_chat(id: &str, enabled: bool) -> OverlayDefinition {
+    let mut stored = definition_of_kind(id, CHAT_KIND);
+    stored.enabled = enabled;
+    stored.config = OverlayConfig::from([("show_avatars".to_owned(), Variant::Bool(true))]);
+    stored
+}
+
+fn viewer_slot() -> forge_overlay::ChatAvatarSlot {
+    forge_overlay::ChatAvatarSlot {
+        platform: forge_types::PlatformId::Twitch,
+        user_id: VIEWER_ID.to_owned(),
+    }
+}
+
+fn twitch_row() -> OverlayConfig {
+    text_config(&[("platform", "twitch"), ("user_id", VIEWER_ID)])
+}
+
+async fn send_row(harness: &Harness, id: &OverlayId) {
+    harness
+        .service
+        .send_to(
+            id,
+            &twitch_row(),
+            &chat_row("viewer", "hello"),
+            forge_runtime::OverlaySendOptions::default(),
+        )
+        .await
+        .expect("a stored chat overlay accepts a row");
+}
+
+#[tokio::test]
+async fn a_row_whose_viewer_avatar_is_already_known_carries_it_in_its_content() {
+    let stored = avatar_chat("chat", true);
+    let harness = harness(vec![stored.clone()], true);
+    let avatars = harness.service.chat_avatars();
+    avatars.register(forge_types::PlatformId::Twitch, Arc::new(OneViewerSource));
+    avatars.ask(viewer_slot());
+    avatars.resolve_batch(forge_types::PlatformId::Twitch).await;
+
+    send_row(&harness, &stored.id).await;
+
+    assert_eq!(
+        harness.sink.frames()[0].content[AVATAR_KEY],
+        serde_json::json!(VIEWER_IMAGE)
+    );
+}
+
+#[tokio::test]
+async fn a_row_whose_viewer_avatar_is_unknown_goes_out_unchanged() {
+    let stored = avatar_chat("chat", true);
+    let harness = harness(vec![stored.clone()], true);
+    harness
+        .service
+        .chat_avatars()
+        .register(forge_types::PlatformId::Twitch, Arc::new(OneViewerSource));
+
+    send_row(&harness, &stored.id).await;
+
+    assert_eq!(
+        harness.sink.frames()[0].content[AVATAR_KEY],
+        serde_json::json!("")
+    );
+}
+
+#[tokio::test]
+async fn a_looked_up_avatar_reaches_every_enabled_chat_overlay_and_no_other() {
+    let first = avatar_chat("chat-a", true);
+    let disabled = avatar_chat("chat-off", false);
+    let alert = definition("alert");
+    let last = avatar_chat("chat-b", true);
+    let harness = harness(vec![first.clone(), disabled, alert, last.clone()], true);
+    harness
+        .service
+        .chat_avatars()
+        .register(forge_types::PlatformId::Twitch, Arc::new(OneViewerSource));
+
+    send_row(&harness, &first.id).await;
+    tokio::time::timeout(std::time::Duration::from_secs(30), async {
+        while !harness.sink.avatars().iter().any(|(id, _)| id == &last.id) {
+            tokio::time::sleep(std::time::Duration::from_millis(10)).await;
+        }
+    })
+    .await
+    .expect("the looked-up avatar never reached the last chat overlay");
+
+    let fill = RowAvatar {
+        slot: viewer_slot(),
+        url: VIEWER_IMAGE.to_owned(),
+    };
+    assert_eq!(
+        harness.sink.avatars(),
+        vec![(first.id.clone(), fill.clone()), (last.id.clone(), fill)]
+    );
 }

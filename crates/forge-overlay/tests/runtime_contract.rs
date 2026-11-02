@@ -264,11 +264,33 @@ fn the_runtime_listens_for_exactly_the_frame_names_the_server_pushes() {
         ("RELOAD_FRAME", forge_overlay::RELOAD_FRAME),
         ("CLEAR_FRAME", forge_overlay::CLEAR_FRAME),
         ("REMOVE_FRAME", forge_overlay::REMOVE_FRAME),
+        ("AVATAR_FRAME", forge_overlay::AVATAR_FRAME),
     ] {
         let declaration = format!("var {variable} = \"{pushed}\";");
         assert!(
             RUNTIME_SOURCE.contains(&declaration),
             "the runtime no longer declares {declaration}"
+        );
+    }
+}
+
+#[test]
+fn the_runtime_reads_every_field_an_avatar_frame_carries() {
+    let frame = forge_overlay::RowAvatar {
+        slot: forge_overlay::ChatAvatarSlot {
+            platform: forge_types::PlatformId::Twitch,
+            user_id: "42".to_owned(),
+        },
+        url: "https://static-cdn.jtvnw.net/a.png".to_owned(),
+    }
+    .frame();
+    let reader = function_body("fillAvatars");
+    let fields = frame.as_object().expect("an avatar frame is a JSON object");
+
+    for name in fields.keys().filter(|name| name.as_str() != "frame") {
+        assert!(
+            reader.contains(&format!("frame.{name}")),
+            "the server pushes '{name}' on an avatar frame, which the runtime never reads"
         );
     }
 }

@@ -2338,3 +2338,55 @@ async fn cancelling_while_the_access_token_is_being_fetched_returns_at_once() {
         assert!(matches!(finished, Ok(Ok(Ok(())))), "{label}");
     }
 }
+
+fn item_by(id: &str, channel_id: &str, profile_image: Option<&str>) -> serde_json::Value {
+    let mut item = text_item(id, "hi", "Viewer");
+    item["authorDetails"]["channelId"] = json!(channel_id);
+    if let Some(image) = profile_image {
+        item["authorDetails"]["profileImageUrl"] = json!(image);
+    }
+    item
+}
+
+#[tokio::test]
+async fn polled_chat_records_each_authors_profile_image_for_avatar_lookups() {
+    use forge_platform_core::ViewerAvatarSource;
+
+    const IMAGE: &str = "https://yt3.ggpht.com/ytc/viewer=s88";
+    let server = MockServer::start().await;
+    mount_broadcast_mock(&server, broadcast_response("chat-avatars")).await;
+    mount_chat_mock(
+        &server,
+        chat_response(
+            json!([
+                item_by("msg-1", "UCpictured", Some(IMAGE)),
+                item_by("msg-2", "UCplain", None),
+            ]),
+            3000,
+        ),
+    )
+    .await;
+    let book = crate::chat::avatar_book::AvatarBook::default();
+    let (poller, mut rx) = make_poller_with_receiver(&server);
+    let poller = poller.with_avatar_book(book.clone());
+    let cancel = CancellationToken::new();
+    let handle = tokio::spawn({
+        let cancel = cancel.clone();
+        async move { poller.run(cancel).await }
+    });
+
+    assert_leading_online(&mut rx).await;
+    for _ in 0..2 {
+        tokio::time::timeout(Duration::from_secs(30), rx.recv())
+            .await
+            .unwrap()
+            .unwrap();
+    }
+    cancel.cancel();
+    handle.await.unwrap().unwrap();
+
+    assert_eq!(
+        (book.remembered("UCpictured"), book.remembered("UCplain")),
+        (Some(IMAGE.to_owned()), None)
+    );
+}

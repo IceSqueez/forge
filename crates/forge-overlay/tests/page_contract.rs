@@ -291,3 +291,20 @@ fn the_chat_look_declares_the_platform_content_key() {
 
     assert!(look_contract(chat).content_keys.contains(&PLATFORM));
 }
+
+#[test]
+fn the_chat_look_listens_for_avatar_frames_through_the_declared_avatar_function() {
+    let reg = registry();
+    let chat = reg.get(CHAT_KIND).expect("the chat kind is registered");
+    let declared = PAGE_CONTRACT
+        .functions
+        .iter()
+        .find(|function| function.name == forge_overlay::AVATAR_FUNCTION)
+        .expect("the page contract declares the avatar function");
+    let call = format!("{}.{}(", PAGE_CONTRACT.namespace, declared.name);
+
+    assert!(
+        chat.page_assets().behavior.contains(&call),
+        "the chat look never calls {call}, so looked-up avatars never reach its rows"
+    );
+}

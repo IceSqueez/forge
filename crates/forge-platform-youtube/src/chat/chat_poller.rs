@@ -21,6 +21,7 @@ use crate::api::quota_state::{CHAT_POLL_COST, today_pacific};
 use crate::broadcast::active_broadcast_id::ActiveBroadcastIdHandle;
 use crate::broadcast::broadcast_lookup::{LookupFailure, fetch_active_broadcast};
 use crate::broadcast::live_chat_id::LiveChatIdHandle;
+use crate::chat::avatar_book::AvatarBook;
 use crate::chat::ban_ledger::{USER_BANNED_EVENT_TYPE, observed_ban};
 use crate::vocabulary::event_kinds;
 use crate::vocabulary::fields::{
@@ -101,6 +102,7 @@ pub struct YouTubeChatPoller {
     active_broadcast_id: ActiveBroadcastIdHandle,
     ban_ledger: Arc<dyn BanLedgerRepo>,
     health_reporter: Option<PollHealthReporter>,
+    avatars: Option<AvatarBook>,
     timings: ChatPollTimings,
 }
 
@@ -123,6 +125,7 @@ impl YouTubeChatPoller {
             active_broadcast_id,
             ban_ledger,
             health_reporter: None,
+            avatars: None,
             timings: ChatPollTimings::DEFAULT,
         }
     }
@@ -134,6 +137,11 @@ impl YouTubeChatPoller {
 
     pub(crate) fn with_health_reporter(mut self, reporter: PollHealthReporter) -> Self {
         self.health_reporter = Some(reporter);
+        self
+    }
+
+    pub(crate) fn with_avatar_book(mut self, avatars: AvatarBook) -> Self {
+        self.avatars = Some(avatars);
         self
     }
 
@@ -359,6 +367,9 @@ impl YouTubeChatPoller {
                             }
                         }
                         continue;
+                    }
+                    if let Some(avatars) = &self.avatars {
+                        avatars.record(item);
                     }
                     if let Some(event) = self.build_event(item, &mut dedup) {
                         if item_type(item) == USER_BANNED_EVENT_TYPE {

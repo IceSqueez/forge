@@ -2,7 +2,7 @@ use std::sync::Arc;
 
 use forge_events::EventPublisher;
 use forge_net::{Gateway, RateLimiter, TokenBucketRateLimiter};
-use forge_platform_core::{ChatPlatform, PlatformEndpoints};
+use forge_platform_core::{ChatPlatform, PlatformEndpoints, ViewerAvatarSource};
 use forge_registry::SubActionRegistry;
 use forge_storage::{CredentialsRepo, StorageError, has_credentials_for};
 use forge_types::IntegrationId;
@@ -26,6 +26,7 @@ use crate::oauth_client::{
 };
 use crate::sub_actions::register_twitch_sub_actions;
 use crate::subscriptions::SubscriptionTracker;
+use crate::viewer_avatars::TwitchViewerAvatars;
 
 pub struct TwitchAssembly {
     endpoints: PlatformEndpoints,
@@ -37,6 +38,7 @@ pub struct TwitchAssembly {
     helix: Gateway,
     bot: Arc<TwitchBotAccount>,
     sign_in: TwitchSignIn,
+    viewer_avatars: Arc<TwitchViewerAvatars>,
 }
 
 pub struct TwitchSession {
@@ -75,6 +77,7 @@ impl TwitchAssembly {
             Arc::clone(&transport),
         );
         let sign_in = TwitchSignIn::new(oauth, helix.clone());
+        let viewer_avatars = Arc::new(TwitchViewerAvatars::new(Arc::clone(&transport)));
         let broadcaster = Arc::new(BroadcasterSlot::default());
         if let Err(e) = register_twitch_sub_actions(
             sub_actions,
@@ -95,7 +98,12 @@ impl TwitchAssembly {
             helix,
             bot,
             sign_in,
+            viewer_avatars,
         })
+    }
+
+    pub fn viewer_avatars(&self) -> Arc<dyn ViewerAvatarSource> {
+        Arc::clone(&self.viewer_avatars) as _
     }
 
     pub fn id(&self) -> IntegrationId {

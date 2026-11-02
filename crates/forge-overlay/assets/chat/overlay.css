@@ -89,6 +89,19 @@ body[data-position="top"] #stage {
   box-shadow: inset calc(3px * var(--text-scale)) 0 0 var(--accent);
 }
 
+.avatar {
+  flex: none;
+  align-self: center;
+  width: calc(18px * var(--text-scale));
+  height: calc(18px * var(--text-scale));
+  border-radius: 50%;
+  object-fit: cover;
+}
+
+.avatar[hidden] {
+  display: none;
+}
+
 .author {
   color: #fff;
   font-weight: 700;

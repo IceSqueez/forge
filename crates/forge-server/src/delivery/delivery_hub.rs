@@ -2,7 +2,7 @@ use std::sync::Arc;
 
 use async_trait::async_trait;
 use forge_events::EventObserver;
-use forge_overlay::RowRemoval;
+use forge_overlay::{RowAvatar, RowRemoval};
 use forge_runtime::{OverlayConnectListener, OverlayFrameSink, OverlayReceivers};
 use forge_storage::OverlayId;
 
@@ -58,6 +58,10 @@ impl OverlayFrameSink for DeliveryHub {
         self.adapter
             .deliver_overlay_removal(identity, removal)
             .await;
+    }
+
+    async fn deliver_avatar(&self, identity: &OverlayId, avatar: &RowAvatar) {
+        self.adapter.deliver_overlay_avatar(identity, avatar).await;
     }
 }
 

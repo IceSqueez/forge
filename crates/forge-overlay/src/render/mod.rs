@@ -7,6 +7,7 @@ pub(crate) mod materialize;
 pub(crate) mod motion_scan;
 pub(crate) mod page_contract;
 pub(crate) mod preview;
+pub(crate) mod row_avatar;
 pub(crate) mod row_filter;
 pub(crate) mod row_removal;
 pub(crate) mod sample;

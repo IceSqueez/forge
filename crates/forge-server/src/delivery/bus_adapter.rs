@@ -363,6 +363,17 @@ impl BusAdapter {
         send_to_overlay(&self.registry, Some(identity), WsFrame::Text(json)).await;
     }
 
+    pub(crate) async fn deliver_overlay_avatar(
+        &self,
+        identity: &OverlayId,
+        avatar: &forge_overlay::RowAvatar,
+    ) {
+        let Ok(json) = serde_json::to_string(&avatar.frame()) else {
+            return;
+        };
+        send_to_overlay(&self.registry, Some(identity), WsFrame::Text(json)).await;
+    }
+
     pub(crate) async fn revoke_overlay(&self, identity: &OverlayId) -> usize {
         let reached = send_to_overlay(
             &self.registry,

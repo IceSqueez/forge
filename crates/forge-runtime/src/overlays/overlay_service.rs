@@ -9,10 +9,11 @@ use forge_events::{Event, EventSource};
 use forge_net::TaskOwner;
 use forge_overlay::{
     DEFAULT_DISPLAY_SECS, DeliveryDisposition, GENERATOR_VERSION, MaterializeReport,
-    OverlayInstance, OverlayKindDescriptor, OverlayKindRegistry, OverlayMedia, RowRemoval,
-    SampleContext, delivered_content, ensure_shared_directory, joined_to_show, latest_binding,
-    latest_content, materialize_overlay, read_overlay_source, refresh_config_credential,
-    remove_overlay_directory, sample_content, show_timing, take_speech, write_overlay_source,
+    OverlayInstance, OverlayKindDescriptor, OverlayKindRegistry, OverlayMedia, RowAvatar,
+    RowRemoval, SampleContext, delivered_content, ensure_shared_directory, joined_to_show,
+    latest_binding, latest_content, materialize_overlay, read_overlay_source,
+    refresh_config_credential, remove_overlay_directory, sample_content, settle_chat_avatar,
+    show_timing, take_speech, write_overlay_source,
 };
 use forge_registry::CancelSignal;
 use forge_storage::{
@@ -24,6 +25,7 @@ use serde_json::json;
 use ulid::Ulid;
 
 use crate::event_flow::bus::EventBus;
+use crate::overlays::chat_avatars::{ChatAvatars, KnownAvatar};
 use crate::overlays::overlay_definition_revision::{
     OverlayDefinitionChanges, OverlayDefinitionRevision,
 };
@@ -105,6 +107,8 @@ pub trait OverlayFrameSink: Send + Sync {
 
     async fn deliver_removal(&self, _identity: &OverlayId, _removal: &RowRemoval) {}
 
+    async fn deliver_avatar(&self, _identity: &OverlayId, _avatar: &RowAvatar) {}
+
     async fn receivers(&self, _identity: &OverlayId) -> OverlayReceivers {
         OverlayReceivers::default()
     }
@@ -162,6 +166,7 @@ struct OverlayService {
     shows: Arc<ShowSequencer>,
     speaker: Option<Arc<dyn ShowSpeaker>>,
     latest: Option<Arc<dyn LatestValueReader>>,
+    avatars: ChatAvatars,
     definitions: OverlayDefinitionRevision,
     date_names: DateNamesHandle,
     tasks: TaskOwner,
@@ -219,12 +224,17 @@ impl OverlayServiceHandle {
                 shows,
                 speaker,
                 latest,
+                avatars: ChatAvatars::default(),
                 definitions: OverlayDefinitionRevision::default(),
                 date_names,
                 tasks,
                 default_root,
             }),
         }
+    }
+
+    pub fn chat_avatars(&self) -> ChatAvatars {
+        self.inner.avatars.clone()
     }
 
     pub fn definition_changes(&self) -> OverlayDefinitionChanges {
@@ -541,6 +551,9 @@ impl OverlayServiceHandle {
         if descriptor.withholds(&definition.config, &content, args) {
             return Ok(OverlayDispatch::Withheld);
         }
+        if let Some(slot) = settle_chat_avatar(descriptor, &definition.config, &mut content) {
+            self.fill_avatar(slot, &mut content);
+        }
         let speech = take_speech(descriptor, &definition.config, &mut content)
             .filter(|_| self.inner.speaker.is_some())
             .map(|program| ShowSpeech {
@@ -582,6 +595,25 @@ impl OverlayServiceHandle {
                 id: definition.id,
                 capacity: SHOW_QUEUE_CAPACITY,
             })
+    }
+
+    fn fill_avatar(&self, slot: forge_overlay::ChatAvatarSlot, content: &mut OverlayConfig) {
+        let avatars = &self.inner.avatars;
+        match avatars.known(&slot) {
+            KnownAvatar::Image(url) => RowAvatar { slot, url }.fill(content),
+            KnownAvatar::NoImage => {}
+            KnownAvatar::Unknown => {
+                let platform = slot.platform;
+                if avatars.ask(slot) {
+                    avatars.spawn_drain(
+                        platform,
+                        Arc::clone(&self.inner.repo),
+                        Arc::clone(&self.inner.frames),
+                        &self.inner.tasks,
+                    );
+                }
+            }
+        }
     }
 
     fn with_installed_voice(

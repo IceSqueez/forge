@@ -18,11 +18,13 @@ pub const SET_FUNCTION: &str = "set";
 pub const SHOW_FUNCTION: &str = "show";
 pub const SOUND_FUNCTION: &str = "sound";
 pub const REMOVE_FUNCTION: &str = "remove";
+pub const AVATAR_FUNCTION: &str = "avatar";
 
 pub const CONTENT_FRAME: &str = "content";
 pub const RELOAD_FRAME: &str = "reload";
 pub const CLEAR_FRAME: &str = "clear";
 pub const REMOVE_FRAME: &str = "remove";
+pub const AVATAR_FRAME: &str = "avatar";
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct PageFunction {
@@ -104,6 +106,11 @@ pub const PAGE_CONTRACT: PageContract = PageContract {
             name: REMOVE_FUNCTION,
             calls: &["forge.remove(callback)"],
             callback: Some("callback(removal)"),
+        },
+        PageFunction {
+            name: AVATAR_FUNCTION,
+            calls: &["forge.avatar(callback)"],
+            callback: Some("callback(avatar)"),
         },
     ],
     bind: BindRule {

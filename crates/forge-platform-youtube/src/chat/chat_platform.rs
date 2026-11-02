@@ -16,6 +16,7 @@ use crate::api::data_api::YouTubeDataApi;
 use crate::api::poll_health::{PollHealthReporter, PollLinkHealth};
 use crate::broadcast::active_broadcast_id::ActiveBroadcastIdHandle;
 use crate::broadcast::live_chat_id::LiveChatIdHandle;
+use crate::chat::avatar_book::AvatarBook;
 use crate::chat::chat_poller::YouTubeChatPoller;
 use crate::chat::send_chat::YouTubeSendChat;
 
@@ -33,6 +34,7 @@ pub struct YouTubePlatform {
     live_chat_id: LiveChatIdHandle,
     active_broadcast_id: ActiveBroadcastIdHandle,
     ban_ledger: Arc<dyn BanLedgerRepo>,
+    avatars: AvatarBook,
     state: Arc<Mutex<ConnectionState>>,
     state_tx: watch::Sender<ConnectionState>,
     cancel: Mutex<Option<CancellationToken>>,
@@ -62,6 +64,7 @@ impl YouTubePlatform {
             live_chat_id,
             active_broadcast_id,
             ban_ledger,
+            avatars: AvatarBook::default(),
             state: Arc::new(Mutex::new(ConnectionState::Disconnected)),
             state_tx,
             cancel: Mutex::new(None),
@@ -78,6 +81,11 @@ impl YouTubePlatform {
 
     pub(crate) fn ban_ledger(&self) -> &Arc<dyn BanLedgerRepo> {
         &self.ban_ledger
+    }
+
+    pub(crate) fn with_avatar_book(mut self, avatars: AvatarBook) -> Self {
+        self.avatars = avatars;
+        self
     }
 
     pub(crate) fn api(&self) -> &YouTubeDataApi {
@@ -138,7 +146,8 @@ impl ChatPlatform for YouTubePlatform {
             self.state_tx.clone(),
             Arc::clone(&self.events),
             cancel.clone(),
-        ));
+        ))
+        .with_avatar_book(self.avatars.clone());
 
         let exit_state = Arc::clone(&self.state);
         let exit_state_tx = self.state_tx.clone();

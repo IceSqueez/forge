@@ -203,6 +203,27 @@ pub(crate) fn chat_event_field() -> SectionedField {
     )
 }
 
+pub(crate) fn chat_avatar_field() -> SectionedField {
+    in_section(
+        ConfigSection::Content,
+        FormField::Text {
+            key: AVATAR,
+            label: "Avatar",
+            placeholder: "https://static-cdn.jtvnw.net/...",
+        },
+    )
+}
+
+pub(crate) fn show_avatars_field() -> SectionedField {
+    in_section(
+        ConfigSection::Style,
+        FormField::Toggle {
+            key: SHOW_AVATARS,
+            label: "Show avatars",
+        },
+    )
+}
+
 pub(crate) fn chat_row_fields() -> [SectionedField; 3] {
     [
         in_section(

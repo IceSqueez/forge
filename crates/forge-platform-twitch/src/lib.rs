@@ -36,6 +36,7 @@ mod subscriptions;
 mod test_support;
 mod timestamp;
 mod triggers;
+mod viewer_avatars;
 mod viewer_step;
 pub mod vocabulary;
 

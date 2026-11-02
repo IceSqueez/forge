@@ -14,6 +14,7 @@ var PREVIEW_ON = "1";
 var SCOPE_MESSAGE = "message";
 var SCOPE_USER = "user";
 var SCOPE_PLATFORM = "platform";
+var SECURE_SCHEME = "https://";
 
 function wholeIn(value, min, max) {
   return typeof value === "number" && Math.floor(value) === value && value >= min && value <= max;
@@ -51,12 +52,41 @@ function isRemoved(row, removal) {
   return false;
 }
 
+function isPageImage(url) {
+  return typeof url === "string" && url.toLowerCase().indexOf(SECURE_SCHEME) === 0;
+}
+
+function showAvatar(row, url) {
+  var image = row.querySelector(".avatar");
+  if (!image || !isPageImage(url)) {
+    return;
+  }
+  image.onerror = function () {
+    image.hidden = true;
+    image.removeAttribute("src");
+  };
+  image.src = url;
+  image.hidden = false;
+}
+
+function awaitsAvatar(row, avatar) {
+  var image = row.querySelector(".avatar");
+  return (
+    Boolean(image) &&
+    image.hidden &&
+    avatar.userId !== "" &&
+    row.dataset.platform === avatar.platform &&
+    row.dataset.userId === avatar.userId
+  );
+}
+
 forge.ready(function (config) {
   var rows = document.getElementById("rows");
   var template = document.getElementById("row-template");
   var newestOnTop = config.position === "top";
   var rowLimit = rowLimitOf(config);
   var hideAfterMs = hideAfterMsOf(config);
+  var showsAvatars = config.show_avatars === true;
 
   function detach(row) {
     if (row.parentNode === rows) {
@@ -92,6 +122,10 @@ forge.ready(function (config) {
     row.dataset.messageId = values.message_id || "";
     row.dataset.userId = values.user_id || "";
 
+    if (showsAvatars) {
+      showAvatar(row, values.avatar || "");
+    }
+
     if (newestOnTop) {
       rows.insertBefore(row, rows.firstChild);
     } else {
@@ -115,6 +149,17 @@ forge.ready(function (config) {
     Array.from(rows.children).forEach(function (row) {
       if (isRemoved(row, removal)) {
         detach(row);
+      }
+    });
+  });
+
+  forge.avatar(function (avatar) {
+    if (!showsAvatars) {
+      return;
+    }
+    Array.from(rows.children).forEach(function (row) {
+      if (awaitsAvatar(row, avatar)) {
+        showAvatar(row, avatar.url);
       }
     });
   });

@@ -8,8 +8,8 @@ use forge_obs::{OBS_AUTO_RECONNECT, OBS_CONNECT_ON_LAUNCH};
 use forge_platform_core::{ChatPlatform, PlatformEndpoints};
 use forge_registry::SubActionRegistry;
 use forge_runtime::{
-    EventBus, IntegrationFactory, IntegrationStartError, RunningIntegration, TaskGroup,
-    spawn_chat_send_router,
+    ChatAvatars, EventBus, IntegrationFactory, IntegrationStartError, RunningIntegration,
+    TaskGroup, spawn_chat_send_router,
 };
 use forge_storage::{
     CredentialsRepo, DataProvider, Flag, Setting, SettingsRepo, SoundboardClipsRepo, StorageError,
@@ -68,6 +68,7 @@ pub(crate) fn wire_twitch(
     bus: &Arc<EventBus>,
     endpoints: &PlatformEndpoints,
     client_id: String,
+    avatars: &ChatAvatars,
 ) -> Option<TwitchFactory> {
     let assembly = forge_platform_twitch::TwitchAssembly::new(
         sub_actions,
@@ -76,6 +77,7 @@ pub(crate) fn wire_twitch(
         endpoints,
         client_id,
     )?;
+    avatars.register(PlatformId::Twitch, assembly.viewer_avatars());
     Some(TwitchFactory {
         bus: Arc::clone(bus),
         assembly,
@@ -163,6 +165,7 @@ pub(crate) fn wire_youtube(
     bus: &Arc<EventBus>,
     endpoints: &PlatformEndpoints,
     identity: OAuthClientIdentity,
+    avatars: &ChatAvatars,
 ) -> Option<YouTubeFactory> {
     let creds = creds_of(backend);
     let assembly = forge_platform_youtube::YouTubeAssembly::new(
@@ -173,6 +176,7 @@ pub(crate) fn wire_youtube(
         (identity.client_id, identity.client_secret),
     )?;
     assembly.register_sub_actions(sub_actions);
+    avatars.register(PlatformId::YouTube, assembly.viewer_avatars());
     Some(YouTubeFactory {
         assembly,
         bus: Arc::clone(bus),
@@ -256,6 +260,7 @@ pub(crate) fn wire_kick(
     bus: &Arc<EventBus>,
     endpoints: &PlatformEndpoints,
     identity: OAuthClientIdentity,
+    avatars: &ChatAvatars,
 ) -> Option<KickFactory> {
     let oauth = forge_platform_kick::KickOAuthClient::new(
         endpoints,
@@ -296,6 +301,13 @@ pub(crate) fn wire_kick(
     ));
     let channel = Arc::new(forge_platform_kick::KickChannel::new(api.clone()));
     let rewards = Arc::new(forge_platform_kick::KickRewards::new(api.clone()));
+    avatars.register(
+        PlatformId::Kick,
+        Arc::new(forge_platform_kick::KickViewerAvatars::new(
+            api.clone(),
+            Arc::clone(&manager),
+        )),
+    );
     let categories = Arc::new(forge_platform_kick::KickCategories::new(api));
 
     let manager_for_sub_actions = Arc::clone(&manager);

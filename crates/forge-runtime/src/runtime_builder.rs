@@ -140,6 +140,10 @@ impl RuntimeWiring {
         &self.scripts
     }
 
+    pub fn chat_avatars(&self) -> crate::ChatAvatars {
+        self.overlays.chat_avatars()
+    }
+
     pub fn sub_actions_mut(&mut self) -> &mut SubActionRegistry {
         &mut self.sub_actions
     }

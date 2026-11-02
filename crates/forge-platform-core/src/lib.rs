@@ -24,6 +24,7 @@ mod reconnect;
 mod sample_donation;
 mod sender;
 mod timestamp;
+mod viewer_avatars;
 mod viewer_step;
 pub use ban_list::{
     BanDuration, BanEntry, BanListOutcome, BanListSource, BanListUnavailable, BanPage,
@@ -89,6 +90,7 @@ pub use sample_donation::{
 };
 pub use sender::{ActingSender, SENDER_FIELD, SENT_AS_FIELD, SenderPreference, SenderRole};
 pub use timestamp::{parse_timestamp, parse_timestamp_logged, timestamp_variant};
+pub use viewer_avatars::{AvatarLookup, ViewerAvatarSource};
 pub use viewer_step::{ViewerAction, ViewerRef, ViewerStep};
 
 pub use auth::pkce_flow::PkceAuthorizeUrl;

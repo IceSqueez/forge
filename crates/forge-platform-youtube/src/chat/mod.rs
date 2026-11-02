@@ -1,3 +1,4 @@
+pub(crate) mod avatar_book;
 pub(crate) mod ban_ledger;
 #[cfg(test)]
 pub(crate) mod ban_ledger_test_support;

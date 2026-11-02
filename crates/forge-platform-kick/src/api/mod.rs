@@ -4,3 +4,4 @@ pub(crate) mod chat_messages;
 pub(crate) mod moderation;
 pub(crate) mod poller;
 pub(crate) mod rewards;
+pub(crate) mod users;

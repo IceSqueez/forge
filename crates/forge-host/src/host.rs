@@ -143,6 +143,7 @@ pub async fn build_host(inputs: HostInputs) -> Host {
         boot_warnings.record(BootWarning::CoreTriggers);
     }
 
+    let chat_avatars = wiring.chat_avatars();
     let (sub_action_reg, trigger_reg) = wiring.registries_mut();
     let integrations = build_integrations(
         sub_action_reg,
@@ -154,6 +155,7 @@ pub async fn build_host(inputs: HostInputs) -> Host {
             endpoints,
             hotkey_main_thread,
             platform_identities,
+            chat_avatars,
         },
     )
     .await;

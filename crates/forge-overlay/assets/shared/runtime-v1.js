@@ -12,6 +12,7 @@
  *                                once the show's speech has ended if later
  *   forge.sound(name)            plays a file from this overlay's folder
  *   forge.remove(callback)       callback(removal) per removal frame
+ *   forge.avatar(callback)       callback(avatar) per avatar frame
  *
  * config.json sits next to the page. Its config object is what the ready callback
  * receives, and the accent, font and position entries are applied here rather
@@ -44,13 +45,18 @@
  * capped backoff, so a browser source that was closed and reopened recovers
  * unhelped.
  *
- * Four frame shapes arrive, all addressed to this overlay by the connection
+ * Five frame shapes arrive, all addressed to this overlay by the connection
  * itself:
  *
  *   { "frame": "content", "content": { "<key>": <value>, ... }, "durationMs": 5000 }
  *   { "frame": "reload" }
  *   { "frame": "clear" }
  *   { "frame": "remove", "platform": "twitch", "scope": "message", "messageId": "<id>" }
+ *   { "frame": "avatar", "platform": "twitch", "userId": "<id>", "url": "https://..." }
+ *
+ * An avatar frame names a viewer whose profile image forge looked up after a row
+ * for them was already delivered; the url is an https image on that platform's
+ * own image host.
  *
  * A content frame carries the content group of this overlay's type with every
  * value already final: forge expanded it where the variable context lives, so the
@@ -152,6 +158,7 @@
   var RELOAD_FRAME = "reload";
   var CLEAR_FRAME = "clear";
   var REMOVE_FRAME = "remove";
+  var AVATAR_FRAME = "avatar";
   var HIDDEN_CLASS = "hidden";
   var MOTION_ASSET = "motion-v1.js";
   var PREVIEW_REPLAY_PAUSE_MS = 1200;
@@ -207,6 +214,7 @@
   var readyCallbacks = [];
   var contentCallbacks = [];
   var removeCallbacks = [];
+  var avatarCallbacks = [];
   var hideTimers = new Map();
   var clipsInFlight = new Map();
   var waitingShow = null;
@@ -478,6 +486,10 @@
       removeRows(frame);
       return;
     }
+    if (frame.frame === AVATAR_FRAME) {
+      fillAvatars(frame);
+      return;
+    }
     if (frame.frame !== CONTENT_FRAME) {
       return;
     }
@@ -508,6 +520,17 @@
     };
     removeCallbacks.forEach(function (callback) {
       invoke(callback, removal);
+    });
+  }
+
+  function fillAvatars(frame) {
+    var avatar = {
+      platform: textOf(frame.platform),
+      userId: textOf(frame.userId),
+      url: textOf(frame.url),
+    };
+    avatarCallbacks.forEach(function (callback) {
+      invoke(callback, avatar);
     });
   }
 
@@ -834,6 +857,13 @@
     removeCallbacks.push(callback);
   }
 
+  function avatar(callback) {
+    if (typeof callback !== "function") {
+      return;
+    }
+    avatarCallbacks.push(callback);
+  }
+
   function ready(callback) {
     if (typeof callback !== "function") {
       return;
@@ -1009,6 +1039,7 @@
     show: show,
     sound: sound,
     remove: remove,
+    avatar: avatar,
   });
 
   window.addEventListener("resize", function () {

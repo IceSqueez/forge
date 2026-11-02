@@ -98,6 +98,8 @@ impl OverlayKindDescriptor for ChatOverlayKind {
         defaults.insert(config::MESSAGE_ID.to_owned(), config::text(""));
         defaults.insert(config::USER_ID.to_owned(), config::text(""));
         defaults.insert(config::EVENT.to_owned(), config::text(""));
+        defaults.insert(config::AVATAR.to_owned(), config::text(""));
+        defaults.insert(config::SHOW_AVATARS.to_owned(), Variant::Bool(false));
         defaults.extend(config::chat_row_defaults());
         defaults.extend(config::chat_filter_defaults());
         defaults
@@ -113,8 +115,10 @@ impl OverlayKindDescriptor for ChatOverlayKind {
             config::chat_message_id_field(),
             config::chat_user_id_field(),
             config::chat_event_field(),
+            config::chat_avatar_field(),
         ];
         fields.extend(config::shared_style_fields());
+        fields.push(config::show_avatars_field());
         fields.push(config::position_field("Newest message at"));
         fields.extend(config::chat_row_fields());
         fields.extend(config::chat_filter_fields());

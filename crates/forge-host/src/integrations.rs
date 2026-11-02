@@ -10,7 +10,7 @@ use forge_platform_core::{
     PlatformEndpoints, QuickActions,
 };
 use forge_registry::{SubActionRegistry, TriggerRegistry};
-use forge_runtime::{DonationIngest, EventBus};
+use forge_runtime::{ChatAvatars, DonationIngest, EventBus};
 use forge_storage::{CredentialsRepo, DataProvider};
 use tokio::sync::watch;
 use tokio::task::JoinHandle;
@@ -358,6 +358,7 @@ pub struct IntegrationInputs {
     pub endpoints: PlatformEndpoints,
     pub hotkey_main_thread: forge_hotkey::MainThreadLink,
     pub platform_identities: PlatformIdentities,
+    pub chat_avatars: ChatAvatars,
 }
 
 pub async fn build_integrations(
@@ -372,6 +373,7 @@ pub async fn build_integrations(
         endpoints,
         hotkey_main_thread,
         platform_identities,
+        chat_avatars,
     } = inputs;
     let endpoints = &endpoints;
     register_platform_triggers(triggers);
@@ -381,10 +383,16 @@ pub async fn build_integrations(
     let mut twitch_bot = None;
     let mut twitch_sign_in = None;
     let mut platform_credentials = PlatformCredentialManagers::default();
-    if let Some(twitch) = platform_identities
-        .twitch_client_id
-        .and_then(|client_id| wire_twitch(sub_actions, backend, bus, endpoints, client_id))
-    {
+    if let Some(twitch) = platform_identities.twitch_client_id.and_then(|client_id| {
+        wire_twitch(
+            sub_actions,
+            backend,
+            bus,
+            endpoints,
+            client_id,
+            &chat_avatars,
+        )
+    }) {
         twitch_bot = Some(twitch.bot());
         twitch_sign_in = Some(twitch.sign_in());
         platform_credentials.twitch = Some(twitch.credentials_manager());
@@ -412,19 +420,31 @@ pub async fn build_integrations(
     let hotkey_client = hotkey.client();
     factories.push(Arc::new(hotkey));
     let mut youtube_sign_in = None;
-    if let Some(youtube) = platform_identities
-        .youtube
-        .and_then(|identity| wire_youtube(sub_actions, backend, bus, endpoints, identity))
-    {
+    if let Some(youtube) = platform_identities.youtube.and_then(|identity| {
+        wire_youtube(
+            sub_actions,
+            backend,
+            bus,
+            endpoints,
+            identity,
+            &chat_avatars,
+        )
+    }) {
         youtube_sign_in = Some(youtube.sign_in());
         platform_credentials.youtube = Some(youtube.credentials_manager());
         factories.push(Arc::new(youtube));
     }
     let mut kick_sign_in = None;
-    if let Some(kick) = platform_identities
-        .kick
-        .and_then(|identity| wire_kick(sub_actions, backend, bus, endpoints, identity))
-    {
+    if let Some(kick) = platform_identities.kick.and_then(|identity| {
+        wire_kick(
+            sub_actions,
+            backend,
+            bus,
+            endpoints,
+            identity,
+            &chat_avatars,
+        )
+    }) {
         kick_sign_in = Some(kick.sign_in());
         platform_credentials.kick = Some(kick.credentials_manager());
         factories.push(Arc::new(kick));

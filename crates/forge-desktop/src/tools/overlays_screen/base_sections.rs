@@ -11,7 +11,7 @@ use forge_overlay::config::{
     BACKGROUND_COLOR, BACKGROUND_OPACITY, COMMAND_PREFIX, DESIGN_HEIGHT, DESIGN_WIDTH, DURATION,
     HIDDEN_ACCOUNTS, HIDE_COMMANDS, HIDE_ROWS, HIDE_ROWS_AFTER_SECS, IMAGE, IMAGE_HEIGHT,
     IMAGE_POSITION, LABEL_OFFSET_X, LABEL_OFFSET_Y, LABEL_SIDE, MARGIN_BOTTOM, MARGIN_LEFT,
-    MARGIN_RIGHT, MARGIN_TOP, ROW_LIMIT, SOUND, SPEECH, SPEECH_VOICE,
+    MARGIN_RIGHT, MARGIN_TOP, ROW_LIMIT, SHOW_AVATARS, SOUND, SPEECH, SPEECH_VOICE,
 };
 use forge_overlay::{ConfigSection, DeliveryDisposition, OverlayConfig};
 use forge_runtime::{OverlayDelivery, OverlayDispatch, ShowEnd, ShowTicket};
@@ -96,6 +96,7 @@ pub(super) fn base_label(key: &str) -> Option<String> {
         HIDE_COMMANDS => Some(tr!("overlays_chat_hide_commands")),
         COMMAND_PREFIX => Some(tr!("overlays_chat_command_prefix")),
         HIDDEN_ACCOUNTS => Some(tr!("overlays_chat_hidden_accounts")),
+        SHOW_AVATARS => Some(tr!("overlays_chat_show_avatars")),
         LABEL_SIDE => Some(tr!("overlays_frame_label_side")),
         LABEL_OFFSET_X => Some(tr!("overlays_frame_label_offset_x")),
         LABEL_OFFSET_Y => Some(tr!("overlays_frame_label_offset_y")),
@@ -120,6 +121,7 @@ pub(super) fn base_hint(key: &str) -> Option<String> {
         HIDE_ROWS => Some(tr!("overlays_chat_hide_rows_hint")),
         HIDE_COMMANDS => Some(tr!("overlays_chat_hide_commands_hint")),
         HIDDEN_ACCOUNTS => Some(tr!("overlays_chat_hidden_accounts_hint")),
+        SHOW_AVATARS => Some(tr!("overlays_chat_show_avatars_hint")),
         LABEL_OFFSET_X => Some(tr!("overlays_frame_label_offset_x_hint")),
         LABEL_OFFSET_Y => Some(tr!("overlays_frame_label_offset_y_hint")),
         _ => None,

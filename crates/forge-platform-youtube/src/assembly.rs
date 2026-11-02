@@ -3,7 +3,7 @@ use std::sync::Arc;
 use forge_events::EventPublisher;
 use forge_net::{RateLimiter, TokenBucketRateLimiter};
 use forge_platform_core::PlatformFuture;
-use forge_platform_core::{PlatformEndpoints, PlatformError};
+use forge_platform_core::{PlatformEndpoints, PlatformError, ViewerAvatarSource};
 use forge_registry::SubActionRegistry;
 use forge_storage::{BanLedgerRepo, CredentialsRepo};
 use forge_types::Secret;
@@ -13,6 +13,7 @@ use crate::account::oauth_client::{
     GOOGLE_OAUTH_BUDGET_CAPACITY, GOOGLE_OAUTH_BUDGET_WINDOW, google_oauth_gateway,
 };
 use crate::broadcast::broadcast_lookup::BroadcastLookup;
+use crate::chat::avatar_book::AvatarBook;
 use crate::chat::chat_platform::token_source;
 use crate::{
     ActiveBroadcastIdHandle, GoogleOAuthClient, LiveChatIdHandle, SharedQuota, YouTubeAdBreak,
@@ -28,6 +29,7 @@ pub struct YouTubeAssembly {
     active_broadcast: ActiveBroadcastIdHandle,
     ban_ledger: Arc<dyn BanLedgerRepo>,
     sign_in: YouTubeSignIn,
+    avatars: AvatarBook,
 }
 
 pub struct YouTubeSession {
@@ -68,7 +70,12 @@ impl YouTubeAssembly {
             active_broadcast,
             ban_ledger,
             sign_in,
+            avatars: AvatarBook::default(),
         })
+    }
+
+    pub fn viewer_avatars(&self) -> Arc<dyn ViewerAvatarSource> {
+        Arc::new(self.avatars.clone())
     }
 
     pub fn sign_in(&self) -> YouTubeSignIn {
@@ -141,14 +148,17 @@ impl YouTubeAssembly {
         let Some(stored) = self.manager.load().await? else {
             return Ok(None);
         };
-        let platform = Arc::new(YouTubePlatform::new(
-            self.api.clone(),
-            stored.channel_id.clone(),
-            Arc::clone(&self.manager),
-            self.live_chat_id.clone(),
-            self.active_broadcast.clone(),
-            Arc::clone(&self.ban_ledger),
-        ));
+        let platform = Arc::new(
+            YouTubePlatform::new(
+                self.api.clone(),
+                stored.channel_id.clone(),
+                Arc::clone(&self.manager),
+                self.live_chat_id.clone(),
+                self.active_broadcast.clone(),
+                Arc::clone(&self.ban_ledger),
+            )
+            .with_avatar_book(self.avatars.clone()),
+        );
         let bundle = YouTubeIntegrationBundle::new(
             stored.channel_id,
             Arc::clone(&platform),

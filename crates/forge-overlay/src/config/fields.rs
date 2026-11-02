@@ -192,6 +192,17 @@ pub(crate) fn chat_user_id_field() -> SectionedField {
     )
 }
 
+pub(crate) fn chat_event_field() -> SectionedField {
+    in_section(
+        ConfigSection::Content,
+        FormField::Text {
+            key: EVENT,
+            label: "Event",
+            placeholder: "Raid",
+        },
+    )
+}
+
 pub(crate) fn chat_row_fields() -> [SectionedField; 3] {
     [
         in_section(

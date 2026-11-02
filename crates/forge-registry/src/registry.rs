@@ -80,6 +80,16 @@ impl TriggerRegistry {
         self.owners.get(kind_id)
     }
 
+    pub fn with_chat_event(&self, kind_id: &str, args: ArgStack) -> ArgStack {
+        match self
+            .get(kind_id)
+            .and_then(|descriptor| descriptor.chat_event())
+        {
+            Some(event) => event.marked(args),
+            None => args,
+        }
+    }
+
     pub fn platforms(&self) -> BTreeSet<PlatformId> {
         self.all()
             .filter_map(|descriptor| descriptor.platform_contract().platform())

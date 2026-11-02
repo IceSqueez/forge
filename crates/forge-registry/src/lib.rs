@@ -1,6 +1,7 @@
 mod analyzer;
 mod category;
 mod chain;
+mod chat_event;
 mod command_phrase;
 mod condition_messages;
 mod config_choice;
@@ -47,6 +48,7 @@ pub use chain::{
     CancelSignal, ChainExecutor, ChainSignal, ChildChainOutcome, ControlCell, ControlSignal,
     RunningAction, StopMark, TelemetrySink,
 };
+pub use chat_event::{CHAT_EVENT_VARIABLE, ChatEventKind};
 pub use command_phrase::{
     COMMAND_CASE_SENSITIVE_KEY, COMMAND_PHRASE_KEY, command_name_of, command_phrase_matches,
 };

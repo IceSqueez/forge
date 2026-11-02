@@ -259,9 +259,11 @@ impl TriggerEvaluator {
             return None;
         }
 
-        let args = self
-            .registry
-            .arg_stack(&instance.kind_id, event, &effective);
+        let args = self.registry.with_chat_event(
+            &instance.kind_id,
+            self.registry
+                .arg_stack(&instance.kind_id, event, &effective),
+        );
 
         if is_command {
             self.bus.publish(

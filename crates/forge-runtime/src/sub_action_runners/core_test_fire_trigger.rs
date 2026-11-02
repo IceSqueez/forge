@@ -14,6 +14,7 @@ use forge_types::{
 use super::core_trigger_shared::TRIGGER_INSTANCE_ID_KEY;
 use super::event_payload::EMPTY_JSON_OBJECT;
 use crate::core_messages;
+use crate::engine::frozen_triggers::FrozenTriggers;
 use crate::{QueueAdmission, QueueSchedulerHandle, SchedulerRequest};
 
 const TRIGGER_INSTANCE: DynamicSelectField<TriggerInstanceId> = DynamicSelectField::new(
@@ -59,6 +60,7 @@ fn synthetic_outputs(
 
 pub(crate) struct CoreTestFireTriggerRunner {
     trigger_instances: Arc<dyn TriggerInstanceRepo>,
+    trigger_kinds: FrozenTriggers,
     actions: Arc<dyn ActionRepo>,
     scheduler: QueueSchedulerHandle,
 }
@@ -66,11 +68,13 @@ pub(crate) struct CoreTestFireTriggerRunner {
 impl CoreTestFireTriggerRunner {
     pub(crate) fn new(
         trigger_instances: Arc<dyn TriggerInstanceRepo>,
+        trigger_kinds: FrozenTriggers,
         actions: Arc<dyn ActionRepo>,
         scheduler: QueueSchedulerHandle,
     ) -> Self {
         Self {
             trigger_instances,
+            trigger_kinds,
             actions,
             scheduler,
         }
@@ -93,6 +97,10 @@ impl CoreTestFireTriggerRunner {
                 return SubActionOutcome::Failed(core_messages::storage_failed(e).into());
             }
         };
+
+        let synthetic_args = self
+            .trigger_kinds
+            .with_chat_event(&trigger_kind, synthetic_args);
 
         let action_ids = match self.trigger_instances.actions_using(instance_id).await {
             Ok(ids) => ids,

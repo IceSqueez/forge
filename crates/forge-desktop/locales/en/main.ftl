@@ -3286,6 +3286,7 @@ overlays_bindings_field_slot = Slot
 overlays_bindings_field_platform = Platform
 overlays_bindings_field_message_id = Message ID
 overlays_bindings_field_user_id = User ID
+overlays_bindings_field_event = Stream event
 overlays_panel_section_content = Content
 overlays_panel_section_style = Style
 overlays_panel_section_source = Browser source

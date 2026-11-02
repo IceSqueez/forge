@@ -28,7 +28,11 @@ impl ChatRowFilter {
     }
 
     pub fn hides(&self, login: &str, message: &str) -> bool {
-        self.is_command(message) || self.hidden_logins.contains(&normalized_login(login))
+        self.is_command(message) || self.hides_account(login)
+    }
+
+    pub fn hides_account(&self, login: &str) -> bool {
+        self.hidden_logins.contains(&normalized_login(login))
     }
 
     fn is_command(&self, message: &str) -> bool {

@@ -24,6 +24,29 @@ pub(crate) const TICKER_LABEL: MessageCode = MessageCode::from_static(NAMESPACE,
 pub(crate) const TICKER_SUMMARY: MessageCode =
     MessageCode::from_static(NAMESPACE, "kind_ticker_summary");
 
+pub(crate) const CHAT_EVENT_FOLLOW: MessageCode =
+    MessageCode::from_static(NAMESPACE, "chat_event_follow");
+pub(crate) const CHAT_EVENT_SUBSCRIPTION: MessageCode =
+    MessageCode::from_static(NAMESPACE, "chat_event_subscription");
+pub(crate) const CHAT_EVENT_RESUBSCRIPTION: MessageCode =
+    MessageCode::from_static(NAMESPACE, "chat_event_resubscription");
+pub(crate) const CHAT_EVENT_GIFT_SUBSCRIPTION: MessageCode =
+    MessageCode::from_static(NAMESPACE, "chat_event_gift_subscription");
+pub(crate) const CHAT_EVENT_CHEER: MessageCode =
+    MessageCode::from_static(NAMESPACE, "chat_event_cheer");
+pub(crate) const CHAT_EVENT_RAID: MessageCode =
+    MessageCode::from_static(NAMESPACE, "chat_event_raid");
+pub(crate) const CHAT_EVENT_DONATION: MessageCode =
+    MessageCode::from_static(NAMESPACE, "chat_event_donation");
+pub(crate) const CHAT_EVENT_SUPER_CHAT: MessageCode =
+    MessageCode::from_static(NAMESPACE, "chat_event_super_chat");
+pub(crate) const CHAT_EVENT_SUPER_STICKER: MessageCode =
+    MessageCode::from_static(NAMESPACE, "chat_event_super_sticker");
+pub(crate) const CHAT_EVENT_MEMBERSHIP: MessageCode =
+    MessageCode::from_static(NAMESPACE, "chat_event_membership");
+pub(crate) const CHAT_EVENT_MEMBERSHIP_GIFT: MessageCode =
+    MessageCode::from_static(NAMESPACE, "chat_event_membership_gift");
+
 macro_rules! catalog {
     ($($icon:ident => $name:literal),* $(,)?) => {
         $(pub(crate) const $icon: MessageCode = MessageCode::from_static(NAMESPACE, $name);)*
@@ -45,6 +68,17 @@ macro_rules! catalog {
         LATEST_SUMMARY,
         TICKER_LABEL,
         TICKER_SUMMARY,
+        CHAT_EVENT_FOLLOW,
+        CHAT_EVENT_SUBSCRIPTION,
+        CHAT_EVENT_RESUBSCRIPTION,
+        CHAT_EVENT_GIFT_SUBSCRIPTION,
+        CHAT_EVENT_CHEER,
+        CHAT_EVENT_RAID,
+        CHAT_EVENT_DONATION,
+        CHAT_EVENT_SUPER_CHAT,
+        CHAT_EVENT_SUPER_STICKER,
+        CHAT_EVENT_MEMBERSHIP,
+        CHAT_EVENT_MEMBERSHIP_GIFT,
                 $($icon,)*
             ],
             en_ftl: include_str!("../locales/en/messages.ftl"),

@@ -2,6 +2,7 @@ use super::spec::TwitchTriggerSpec;
 use crate::vocabulary::trigger_ids;
 use crate::vocabulary::{event_kinds, messages};
 use forge_events::Event;
+use forge_registry::ChatEventKind;
 use forge_registry::{
     ActorDeclaration, ActorIdentity, ActorRole, ActorSlot, CanonicalVariable, FormField,
     SubActionConfigExt, TriggerCategory, TriggerVariables,
@@ -150,6 +151,7 @@ pub(super) const SPEC: TwitchTriggerSpec = TwitchTriggerSpec {
     default_config,
     config_fields,
     condition_display,
+    chat_event: Some(ChatEventKind::Donation),
     ..TwitchTriggerSpec::BASE
 };
 

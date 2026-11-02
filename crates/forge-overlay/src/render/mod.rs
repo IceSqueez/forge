@@ -1,5 +1,6 @@
 pub(crate) mod base;
 pub(crate) mod browser_preview;
+pub(crate) mod chat_event_label;
 pub(crate) mod content;
 pub(crate) mod document;
 pub(crate) mod materialize;

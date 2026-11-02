@@ -72,8 +72,11 @@ impl ActionEditor {
                 Some((variables, descriptor.platform_contract()))
             });
             let (initial_args, note) = match (selected_inst, declared) {
-                (Some(_), Some((variables, contract))) => (
-                    synthesize_args(variables, &SynthesisSample::random(contract)),
+                (Some(inst), Some((variables, contract))) => (
+                    self.deps.trigger_registry.with_chat_event(
+                        &inst.kind_id,
+                        synthesize_args(variables, &SynthesisSample::random(contract)),
+                    ),
                     None,
                 ),
                 (Some(_), None) => (ArgStack::new(), Some(TestRunNote::NoSchema)),

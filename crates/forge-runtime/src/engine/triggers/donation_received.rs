@@ -2,6 +2,7 @@ use forge_events::{
     DONATION_PROVIDER_CONFIG_KEY, DONATION_RECEIVED_KIND, DonationReceived, Event, EventSource,
     TypedEvent,
 };
+use forge_registry::ChatEventKind;
 use forge_registry::{
     ActorDeclaration, ActorIdentity, ActorRole, EventFilter, FormField, KindPlatformContract,
     LoginSlot, SourcedActor, TriggerCatalogEntry, TriggerCategory, TriggerKindDescriptor,
@@ -40,6 +41,10 @@ impl TriggerCatalogEntry for DonationReceivedDescriptor {
 impl TriggerKindDescriptor for DonationReceivedDescriptor {
     fn id(&self) -> &str {
         DONATION_RECEIVED_KIND
+    }
+
+    fn chat_event(&self) -> Option<ChatEventKind> {
+        Some(ChatEventKind::Donation)
     }
 
     fn platform_contract(&self) -> KindPlatformContract {

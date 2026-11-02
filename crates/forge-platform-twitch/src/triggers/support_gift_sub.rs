@@ -2,6 +2,7 @@ use super::spec::TwitchTriggerSpec;
 use crate::vocabulary::event_kinds;
 use crate::vocabulary::trigger_ids;
 use forge_events::Event;
+use forge_registry::ChatEventKind;
 use forge_registry::{
     ActorDeclaration, ActorIdentity, ActorRole, CanonicalCount, TriggerCategory, TriggerVariables,
 };
@@ -40,6 +41,7 @@ pub(super) const SPEC: TwitchTriggerSpec = TwitchTriggerSpec {
     kind: event_kinds::CHANNEL_SUBSCRIPTION_GIFT,
     actors: ActorDeclaration::Actors(&[ActorRole::Gifter]),
     variables,
+    chat_event: Some(ChatEventKind::GiftSubscription),
     ..TwitchTriggerSpec::BASE
 };
 

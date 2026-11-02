@@ -189,6 +189,7 @@ use crate::QueueSchedulerHandle;
 use crate::config::Config;
 use crate::engine::action_cancel::ActionCancelRegistry;
 use crate::engine::condition::ConditionGate;
+use crate::engine::frozen_triggers::FrozenTriggers;
 use crate::engine::scheduled_runs::ScheduledRunsHandle;
 use crate::integrations::egress::{EgressClient, HttpMethod};
 use crate::overlays::overlay_service::OverlayServiceHandle;
@@ -215,6 +216,7 @@ pub struct CoreSubActionDeps {
     pub settings: Arc<dyn SettingsRepo>,
     pub scheduler: QueueSchedulerHandle,
     pub trigger_instances: Arc<dyn TriggerInstanceRepo>,
+    pub(crate) trigger_kinds: FrozenTriggers,
     pub actions: Arc<dyn ActionRepo>,
     pub script_repo: Arc<dyn ScriptRepo>,
     pub cancel_registry: Arc<ActionCancelRegistry>,
@@ -236,6 +238,7 @@ pub fn register_core_sub_actions(
         settings,
         scheduler,
         trigger_instances,
+        trigger_kinds,
         actions,
         script_repo,
         cancel_registry,
@@ -285,6 +288,7 @@ pub fn register_core_sub_actions(
     ))))?;
     reg.register(Box::new(CoreTestFireTriggerRunner::new(
         trigger_instances,
+        trigger_kinds,
         actions,
         scheduler,
     )))?;

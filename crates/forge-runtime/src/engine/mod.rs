@@ -3,6 +3,7 @@ pub(crate) mod action_engine;
 pub(crate) mod chain;
 pub(crate) mod condition;
 pub(crate) mod cooldown;
+pub(crate) mod frozen_triggers;
 pub(crate) mod queue_depth;
 pub(crate) mod queue_scheduler;
 pub(crate) mod queue_service;

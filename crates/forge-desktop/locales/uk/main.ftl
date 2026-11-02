@@ -3376,6 +3376,7 @@ overlays_bindings_field_slot = Слот
 overlays_bindings_field_platform = Платформа
 overlays_bindings_field_message_id = Ідентифікатор повідомлення
 overlays_bindings_field_user_id = Ідентифікатор користувача
+overlays_bindings_field_event = Подія стриму
 overlays_panel_section_content = Вміст
 overlays_panel_section_style = Стиль
 overlays_panel_section_source = Браузерне джерело

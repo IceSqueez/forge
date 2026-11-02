@@ -32,6 +32,7 @@ pub const BADGES: &str = "badges";
 pub const MESSAGE: &str = "message";
 pub const MESSAGE_ID: &str = "message_id";
 pub const USER_ID: &str = "user_id";
+pub const EVENT: &str = "event";
 pub const ROW_LIMIT: &str = "row_limit";
 pub const HIDE_ROWS: &str = "hide_rows";
 pub const HIDE_ROWS_AFTER_SECS: &str = "hide_rows_after_secs";

@@ -1,4 +1,5 @@
 use forge_events::{Event, EventSource};
+use forge_registry::ChatEventKind;
 use forge_registry::{
     ActorDeclaration, ActorIdentity, ActorRole, ActorSlot, CanonicalVariable, EventFilter,
     KindPlatformContract, TriggerCatalogEntry, TriggerCategory, TriggerKindDescriptor,
@@ -38,6 +39,10 @@ impl TriggerCatalogEntry for SupportNewMemberDescriptor {
 impl TriggerKindDescriptor for SupportNewMemberDescriptor {
     fn id(&self) -> &str {
         trigger_ids::CHANNEL_MEMBER
+    }
+
+    fn chat_event(&self) -> Option<ChatEventKind> {
+        Some(ChatEventKind::Membership)
     }
 
     fn platform_contract(&self) -> KindPlatformContract {

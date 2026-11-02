@@ -10,7 +10,7 @@ use forge_components::{
     ActivePresentation, BORDER_THIN, FONT_XXS, ForgePalette, scaled, section_label, tr,
 };
 use forge_overlay::config::{
-    ACCENT, AUTHOR, AUTHOR_COLOR, BADGES, FONT, HEADLINE, ICON, LABEL, MESSAGE, MESSAGE_ID,
+    ACCENT, AUTHOR, AUTHOR_COLOR, BADGES, EVENT, FONT, HEADLINE, ICON, LABEL, MESSAGE, MESSAGE_ID,
     PLACEHOLDER, PLATFORM, POSITION, SLOT, SUBLINE, TARGET, TEXT_SIZE, USER_ID, VALUE,
 };
 use forge_overlay::{
@@ -351,6 +351,7 @@ fn binding_label(key: &str) -> Option<String> {
         PLATFORM => Some(tr!("overlays_bindings_field_platform")),
         MESSAGE_ID => Some(tr!("overlays_bindings_field_message_id")),
         USER_ID => Some(tr!("overlays_bindings_field_user_id")),
+        EVENT => Some(tr!("overlays_bindings_field_event")),
         _ => base_label(key),
     }
 }

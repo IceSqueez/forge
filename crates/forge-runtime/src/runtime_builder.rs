@@ -11,6 +11,7 @@ use forge_types::{LatestValueReader, Queue, WallClock};
 use crate::config::Config;
 use crate::engine::action_cancel::ActionCancelRegistry;
 use crate::engine::action_engine::{ActionEngineHandle, spawn_action_engine};
+use crate::engine::frozen_triggers::FrozenTriggers;
 use crate::engine::queue_scheduler::{QueueScheduler, QueueSchedulerHandle, QueueSchedulerStart};
 use crate::engine::scheduled_runs::{
     CatchUpSettle, ScheduledRunsHandle, ScheduledRunsStart, ScheduledRunsStartParts,
@@ -61,6 +62,7 @@ pub struct RuntimeWiring {
     scheduled_runs_start: ScheduledRunsStart,
     sub_actions: SubActionRegistry,
     triggers: TriggerRegistry,
+    frozen_triggers: FrozenTriggers,
     paths: AppPaths,
     config: Config,
     os: OsPorts,
@@ -127,6 +129,7 @@ impl RuntimeWiring {
             scheduled_runs_start,
             sub_actions: SubActionRegistry::new(),
             triggers: TriggerRegistry::new(),
+            frozen_triggers: FrozenTriggers::default(),
             paths,
             config,
             os,
@@ -160,6 +163,7 @@ impl RuntimeWiring {
                 settings: self.provider.settings_repo(),
                 scheduler: self.scheduler.clone(),
                 trigger_instances: self.provider.trigger_instance_repo(),
+                trigger_kinds: self.frozen_triggers.clone(),
                 actions: self.provider.action_repo(),
                 script_repo: self.provider.script_repo(),
                 cancel_registry: Arc::clone(&self.cancel_registry),
@@ -189,12 +193,14 @@ impl RuntimeWiring {
             scheduled_runs_start,
             sub_actions,
             triggers,
+            frozen_triggers,
             paths: _,
             config,
             os: _,
         } = self;
         let sub_action_registry = Arc::new(sub_actions);
         let trigger_registry = Arc::new(triggers);
+        frozen_triggers.freeze(Arc::clone(&trigger_registry));
         bus.declare_lanes(&trigger_registry);
         let trigger_defaults_stored =
             store_trigger_defaults(provider.as_ref(), &trigger_registry).await;

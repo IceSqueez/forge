@@ -2,6 +2,7 @@ use forge_events::{DeliveryLane, Event};
 use forge_types::{ArgStack, TriggerConfig, UserText, VariableSchema, Variant};
 
 use crate::category::TriggerCategory;
+use crate::chat_event::ChatEventKind;
 use crate::condition_messages::any_condition;
 use crate::config_problem::ConfigProblem;
 use crate::event_filter::EventFilter;
@@ -57,6 +58,9 @@ pub trait TriggerKindDescriptor: TriggerCatalogEntry + Send + Sync {
         any_condition()
     }
     fn event_filter(&self) -> EventFilter;
+    fn chat_event(&self) -> Option<ChatEventKind> {
+        None
+    }
     fn targeted_instance_field(&self) -> Option<&'static str> {
         None
     }

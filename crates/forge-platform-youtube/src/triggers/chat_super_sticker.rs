@@ -1,4 +1,5 @@
 use forge_events::{Event, EventSource};
+use forge_registry::ChatEventKind;
 use forge_registry::{
     ActorDeclaration, ActorRole, ActorSlot, CanonicalVariable, EventFilter, KindPlatformContract,
     TriggerCatalogEntry, TriggerCategory, TriggerKindDescriptor, TriggerVariables,
@@ -38,6 +39,10 @@ impl TriggerCatalogEntry for SupportSuperStickerDescriptor {
 impl TriggerKindDescriptor for SupportSuperStickerDescriptor {
     fn id(&self) -> &str {
         trigger_ids::CHAT_SUPER_STICKER
+    }
+
+    fn chat_event(&self) -> Option<ChatEventKind> {
+        Some(ChatEventKind::SuperSticker)
     }
 
     fn platform_contract(&self) -> KindPlatformContract {

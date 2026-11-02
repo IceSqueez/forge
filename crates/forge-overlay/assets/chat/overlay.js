@@ -8,6 +8,7 @@ var HIDE_AFTER_MIN_SECS = 1;
 var HIDE_AFTER_MAX_SECS = 300;
 var ROW_FADE_MS = 300;
 var LEAVING_CLASS = "leaving";
+var EVENT_ROW_CLASS = "event-row";
 var PREVIEW_PARAM = "preview";
 var PREVIEW_ON = "1";
 var SCOPE_MESSAGE = "message";
@@ -82,6 +83,10 @@ forge.ready(function (config) {
 
     row.querySelector(".badges").textContent = values.badges || "";
     row.querySelector('[data-bind="message"]').textContent = values.message || "";
+
+    var event = (values.event || "").trim();
+    row.querySelector(".event").textContent = event;
+    row.classList.toggle(EVENT_ROW_CLASS, event !== "");
 
     row.dataset.platform = values.platform || "";
     row.dataset.messageId = values.message_id || "";

@@ -1,4 +1,5 @@
 use forge_events::{Event, EventSource};
+use forge_registry::ChatEventKind;
 use forge_registry::{
     ActorDeclaration, ActorRole, ActorSlot, CanonicalVariable, EventFilter, KindPlatformContract,
     TriggerCatalogEntry, TriggerCategory, TriggerKindDescriptor, TriggerVariables,
@@ -38,6 +39,10 @@ impl TriggerCatalogEntry for SupportSuperChatDescriptor {
 impl TriggerKindDescriptor for SupportSuperChatDescriptor {
     fn id(&self) -> &str {
         trigger_ids::CHAT_SUPER_CHAT
+    }
+
+    fn chat_event(&self) -> Option<ChatEventKind> {
+        Some(ChatEventKind::SuperChat)
     }
 
     fn platform_contract(&self) -> KindPlatformContract {

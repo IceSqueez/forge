@@ -1,4 +1,5 @@
 use forge_events::{DeliveryLane, Event, EventSource};
+use forge_registry::ChatEventKind;
 use forge_registry::{
     ActorDeclaration, ChatTriggerFamily, ConfigProblem, EventFilter, FormField,
     KindPlatformContract, TriggerCatalogEntry, TriggerCategory, TriggerKindDescriptor,
@@ -27,6 +28,7 @@ pub(super) struct TwitchTriggerSpec {
     pub condition_display: fn(&TriggerConfig) -> UserText,
     pub check_config: fn(&TriggerConfig) -> Result<(), ConfigProblem>,
     pub chat_family: Option<ChatTriggerFamily>,
+    pub chat_event: Option<ChatEventKind>,
     pub lane: DeliveryLane,
 }
 
@@ -71,6 +73,7 @@ impl TwitchTriggerSpec {
         condition_display: any_event,
         check_config: valid_config,
         chat_family: None,
+        chat_event: None,
         lane: DeliveryLane::Priority,
     };
 }
@@ -139,6 +142,10 @@ impl TriggerKindDescriptor for TwitchTriggerSpec {
 
     fn actors(&self) -> ActorDeclaration {
         self.actors
+    }
+
+    fn chat_event(&self) -> Option<ChatEventKind> {
+        self.chat_event
     }
 
     fn chat_trigger_family(&self) -> Option<ChatTriggerFamily> {

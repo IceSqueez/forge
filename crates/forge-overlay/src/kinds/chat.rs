@@ -1,4 +1,4 @@
-use forge_registry::{ActorRole, ActorSlot, CanonicalVariable};
+use forge_registry::{ActorRole, ActorSlot, CanonicalVariable, ChatEventKind};
 use forge_types::{ArgStack, PlatformId, Variant};
 
 use forge_types::MessageCode;
@@ -13,6 +13,7 @@ use crate::messages;
 use crate::metrics;
 use crate::metrics::ElementSizing;
 use crate::motion::{self, MotionAxes, MotionProfile};
+use crate::render::chat_event_label::chat_event_label;
 use crate::render::preview::{PreviewComposition, PreviewShape, compose};
 use crate::render::row_filter::ChatRowFilter;
 
@@ -96,6 +97,7 @@ impl OverlayKindDescriptor for ChatOverlayKind {
         defaults.insert(config::PLATFORM.to_owned(), config::text(""));
         defaults.insert(config::MESSAGE_ID.to_owned(), config::text(""));
         defaults.insert(config::USER_ID.to_owned(), config::text(""));
+        defaults.insert(config::EVENT.to_owned(), config::text(""));
         defaults.extend(config::chat_row_defaults());
         defaults.extend(config::chat_filter_defaults());
         defaults
@@ -110,6 +112,7 @@ impl OverlayKindDescriptor for ChatOverlayKind {
             config::chat_platform_field(),
             config::chat_message_id_field(),
             config::chat_user_id_field(),
+            config::chat_event_field(),
         ];
         fields.extend(config::shared_style_fields());
         fields.push(config::position_field("Newest message at"));
@@ -126,11 +129,16 @@ impl OverlayKindDescriptor for ChatOverlayKind {
                 .map(str::trim)
                 .map(str::to_owned)
         };
-        let platform = implied(sender(ActorSlot::Platform).name())
-            .and_then(|raw| PlatformId::from_wire(&raw))
-            .map(|platform| platform.as_str().to_owned());
+        let platform =
+            implied(sender(ActorSlot::Platform).name()).and_then(|raw| PlatformId::from_wire(&raw));
+        let event = ChatEventKind::of_run(args)
+            .and_then(|event| chat_event_label(event, args.names_language()));
         [
-            (config::PLATFORM, platform),
+            (
+                config::PLATFORM,
+                platform.map(|platform| platform.as_str().to_owned()),
+            ),
+            (config::EVENT, event),
             (
                 config::MESSAGE_ID,
                 implied(CanonicalVariable::MessageId.name()),
@@ -156,11 +164,15 @@ impl OverlayKindDescriptor for ChatOverlayKind {
                 .unwrap_or_default()
                 .to_owned()
         };
+        let login = chat_text(
+            CanonicalVariable::actor(ActorRole::Principal, ActorSlot::Login),
+            config::AUTHOR,
+        );
+        if !config::read_str(delivered, config::EVENT).trim().is_empty() {
+            return filter.hides_account(&login);
+        }
         filter.hides(
-            &chat_text(
-                CanonicalVariable::actor(ActorRole::Principal, ActorSlot::Login),
-                config::AUTHOR,
-            ),
+            &login,
             &chat_text(CanonicalVariable::MessageText, config::MESSAGE),
         )
     }

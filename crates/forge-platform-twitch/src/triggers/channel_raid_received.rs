@@ -3,6 +3,7 @@ use crate::vocabulary::RaidDirection;
 use crate::vocabulary::event_kinds;
 use crate::vocabulary::trigger_ids;
 use forge_events::Event;
+use forge_registry::ChatEventKind;
 use forge_registry::{
     ActorDeclaration, ActorIdentity, ActorRole, ActorSlot, CanonicalCount, CanonicalVariable,
     TriggerCategory, TriggerVariables,
@@ -55,6 +56,7 @@ pub(super) const SPEC: TwitchTriggerSpec = TwitchTriggerSpec {
     actors: ActorDeclaration::principal(),
     variables,
     matches,
+    chat_event: Some(ChatEventKind::Raid),
     ..TwitchTriggerSpec::BASE
 };
 

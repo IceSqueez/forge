@@ -962,6 +962,7 @@ dependencies = [
  "forge-events",
  "forge-net",
  "forge-platform-core",
+ "forge-registry",
  "forge-storage",
  "forge-types",
  "serde",

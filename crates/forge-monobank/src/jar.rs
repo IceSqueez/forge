@@ -43,6 +43,7 @@ pub struct MonobankJar {
     pub title: Option<String>,
     pub currency: Option<CurrencyCode>,
     pub goal: Option<MoneyAmount>,
+    pub balance: Option<MoneyAmount>,
 }
 
 impl MonobankJar {
@@ -55,6 +56,11 @@ impl MonobankJar {
                 .filter(|goal| *goal > 0)
                 .and_then(|goal| currency.amount(goal).ok())
         });
+        let balance = known_currency.as_ref().and_then(|currency| {
+            wire.balance
+                .and_then(|balance| u64::try_from(balance).ok())
+                .and_then(|balance| currency.amount(balance).ok())
+        });
         Some(Self {
             id,
             send_id: wire.send_id.filter(|send_id| !send_id.trim().is_empty()),
@@ -64,6 +70,7 @@ impl MonobankJar {
                 .filter(|title| !title.is_empty()),
             currency: known_currency.map(|currency| currency.code),
             goal,
+            balance,
         })
     }
 }

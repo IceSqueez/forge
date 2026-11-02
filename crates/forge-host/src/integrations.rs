@@ -525,6 +525,9 @@ pub(crate) fn register_platform_triggers(triggers: &mut TriggerRegistry) {
     if let Err(e) = forge_platform_kick::register_kick_triggers(triggers) {
         tracing::error!(error = %e, "kick trigger registration failed");
     }
+    if let Err(e) = forge_monobank::register_monobank_triggers(triggers) {
+        tracing::error!(error = %e, "monobank trigger registration failed");
+    }
 }
 
 pub(crate) fn publisher(bus: &Arc<EventBus>) -> Arc<dyn EventPublisher> {

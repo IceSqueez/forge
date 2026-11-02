@@ -19,10 +19,14 @@ pub(crate) struct JarWire {
     pub(crate) currency_code: Option<i64>,
     #[serde(default)]
     pub(crate) goal: Option<i64>,
+    #[serde(default)]
+    pub(crate) balance: Option<i64>,
 }
 
 pub(crate) const TRANSACTION_ID_FIELD: &str = "id";
 pub(crate) const TRANSACTION_TIME_FIELD: &str = "time";
+pub(crate) const TRANSACTION_BALANCE_FIELD: &str = "balance";
+pub(crate) const TRANSACTION_CURRENCY_FIELD: &str = "currencyCode";
 
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase")]

@@ -2955,6 +2955,7 @@ dependencies = [
  "forge-events",
  "forge-net",
  "forge-platform-core",
+ "forge-registry",
  "forge-storage",
  "forge-test-support",
  "forge-types",

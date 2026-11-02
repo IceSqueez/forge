@@ -26,6 +26,7 @@ pub struct MonobankProvider {
     jars: Arc<JarDirectory>,
     creds: Arc<dyn CredentialsRepo>,
     timing: MonobankTiming,
+    progress_publisher: Option<Arc<dyn EventPublisher>>,
 }
 
 impl MonobankProvider {
@@ -46,6 +47,7 @@ impl MonobankProvider {
             jars: Arc::new(JarDirectory::default()),
             creds,
             timing,
+            progress_publisher: None,
         }
     }
 
@@ -58,8 +60,9 @@ impl MonobankProvider {
         self
     }
 
-    pub fn with_event_publisher(self, publisher: Arc<dyn EventPublisher>) -> Self {
-        self.poll.attach_publisher(publisher);
+    pub fn with_event_publisher(mut self, publisher: Arc<dyn EventPublisher>) -> Self {
+        self.poll.attach_publisher(Arc::clone(&publisher));
+        self.progress_publisher = Some(publisher);
         self
     }
 
@@ -162,6 +165,7 @@ impl DonationProvider for MonobankProvider {
                 overlap: self.config.window_overlap,
             },
             status: Arc::clone(self.poll.board()),
+            progress_publisher: self.progress_publisher.clone(),
         });
         let backoff = Backoff::new(
             self.timing.error_backoff_base,

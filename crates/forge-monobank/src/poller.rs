@@ -1,10 +1,11 @@
 use std::sync::Arc;
 use std::time::Duration;
 
+use forge_events::{EventPublisher, EventSource, TypedEvent};
 use forge_net::DedupSet;
 use forge_platform_core::{PollScope, PollWorker};
 use forge_storage::CredentialsRepo;
-use forge_types::{Donation, IntegrationId, Secret};
+use forge_types::{Donation, IntegrationId, MoneyAmount, Secret};
 use time::OffsetDateTime;
 use tracing::debug;
 
@@ -12,6 +13,7 @@ use crate::api::MonobankApi;
 use crate::credentials;
 use crate::error::{MonobankError, redacted_serde_reason};
 use crate::jar::{JarDirectory, JarId, MonobankJar};
+use crate::jar_progress::{JarProgressTracker, newest_balance};
 use crate::normalize::donation_from_item;
 use crate::status::{PollFailure, PollerPhase, StatusBoard};
 use crate::window::{Coverage, StatementWindow, WindowPlanner};
@@ -26,6 +28,7 @@ pub(crate) struct PollContext {
     pub(crate) creds: Arc<dyn CredentialsRepo>,
     pub(crate) planner: WindowPlanner,
     pub(crate) status: Arc<StatusBoard>,
+    pub(crate) progress_publisher: Option<Arc<dyn EventPublisher>>,
 }
 
 #[derive(Clone, PartialEq, Eq)]
@@ -56,14 +59,16 @@ pub(crate) struct Worker {
     ctx: PollContext,
     session: Option<Session>,
     memory: Option<PollMemory>,
+    progress: JarProgressTracker,
 }
 
 impl Worker {
-    pub(crate) const fn new(ctx: PollContext) -> Self {
+    pub(crate) fn new(ctx: PollContext) -> Self {
         Self {
             ctx,
             session: None,
             memory: None,
+            progress: JarProgressTracker::default(),
         }
     }
 }
@@ -80,7 +85,14 @@ impl PollWorker for Worker {
     }
 
     async fn cycle(&mut self, scope: &PollScope) -> Result<(), CycleError> {
-        cycle(&self.ctx, scope, &mut self.session, &mut self.memory).await
+        cycle(
+            &self.ctx,
+            scope,
+            &mut self.session,
+            &mut self.memory,
+            &mut self.progress,
+        )
+        .await
     }
 
     fn pacing_delay(&self, error: &MonobankError) -> Option<Duration> {
@@ -104,6 +116,7 @@ async fn cycle(
     scope: &PollScope,
     session: &mut Option<Session>,
     memory: &mut Option<PollMemory>,
+    progress: &mut JarProgressTracker,
 ) -> Result<(), CycleError> {
     let current = match session {
         Some(current) => current.clone(),
@@ -116,6 +129,7 @@ async fn cycle(
             let jar = scope
                 .interruptible(ctx.jars.find(&ctx.api, &credential.token, &jar_id))
                 .await?;
+            progress.connected(jar.clone());
             ctx.status.record_subject(jar);
             let started = Session {
                 token: credential.token,
@@ -141,12 +155,31 @@ async fn cycle(
         ))
         .await?;
     let item_count = items.len();
+    let current_balance = window
+        .advances_coverage
+        .then(|| newest_balance(&items))
+        .flatten();
     let harvest = harvest(&ctx.provider, &mut memory.seen, items, window);
     let oldest_item_unix = harvest.oldest_item_unix;
     let newest = emit(ctx, scope, harvest).await?;
     memory.coverage.record(window, item_count, oldest_item_unix);
     ctx.status.record_poll(newest);
+    publish_progress(ctx, progress, current_balance);
     Ok(())
+}
+
+fn publish_progress(
+    ctx: &PollContext,
+    progress: &mut JarProgressTracker,
+    current_balance: Option<MoneyAmount>,
+) {
+    let Some(publisher) = &ctx.progress_publisher else {
+        return;
+    };
+    if let Some(changed) = progress.observe(current_balance) {
+        debug!(is_synced = changed.is_synced, "monobank jar progress");
+        changed.publish(publisher.as_ref(), EventSource::Donation, None);
+    }
 }
 
 fn harvest(

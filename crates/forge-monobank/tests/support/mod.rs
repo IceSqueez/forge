@@ -209,6 +209,14 @@ impl Bank {
             .push(item);
     }
 
+    pub(crate) fn set_jar_balance(&self, jar: &str, balance: i64) {
+        for listed in &mut self.state.lock().unwrap().jars {
+            if listed["id"] == jar {
+                listed["balance"] = json!(balance);
+            }
+        }
+    }
+
     pub(crate) fn fail_next(&self, path_prefix: &str, response: ResponseTemplate) {
         self.state
             .lock()

@@ -26,6 +26,7 @@ time = { workspace = true }
 tracing = { workspace = true }
 
 [dev-dependencies]
+forge-events = { path = "../forge-events", features = ["test-support"] }
 forge-test-support = { path = "../forge-test-support" }
 reqwest = { workspace = true }
 forge-storage = { path = "../forge-storage", features = ["settings-test-support"] }

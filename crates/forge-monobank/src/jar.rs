@@ -226,6 +226,30 @@ mod tests {
     }
 
     #[test]
+    fn jar_balance_is_read_in_minor_units_and_an_empty_jar_keeps_a_zero_balance() {
+        for (balance, micros) in [(2_500, 25_000_000), (0, 0)] {
+            let jar = jar(json!({ "balance": balance })).unwrap();
+            assert_eq!(
+                jar.balance
+                    .map(|balance| (balance.micros(), balance.currency().as_str().to_owned())),
+                Some((micros, "UAH".to_owned())),
+                "balance {balance}"
+            );
+        }
+    }
+
+    #[test]
+    fn jar_without_a_usable_balance_or_known_currency_has_no_balance() {
+        for overrides in [
+            json!({ "balance": -1 }),
+            json!({ "balance": null }),
+            json!({ "currencyCode": 643 }),
+        ] {
+            assert_eq!(jar(overrides.clone()).unwrap().balance, None, "{overrides}");
+        }
+    }
+
+    #[test]
     fn jar_with_an_unknown_currency_is_listed_without_a_currency() {
         let jar = jar(json!({ "currencyCode": 643 })).unwrap();
         assert_eq!((jar.id.as_str(), jar.currency), ("jar-AbC_123", None));

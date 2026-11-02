@@ -137,3 +137,166 @@ fn declared(name: &str, kind: VariantKind) -> DeclaredVariable {
         synthesis: None,
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use std::collections::BTreeMap;
+
+    use forge_events::{Event, EventSource, TypedEvent};
+    use forge_registry::{CanonicalVariable, MoneySlot, TriggerRegistry};
+    use forge_types::{CurrencyCode, MoneyAmount, TriggerConfig, Variant, VariantKind};
+
+    use super::register_monobank_triggers;
+    use crate::jar_progress::{JAR_PROGRESS_KIND, JarProgressed};
+
+    fn registry() -> TriggerRegistry {
+        let mut registry = TriggerRegistry::new();
+        register_monobank_triggers(&mut registry).unwrap();
+        registry
+    }
+
+    fn progress(goal_micros: Option<u64>, jar_title: Option<&str>) -> JarProgressed {
+        JarProgressed {
+            jar_id: "jarAAA111".to_owned(),
+            jar_title: jar_title.map(str::to_owned),
+            balance_micros: 250_000_000,
+            goal_micros,
+            currency: uah(),
+            is_synced: true,
+        }
+    }
+
+    fn uah() -> CurrencyCode {
+        CurrencyCode::parse("UAH").unwrap()
+    }
+
+    fn args_of(progress: JarProgressed) -> BTreeMap<String, Variant> {
+        registry()
+            .get(JAR_PROGRESS_KIND)
+            .unwrap()
+            .build_arg_stack(&progress.into_event(EventSource::Donation, None))
+            .snapshot()
+    }
+
+    fn money(slot: MoneySlot) -> String {
+        CanonicalVariable::Money(slot).name().to_owned()
+    }
+
+    #[test]
+    fn every_declared_output_is_set_with_its_declared_kind() {
+        let registry = registry();
+        let descriptor = registry.get(JAR_PROGRESS_KIND).unwrap();
+        let args = args_of(progress(Some(1_000_000_000), Some("Drone")));
+
+        let mismatched: Vec<String> = descriptor
+            .output_schema()
+            .unwrap()
+            .variables
+            .into_iter()
+            .filter(|declared| {
+                args.get(&declared.name).map(VariantKind::from_variant) != Some(declared.kind)
+            })
+            .map(|declared| declared.name)
+            .collect();
+
+        assert_eq!(mismatched, Vec::<String>::new());
+    }
+
+    #[test]
+    fn arg_stack_carries_the_balance_the_goal_and_the_share_collected() {
+        let args = args_of(progress(Some(1_000_000_000), Some("Drone")));
+
+        let expected = BTreeMap::from([
+            (money(MoneySlot::AmountMicros), Variant::Int(250_000_000)),
+            (money(MoneySlot::Amount), Variant::Float(250.0)),
+            (
+                money(MoneySlot::Currency),
+                Variant::String("UAH".to_owned()),
+            ),
+            (
+                "jar_goal_amount_micros".to_owned(),
+                Variant::Int(1_000_000_000),
+            ),
+            ("jar_goal_amount".to_owned(), Variant::Float(1_000.0)),
+            (
+                "jar_goal_amount_formatted".to_owned(),
+                Variant::String(MoneyAmount::from_micros(1_000_000_000, uah()).formatted()),
+            ),
+            ("jar_goal_percent".to_owned(), Variant::Float(25.0)),
+            ("jar_id".to_owned(), Variant::String("jarAAA111".to_owned())),
+            ("jar_title".to_owned(), Variant::String("Drone".to_owned())),
+            ("jar_is_synced".to_owned(), Variant::Bool(true)),
+        ]);
+        let actual: BTreeMap<String, Variant> = expected
+            .keys()
+            .filter_map(|name| args.get(name).map(|value| (name.clone(), value.clone())))
+            .collect();
+
+        assert_eq!(actual, expected);
+    }
+
+    #[test]
+    fn arg_stack_without_a_goal_or_title_reports_zero_goal_and_empty_title() {
+        let args = args_of(progress(None, None));
+
+        let actual: Vec<Option<&Variant>> = [
+            "jar_goal_amount_micros",
+            "jar_goal_amount",
+            "jar_goal_amount_formatted",
+            "jar_goal_percent",
+            "jar_title",
+        ]
+        .into_iter()
+        .map(|name| args.get(name))
+        .collect();
+
+        assert_eq!(
+            actual,
+            [
+                Some(&Variant::Int(0)),
+                Some(&Variant::Float(0.0)),
+                Some(&Variant::String(String::new())),
+                Some(&Variant::Float(0.0)),
+                Some(&Variant::String(String::new())),
+            ]
+        );
+    }
+
+    #[test]
+    fn trigger_matches_only_jar_progress_from_the_donation_source() {
+        let registry = registry();
+        let descriptor = registry.get(JAR_PROGRESS_KIND).unwrap();
+        let payload = serde_json::to_value(progress(None, None)).unwrap();
+
+        for (event, expected) in [
+            (
+                Event::new(EventSource::Donation, JAR_PROGRESS_KIND, payload.clone()),
+                true,
+            ),
+            (
+                Event::new(EventSource::Twitch, JAR_PROGRESS_KIND, payload.clone()),
+                false,
+            ),
+            (
+                Event::new(EventSource::Donation, "donation.received", payload.clone()),
+                false,
+            ),
+            (
+                Event::new(
+                    EventSource::Donation,
+                    JAR_PROGRESS_KIND,
+                    serde_json::json!({ "jar_id": "jarAAA111" }),
+                ),
+                false,
+            ),
+        ] {
+            assert_eq!(
+                descriptor.matches_trigger(&TriggerConfig::new(), &event),
+                expected,
+                "{} from {:?}",
+                event.kind,
+                event.source
+            );
+        }
+    }
+}

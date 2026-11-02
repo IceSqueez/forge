@@ -15,6 +15,7 @@ forge-events = { path = "../forge-events", features = ["test-support"] }
 forge-host = { path = "../forge-host", features = ["test-support"] }
 forge-hotkey = { path = "../forge-hotkey" }
 forge-midi = { path = "../forge-midi" }
+forge-monobank = { path = "../forge-monobank" }
 forge-net = { path = "../forge-net", features = ["test-support"] }
 forge-obs = { path = "../forge-obs" }
 forge-overlay = { path = "../forge-overlay" }

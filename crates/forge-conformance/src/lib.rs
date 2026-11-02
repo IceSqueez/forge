@@ -12,5 +12,6 @@ pub fn every_registered_trigger() -> TriggerRegistry {
     forge_vtube::register_vtube_triggers(&mut registry).expect("vtube triggers");
     forge_midi::register_midi_triggers(&mut registry).expect("midi triggers");
     forge_hotkey::register_hotkey_triggers(&mut registry).expect("hotkey triggers");
+    forge_monobank::register_monobank_triggers(&mut registry).expect("monobank triggers");
     registry
 }

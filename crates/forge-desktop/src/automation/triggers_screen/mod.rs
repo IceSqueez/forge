@@ -667,6 +667,7 @@ mod tests {
         forge_hotkey::register_hotkey_triggers(&mut registry).unwrap();
         forge_platform_youtube::register_youtube_triggers(&mut registry).unwrap();
         forge_platform_kick::register_kick_triggers(&mut registry).unwrap();
+        forge_monobank::register_monobank_triggers(&mut registry).unwrap();
 
         let chipless: Vec<&str> = registry
             .all()
@@ -715,6 +716,7 @@ mod tests {
         forge_obs::register_obs_triggers(&mut registry).unwrap();
         forge_vtube::register_vtube_triggers(&mut registry).unwrap();
         forge_midi::register_midi_triggers(&mut registry).unwrap();
+        forge_monobank::register_monobank_triggers(&mut registry).unwrap();
 
         let (_, picks) = build_kind_groups(&registry, &forge_components::FORGE_DEFAULT);
 

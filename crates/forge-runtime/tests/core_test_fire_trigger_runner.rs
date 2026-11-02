@@ -9,8 +9,8 @@ use std::time::Duration;
 use forge_events::EventSubscription;
 use forge_registry::{ConfigProblem, ConfigReason, RegistryError, RunContext, SubActionRunner};
 use forge_runtime::{
-    EventBus, FrozenRuntime, NullEventLogRepo, QueueAdmission, QueueSchedulerHandle,
-    SchedulerRequest,
+    EventBus, FrozenRuntime, NullEventLogRepo, QueueAdmission, QueueSchedulerHandle, RuntimeWiring,
+    SchedulerRequest, register_core_triggers,
 };
 use forge_storage::{ActionRepo, DataProvider, GlobalsRepo, TriggerInstanceRepo};
 use forge_storage_sqlite::SqliteBackend;
@@ -59,7 +59,11 @@ async fn harness(queue: Queue) -> Harness {
 
     let bus = EventBus::new(Arc::new(NullEventLogRepo));
     let dp: Arc<dyn DataProvider> = Arc::clone(&backend) as Arc<dyn DataProvider>;
-    let runtime = common::frozen_runtime(common::wiring_parts(dp, Arc::clone(&bus)).await).await;
+    let mut wiring = common::with_every_core_step(RuntimeWiring::new(
+        common::wiring_parts(dp, Arc::clone(&bus)).await,
+    ));
+    register_core_triggers(wiring.triggers_mut()).unwrap();
+    let runtime = wiring.freeze().await;
 
     Harness {
         trigger_instances: backend.trigger_instance_repo(),
@@ -255,6 +259,62 @@ async fn override_outputs_reach_the_fired_actions_execution_context() {
         );
         fired.harness.handle.shutdown();
     }
+}
+
+#[tokio::test]
+async fn firing_a_stream_event_trigger_marks_the_run_with_its_chat_event() {
+    let queue_id = QueueId::new();
+    let harness = harness(nonblocking(queue_id)).await;
+    let mut sub = harness.bus.subscribe();
+    let bound = ActionId::new();
+    let mut config = BTreeMap::new();
+    config.insert("name".to_owned(), Variant::String("captured".to_owned()));
+    config.insert(
+        "value".to_owned(),
+        Variant::String(format!("%{}%", forge_registry::CHAT_EVENT_VARIABLE)),
+    );
+    harness
+        .actions
+        .save(&common::sequential_action(
+            bound,
+            "bound",
+            queue_id,
+            vec![SubActionStep {
+                kind_id: "core.globals.set".to_owned(),
+                config,
+                enabled: true,
+                continue_on_error: false,
+                condition: None,
+                label: None,
+            }],
+        ))
+        .await
+        .unwrap();
+    let instance_id = harness
+        .trigger_instances
+        .upsert_default(forge_events::DONATION_RECEIVED_KIND, "Donation")
+        .await
+        .unwrap();
+    harness
+        .trigger_instances
+        .link_action(bound, instance_id)
+        .await
+        .unwrap();
+
+    let outcome = run_outcome(
+        fire_runner(&harness),
+        &fire_cfg(&instance_id.to_string(), no_outputs()),
+    )
+    .await;
+
+    assert!(matches!(outcome, SubActionOutcome::Success));
+    assert!(await_action_done(&mut sub, bound).await);
+    let captured = harness.globals.get("captured").await.unwrap();
+    assert!(
+        matches!(captured, Some(Variant::String(ref wire)) if wire == forge_registry::ChatEventKind::Donation.wire_id()),
+        "{captured:?}"
+    );
+    harness.handle.shutdown();
 }
 
 #[tokio::test]

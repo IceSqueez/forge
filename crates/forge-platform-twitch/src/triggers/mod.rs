@@ -612,4 +612,43 @@ mod tests {
             assert!(reg.get(id).is_some(), "missing kind id: {id}");
         }
     }
+
+    #[test]
+    fn only_stream_event_triggers_mark_their_runs_with_a_chat_event() {
+        use crate::vocabulary::trigger_ids;
+        use forge_registry::ChatEventKind;
+
+        let expected = std::collections::HashMap::from([
+            (trigger_ids::CHANNEL_FOLLOW, ChatEventKind::Follow),
+            (trigger_ids::SUPPORT_SUBSCRIBER, ChatEventKind::Subscription),
+            (
+                trigger_ids::SUPPORT_RESUBSCRIBER,
+                ChatEventKind::Resubscription,
+            ),
+            (
+                trigger_ids::SUPPORT_GIFT_SUB,
+                ChatEventKind::GiftSubscription,
+            ),
+            (trigger_ids::SUPPORT_CHEER, ChatEventKind::Cheer),
+            (trigger_ids::CHAT_CHEER_MESSAGE, ChatEventKind::Cheer),
+            (trigger_ids::CHANNEL_RAID_RECEIVED, ChatEventKind::Raid),
+            (
+                trigger_ids::SUPPORT_CHARITY_DONATION,
+                ChatEventKind::Donation,
+            ),
+        ]);
+        let registry = twitch_registry();
+
+        for id in expected.keys() {
+            assert!(registry.get(id).is_some(), "missing kind id: {id}");
+        }
+        for descriptor in registry.all() {
+            assert_eq!(
+                descriptor.chat_event(),
+                expected.get(descriptor.id()).copied(),
+                "{}",
+                descriptor.id()
+            );
+        }
+    }
 }

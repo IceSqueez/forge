@@ -65,3 +65,52 @@ impl ChatEventKind {
         )
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn every_kind_round_trips_through_its_wire_id() {
+        for kind in ChatEventKind::ALL {
+            assert_eq!(ChatEventKind::from_wire_id(kind.wire_id()), Some(kind));
+        }
+    }
+
+    #[test]
+    fn from_wire_id_rejects_unknown_and_non_canonical_ids() {
+        for wire in [
+            "",
+            "host",
+            "Raid",
+            "raid ",
+            " raid",
+            "super-chat",
+            "gift sub",
+        ] {
+            assert_eq!(ChatEventKind::from_wire_id(wire), None, "{wire:?}");
+        }
+    }
+
+    #[test]
+    fn of_run_reads_back_the_kind_a_run_was_marked_with() {
+        for kind in ChatEventKind::ALL {
+            assert_eq!(
+                ChatEventKind::of_run(&kind.marked(ArgStack::new())),
+                Some(kind)
+            );
+        }
+    }
+
+    #[test]
+    fn of_run_ignores_an_absent_unknown_or_non_string_marker() {
+        let unknown = ArgStack::new().set(
+            CHAT_EVENT_VARIABLE.to_owned(),
+            Variant::String("host".to_owned()),
+        );
+        let non_string = ArgStack::new().set(CHAT_EVENT_VARIABLE.to_owned(), Variant::Int(5));
+        for args in [ArgStack::new(), unknown, non_string] {
+            assert_eq!(ChatEventKind::of_run(&args), None);
+        }
+    }
+}

@@ -172,6 +172,7 @@ impl OwnedSubActionRegistration<'_> {
 mod tests {
     use super::*;
     use crate::category::{SubActionCategory, TriggerCategory};
+    use crate::chat_event::ChatEventKind;
     use crate::descriptor::TriggerCatalogEntry;
     use crate::event_filter::EventFilter;
     use crate::form::FormField;
@@ -240,6 +241,7 @@ mod tests {
     struct ContractStub {
         kind_id: &'static str,
         contract: KindPlatformContract,
+        chat_event: Option<ChatEventKind>,
     }
 
     impl TriggerCatalogEntry for ContractStub {
@@ -270,6 +272,9 @@ mod tests {
         }
         fn platform_contract(&self) -> KindPlatformContract {
             self.contract
+        }
+        fn chat_event(&self) -> Option<ChatEventKind> {
+            self.chat_event
         }
         fn default_config(&self) -> TriggerConfig {
             TriggerConfig::new()
@@ -387,10 +392,60 @@ mod tests {
             reg.register(Box::new(ContractStub {
                 kind_id,
                 contract: *contract,
+                chat_event: None,
             }))
             .unwrap();
         }
         reg
+    }
+
+    fn chat_event_registry() -> TriggerRegistry {
+        let mut reg = TriggerRegistry::new();
+        for (kind_id, chat_event) in [
+            ("twitch.raid", Some(ChatEventKind::Raid)),
+            ("twitch.chat", None),
+        ] {
+            reg.register(Box::new(ContractStub {
+                kind_id,
+                contract: KindPlatformContract::Universal,
+                chat_event,
+            }))
+            .unwrap();
+        }
+        reg
+    }
+
+    fn user_args() -> ArgStack {
+        ArgStack::new().set(
+            "user".to_owned(),
+            forge_types::Variant::String("ann".to_owned()),
+        )
+    }
+
+    #[test]
+    fn with_chat_event_marks_a_run_of_an_event_trigger_with_its_kind() {
+        let args = chat_event_registry().with_chat_event("twitch.raid", user_args());
+
+        assert_eq!(ChatEventKind::of_run(&args), Some(ChatEventKind::Raid));
+    }
+
+    #[test]
+    fn with_chat_event_keeps_the_trigger_arguments_it_marks() {
+        let args = chat_event_registry().with_chat_event("twitch.raid", user_args());
+
+        assert_eq!(
+            args.get("user"),
+            Some(&forge_types::Variant::String("ann".to_owned()))
+        );
+    }
+
+    #[test]
+    fn with_chat_event_leaves_runs_of_plain_and_unknown_triggers_untouched() {
+        let reg = chat_event_registry();
+        for kind_id in ["twitch.chat", "twitch.unregistered"] {
+            let args = reg.with_chat_event(kind_id, user_args());
+            assert_eq!(args.snapshot(), user_args().snapshot(), "{kind_id}");
+        }
     }
 
     #[test]

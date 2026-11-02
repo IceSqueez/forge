@@ -2,7 +2,7 @@ mod common;
 use common::{CHAT_KIND, text, with_kind};
 
 use forge_overlay::config::{
-    AUTHOR, COMMAND_PREFIX, HIDDEN_ACCOUNTS, HIDE_COMMANDS, MESSAGE, POSITION, TEXT_SIZE,
+    AUTHOR, COMMAND_PREFIX, EVENT, HIDDEN_ACCOUNTS, HIDE_COMMANDS, MESSAGE, POSITION, TEXT_SIZE,
 };
 use forge_overlay::{
     ChatRowFilter, OverlayConfig, OverlayError, effective_overlay_config, validate_overlay_config,
@@ -226,6 +226,62 @@ fn without_run_variables_the_shown_author_and_message_decide() {
             "{delivered:?}"
         );
     }
+}
+
+fn event_row(event: &str, author: &str, message: &str) -> OverlayConfig {
+    let mut delivered = shown(author, message);
+    delivered.insert(EVENT.to_owned(), text(event));
+    delivered
+}
+
+#[test]
+fn an_event_row_is_judged_by_its_account_alone_while_a_plain_row_still_hides_commands() {
+    let mut stored = accounts("nightbot");
+    stored.extend(commands(Some(Variant::Bool(true)), Some("!")));
+    for (delivered, withheld, case) in [
+        (
+            event_row("Cheer", "viewer", "!cheer100 go"),
+            false,
+            "an event row opening with the prefix",
+        ),
+        (
+            event_row("Raid", "nightbot", "hello"),
+            true,
+            "an event row from a hidden account",
+        ),
+        (
+            event_row("", "viewer", "!so ada"),
+            true,
+            "a plain row with a blank event",
+        ),
+        (
+            event_row("  ", "viewer", "!so ada"),
+            true,
+            "a plain row with a whitespace event",
+        ),
+        (
+            shown("viewer", "!so ada"),
+            true,
+            "a plain row without an event",
+        ),
+    ] {
+        assert_eq!(
+            withholds(&stored, &delivered, &ArgStack::new()),
+            withheld,
+            "{case}"
+        );
+    }
+}
+
+#[test]
+fn an_event_row_keeps_a_command_shaped_run_message() {
+    let stored = commands(Some(Variant::Bool(true)), Some("!"));
+
+    assert!(!withholds(
+        &stored,
+        &event_row("Cheer", "viewer", "cheer"),
+        &run_args("viewer", "!cheer100 go"),
+    ));
 }
 
 #[test]

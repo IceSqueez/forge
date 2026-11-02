@@ -1442,6 +1442,7 @@ mod tests {
         id: &'static str,
         source: EventSource,
         prefix: &'static str,
+        chat_event: Option<forge_registry::ChatEventKind>,
     }
 
     impl TriggerCatalogEntry for PrefixDescriptor {
@@ -1488,6 +1489,9 @@ mod tests {
         fn matches_trigger(&self, _: &TriggerConfig, _: &Event) -> bool {
             true
         }
+        fn chat_event(&self) -> Option<forge_registry::ChatEventKind> {
+            self.chat_event
+        }
     }
 
     const PREFIX_CASES: &[(&str, EventSource, &str, &[&str])] = &[
@@ -1528,6 +1532,7 @@ mod tests {
                     id,
                     source: *source,
                     prefix,
+                    chat_event: None,
                 }))
                 .unwrap();
         }
@@ -1539,6 +1544,58 @@ mod tests {
             kind_id: kind_id.to_owned(),
             ..command_instance(PlatformScope::Any, PermissionRung::Everyone, 0)
         }
+    }
+
+    fn chat_event_harness() -> (Arc<EventBus>, TriggerEvaluator) {
+        let mut registry = TriggerRegistry::new();
+        for (id, prefix, chat_event) in [
+            (
+                "twitch.raid",
+                "twitch.channel.raid",
+                Some(forge_registry::ChatEventKind::Raid),
+            ),
+            ("twitch.chat", "twitch.channel.chat.message", None),
+        ] {
+            registry
+                .register(Box::new(PrefixDescriptor {
+                    id,
+                    source: EventSource::Twitch,
+                    prefix,
+                    chat_event,
+                }))
+                .unwrap();
+        }
+        decide_harness_with(registry)
+    }
+
+    #[tokio::test]
+    async fn a_run_of_a_stream_event_trigger_carries_its_chat_event() {
+        let (_bus, mut evaluator) = chat_event_harness();
+        let event = Event::new(EventSource::Twitch, "twitch.channel.raid", json!({}));
+
+        let args = evaluator.decide(&prefix_instance("twitch.raid"), &event);
+
+        assert_eq!(
+            args.as_ref()
+                .and_then(forge_registry::ChatEventKind::of_run),
+            Some(forge_registry::ChatEventKind::Raid)
+        );
+    }
+
+    #[tokio::test]
+    async fn a_run_of_a_plain_chat_trigger_carries_no_chat_event() {
+        let (_bus, mut evaluator) = chat_event_harness();
+        let event = Event::new(
+            EventSource::Twitch,
+            "twitch.channel.chat.message",
+            json!({}),
+        );
+
+        let args = evaluator
+            .decide(&prefix_instance("twitch.chat"), &event)
+            .unwrap();
+
+        assert_eq!(args.get(forge_registry::CHAT_EVENT_VARIABLE), None);
     }
 
     #[tokio::test]
@@ -1812,6 +1869,7 @@ mod tests {
                 id: "twitch.chat.message",
                 source: EventSource::Twitch,
                 prefix: "twitch.channel.chat.message",
+                chat_event: None,
             }))
             .unwrap();
         decide_harness_with(registry)

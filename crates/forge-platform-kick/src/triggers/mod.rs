@@ -359,4 +359,32 @@ mod tests {
             }
         }
     }
+
+    #[test]
+    fn only_stream_event_triggers_mark_their_runs_with_a_chat_event() {
+        use crate::vocabulary::trigger_ids;
+        use forge_registry::ChatEventKind;
+
+        let expected = std::collections::HashMap::from([
+            (trigger_ids::CHANNEL_SUBSCRIBED, ChatEventKind::Subscription),
+            (
+                trigger_ids::CHANNEL_SUBSCRIPTION_GIFTS,
+                ChatEventKind::GiftSubscription,
+            ),
+            (trigger_ids::CHANNEL_HOSTED, ChatEventKind::Raid),
+        ]);
+        let registry = kick_registry();
+
+        for id in expected.keys() {
+            assert!(registry.get(id).is_some(), "missing kind id: {id}");
+        }
+        for descriptor in registry.all() {
+            assert_eq!(
+                descriptor.chat_event(),
+                expected.get(descriptor.id()).copied(),
+                "{}",
+                descriptor.id()
+            );
+        }
+    }
 }

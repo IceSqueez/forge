@@ -370,6 +370,7 @@ impl Harness {
             OverlayDispatch::Applied(delivery) => {
                 panic!("a transient show was applied at once ({delivery:?}) instead of queued")
             }
+            OverlayDispatch::Withheld => panic!("a transient show was withheld instead of queued"),
         }
     }
 

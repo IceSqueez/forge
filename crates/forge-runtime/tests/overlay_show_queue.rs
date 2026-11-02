@@ -236,6 +236,7 @@ impl Harness {
             OverlayDispatch::Applied(delivery) => {
                 panic!("a transient show was applied at once ({delivery:?}) instead of queued")
             }
+            OverlayDispatch::Withheld => panic!("a transient show was withheld instead of queued"),
         }
     }
 
@@ -445,6 +446,7 @@ async fn a_burst_past_the_capacity_refuses_only_the_excess_and_shows_every_accep
             Ok(OverlayDispatch::Applied(delivery)) => {
                 panic!("show {index} bypassed the queue ({delivery:?})")
             }
+            Ok(OverlayDispatch::Withheld) => panic!("show {index} was withheld"),
             Err(error) => refused.push((index, error)),
         }
     }

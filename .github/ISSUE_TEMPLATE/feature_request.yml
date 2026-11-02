@@ -7,6 +7,23 @@ body:
     attributes:
       value: |
         Thanks for suggesting a feature! Forge aims to stay focused - please help us understand the use case before we discuss design.
+  - type: dropdown
+    id: area
+    attributes:
+      label: Which part of Forge?
+      options:
+        - Chat and platforms (Twitch, YouTube, Kick)
+        - Actions, triggers and scripts
+        - Overlays and alerts
+        - Text-to-speech and voices
+        - Soundboard and audio
+        - OBS, VTube Studio or Discord
+        - Donations
+        - Backups, packs and import
+        - Installation and updates
+        - Something else or not sure
+    validations:
+      required: false
   - type: textarea
     id: problem
     attributes:
@@ -19,24 +36,25 @@ body:
     id: solution
     attributes:
       label: Proposed solution
-      description: How would you want Forge to handle this?
+      description: How would you want Forge to handle this? A rough idea is fine.
     validations:
-      required: true
+      required: false
   - type: textarea
     id: alternatives
     attributes:
       label: Alternatives considered
-      description: Other tools / workarounds you've tried, and why they fall short.
-  - type: checkboxes
-    id: scope
+      description: Other tools or workarounds you've tried, and why they fall short.
+  - type: dropdown
+    id: platforms
     attributes:
-      label: Scope
-      description: |
-        Forge is intentionally minimal. Help us scope: is this a core capability, or a plugin/script that builds on existing primitives?
+      label: Which platforms do you need this on?
+      multiple: true
       options:
-        - label: I believe this needs core changes (event types, runtime, schema)
-        - label: This could be built on top of existing rhai scripting + actions
-        - label: I'm not sure
+        - Windows
+        - macOS
+        - Linux
+    validations:
+      required: false
   - type: checkboxes
     id: confirmations
     attributes:

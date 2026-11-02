@@ -11,8 +11,8 @@ body:
     id: version
     attributes:
       label: Forge version
-      description: Output of `forge --version` (or the release tag / commit SHA).
-      placeholder: "0.1.0-alpha.2 (commit abc1234)"
+      description: Shown in the bottom left corner of Forge and in Settings.
+      placeholder: "0.7.1"
     validations:
       required: true
   - type: dropdown
@@ -29,6 +29,23 @@ body:
         - Other (please specify in description)
     validations:
       required: true
+  - type: dropdown
+    id: area
+    attributes:
+      label: Which part of Forge?
+      options:
+        - Chat and platforms (Twitch, YouTube, Kick)
+        - Actions, triggers and scripts
+        - Overlays and alerts
+        - Text-to-speech and voices
+        - Soundboard and audio
+        - OBS, VTube Studio or Discord
+        - Donations
+        - Backups, packs and import
+        - Installation and updates
+        - Something else or not sure
+    validations:
+      required: false
   - type: textarea
     id: what-happened
     attributes:
@@ -61,7 +78,7 @@ body:
     attributes:
       label: Relevant log output
       description: |
-        Run with `RUST_LOG=forge=debug cargo run -p forge-app` and paste relevant output. Redact tokens and personal info.
+        In Forge, open Settings, Logs & diagnostics, then Open logs folder or Export diagnostic bundle. Paste the lines around the problem, or drop the file here. Remove anything private first.
       render: shell
   - type: checkboxes
     id: confirmations
@@ -70,5 +87,5 @@ body:
       options:
         - label: I've searched existing issues and confirmed this isn't a duplicate
           required: true
-        - label: I'm using the latest alpha/beta release (or built from the active release branch)
+        - label: I'm using the latest release
           required: true

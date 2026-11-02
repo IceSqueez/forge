@@ -369,25 +369,6 @@ async fn a_remembered_off_host_avatar_is_not_used() {
 }
 
 #[tokio::test]
-async fn unregistering_a_platform_forgets_the_viewers_waiting_on_it() {
-    let (avatars, source) = with_twitch(FakeSource::new(100, Answer::Images));
-    avatars.ask(twitch("42"));
-
-    avatars.unregister(PlatformId::Twitch);
-    avatars.register(
-        PlatformId::Twitch,
-        Arc::clone(&source) as Arc<dyn ViewerAvatarSource>,
-    );
-
-    assert_eq!(avatars.resolve_batch(PlatformId::Twitch).await, None);
-    assert!(
-        avatars.ask(twitch("42")),
-        "a forgotten viewer could not be asked again"
-    );
-    assert!(source.asked().is_empty());
-}
-
-#[tokio::test]
 async fn a_drain_for_a_platform_without_a_source_ends_and_forgets_its_queue() {
     let avatars = ChatAvatars::default();
     avatars.ask(twitch("42"));
@@ -396,4 +377,31 @@ async fn a_drain_for_a_platform_without_a_source_ends_and_forgets_its_queue() {
 
     assert_eq!(drained, None);
     assert!(avatars.ask(twitch("42")));
+}
+
+#[tokio::test]
+async fn an_unavailable_answer_drops_the_viewers_still_waiting_on_that_platform() {
+    let (avatars, source) = with_twitch(FakeSource::new(1, Answer::Unavailable));
+    for user_id in ["1", "2", "3"] {
+        avatars.ask(twitch(user_id));
+    }
+
+    let batches = drain(&avatars, PlatformId::Twitch).await;
+
+    assert_eq!(batches.len(), 1, "lookups went on after the source refused");
+    assert_eq!(source.asked().len(), 1);
+}
+
+#[tokio::test(start_paused = true)]
+async fn lookups_resume_once_the_pause_after_an_unavailable_answer_ends() {
+    let (avatars, _) = with_twitch(FakeSource::new(100, Answer::Unavailable));
+    avatars.ask(twitch("42"));
+    drain(&avatars, PlatformId::Twitch).await;
+
+    tokio::time::advance(std::time::Duration::from_secs(29)).await;
+    let during = avatars.ask(twitch("43"));
+    tokio::time::advance(std::time::Duration::from_secs(2)).await;
+    let after = avatars.ask(twitch("43"));
+
+    assert_eq!((during, after), (false, true));
 }

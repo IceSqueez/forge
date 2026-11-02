@@ -32,32 +32,23 @@ fn github_repo_reaches_the_release_api_whatever_the_web_url_spelling() {
 }
 
 #[test]
-fn both_manifest_entry_points_download_the_latest_signed_manifest_whatever_the_spelling() {
+fn the_signed_manifest_is_downloaded_from_the_named_release_whatever_the_spelling() {
     let expected = ManifestSource::new(
-        "https://github.com/nova/forge/releases/latest/download/forge-update.json".to_owned(),
-        "https://github.com/nova/forge/releases/latest/download/forge-update.json.minisig"
+        "https://github.com/nova/forge/releases/download/v0.7.1/forge-update.json".to_owned(),
+        "https://github.com/nova/forge/releases/download/v0.7.1/forge-update.json.minisig"
             .to_owned(),
     );
     for spelling in WEB_URL_SPELLINGS {
-        let from_repo = GithubRepo::parse(spelling).map(|repo| repo.latest_manifest_source());
+        let from_repo =
+            GithubRepo::parse(spelling).map(|repo| repo.release_manifest_source("v0.7.1"));
         assert_eq!(from_repo.as_ref(), Some(&expected), "repo for {spelling:?}");
-        assert_eq!(
-            ManifestSource::github_latest(spelling).as_ref(),
-            Some(&expected),
-            "github_latest for {spelling:?}",
-        );
     }
 }
 
 #[test]
-fn anything_but_a_github_web_url_yields_no_repo_and_no_manifest_source() {
+fn anything_but_a_github_web_url_yields_no_repo() {
     for url in NOT_GITHUB_WEB_URLS {
         assert_eq!(GithubRepo::parse(url), None, "repo accepted {url:?}");
-        assert_eq!(
-            ManifestSource::github_latest(url),
-            None,
-            "manifest source accepted {url:?}",
-        );
     }
 }
 

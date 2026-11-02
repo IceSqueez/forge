@@ -2,7 +2,7 @@ mod support;
 
 use forge_update::{
     ArtifactKind, CancelSignal, ManifestSource, Platform, Sha256Digest, TrustedKeys,
-    check_for_update, download_artifact, parse_version, progress_channel,
+    download_artifact, fetch_release_offer, parse_version, progress_channel,
 };
 use support::{Reply, TestServer, client};
 
@@ -33,10 +33,9 @@ async fn a_signed_offer_is_downloaded_digest_checked_and_staged_through_one_clie
     let client = client();
     let keys = TrustedKeys::from_base64(&[SERVING_KEY]).unwrap();
 
-    let offer = check_for_update(&client, &source, &keys, &parse_version("0.6.1").unwrap())
+    let offer = fetch_release_offer(&client, &source, &keys, &parse_version("v0.6.2").unwrap())
         .await
-        .unwrap()
-        .expect("0.6.2 is offered to 0.6.1");
+        .unwrap();
     let mut artifact = offer
         .artifact_for(Platform::LinuxX64, ArtifactKind::AppImage)
         .expect("signed linux appimage")

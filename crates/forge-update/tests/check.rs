@@ -4,7 +4,7 @@ mod support;
 use std::sync::Arc;
 
 use forge_update::{
-    ManifestSource, TrustedKeys, UpdateClient, UpdateError, check_for_update, parse_version,
+    ManifestSource, TrustedKeys, UpdateClient, UpdateError, fetch_release_offer, parse_version,
 };
 use support::{Reply, SECRET, TestServer, client};
 
@@ -31,34 +31,41 @@ async fn serve(manifest: Reply, signature: Reply) -> (TestServer, ManifestSource
     (server, source)
 }
 
-async fn check(source: &ManifestSource, running: &str) -> Result<Option<String>, UpdateError> {
-    check_for_update(
+async fn check(source: &ManifestSource, release: &str) -> Result<String, UpdateError> {
+    fetch_release_offer(
         &client(),
         source,
         &test_keys(),
-        &parse_version(running).unwrap(),
+        &parse_version(release).unwrap(),
     )
     .await
-    .map(|offer| offer.map(|offer| offer.version.to_string()))
+    .map(|offer| offer.version.to_string())
 }
 
 #[tokio::test]
-async fn a_signed_manifest_is_offered_only_when_newer_than_the_running_build() {
+async fn a_signed_manifest_is_offered_only_for_the_release_it_describes() {
     let (_server, source) = serve(
         Reply::Full(MANIFEST.to_vec()),
         Reply::Full(SIGNATURE.to_vec()),
     )
     .await;
-    for (running, offered) in [
-        ("0.6.1", Some("0.6.2")),
-        ("0.6.2-beta.3", Some("0.6.2")),
-        ("0.6.2", None),
-        ("0.6.3", None),
-        ("1.0.0", None),
+    for (release, offered) in [
+        ("v0.6.2", true),
+        ("0.6.2", true),
+        ("0.6.1", false),
+        ("0.6.2-beta.3", false),
+        ("0.6.3", false),
     ] {
-        let result = check(&source, running).await.unwrap();
+        let result = check(&source, release).await;
 
-        assert_eq!(result.as_deref(), offered, "running {running}");
+        if offered {
+            assert_eq!(result.unwrap(), "0.6.2", "release {release}");
+        } else {
+            assert!(
+                matches!(result, Err(UpdateError::ReleaseVersionMismatch { .. })),
+                "release {release}: {result:?}",
+            );
+        }
     }
 }
 
@@ -218,7 +225,7 @@ async fn an_exhausted_rate_limiter_stops_the_check_before_any_request() {
     ))
     .unwrap();
 
-    let result = check_for_update(
+    let result = fetch_release_offer(
         &limited,
         &source,
         &test_keys(),

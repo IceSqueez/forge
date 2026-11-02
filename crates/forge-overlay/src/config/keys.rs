@@ -30,6 +30,8 @@ pub const AUTHOR: &str = "author";
 pub const AUTHOR_COLOR: &str = "author_color";
 pub const BADGES: &str = "badges";
 pub const MESSAGE: &str = "message";
+pub const MESSAGE_ID: &str = "message_id";
+pub const USER_ID: &str = "user_id";
 
 pub const LABEL: &str = "label";
 pub const VALUE: &str = "value";

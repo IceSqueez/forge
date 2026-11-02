@@ -57,6 +57,13 @@ pub struct ChatModerationPayload {
 
 impl ChatModerationPayload {
     pub const KEY: &'static str = "_chat_mod";
+
+    pub fn attach(self, payload: &mut serde_json::Value) {
+        if let (Some(fields), Ok(envelope)) = (payload.as_object_mut(), serde_json::to_value(self))
+        {
+            fields.insert(Self::KEY.to_owned(), envelope);
+        }
+    }
 }
 
 #[derive(Clone, PartialEq, Eq, Serialize, Deserialize)]

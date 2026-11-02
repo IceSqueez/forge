@@ -73,7 +73,8 @@ pub use render::sample::{SampleContext, SampleTrigger, sample_content, sample_co
 pub use render::page_contract::BindRule;
 pub use render::page_contract::RuntimeAttribute;
 pub use render::page_contract::RuntimeProperty;
-pub use render::page_contract::{CLEAR_FRAME, CONTENT_FRAME, RELOAD_FRAME};
+pub use render::page_contract::{CLEAR_FRAME, CONTENT_FRAME, RELOAD_FRAME, REMOVE_FRAME};
 pub use render::page_contract::{
-    CONTENT_FUNCTION, READY_FUNCTION, SET_FUNCTION, SHOW_FUNCTION, SOUND_FUNCTION,
+    CONTENT_FUNCTION, READY_FUNCTION, REMOVE_FUNCTION, SET_FUNCTION, SHOW_FUNCTION, SOUND_FUNCTION,
 };
+pub use render::row_removal::{RowRemoval, RowRemovalScope};

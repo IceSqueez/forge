@@ -8,8 +8,8 @@ use forge_platform_core::TokenSource;
 use forge_storage::BanLedgerRepo;
 use forge_types::Secret;
 use forge_types::{
-    ChatEventDetail, ChatPayload, ChatSegment, ChatViewer, CurrencyCode, ModerationMarks,
-    MoneyAmount, UserBadge,
+    ChatEventDetail, ChatModerationAction, ChatModerationPayload, ChatPayload, ChatSegment,
+    ChatViewer, CurrencyCode, ModerationMarks, MoneyAmount, UserBadge, UserRemoval,
 };
 use time::OffsetDateTime;
 use tokio::sync::mpsc::UnboundedSender;

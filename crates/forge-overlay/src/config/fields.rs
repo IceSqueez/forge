@@ -170,6 +170,28 @@ pub(crate) fn chat_platform_field() -> SectionedField {
     )
 }
 
+pub(crate) fn chat_message_id_field() -> SectionedField {
+    in_section(
+        ConfigSection::Content,
+        FormField::Text {
+            key: MESSAGE_ID,
+            label: "Message ID",
+            placeholder: "%message_id%",
+        },
+    )
+}
+
+pub(crate) fn chat_user_id_field() -> SectionedField {
+    in_section(
+        ConfigSection::Content,
+        FormField::Text {
+            key: USER_ID,
+            label: "User ID",
+            placeholder: "%user_id%",
+        },
+    )
+}
+
 pub(crate) fn label_field() -> SectionedField {
     in_section(
         ConfigSection::Content,

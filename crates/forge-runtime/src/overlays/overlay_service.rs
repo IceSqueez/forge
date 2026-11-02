@@ -9,10 +9,10 @@ use forge_events::{Event, EventSource};
 use forge_net::TaskOwner;
 use forge_overlay::{
     DEFAULT_DISPLAY_SECS, DeliveryDisposition, GENERATOR_VERSION, MaterializeReport,
-    OverlayInstance, OverlayKindDescriptor, OverlayKindRegistry, OverlayMedia, SampleContext,
-    delivered_content, ensure_shared_directory, joined_to_show, latest_binding, latest_content,
-    materialize_overlay, read_overlay_source, refresh_config_credential, remove_overlay_directory,
-    sample_content, show_timing, take_speech, write_overlay_source,
+    OverlayInstance, OverlayKindDescriptor, OverlayKindRegistry, OverlayMedia, RowRemoval,
+    SampleContext, delivered_content, ensure_shared_directory, joined_to_show, latest_binding,
+    latest_content, materialize_overlay, read_overlay_source, refresh_config_credential,
+    remove_overlay_directory, sample_content, show_timing, take_speech, write_overlay_source,
 };
 use forge_registry::CancelSignal;
 use forge_storage::{
@@ -35,6 +35,8 @@ use crate::overlays::overlay_shows::{
     ShowTicket,
 };
 use crate::speech::speak_dispatcher::{ShowSpeaker, ShowSpeech, SpeechOrigin, SpeechStartSignal};
+
+use forge_overlay::kinds::chat::KIND_ID as CHAT_KIND_ID;
 
 pub const OVERLAY_TEST_FIRE_KIND: &str = "overlay.test_fire";
 
@@ -99,6 +101,8 @@ pub trait OverlayFrameSink: Send + Sync {
     async fn deliver_reload(&self, identity: &OverlayId);
 
     async fn revoke(&self, identity: &OverlayId);
+
+    async fn deliver_removal(&self, _identity: &OverlayId, _removal: &RowRemoval) {}
 
     async fn receivers(&self, _identity: &OverlayId) -> OverlayReceivers {
         OverlayReceivers::default()
@@ -477,6 +481,25 @@ impl OverlayServiceHandle {
 
     pub async fn reload_page(&self, id: &OverlayId) {
         self.inner.frames.deliver_reload(id).await;
+    }
+
+    pub async fn remove_chat_rows(&self, removal: &RowRemoval) {
+        let definitions = match self.inner.repo.list().await {
+            Ok(definitions) => definitions,
+            Err(error) => {
+                tracing::warn!(%error, "overlays unreadable; chat removal not pushed");
+                return;
+            }
+        };
+        for definition in definitions
+            .iter()
+            .filter(|definition| definition.enabled && definition.kind_id == CHAT_KIND_ID)
+        {
+            self.inner
+                .frames
+                .deliver_removal(&definition.id, removal)
+                .await;
+        }
     }
 
     pub async fn receivers(&self, id: &OverlayId) -> OverlayReceivers {

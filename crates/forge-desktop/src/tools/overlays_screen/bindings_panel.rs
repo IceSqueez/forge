@@ -10,11 +10,11 @@ use forge_components::{
     ActivePresentation, BORDER_THIN, FONT_XXS, ForgePalette, scaled, section_label, tr,
 };
 use forge_overlay::config::{
-    ACCENT, AUTHOR, AUTHOR_COLOR, BADGES, FONT, HEADLINE, ICON, LABEL, MESSAGE, PLACEHOLDER,
-    PLATFORM, POSITION, SLOT, SUBLINE, TARGET, TEXT_SIZE, VALUE,
+    ACCENT, AUTHOR, AUTHOR_COLOR, BADGES, FONT, HEADLINE, ICON, LABEL, MESSAGE, MESSAGE_ID,
+    PLACEHOLDER, PLATFORM, POSITION, SLOT, SUBLINE, TARGET, TEXT_SIZE, USER_ID, VALUE,
 };
 use forge_overlay::{
-    CONTENT_FUNCTION, READY_FUNCTION, SET_FUNCTION, SHOW_FUNCTION, SOUND_FUNCTION,
+    CONTENT_FUNCTION, READY_FUNCTION, REMOVE_FUNCTION, SET_FUNCTION, SHOW_FUNCTION, SOUND_FUNCTION,
 };
 use forge_overlay::{LookContract, PAGE_CONTRACT, PageContract, PageFunction};
 use gpui::{
@@ -319,6 +319,7 @@ fn function_summary(name: &str) -> Option<String> {
         SET_FUNCTION => Some(tr!("overlays_bindings_fn_set")),
         SHOW_FUNCTION => Some(tr!("overlays_bindings_fn_show")),
         SOUND_FUNCTION => Some(tr!("overlays_bindings_fn_sound")),
+        REMOVE_FUNCTION => Some(tr!("overlays_bindings_fn_remove")),
         _ => None,
     }
 }
@@ -348,6 +349,8 @@ fn binding_label(key: &str) -> Option<String> {
         ICON => Some(tr!("overlays_bindings_field_icon")),
         SLOT => Some(tr!("overlays_bindings_field_slot")),
         PLATFORM => Some(tr!("overlays_bindings_field_platform")),
+        MESSAGE_ID => Some(tr!("overlays_bindings_field_message_id")),
+        USER_ID => Some(tr!("overlays_bindings_field_user_id")),
         _ => base_label(key),
     }
 }

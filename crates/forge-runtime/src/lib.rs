@@ -69,6 +69,7 @@ pub use integrations::notification_policy::{
     ActionFailureNotice, NotificationIntent, NotificationIntents, NotificationPolicyHandle,
     NotificationPreferences, spawn_notification_policy,
 };
+pub use overlays::chat_removal_feed::{removal_of, spawn_chat_removal_feed};
 pub use overlays::latest_overlay_feed::spawn_latest_overlay_feed;
 pub use overlays::overlay_definition_revision::OverlayDefinitionChanges;
 pub use overlays::overlay_media::OverlayMediaLibrary;

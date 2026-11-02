@@ -2,6 +2,7 @@ use std::sync::Arc;
 
 use async_trait::async_trait;
 use forge_events::EventObserver;
+use forge_overlay::RowRemoval;
 use forge_runtime::{OverlayConnectListener, OverlayFrameSink, OverlayReceivers};
 use forge_storage::OverlayId;
 
@@ -51,6 +52,12 @@ impl OverlayFrameSink for DeliveryHub {
 
     async fn revoke(&self, identity: &OverlayId) {
         self.adapter.revoke_overlay(identity).await;
+    }
+
+    async fn deliver_removal(&self, identity: &OverlayId, removal: &RowRemoval) {
+        self.adapter
+            .deliver_overlay_removal(identity, removal)
+            .await;
     }
 }
 

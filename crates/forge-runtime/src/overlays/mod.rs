@@ -1,3 +1,4 @@
+pub(crate) mod chat_removal_feed;
 pub(crate) mod latest_overlay_feed;
 pub(crate) mod overlay_definition_revision;
 pub(crate) mod overlay_lanes;

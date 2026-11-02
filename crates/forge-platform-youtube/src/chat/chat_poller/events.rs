@@ -350,12 +350,24 @@ pub(super) fn user_banned_event(
     };
 
     let mut payload = serde_json::json!({
-        (ban_fields::TARGET_USER): entity_json(target_channel_id, target_display_name),
+        (ban_fields::TARGET_USER): entity_json(target_channel_id.clone(), target_display_name.clone()),
         (ban_fields::MODERATOR): author_json(author_details),
         (ban_fields::TYPE): ban_type,
         (ban_fields::DURATION_SECONDS): ban_duration_secs,
     });
     payload[ChatPayload::KEY] = serde_json::to_value(&chat_payload).ok()?;
+    ChatModerationPayload {
+        action: ChatModerationAction::RemoveUser {
+            user_id: target_channel_id,
+            user_name: target_display_name.unwrap_or_default(),
+            removal: if is_temporary {
+                UserRemoval::Timeout
+            } else {
+                UserRemoval::Ban
+            },
+        },
+    }
+    .attach(&mut payload);
     Some(Event::new(
         EventSource::YouTube,
         event_kinds::CHANNEL_USER_BANNED,
@@ -383,6 +395,12 @@ pub(super) fn tombstone_event(id: String) -> Option<Event> {
         (chat_mod_fields::MESSAGE_ID): id,
     });
     payload[ChatPayload::KEY] = serde_json::to_value(&chat_payload).ok()?;
+    ChatModerationPayload {
+        action: ChatModerationAction::DeleteMessage {
+            message_id: id.clone(),
+        },
+    }
+    .attach(&mut payload);
     Some(Event::new(
         EventSource::YouTube,
         event_kinds::CHAT_MESSAGE_DELETED,

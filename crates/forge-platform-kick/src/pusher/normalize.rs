@@ -1,4 +1,7 @@
-use forge_types::{ChatPayload, ChatSegment, ChatViewer, ModerationMarks, UserBadge};
+use forge_types::{
+    ChatModerationAction, ChatPayload, ChatSegment, ChatViewer, ModerationMarks, UserBadge,
+    UserRemoval,
+};
 use serde_json::Value;
 use tracing::debug;
 
@@ -117,6 +120,28 @@ pub(crate) fn chat_message_deleted(raw: &Value) -> Value {
     serde_json::json!({
         (chat::MESSAGE_ID): message_id,
         (chat::DELETED_BY): entity_json(deleted_by_id, deleted_by_username),
+    })
+}
+
+pub(crate) fn message_deletion(raw: &Value) -> Option<ChatModerationAction> {
+    let message_id = raw
+        .get("message")
+        .and_then(|m| str_field(m, "id"))
+        .filter(|id| !id.is_empty())?;
+    Some(ChatModerationAction::DeleteMessage { message_id })
+}
+
+pub(crate) fn user_removal(raw: &Value) -> Option<ChatModerationAction> {
+    let user = raw.get("user")?;
+    let user_name = str_field(user, "username").unwrap_or_default();
+    Some(ChatModerationAction::RemoveUser {
+        user_id: u64_field(user, "id").map(|id| id.to_string()),
+        user_name,
+        removal: if u64_field(raw, "duration").is_some() {
+            UserRemoval::Timeout
+        } else {
+            UserRemoval::Ban
+        },
     })
 }
 

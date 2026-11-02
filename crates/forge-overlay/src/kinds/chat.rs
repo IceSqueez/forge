@@ -93,6 +93,8 @@ impl OverlayKindDescriptor for ChatOverlayKind {
         defaults.insert(config::BADGES.to_owned(), config::text(""));
         defaults.insert(config::MESSAGE.to_owned(), config::text("%message_text%"));
         defaults.insert(config::PLATFORM.to_owned(), config::text(""));
+        defaults.insert(config::MESSAGE_ID.to_owned(), config::text(""));
+        defaults.insert(config::USER_ID.to_owned(), config::text(""));
         defaults
     }
 
@@ -103,6 +105,8 @@ impl OverlayKindDescriptor for ChatOverlayKind {
             config::badges_field(),
             config::message_field(),
             config::chat_platform_field(),
+            config::chat_message_id_field(),
+            config::chat_user_id_field(),
         ];
         fields.extend(config::shared_style_fields());
         fields.push(config::position_field("Newest message at"));
@@ -110,13 +114,27 @@ impl OverlayKindDescriptor for ChatOverlayKind {
     }
 
     fn implied_content(&self, args: &ArgStack) -> OverlayConfig {
-        let sender_platform = CanonicalVariable::actor(ActorRole::Principal, ActorSlot::Platform);
-        args.get(sender_platform.name())
-            .and_then(Variant::as_str)
-            .and_then(|raw| PlatformId::from_wire(raw.trim()))
-            .map(|platform| (config::PLATFORM.to_owned(), config::text(platform.as_str())))
-            .into_iter()
-            .collect()
+        let sender = |slot| CanonicalVariable::actor(ActorRole::Principal, slot);
+        let implied = |name: &str| {
+            args.get(name)
+                .and_then(Variant::as_str)
+                .map(str::trim)
+                .map(str::to_owned)
+        };
+        let platform = implied(sender(ActorSlot::Platform).name())
+            .and_then(|raw| PlatformId::from_wire(&raw))
+            .map(|platform| platform.as_str().to_owned());
+        [
+            (config::PLATFORM, platform),
+            (
+                config::MESSAGE_ID,
+                implied(CanonicalVariable::MessageId.name()),
+            ),
+            (config::USER_ID, implied(sender(ActorSlot::Id).name())),
+        ]
+        .into_iter()
+        .filter_map(|(key, value)| Some((key.to_owned(), config::text(&value?))))
+        .collect()
     }
 
     fn sizing(&self) -> Option<ElementSizing> {

@@ -6,7 +6,8 @@ use forge_registry::{SubActionRegistry, TriggerRegistry};
 use forge_runtime::{
     ActionsService, Catalog, DateNamesHandle, DonationIngest, DonationOverlayAudience, EventBus,
     MaterializePass, OverlayConnectFanout, OverlayConnectListener, OverlaySampleSource,
-    OverlaySamples, OverlayServiceHandle, RuntimeError, spawn_latest_overlay_feed,
+    OverlaySamples, OverlayServiceHandle, RuntimeError, spawn_chat_removal_feed,
+    spawn_latest_overlay_feed,
 };
 use forge_server::DeliveryHub;
 use forge_storage::DataProvider;
@@ -69,6 +70,7 @@ pub(crate) async fn start_overlays(
         date_names,
     ));
     spawn_latest_overlay_feed(bus, service.clone(), services);
+    spawn_chat_removal_feed(bus, service.clone(), services);
     let donation_audience = DonationOverlayAudience::new(
         Arc::clone(catalog),
         service.clone(),

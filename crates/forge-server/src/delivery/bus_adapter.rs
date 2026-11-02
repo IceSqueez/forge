@@ -352,6 +352,17 @@ impl BusAdapter {
         .await;
     }
 
+    pub(crate) async fn deliver_overlay_removal(
+        &self,
+        identity: &OverlayId,
+        removal: &forge_overlay::RowRemoval,
+    ) {
+        let Ok(json) = serde_json::to_string(&removal.frame()) else {
+            return;
+        };
+        send_to_overlay(&self.registry, Some(identity), WsFrame::Text(json)).await;
+    }
+
     pub(crate) async fn revoke_overlay(&self, identity: &OverlayId) -> usize {
         let reached = send_to_overlay(
             &self.registry,

@@ -7,7 +7,7 @@ use forge_events::{Event, EventSource};
 use forge_net::{Backoff, DEFAULT_BACKOFF_BASE, DEFAULT_BACKOFF_CAP};
 use forge_platform_core::ConnectionState;
 use forge_platform_core::{ConnectionTransition, PlatformEndpoints};
-use forge_types::ChatPayload;
+use forge_types::{ChatModerationPayload, ChatPayload};
 use futures::StreamExt;
 use tokio::sync::{mpsc, watch};
 use tokio::task::JoinSet;
@@ -498,14 +498,20 @@ pub(crate) fn build_event(event_name: &str, payload: serde_json::Value) -> Optio
             }
             (event_kinds::CHAT_MESSAGE_SENT, normalized)
         }
-        app_events::MESSAGE_DELETED => (
-            event_kinds::CHAT_MESSAGE_DELETED,
-            normalize::chat_message_deleted(&payload),
-        ),
-        app_events::USER_BANNED => (
-            event_kinds::MODERATION_BANNED,
-            normalize::moderation_banned(&payload),
-        ),
+        app_events::MESSAGE_DELETED => {
+            let mut normalized = normalize::chat_message_deleted(&payload);
+            if let Some(action) = normalize::message_deletion(&payload) {
+                ChatModerationPayload { action }.attach(&mut normalized);
+            }
+            (event_kinds::CHAT_MESSAGE_DELETED, normalized)
+        }
+        app_events::USER_BANNED => {
+            let mut normalized = normalize::moderation_banned(&payload);
+            if let Some(action) = normalize::user_removal(&payload) {
+                ChatModerationPayload { action }.attach(&mut normalized);
+            }
+            (event_kinds::MODERATION_BANNED, normalized)
+        }
         app_events::SUBSCRIPTION => (
             event_kinds::CHANNEL_SUBSCRIBED,
             normalize::channel_subscribed(&payload),
@@ -663,6 +669,71 @@ pub(crate) mod tests {
                 None => assert!(result.is_none(), "must be None for {event_type}"),
             }
         }
+    }
+
+    fn moderation_of(event: &Event) -> forge_types::ChatModerationAction {
+        let envelope = event
+            .payload
+            .get(ChatModerationPayload::KEY)
+            .expect("the event carries the moderation envelope")
+            .clone();
+        serde_json::from_value::<ChatModerationPayload>(envelope)
+            .expect("the envelope reads back")
+            .action
+    }
+
+    #[test]
+    fn a_deleted_message_event_names_the_message_to_take_down() {
+        let event = build_event(
+            "App\\Events\\MessageDeletedEvent",
+            serde_json::json!({"message": {"id": "msg-7"}, "deleted_by": {"id": 5}}),
+        )
+        .expect("must build event");
+
+        assert_eq!(
+            moderation_of(&event),
+            forge_types::ChatModerationAction::DeleteMessage {
+                message_id: "msg-7".to_owned()
+            }
+        );
+    }
+
+    #[test]
+    fn a_ban_with_a_duration_is_a_timeout_and_one_without_is_a_ban() {
+        for (duration, removal) in [
+            (serde_json::json!(600), forge_types::UserRemoval::Timeout),
+            (serde_json::Value::Null, forge_types::UserRemoval::Ban),
+        ] {
+            let event = build_event(
+                "App\\Events\\UserBannedEvent",
+                serde_json::json!({
+                    "user": {"id": 42, "username": "bad_user"},
+                    "banned_by": {"id": 2},
+                    "duration": duration,
+                }),
+            )
+            .expect("must build event");
+
+            assert_eq!(
+                moderation_of(&event),
+                forge_types::ChatModerationAction::RemoveUser {
+                    user_id: Some("42".to_owned()),
+                    user_name: "bad_user".to_owned(),
+                    removal,
+                }
+            );
+        }
+    }
+
+    #[test]
+    fn a_deletion_without_a_message_id_carries_no_moderation_envelope() {
+        let event = build_event(
+            "App\\Events\\MessageDeletedEvent",
+            serde_json::json!({"deleted_by": {"id": 5}}),
+        )
+        .expect("must build event");
+
+        assert!(event.payload.get(ChatModerationPayload::KEY).is_none());
     }
 
     #[tokio::test]

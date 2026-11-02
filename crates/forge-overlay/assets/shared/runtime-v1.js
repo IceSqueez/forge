@@ -11,6 +11,7 @@
  *   forge.show(target, ms)       reveals them, hides them again after ms, or
  *                                once the show's speech has ended if later
  *   forge.sound(name)            plays a file from this overlay's folder
+ *   forge.remove(callback)       callback(removal) per removal frame
  *
  * config.json sits next to the page. Its config object is what the ready callback
  * receives, and the accent, font and position entries are applied here rather
@@ -43,12 +44,13 @@
  * capped backoff, so a browser source that was closed and reopened recovers
  * unhelped.
  *
- * Three frame shapes arrive, all addressed to this overlay by the connection
+ * Four frame shapes arrive, all addressed to this overlay by the connection
  * itself:
  *
  *   { "frame": "content", "content": { "<key>": <value>, ... }, "durationMs": 5000 }
  *   { "frame": "reload" }
  *   { "frame": "clear" }
+ *   { "frame": "remove", "platform": "twitch", "scope": "message", "messageId": "<id>" }
  *
  * A content frame carries the content group of this overlay's type with every
  * value already final: forge expanded it where the variable context lives, so the
@@ -89,6 +91,14 @@
  * like the page a browser source loads; it only says so in its auth frame, so
  * forge counts it apart from this overlay's browser sources. Without the flag the
  * page is transparent and shows nothing until content arrives.
+ *
+ * A remove frame reports that a moderator took chat content down: scope is
+ * "message" with the messageId, "user" with the userId of a timed-out or banned
+ * viewer, or "platform" when that platform's whole chat was cleared. It is
+ * handed to every forge.remove callback as { platform, scope, messageId, userId }
+ * (ids absent from the frame arrive as empty strings), and a page that
+ * registered none ignores it. Ids are those of the message_id and user_id
+ * content fields the page was given earlier.
  *
  * A reload frame is handled here rather than by the page. forge sends it after
  * rewriting an overlay's files, which is why hand-edited pages pick up regenerated
@@ -141,6 +151,7 @@
   var CONTENT_FRAME = "content";
   var RELOAD_FRAME = "reload";
   var CLEAR_FRAME = "clear";
+  var REMOVE_FRAME = "remove";
   var HIDDEN_CLASS = "hidden";
   var MOTION_ASSET = "motion-v1.js";
   var PREVIEW_REPLAY_PAUSE_MS = 1200;
@@ -195,6 +206,7 @@
   var runtimeScript = document_.currentScript;
   var readyCallbacks = [];
   var contentCallbacks = [];
+  var removeCallbacks = [];
   var hideTimers = new Map();
   var clipsInFlight = new Map();
   var waitingShow = null;
@@ -462,6 +474,10 @@
       clear();
       return;
     }
+    if (frame.frame === REMOVE_FRAME) {
+      removeRows(frame);
+      return;
+    }
     if (frame.frame !== CONTENT_FRAME) {
       return;
     }
@@ -481,6 +497,18 @@
     }
 
     deliver(values, durationMs);
+  }
+
+  function removeRows(frame) {
+    var removal = {
+      platform: textOf(frame.platform),
+      scope: textOf(frame.scope),
+      messageId: textOf(frame.messageId),
+      userId: textOf(frame.userId),
+    };
+    removeCallbacks.forEach(function (callback) {
+      invoke(callback, removal);
+    });
   }
 
   function textOf(value) {
@@ -799,6 +827,13 @@
     contentCallbacks.push(callback);
   }
 
+  function remove(callback) {
+    if (typeof callback !== "function") {
+      return;
+    }
+    removeCallbacks.push(callback);
+  }
+
   function ready(callback) {
     if (typeof callback !== "function") {
       return;
@@ -973,6 +1008,7 @@
     set: set,
     show: show,
     sound: sound,
+    remove: remove,
   });
 
   window.addEventListener("resize", function () {

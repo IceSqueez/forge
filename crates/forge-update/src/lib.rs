@@ -28,7 +28,7 @@ mod version;
 mod tests;
 
 pub use apply_state::{APPLY_STATE_FILE, ApplyMode, HandoffPlan, HandoffRequest};
-pub use check::check_for_update;
+pub use check::fetch_release_offer;
 pub use database::{DatabaseUnit, SchemaProbe};
 pub use digest::Sha256Digest;
 pub use download::ProgressReceiver;

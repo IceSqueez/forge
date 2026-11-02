@@ -1,5 +1,3 @@
-use crate::github::GithubRepo;
-
 pub(crate) const MANIFEST_ASSET: &str = "forge-update.json";
 pub(crate) const SIGNATURE_ASSET: &str = "forge-update.json.minisig";
 
@@ -15,10 +13,6 @@ impl ManifestSource {
             manifest_url: manifest_url.into(),
             signature_url: signature_url.into(),
         }
-    }
-
-    pub fn github_latest(repo_url: &str) -> Option<Self> {
-        GithubRepo::parse(repo_url).map(|repo| repo.latest_manifest_source())
     }
 
     pub fn manifest_url(&self) -> &str {

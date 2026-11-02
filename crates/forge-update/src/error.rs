@@ -31,6 +31,8 @@ pub enum UpdateError {
     MissingSignedVersion,
     #[error("the signed version {signed} does not match the manifest version {manifest}")]
     VersionMismatch { signed: String, manifest: String },
+    #[error("the manifest of release {release} describes version {manifest}")]
+    ReleaseVersionMismatch { release: String, manifest: String },
     #[error("{0:?} is not a valid version")]
     InvalidVersion(String),
     #[error("an update artifact name is not a plain file name")]

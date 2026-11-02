@@ -7,7 +7,7 @@ use crate::source::{MANIFEST_ASSET, ManifestSource, SIGNATURE_ASSET};
 const GITHUB_WEB_PREFIX: &str = "https://github.com/";
 const GITHUB_API_REPOS: &str = "https://api.github.com/repos/";
 const GIT_SUFFIX: &str = ".git";
-const LATEST_DOWNLOAD_PATH: &str = "/releases/latest/download/";
+const RELEASE_DOWNLOAD_PATH: &str = "/releases/download/";
 const LATEST_RELEASE_PATH: &str = "/releases/latest";
 const RELEASE_TAG_PATH: &str = "/releases/tag/v";
 const TAG_PREFIX: char = 'v';
@@ -31,8 +31,11 @@ impl GithubRepo {
         })
     }
 
-    pub fn latest_manifest_source(&self) -> ManifestSource {
-        let base = format!("{GITHUB_WEB_PREFIX}{}{LATEST_DOWNLOAD_PATH}", self.slug);
+    pub fn release_manifest_source(&self, tag: &str) -> ManifestSource {
+        let base = format!(
+            "{GITHUB_WEB_PREFIX}{}{RELEASE_DOWNLOAD_PATH}{tag}/",
+            self.slug
+        );
         ManifestSource::new(
             format!("{base}{MANIFEST_ASSET}"),
             format!("{base}{SIGNATURE_ASSET}"),

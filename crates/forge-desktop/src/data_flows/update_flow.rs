@@ -128,6 +128,7 @@ pub(crate) fn failure_of(error: &UpdateError) -> UpdateFailure {
         | UpdateError::UnsupportedManifestFormat(_)
         | UpdateError::MissingSignedVersion
         | UpdateError::VersionMismatch { .. }
+        | UpdateError::ReleaseVersionMismatch { .. }
         | UpdateError::InvalidVersion(_)
         | UpdateError::Cancelled
         | UpdateError::Io(_)

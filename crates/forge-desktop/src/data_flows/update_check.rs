@@ -5,8 +5,8 @@ use crate::data_flows::update_report::ROLLED_BACK_VERSION;
 use forge_storage::{DataProvider, read_setting};
 use forge_update::{
     GithubRepo, InstallKind, ManualReason, Platform, PublishedRelease, TrustedKeys, UpdateClient,
-    UpdateError, UpdateOffer, check_for_update, detect_install, fetch_latest_release, is_newer,
-    parse_version,
+    UpdateError, UpdateOffer, Version, detect_install, fetch_latest_release, fetch_release_offer,
+    is_newer, parse_version,
 };
 use gpui::{AsyncApp, Entity, Task};
 use time::OffsetDateTime;
@@ -100,12 +100,6 @@ pub(crate) fn update_candidate(
             }
         }
     }
-}
-
-enum SignedCheck {
-    Offer(UpdateOffer),
-    UpToDate,
-    Unavailable,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -225,46 +219,53 @@ async fn find_update() -> CheckOutcome {
             return CheckOutcome::Failed;
         }
     };
-    match check_signed(&client, &repo).await {
-        SignedCheck::Offer(offer) => CheckOutcome::Found(FoundUpdate::Signed(offer)),
-        SignedCheck::UpToDate => CheckOutcome::UpToDate,
-        SignedCheck::Unavailable => latest_release(&client, &repo).await,
+    let Some(running) = parse_version(CURRENT_VERSION) else {
+        return CheckOutcome::Failed;
+    };
+    let release = match fetch_latest_release(&client, &repo).await {
+        Ok(Some(release)) => release,
+        Ok(None) => return CheckOutcome::UpToDate,
+        Err(error) => {
+            tracing::debug!(error = %error, "latest release lookup failed");
+            return CheckOutcome::Failed;
+        }
+    };
+    let Some(latest) = parse_version(&release.tag) else {
+        tracing::debug!(tag = %release.tag, "latest release tag is not a version");
+        return CheckOutcome::Failed;
+    };
+    if !is_newer(&running, &latest) {
+        return CheckOutcome::UpToDate;
+    }
+    match signed_offer(&client, &repo, &release, &latest).await {
+        Some(offer) => CheckOutcome::Found(FoundUpdate::Signed(offer)),
+        None => CheckOutcome::Found(FoundUpdate::Unsigned(release)),
     }
 }
 
-async fn check_signed(client: &UpdateClient, repo: &GithubRepo) -> SignedCheck {
-    let Some(running) = parse_version(CURRENT_VERSION) else {
-        return SignedCheck::Unavailable;
-    };
+async fn signed_offer(
+    client: &UpdateClient,
+    repo: &GithubRepo,
+    release: &PublishedRelease,
+    latest: &Version,
+) -> Option<UpdateOffer> {
     let keys = match TrustedKeys::production() {
         Ok(keys) => keys,
         Err(error) => {
             tracing::warn!(error = %error, "signed update check could not start");
-            return SignedCheck::Unavailable;
+            return None;
         }
     };
-    let source = repo.latest_manifest_source();
-    match check_for_update(client, &source, &keys, &running).await {
-        Ok(Some(offer)) => SignedCheck::Offer(offer),
-        Ok(None) => SignedCheck::UpToDate,
+    let source = repo.release_manifest_source(&release.tag);
+    match fetch_release_offer(client, &source, &keys, latest).await {
+        Ok(offer) => Some(offer),
         Err(UpdateError::Network(_) | UpdateError::RateLimited | UpdateError::Status(_)) => {
-            tracing::debug!("signed update manifest unreachable; falling back");
-            SignedCheck::Unavailable
+            tracing::debug!("signed update manifest unreachable; offering the release page");
+            None
         }
         Err(error) => {
-            tracing::warn!(error = %error, "signed update manifest rejected; falling back");
-            SignedCheck::Unavailable
-        }
-    }
-}
-
-async fn latest_release(client: &UpdateClient, repo: &GithubRepo) -> CheckOutcome {
-    match fetch_latest_release(client, repo).await {
-        Ok(Some(release)) => CheckOutcome::Found(FoundUpdate::Unsigned(release)),
-        Ok(None) => CheckOutcome::UpToDate,
-        Err(error) => {
-            tracing::debug!(error = %error, "latest release lookup failed");
-            CheckOutcome::Failed
+            tracing::warn!(error = %error, "signed update manifest rejected; offering the release page");
+            None
         }
     }
 }

@@ -68,6 +68,7 @@ msg-core-url_not_http = Можна відкривати лише адреси ht
 msg-core-overlay_service_not_running = Служба оверлеїв не запущена
 msg-core-overlay_show_cleared = Чергу показів оверлея очищено до виконання цього показу
 msg-core-overlay_show_withdrawn = Оверлей вимкнено або видалено до виконання показу
+msg-core-overlay_row_withheld = Фільтри чату оверлея приховують це повідомлення
 msg-core-overlay_send_failed = Оверлей відхилив повідомлення
 msg-core-script_not_found = Скрипт { $name } не знайдено
 msg-core-script_failed = Скрипт { $name } завершився помилкою

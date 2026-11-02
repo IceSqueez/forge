@@ -65,6 +65,14 @@ pub trait OverlayKindDescriptor: Send + Sync {
     fn implied_content(&self, _args: &ArgStack) -> OverlayConfig {
         OverlayConfig::new()
     }
+    fn withholds(
+        &self,
+        _stored: &OverlayConfig,
+        _delivered: &OverlayConfig,
+        _args: &ArgStack,
+    ) -> bool {
+        false
+    }
     fn default_display_secs(&self) -> i64 {
         base::DEFAULT_DISPLAY_SECS
     }

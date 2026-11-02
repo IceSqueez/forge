@@ -70,6 +70,7 @@ pub struct OverlaySendOptions {
 pub enum OverlayDispatch {
     Applied(OverlayDelivery),
     Queued(ShowTicket),
+    Withheld,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -537,6 +538,9 @@ impl OverlayServiceHandle {
             return Err(RuntimeError::SlotBound(definition.id));
         }
         let mut content = delivered_content(descriptor, &definition.config, supplied, args);
+        if descriptor.withholds(&definition.config, &content, args) {
+            return Ok(OverlayDispatch::Withheld);
+        }
         let speech = take_speech(descriptor, &definition.config, &mut content)
             .filter(|_| self.inner.speaker.is_some())
             .map(|program| ShowSpeech {

@@ -35,6 +35,9 @@ pub const USER_ID: &str = "user_id";
 pub const ROW_LIMIT: &str = "row_limit";
 pub const HIDE_ROWS: &str = "hide_rows";
 pub const HIDE_ROWS_AFTER_SECS: &str = "hide_rows_after_secs";
+pub const HIDE_COMMANDS: &str = "hide_commands";
+pub const COMMAND_PREFIX: &str = "command_prefix";
+pub const HIDDEN_ACCOUNTS: &str = "hidden_accounts";
 
 pub const LABEL: &str = "label";
 pub const VALUE: &str = "value";
@@ -134,6 +137,8 @@ pub const DEFAULT_ROW_LIMIT: i64 = 15;
 pub const HIDE_ROWS_AFTER_MIN_SECS: i64 = 1;
 pub const HIDE_ROWS_AFTER_MAX_SECS: i64 = 300;
 pub const DEFAULT_HIDE_ROWS_AFTER_SECS: i64 = 30;
+
+pub const DEFAULT_COMMAND_PREFIX: &str = "!";
 
 pub const DESIGN_SIZE_MIN_PX: i64 = 40;
 pub const DESIGN_SIZE_MAX_PX: i64 = 7680;

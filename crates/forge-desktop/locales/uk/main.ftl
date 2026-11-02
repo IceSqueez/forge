@@ -3698,6 +3698,7 @@ overlays_show_preview_only = { $count ->
    *[other] Показ надіслано, але підключено лише { $count } вкладок перегляду
 }
 overlays_show_no_page = Показ надіслано, але жодна сторінка не підключена - нічого не видно й не чутно.
+overlays_show_withheld = Не надіслано - фільтри чату приховують це повідомлення.
 overlays_show_ended = Показ завершився.
 overlays_show_cleared = Показ прибрано з черги до того, як він відбувся.
 overlays_show_withdrawn = Показ відкликано до того, як він відбувся.
@@ -3751,6 +3752,11 @@ overlays_chat_row_limit_hint = Найстаріше повідомлення з�
 overlays_chat_hide_rows = Ховати повідомлення
 overlays_chat_hide_rows_hint = Кожне повідомлення згасає через заданий час після появи.
 overlays_chat_hide_rows_after = Ховати через
+overlays_chat_hide_commands = Ховати команди
+overlays_chat_hide_commands_hint = Повідомлення, що починаються з префікса команд, не показуються.
+overlays_chat_command_prefix = Префікс команд
+overlays_chat_hidden_accounts = Приховані акаунти
+overlays_chat_hidden_accounts_hint = Логіни, чиї повідомлення не показуються, через кому. Регістр не важливий.
 overlays_image_none = Без зображення
 overlays_image_none_desc = Сповіщення показується без зображення.
 overlays_image_picker_title = Виберіть зображення

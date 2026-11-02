@@ -8,10 +8,10 @@ use forge_components::{
     toggle, tr,
 };
 use forge_overlay::config::{
-    BACKGROUND_COLOR, BACKGROUND_OPACITY, DESIGN_HEIGHT, DESIGN_WIDTH, DURATION, HIDE_ROWS,
-    HIDE_ROWS_AFTER_SECS, IMAGE, IMAGE_HEIGHT, IMAGE_POSITION, LABEL_OFFSET_X, LABEL_OFFSET_Y,
-    LABEL_SIDE, MARGIN_BOTTOM, MARGIN_LEFT, MARGIN_RIGHT, MARGIN_TOP, ROW_LIMIT, SOUND, SPEECH,
-    SPEECH_VOICE,
+    BACKGROUND_COLOR, BACKGROUND_OPACITY, COMMAND_PREFIX, DESIGN_HEIGHT, DESIGN_WIDTH, DURATION,
+    HIDDEN_ACCOUNTS, HIDE_COMMANDS, HIDE_ROWS, HIDE_ROWS_AFTER_SECS, IMAGE, IMAGE_HEIGHT,
+    IMAGE_POSITION, LABEL_OFFSET_X, LABEL_OFFSET_Y, LABEL_SIDE, MARGIN_BOTTOM, MARGIN_LEFT,
+    MARGIN_RIGHT, MARGIN_TOP, ROW_LIMIT, SOUND, SPEECH, SPEECH_VOICE,
 };
 use forge_overlay::{ConfigSection, DeliveryDisposition, OverlayConfig};
 use forge_runtime::{OverlayDelivery, OverlayDispatch, ShowEnd, ShowTicket};
@@ -93,6 +93,9 @@ pub(super) fn base_label(key: &str) -> Option<String> {
         ROW_LIMIT => Some(tr!("overlays_chat_row_limit")),
         HIDE_ROWS => Some(tr!("overlays_chat_hide_rows")),
         HIDE_ROWS_AFTER_SECS => Some(tr!("overlays_chat_hide_rows_after")),
+        HIDE_COMMANDS => Some(tr!("overlays_chat_hide_commands")),
+        COMMAND_PREFIX => Some(tr!("overlays_chat_command_prefix")),
+        HIDDEN_ACCOUNTS => Some(tr!("overlays_chat_hidden_accounts")),
         LABEL_SIDE => Some(tr!("overlays_frame_label_side")),
         LABEL_OFFSET_X => Some(tr!("overlays_frame_label_offset_x")),
         LABEL_OFFSET_Y => Some(tr!("overlays_frame_label_offset_y")),
@@ -115,6 +118,8 @@ pub(super) fn base_hint(key: &str) -> Option<String> {
         IMAGE => Some(tr!("overlays_alert_image_hint")),
         ROW_LIMIT => Some(tr!("overlays_chat_row_limit_hint")),
         HIDE_ROWS => Some(tr!("overlays_chat_hide_rows_hint")),
+        HIDE_COMMANDS => Some(tr!("overlays_chat_hide_commands_hint")),
+        HIDDEN_ACCOUNTS => Some(tr!("overlays_chat_hidden_accounts_hint")),
         LABEL_OFFSET_X => Some(tr!("overlays_frame_label_offset_x_hint")),
         LABEL_OFFSET_Y => Some(tr!("overlays_frame_label_offset_y_hint")),
         _ => None,
@@ -149,6 +154,7 @@ pub(super) enum BaseEvent {
 enum Fired {
     Applied(OverlayDelivery),
     Queued(OverlayDelivery, ShowTicket),
+    Withheld,
 }
 
 enum ShowFire {
@@ -156,6 +162,7 @@ enum ShowFire {
     Sending,
     Playing(OverlayDelivery),
     Applied(OverlayDelivery),
+    Withheld,
     Ended(ShowEnd),
     Failed(String),
 }
@@ -335,6 +342,7 @@ impl OverlayPropertyPanel {
                         let delivery = service.receivers(&id).await.outcome();
                         Ok(Fired::Queued(delivery, ticket))
                     }
+                    Ok(OverlayDispatch::Withheld) => Ok(Fired::Withheld),
                     Err(error) => Err(RepoFailure::from(error)),
                 }
             },
@@ -364,6 +372,7 @@ impl OverlayPropertyPanel {
                     cx,
                 );
             }
+            Ok(Fired::Withheld) => self.base.fire = ShowFire::Withheld,
             Err(message) => self.base.fire = ShowFire::Failed(message.text()),
         }
         cx.notify();
@@ -683,6 +692,7 @@ fn fire_status(fire: &ShowFire, queues: bool, slot_bound: bool) -> (String, bool
         ),
         ShowFire::Sending => (tr!("overlays_show_sending"), false),
         ShowFire::Playing(delivery) | ShowFire::Applied(delivery) => delivery_text(*delivery),
+        ShowFire::Withheld => (tr!("overlays_show_withheld"), true),
         ShowFire::Ended(ShowEnd::Shown(_)) => (tr!("overlays_show_ended"), false),
         ShowFire::Ended(ShowEnd::Cleared) => (tr!("overlays_show_cleared"), true),
         ShowFire::Ended(ShowEnd::Withdrawn) => (tr!("overlays_show_withdrawn"), true),

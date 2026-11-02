@@ -145,6 +145,8 @@ pub(crate) const OVERLAY_SHOW_CLEARED: MessageCode =
     MessageCode::from_static(CORE_NAMESPACE, "overlay_show_cleared");
 pub(crate) const OVERLAY_SHOW_WITHDRAWN: MessageCode =
     MessageCode::from_static(CORE_NAMESPACE, "overlay_show_withdrawn");
+pub(crate) const OVERLAY_ROW_WITHHELD: MessageCode =
+    MessageCode::from_static(CORE_NAMESPACE, "overlay_row_withheld");
 pub(crate) const OVERLAY_SEND_FAILED: MessageCode =
     MessageCode::from_static(CORE_NAMESPACE, "overlay_send_failed");
 pub(crate) const SCRIPT_NOT_FOUND: MessageCode =
@@ -273,6 +275,7 @@ pub const CORE_MESSAGES: MessageCatalog = MessageCatalog {
         OVERLAY_SERVICE_NOT_RUNNING,
         OVERLAY_SHOW_CLEARED,
         OVERLAY_SHOW_WITHDRAWN,
+        OVERLAY_ROW_WITHHELD,
         OVERLAY_SEND_FAILED,
         SCRIPT_NOT_FOUND,
         SCRIPT_FAILED,
@@ -615,6 +618,10 @@ pub(crate) fn overlay_show_withdrawn() -> MessageRef {
     MessageRef::new(OVERLAY_SHOW_WITHDRAWN)
 }
 
+pub(crate) fn overlay_row_withheld() -> MessageRef {
+    MessageRef::new(OVERLAY_ROW_WITHHELD)
+}
+
 pub(crate) fn overlay_send_failed(cause: impl Display) -> MessageRef {
     with_cause(OVERLAY_SEND_FAILED, cause)
 }
@@ -770,6 +777,7 @@ mod tests {
             MessageRef::new(OVERLAY_SERVICE_NOT_RUNNING),
             overlay_show_cleared(),
             overlay_show_withdrawn(),
+            overlay_row_withheld(),
             overlay_send_failed("c"),
             script_not_found("s"),
             script_failed(

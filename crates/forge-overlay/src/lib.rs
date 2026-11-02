@@ -77,4 +77,5 @@ pub use render::page_contract::{CLEAR_FRAME, CONTENT_FRAME, RELOAD_FRAME, REMOVE
 pub use render::page_contract::{
     CONTENT_FUNCTION, READY_FUNCTION, REMOVE_FUNCTION, SET_FUNCTION, SHOW_FUNCTION, SOUND_FUNCTION,
 };
+pub use render::row_filter::ChatRowFilter;
 pub use render::row_removal::{RowRemoval, RowRemovalScope};

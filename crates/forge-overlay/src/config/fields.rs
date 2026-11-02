@@ -234,6 +234,42 @@ pub(crate) fn chat_row_defaults() -> OverlayConfig {
     ])
 }
 
+pub(crate) fn chat_filter_fields() -> [SectionedField; 3] {
+    [
+        in_section(
+            ConfigSection::Behavior,
+            FormField::Toggle {
+                key: HIDE_COMMANDS,
+                label: "Hide commands",
+            },
+        ),
+        in_section(
+            ConfigSection::Behavior,
+            FormField::Text {
+                key: COMMAND_PREFIX,
+                label: "Command prefix",
+                placeholder: DEFAULT_COMMAND_PREFIX,
+            },
+        ),
+        in_section(
+            ConfigSection::Behavior,
+            FormField::Text {
+                key: HIDDEN_ACCOUNTS,
+                label: "Hidden accounts",
+                placeholder: "Nightbot, StreamElements",
+            },
+        ),
+    ]
+}
+
+pub(crate) fn chat_filter_defaults() -> OverlayConfig {
+    OverlayConfig::from([
+        (HIDE_COMMANDS.to_owned(), Variant::Bool(false)),
+        (COMMAND_PREFIX.to_owned(), text(DEFAULT_COMMAND_PREFIX)),
+        (HIDDEN_ACCOUNTS.to_owned(), text("")),
+    ])
+}
+
 pub(crate) fn label_field() -> SectionedField {
     in_section(
         ConfigSection::Content,

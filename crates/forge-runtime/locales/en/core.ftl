@@ -58,6 +58,7 @@ msg-core-url_not_http = Only http and https addresses can be opened
 msg-core-overlay_service_not_running = The overlay service is not running
 msg-core-overlay_show_cleared = The overlay show queue was cleared before this show ran
 msg-core-overlay_show_withdrawn = The overlay was disabled or deleted before the show ran
+msg-core-overlay_row_withheld = The overlay's chat filters hide this message
 msg-core-overlay_send_failed = The overlay refused the message
 msg-core-script_not_found = The script { $name } was not found
 msg-core-script_failed = The script { $name } failed

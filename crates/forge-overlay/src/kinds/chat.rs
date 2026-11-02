@@ -14,10 +14,11 @@ use crate::metrics;
 use crate::metrics::ElementSizing;
 use crate::motion::{self, MotionAxes, MotionProfile};
 use crate::render::preview::{PreviewComposition, PreviewShape, compose};
+use crate::render::row_filter::ChatRowFilter;
 
 pub const KIND_ID: &str = "overlay.chat";
 
-pub const CONFIG_SCHEMA_VERSION: u32 = 4;
+pub const CONFIG_SCHEMA_VERSION: u32 = 5;
 
 const ROW_ENTRANCE_MS: i64 = 300;
 const ROW_TEMPLATE_ID: &str = "row-template";
@@ -96,6 +97,7 @@ impl OverlayKindDescriptor for ChatOverlayKind {
         defaults.insert(config::MESSAGE_ID.to_owned(), config::text(""));
         defaults.insert(config::USER_ID.to_owned(), config::text(""));
         defaults.extend(config::chat_row_defaults());
+        defaults.extend(config::chat_filter_defaults());
         defaults
     }
 
@@ -112,6 +114,7 @@ impl OverlayKindDescriptor for ChatOverlayKind {
         fields.extend(config::shared_style_fields());
         fields.push(config::position_field("Newest message at"));
         fields.extend(config::chat_row_fields());
+        fields.extend(config::chat_filter_fields());
         fields
     }
 
@@ -137,6 +140,29 @@ impl OverlayKindDescriptor for ChatOverlayKind {
         .into_iter()
         .filter_map(|(key, value)| Some((key.to_owned(), config::text(&value?))))
         .collect()
+    }
+
+    fn withholds(
+        &self,
+        stored: &OverlayConfig,
+        delivered: &OverlayConfig,
+        args: &ArgStack,
+    ) -> bool {
+        let filter = ChatRowFilter::from_config(&config::effective_overlay_config(self, stored));
+        let chat_text = |canonical: CanonicalVariable, shown: &str| {
+            args.get(canonical.name())
+                .and_then(Variant::as_str)
+                .or_else(|| delivered.get(shown).and_then(Variant::as_str))
+                .unwrap_or_default()
+                .to_owned()
+        };
+        filter.hides(
+            &chat_text(
+                CanonicalVariable::actor(ActorRole::Principal, ActorSlot::Login),
+                config::AUTHOR,
+            ),
+            &chat_text(CanonicalVariable::MessageText, config::MESSAGE),
+        )
     }
 
     fn sizing(&self) -> Option<ElementSizing> {

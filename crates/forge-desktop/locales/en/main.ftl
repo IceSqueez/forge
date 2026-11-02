@@ -3604,6 +3604,7 @@ overlays_show_preview_only = { $count ->
    *[other] Show sent, but only { $count } preview tabs are connected
 }
 overlays_show_no_page = Show sent, but no page is connected - nothing is seen or heard.
+overlays_show_withheld = Not sent - the chat filters hide this message.
 overlays_show_ended = The show has ended.
 overlays_show_cleared = The show was cleared from the queue before it played.
 overlays_show_withdrawn = The show was withdrawn before it played.
@@ -3657,6 +3658,11 @@ overlays_chat_row_limit_hint = The oldest message leaves once this many are on s
 overlays_chat_hide_rows = Hide messages
 overlays_chat_hide_rows_hint = Each message fades out the set time after it appears.
 overlays_chat_hide_rows_after = Hide after
+overlays_chat_hide_commands = Hide commands
+overlays_chat_hide_commands_hint = Messages that start with the command prefix are not shown.
+overlays_chat_command_prefix = Command prefix
+overlays_chat_hidden_accounts = Hidden accounts
+overlays_chat_hidden_accounts_hint = Logins whose messages are not shown, separated by commas. Case does not matter.
 overlays_image_none = No image
 overlays_image_none_desc = The alert shows no image.
 overlays_image_picker_title = Choose an image

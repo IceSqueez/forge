@@ -95,6 +95,9 @@ impl OverlaySendRunner {
                 show_outcome(identity, ticket.finished().await)
             }
             Ok(OverlayDispatch::Queued(_)) => SubActionOutcome::Success,
+            Ok(OverlayDispatch::Withheld) => {
+                SubActionOutcome::Skipped(core_messages::overlay_row_withheld().into())
+            }
             Err(error) => {
                 SubActionOutcome::Failed(core_messages::overlay_send_failed(error).into())
             }

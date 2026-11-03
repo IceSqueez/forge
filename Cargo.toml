@@ -195,7 +195,7 @@ fluent-langneg = { version = "0.13" }
 unic-langid = { version = "0.9" }
 unicode-segmentation = { version = "1.13" }
 sys-locale = { version = "0.3" }
-sysinfo = { version = "0.39.6", default-features = false, features = [
+sysinfo = { version = "0.40.1", default-features = false, features = [
   "system",
 ] }
 

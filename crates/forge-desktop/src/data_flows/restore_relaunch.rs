@@ -104,7 +104,9 @@ fn exits_within(waits: u32, mut is_running: impl FnMut() -> bool, mut wait: impl
 }
 
 fn is_running(pid: Pid) -> bool {
-    let mut system = System::new();
+    let Ok(mut system) = System::new() else {
+        return false;
+    };
     system.refresh_processes_specifics(
         ProcessesToUpdate::Some(&[pid]),
         true,

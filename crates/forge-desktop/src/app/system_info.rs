@@ -174,19 +174,23 @@ impl HostFacts {
             RefreshKind::nothing()
                 .with_cpu(CpuRefreshKind::nothing())
                 .with_memory(MemoryRefreshKind::nothing().with_ram()),
-        );
-        let cpus = system.cpus();
+        )
+        .ok();
+        let cpus = system.as_ref().map(System::cpus).unwrap_or_default();
         let cpu_model = cpus
             .first()
             .map(|cpu| cpu.brand().trim().to_owned())
             .filter(|brand| !brand.is_empty());
         let logical_cores = (!cpus.is_empty()).then_some(cpus.len());
-        let total_memory_bytes = Some(system.total_memory()).filter(|bytes| *bytes > 0);
+        let total_memory_bytes = system
+            .as_ref()
+            .map(System::total_memory)
+            .filter(|bytes| *bytes > 0);
         Self {
             install: Some(detect_install()),
-            os_name: System::name(),
-            os_version: System::os_version(),
-            kernel: System::kernel_version(),
+            os_name: System::name().ok(),
+            os_version: System::os_version().ok(),
+            kernel: System::kernel_version().ok(),
             cpu_model,
             logical_cores,
             total_memory_bytes,
@@ -227,6 +231,7 @@ impl IdentityScrubber {
         let home = std::env::home_dir().map(|dir| dir.to_string_lossy().into_owned());
         Self::new(
             System::host_name()
+                .ok()
                 .into_iter()
                 .chain(user_names)
                 .chain(home),

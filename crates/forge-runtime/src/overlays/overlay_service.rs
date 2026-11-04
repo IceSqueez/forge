@@ -65,6 +65,19 @@ pub struct OverlayReceivers {
     pub preview_tabs: usize,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub struct OverlayPage(u64);
+
+impl OverlayPage {
+    pub fn new(raw: u64) -> Self {
+        Self(raw)
+    }
+
+    pub fn raw(self) -> u64 {
+        self.0
+    }
+}
+
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
 pub struct OverlaySendOptions {
     pub duration_ms: Option<u64>,
@@ -104,6 +117,15 @@ pub trait OverlayFrameSink: Send + Sync {
         duration_ms: Option<u64>,
     ) -> OverlayReceivers;
 
+    async fn deliver_content_to_page(
+        &self,
+        _identity: &OverlayId,
+        _page: OverlayPage,
+        _content: serde_json::Value,
+    ) -> OverlayReceivers {
+        OverlayReceivers::default()
+    }
+
     async fn deliver_reload(&self, identity: &OverlayId);
 
     async fn revoke(&self, identity: &OverlayId);
@@ -119,7 +141,7 @@ pub trait OverlayFrameSink: Send + Sync {
 
 #[async_trait]
 pub trait OverlayConnectListener: Send + Sync {
-    async fn overlay_connected(&self, identity: &OverlayId);
+    async fn overlay_connected(&self, identity: &OverlayId, page: OverlayPage);
 }
 
 pub struct OverlayConnectFanout(Vec<Arc<dyn OverlayConnectListener>>);
@@ -132,9 +154,9 @@ impl OverlayConnectFanout {
 
 #[async_trait]
 impl OverlayConnectListener for OverlayConnectFanout {
-    async fn overlay_connected(&self, identity: &OverlayId) {
+    async fn overlay_connected(&self, identity: &OverlayId, page: OverlayPage) {
         for listener in &self.0 {
-            listener.overlay_connected(identity).await;
+            listener.overlay_connected(identity, page).await;
         }
     }
 }
@@ -836,7 +858,7 @@ impl OverlayServiceHandle {
         let handle = self.clone();
         self.inner.tasks.spawn_until_stopped(async move {
             tokio::time::sleep(LATEST_PREVIEW_HOLD).await;
-            if let Err(error) = handle.replay_retained(&id).await {
+            if let Err(error) = handle.replay_retained(&id, None).await {
                 tracing::warn!(overlay = %id, %error, "latest value did not return after a preview");
             }
         });
@@ -886,14 +908,18 @@ impl OverlayServiceHandle {
         ))
     }
 
-    async fn replay_retained(&self, id: &OverlayId) -> Result<(), RuntimeError> {
+    async fn replay_retained(
+        &self,
+        id: &OverlayId,
+        page: Option<OverlayPage>,
+    ) -> Result<(), RuntimeError> {
         let _lane = self.inner.lanes.enter(id).await;
         let definition = self.load(id).await?;
         let Some(descriptor) = self.inner.kinds.get(&definition.kind_id) else {
             return Ok(());
         };
         if let Some(content) = self.live_latest_content(&definition, descriptor) {
-            self.send(id, &content, None).await;
+            self.replay(id, page, &content).await;
             return Ok(());
         }
         if !descriptor.delivery_disposition().retains_last_content() {
@@ -904,8 +930,22 @@ impl OverlayServiceHandle {
         else {
             return Ok(());
         };
-        self.send(id, &content, None).await;
+        self.replay(id, page, &content).await;
         Ok(())
+    }
+
+    async fn replay(&self, id: &OverlayId, page: Option<OverlayPage>, content: &OverlayConfig) {
+        match page {
+            Some(page) => {
+                self.inner
+                    .frames
+                    .deliver_content_to_page(id, page, content_json(content))
+                    .await;
+            }
+            None => {
+                self.send(id, content, None).await;
+            }
+        }
     }
 
     async fn push(
@@ -1014,8 +1054,8 @@ impl OverlayServiceHandle {
 
 #[async_trait]
 impl OverlayConnectListener for OverlayServiceHandle {
-    async fn overlay_connected(&self, identity: &OverlayId) {
-        if let Err(error) = self.replay_retained(identity).await {
+    async fn overlay_connected(&self, identity: &OverlayId, page: OverlayPage) {
+        if let Err(error) = self.replay_retained(identity, Some(page)).await {
             tracing::warn!(overlay = %identity, %error, "retained overlay content did not replay");
         }
     }

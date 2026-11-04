@@ -3,7 +3,7 @@ use std::sync::Arc;
 use async_trait::async_trait;
 use forge_events::EventObserver;
 use forge_overlay::{RowAvatar, RowRemoval};
-use forge_runtime::{OverlayConnectListener, OverlayFrameSink, OverlayReceivers};
+use forge_runtime::{OverlayConnectListener, OverlayFrameSink, OverlayPage, OverlayReceivers};
 use forge_storage::OverlayId;
 
 use crate::delivery::bus_adapter::BusAdapter;
@@ -39,6 +39,17 @@ impl OverlayFrameSink for DeliveryHub {
     ) -> OverlayReceivers {
         self.adapter
             .deliver_overlay_content(identity, &content, duration_ms)
+            .await
+    }
+
+    async fn deliver_content_to_page(
+        &self,
+        identity: &OverlayId,
+        page: OverlayPage,
+        content: serde_json::Value,
+    ) -> OverlayReceivers {
+        self.adapter
+            .deliver_overlay_content_to_page(identity, page.into(), &content)
             .await
     }
 

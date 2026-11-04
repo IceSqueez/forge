@@ -81,8 +81,8 @@ pub use overlays::overlay_media::OverlayMediaLibrary;
 pub use overlays::overlay_samples::{OverlaySampleSource, OverlaySamples};
 pub use overlays::overlay_service::{
     MaterializePass, OVERLAY_NAME_KEY, OVERLAY_SPEECH_FAILED_KIND, OverlayConnectFanout,
-    OverlayConnectListener, OverlayDelivery, OverlayDispatch, OverlayFrameSink, OverlayReceivers,
-    OverlayServiceHandle, OverlayServiceParts, SPEECH_FAILURE_ERROR_KEY,
+    OverlayConnectListener, OverlayDelivery, OverlayDispatch, OverlayFrameSink, OverlayPage,
+    OverlayReceivers, OverlayServiceHandle, OverlayServiceParts, SPEECH_FAILURE_ERROR_KEY,
     SPEECH_FAILURE_MESSAGE_KEY, TestFire,
 };
 pub use overlays::overlay_shows::{

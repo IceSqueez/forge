@@ -6,7 +6,7 @@ use async_trait::async_trait;
 use forge_storage::OverlayId;
 use tokio::sync::Notify;
 
-use crate::overlays::overlay_service::OverlayConnectListener;
+use crate::overlays::overlay_service::{OverlayConnectListener, OverlayPage};
 
 #[async_trait]
 pub trait DonationAudience: Send + Sync {
@@ -51,7 +51,7 @@ impl CatchUpWaker {
 
 #[async_trait]
 impl OverlayConnectListener for CatchUpWaker {
-    async fn overlay_connected(&self, _identity: &OverlayId) {
+    async fn overlay_connected(&self, _identity: &OverlayId, _page: OverlayPage) {
         self.wake();
     }
 }

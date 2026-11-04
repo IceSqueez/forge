@@ -124,7 +124,9 @@ async fn authenticate_overlay(
     {
         *ctx.session.overlay_channel_swap.lock().await = Some(receiver);
         if let Some(listener) = ctx.services.bus_adapter.overlay_connect_listener() {
-            listener.overlay_connected(&identity).await;
+            listener
+                .overlay_connected(&identity, ctx.session.client.id.into())
+                .await;
         }
     }
     WsResponse::Ok(serde_json::json!({ "authenticated": true }))

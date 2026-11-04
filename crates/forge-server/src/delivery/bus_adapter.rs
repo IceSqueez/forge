@@ -6,7 +6,7 @@ use std::sync::{
 };
 
 use forge_events::{Delivery, Event, EventObserver, EventSource};
-use forge_runtime::{OverlayConnectListener, OverlayReceivers};
+use forge_runtime::{OverlayConnectListener, OverlayPage, OverlayReceivers};
 use forge_storage::OverlayId;
 use forge_types::EventId;
 use serde::Serialize;
@@ -27,6 +27,18 @@ pub struct ClientId(pub(crate) u64);
 impl ClientId {
     pub fn new(raw: u64) -> Self {
         Self(raw)
+    }
+}
+
+impl From<ClientId> for OverlayPage {
+    fn from(id: ClientId) -> Self {
+        OverlayPage::new(id.0)
+    }
+}
+
+impl From<OverlayPage> for ClientId {
+    fn from(page: OverlayPage) -> Self {
+        Self(page.raw())
     }
 }
 
@@ -275,6 +287,23 @@ async fn send_to_overlay(
     reached
 }
 
+async fn send_to_overlay_page(
+    registry: &RwLock<Vec<ConnectedClient>>,
+    identity: &OverlayId,
+    page: ClientId,
+    frame: WsFrame,
+) -> OverlayReceivers {
+    let reg = registry.read().await;
+    let mut reached = OverlayReceivers::default();
+    if let Some((client, class)) =
+        overlay_clients(&reg, Some(identity)).find(|(client, _)| client.id == page)
+        && client.sender.send(frame).is_ok()
+    {
+        tally(&mut reached, class);
+    }
+    reached
+}
+
 async fn count_overlay(
     registry: &RwLock<Vec<ConnectedClient>>,
     identity: &OverlayId,
@@ -337,6 +366,18 @@ impl BusAdapter {
             return OverlayReceivers::default();
         };
         send_to_overlay(&self.registry, Some(identity), WsFrame::Text(json)).await
+    }
+
+    pub(crate) async fn deliver_overlay_content_to_page(
+        &self,
+        identity: &OverlayId,
+        page: ClientId,
+        content: &serde_json::Value,
+    ) -> OverlayReceivers {
+        let Some(json) = serialize_content_frame(content, None) else {
+            return OverlayReceivers::default();
+        };
+        send_to_overlay_page(&self.registry, identity, page, WsFrame::Text(json)).await
     }
 
     pub(crate) async fn overlay_receivers(&self, identity: &OverlayId) -> OverlayReceivers {

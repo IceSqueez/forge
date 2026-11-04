@@ -145,7 +145,8 @@
  * obsSourceVisibleChanged event, a reveal or hide lands on its final state at
  * once, because a hidden page may never run the frames an entrance waits on.
  * When either visibility changes, motion still playing jumps to its end and a
- * hide whose time already passed happens then, so a persistent overlay is up
+ * hide whose time already passed happens then, at once and without its exit
+ * motion, so a persistent overlay is up
  * the moment its source is seen and a transient show that ran out unseen
  * never appears late.
  *
@@ -972,8 +973,15 @@
   }
 
   function conceal(nodes, then) {
+    concealNodes(nodes, then, unseen());
+  }
+
+  function concealAtOnce(nodes, then) {
+    concealNodes(nodes, then, true);
+  }
+
+  function concealNodes(nodes, then, atOnce) {
     var engine = motion();
-    var still = unseen();
     var remaining = nodes.length;
     var concealed = function (node) {
       node.classList.add(HIDDEN_CLASS);
@@ -987,7 +995,7 @@
       return;
     }
     nodes.forEach(function (node) {
-      if (!engine || !config || still) {
+      if (!engine || !config || atOnce) {
         if (engine) {
           engine.cancel(node);
         }
@@ -1032,10 +1040,14 @@
 
     var hide = {
       dueAt: window.performance.now() + windowMs,
-      fire: function () {
+      fire: function (overdue) {
         window.clearTimeout(hide.timer);
         hideTimers.delete(target);
         hideAfterSpeech(function () {
+          if (overdue === true) {
+            concealAtOnce(nodes, replayPreview);
+            return;
+          }
           conceal(nodes, replayPreview);
         });
       },
@@ -1052,7 +1064,7 @@
     var now = window.performance.now();
     Array.from(hideTimers.values()).forEach(function (hide) {
       if (hide.dueAt <= now) {
-        hide.fire();
+        hide.fire(true);
       }
     });
   }

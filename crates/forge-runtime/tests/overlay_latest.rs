@@ -8,8 +8,9 @@ use async_trait::async_trait;
 use forge_events::{Event, EventSource, LatestChanged, TypedEvent};
 use forge_overlay::{OverlayKindRegistry, register_builtin_kinds};
 use forge_runtime::{
-    Config, EventBus, NullEventLogRepo, OverlayConnectListener, OverlayFrameSink, OverlayReceivers,
-    OverlayServiceHandle, OverlayServiceParts, RuntimeError, spawn_latest_overlay_feed,
+    Config, EventBus, NullEventLogRepo, OverlayConnectListener, OverlayFrameSink, OverlayPage,
+    OverlayReceivers, OverlayServiceHandle, OverlayServiceParts, RuntimeError,
+    spawn_latest_overlay_feed,
 };
 use forge_storage::test_support::MemorySettings;
 use forge_storage::{
@@ -87,6 +88,15 @@ impl OverlayFrameSink for RecordingSink {
             sources: 1,
             preview_tabs: 0,
         }
+    }
+
+    async fn deliver_content_to_page(
+        &self,
+        identity: &OverlayId,
+        _: OverlayPage,
+        content: Value,
+    ) -> OverlayReceivers {
+        self.deliver_content(identity, content, None).await
     }
 
     async fn deliver_reload(&self, _: &OverlayId) {}
@@ -250,7 +260,7 @@ async fn a_connecting_latest_page_gets_the_live_slot_value_not_the_retained_cont
     bounded(
         harness
             .service
-            .overlay_connected(&OverlayId::new("last-donation")),
+            .overlay_connected(&OverlayId::new("last-donation"), OverlayPage::new(1)),
     )
     .await;
 
@@ -265,7 +275,7 @@ async fn a_connecting_latest_page_with_an_empty_slot_gets_the_placeholder() {
     bounded(
         harness
             .service
-            .overlay_connected(&OverlayId::new("last-donation")),
+            .overlay_connected(&OverlayId::new("last-donation"), OverlayPage::new(1)),
     )
     .await;
 
@@ -291,7 +301,7 @@ async fn a_platform_scoped_latest_page_ignores_a_value_from_another_platform() {
     bounded(
         harness
             .service
-            .overlay_connected(&OverlayId::new("last-donation")),
+            .overlay_connected(&OverlayId::new("last-donation"), OverlayPage::new(1)),
     )
     .await;
 

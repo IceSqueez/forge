@@ -1095,7 +1095,11 @@ pub(crate) mod tests {
 
     #[async_trait]
     impl forge_runtime::OverlayConnectListener for RecordingListener {
-        async fn overlay_connected(&self, identity: &forge_storage::OverlayId) {
+        async fn overlay_connected(
+            &self,
+            identity: &forge_storage::OverlayId,
+            _: forge_runtime::OverlayPage,
+        ) {
             self.0.lock().expect("mutex").push(identity.clone());
         }
     }

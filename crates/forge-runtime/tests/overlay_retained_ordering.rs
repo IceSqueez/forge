@@ -7,8 +7,8 @@ use std::time::Duration;
 use async_trait::async_trait;
 use forge_overlay::{OverlayKindRegistry, register_builtin_kinds};
 use forge_runtime::{
-    EventBus, NullEventLogRepo, OverlayConnectListener, OverlayFrameSink, OverlayReceivers,
-    OverlayServiceHandle, OverlayServiceParts,
+    EventBus, NullEventLogRepo, OverlayConnectListener, OverlayFrameSink, OverlayPage,
+    OverlayReceivers, OverlayServiceHandle, OverlayServiceParts,
 };
 use forge_storage::test_support::MemorySettings;
 use forge_storage::{
@@ -66,6 +66,15 @@ impl OverlayFrameSink for GatedSink {
             sources: 1,
             preview_tabs: 0,
         }
+    }
+
+    async fn deliver_content_to_page(
+        &self,
+        identity: &OverlayId,
+        _: OverlayPage,
+        content: serde_json::Value,
+    ) -> OverlayReceivers {
+        self.deliver_content(identity, content, None).await
     }
 
     async fn deliver_reload(&self, _: &OverlayId) {}
@@ -217,7 +226,7 @@ async fn a_replay_racing_a_push_never_leaves_the_page_on_the_older_content() {
     let replay = tokio::spawn({
         let service = harness.service.clone();
         let goal = goal.clone();
-        async move { service.overlay_connected(&goal).await }
+        async move { service.overlay_connected(&goal, OverlayPage::new(1)).await }
     });
     harness.wait_until_held().await;
     let push = harness.deliver(&goal, "newer");

@@ -14,8 +14,8 @@ use forge_overlay::{
 use forge_runtime::OVERLAY_TEST_FIRE_KIND;
 use forge_runtime::{
     EventBus, MaterializePass, NullEventLogRepo, OverlayConnectFanout, OverlayConnectListener,
-    OverlayDefinitionChanges, OverlayDelivery, OverlayDispatch, OverlayFrameSink, OverlayReceivers,
-    OverlayServiceHandle, OverlayServiceParts, RuntimeError,
+    OverlayDefinitionChanges, OverlayDelivery, OverlayDispatch, OverlayFrameSink, OverlayPage,
+    OverlayReceivers, OverlayServiceHandle, OverlayServiceParts, RuntimeError,
 };
 
 use forge_storage::settings::core_settings;
@@ -113,6 +113,15 @@ impl OverlayFrameSink for RecordingSink {
             sources: 1,
             preview_tabs: 0,
         }
+    }
+
+    async fn deliver_content_to_page(
+        &self,
+        identity: &OverlayId,
+        _: OverlayPage,
+        content: serde_json::Value,
+    ) -> OverlayReceivers {
+        self.deliver_content(identity, content, None).await
     }
 
     async fn deliver_reload(&self, identity: &OverlayId) {
@@ -796,7 +805,10 @@ async fn a_reconnecting_page_is_handed_back_the_content_it_was_last_showing() {
         .await
         .expect("a bound overlay accepts content");
 
-    harness.service.overlay_connected(&stored.id).await;
+    harness
+        .service
+        .overlay_connected(&stored.id, OverlayPage::new(1))
+        .await;
 
     let frames = harness.sink.frames();
     assert_eq!(
@@ -822,7 +834,10 @@ async fn a_page_connecting_with_nothing_retained_for_it_receives_no_replay() {
     let harness = harness(vec![stored.clone()], true);
 
     for identity in [stored.id.clone(), OverlayId::new("nobody")] {
-        harness.service.overlay_connected(&identity).await;
+        harness
+            .service
+            .overlay_connected(&identity, OverlayPage::new(1))
+            .await;
     }
 
     assert!(
@@ -1232,7 +1247,10 @@ async fn content_kept_under_an_earlier_look_replays_only_while_the_current_look_
             text_config(&[(LABEL_KEY, "Sub goal"), (VALUE_KEY, "42")]),
         ));
 
-        harness.service.overlay_connected(&stored.id).await;
+        harness
+            .service
+            .overlay_connected(&stored.id, OverlayPage::new(1))
+            .await;
 
         assert_eq!(
             harness.sink.frames().len(),
@@ -1317,7 +1335,7 @@ struct NamedListener {
 
 #[async_trait]
 impl OverlayConnectListener for NamedListener {
-    async fn overlay_connected(&self, identity: &OverlayId) {
+    async fn overlay_connected(&self, identity: &OverlayId, _: OverlayPage) {
         self.heard
             .lock()
             .unwrap()
@@ -1337,7 +1355,7 @@ async fn a_connect_fanout_tells_every_listener_in_the_order_given() {
     let fanout = OverlayConnectFanout::new(vec![listener("replay"), listener("catch-up")]);
     let id = OverlayId::new("donation-alert");
 
-    fanout.overlay_connected(&id).await;
+    fanout.overlay_connected(&id, OverlayPage::new(1)).await;
 
     assert_eq!(
         heard.lock().unwrap().clone(),

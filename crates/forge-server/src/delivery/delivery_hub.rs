@@ -83,6 +83,8 @@ mod tests {
 
     use forge_runtime::{EventBus, NullEventLogRepo};
 
+    use tokio::sync::broadcast;
+
     use super::*;
     use crate::delivery::bus_adapter::{ClientFilterSet, OverlayClientClass, WsFrame};
 
@@ -100,13 +102,40 @@ mod tests {
 
     #[async_trait]
     impl OverlayConnectListener for RecordingListener {
-        async fn overlay_connected(&self, identity: &OverlayId) {
+        async fn overlay_connected(&self, identity: &OverlayId, _: OverlayPage) {
             self.0.lock().expect("mutex").push(identity.clone());
         }
     }
 
     fn hub() -> DeliveryHub {
         DeliveryHub::new(EventBus::new(Arc::new(NullEventLogRepo)))
+    }
+
+    async fn overlay_page(
+        hub: &DeliveryHub,
+        identity: &str,
+    ) -> (OverlayPage, broadcast::Receiver<WsFrame>) {
+        let (client, _initial) = hub
+            .adapter()
+            .register_client(ClientFilterSet::new(HashSet::new()))
+            .await;
+        let frames = hub
+            .adapter()
+            .promote_to_overlay(
+                client.id,
+                OverlayId::new(identity),
+                OverlayClientClass::BrowserSource,
+            )
+            .await
+            .expect("a just-registered client is still on the registry");
+        (client.id.into(), frames)
+    }
+
+    fn content_of(frame: Result<WsFrame, broadcast::error::TryRecvError>) -> serde_json::Value {
+        match frame {
+            Ok(WsFrame::Text(text)) => serde_json::from_str(&text).expect("a json frame"),
+            other => panic!("the page was not delivered a text frame: {other:?}"),
+        }
     }
 
     #[tokio::test]
@@ -199,10 +228,102 @@ mod tests {
             .overlay_connect_listener()
             .expect("a listener was attached");
         attached
-            .overlay_connected(&OverlayId::new("goal-box"))
+            .overlay_connected(&OverlayId::new("goal-box"), OverlayPage::new(1))
             .await;
 
         assert_eq!(first.heard(), vec![OverlayId::new("goal-box")]);
         assert!(second.heard().is_empty());
+    }
+
+    #[tokio::test]
+    async fn content_to_one_page_reaches_that_page_and_not_a_sibling_page_of_the_same_overlay() {
+        let hub = hub();
+        let (target, mut target_frames) = overlay_page(&hub, "goal-box").await;
+        let (_sibling, mut sibling_frames) = overlay_page(&hub, "goal-box").await;
+
+        let reached = hub
+            .deliver_content_to_page(
+                &OverlayId::new("goal-box"),
+                target,
+                serde_json::json!({ "value": 7 }),
+            )
+            .await;
+
+        assert_eq!(
+            (
+                reached,
+                target_frames.try_recv().is_ok(),
+                sibling_frames.try_recv().err()
+            ),
+            (
+                OverlayReceivers {
+                    sources: 1,
+                    preview_tabs: 0
+                },
+                true,
+                Some(broadcast::error::TryRecvError::Empty),
+            ),
+            "a replay meant for one page re-animated another page of the same overlay"
+        );
+    }
+
+    #[tokio::test]
+    async fn content_to_a_page_is_a_plain_content_frame_without_a_duration() {
+        let hub = hub();
+        let (page, mut frames) = overlay_page(&hub, "goal-box").await;
+
+        hub.deliver_content_to_page(
+            &OverlayId::new("goal-box"),
+            page,
+            serde_json::json!({ "label": "Sub goal", "value": 42 }),
+        )
+        .await;
+
+        assert_eq!(
+            content_of(frames.try_recv()),
+            serde_json::json!({
+                "frame": "content",
+                "content": { "label": "Sub goal", "value": 42 },
+            })
+        );
+    }
+
+    #[tokio::test]
+    async fn content_to_a_page_that_is_not_a_connected_page_of_that_overlay_reaches_nobody() {
+        let hub = hub();
+        let (foreign, mut foreign_frames) = overlay_page(&hub, "alert-box").await;
+        let (plain, mut plain_frames) = hub
+            .adapter()
+            .register_client(ClientFilterSet::new(HashSet::new()))
+            .await;
+
+        for (label, page) in [
+            ("a page of another overlay", foreign),
+            (
+                "a socket that never became an overlay page",
+                plain.id.into(),
+            ),
+            ("a page id no socket holds", OverlayPage::new(u64::MAX)),
+        ] {
+            let reached = hub
+                .deliver_content_to_page(
+                    &OverlayId::new("goal-box"),
+                    page,
+                    serde_json::json!({ "value": 7 }),
+                )
+                .await;
+
+            assert_eq!(reached, OverlayReceivers::default(), "{label}");
+        }
+        assert_eq!(
+            (
+                foreign_frames.try_recv().err(),
+                plain_frames.try_recv().err()
+            ),
+            (
+                Some(broadcast::error::TryRecvError::Empty),
+                Some(broadcast::error::TryRecvError::Empty),
+            )
+        );
     }
 }

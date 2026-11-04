@@ -4,12 +4,10 @@
 // over the declared text - a real browser is what proves the pixels.
 "use strict";
 
-const fs = require("fs");
-const path = require("path");
 const { JSDOM } = require("jsdom");
 const { start } = require("./serve");
+const { kindAssets } = require("./kindassets");
 
-const ASSETS = path.resolve(__dirname, "../../../crates/forge-overlay/assets");
 const SETTLE_MS = 250;
 
 const PUBLISHED = [
@@ -29,7 +27,7 @@ const CONTENT = {
 };
 
 function stylesheetText(kind) {
-  return fs.readFileSync(path.join(ASSETS, kind, "overlay.css"), "utf8");
+  return kindAssets(kind)["overlay.css"].toString("utf8");
 }
 
 function declarations(css) {

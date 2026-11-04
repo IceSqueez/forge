@@ -9,7 +9,7 @@ const path = require("path");
 const { WebSocketServer } = require("ws");
 const puppeteer = require("puppeteer");
 
-const ASSETS = path.resolve(__dirname, "../../crates/forge-overlay/assets");
+const { kindAssets, ASSETS } = require("./kindassets");
 const KIND = "alert";
 const SOUND_FILE = "ding.wav";
 const SOUND_MS = 400;
@@ -40,8 +40,8 @@ function wav(ms) {
 
 function host() {
   const files = new Map();
-  for (const name of ["index.html", "overlay.css", "overlay.js"]) {
-    files.set(`/${KIND}/${name}`, fs.readFileSync(path.join(ASSETS, KIND, name)));
+  for (const [name, body] of Object.entries(kindAssets(KIND))) {
+    files.set(`/${KIND}/${name}`, body);
   }
   files.set("/forge-shared/runtime-v1.js", fs.readFileSync(path.join(ASSETS, "shared", "runtime-v1.js")));
   files.set(

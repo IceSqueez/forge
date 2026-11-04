@@ -8,10 +8,7 @@ const fs = require("fs");
 const path = require("path");
 const { WebSocketServer } = require("ws");
 
-const ASSETS = path.resolve(
-  __dirname,
-  "../../crates/forge-overlay/assets",
-);
+const { kindAssets, ASSETS } = require("./kindassets");
 
 const TYPES = {
   ".html": "text/html; charset=utf-8",
@@ -22,12 +19,10 @@ const TYPES = {
 
 function start({ kind, config, content, overrides = {} }) {
   const files = new Map();
-  for (const name of ["index.html", "overlay.css", "overlay.js"]) {
+  for (const [name, body] of Object.entries(kindAssets(kind))) {
     files.set(
       `/${kind}/${name}`,
-      name in overrides
-        ? Buffer.from(overrides[name])
-        : fs.readFileSync(path.join(ASSETS, kind, name)),
+      name in overrides ? Buffer.from(overrides[name]) : body,
     );
   }
   for (const name of ["runtime-v1.js", "motion-v1.js"]) {

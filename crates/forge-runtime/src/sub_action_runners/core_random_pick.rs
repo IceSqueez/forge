@@ -5,7 +5,7 @@ use forge_registry::{
     RunContext, StepCatalogEntry, StepTimer, SubActionCategory, SubActionIo, SubActionRunner,
     TypedField, VariableField,
 };
-use forge_types::{ArgStack, SubActionConfig, SubActionTelemetry, Variant};
+use forge_types::{ArgStack, SubActionConfig, SubActionTelemetry, Variant, variable_references};
 use rand::RngExt;
 use rand::distr::Distribution;
 use rand::distr::weighted::WeightedIndex;
@@ -40,6 +40,20 @@ fn written_entries(entries: Vec<Variant>) -> Vec<Variant> {
             _ => true,
         })
         .collect()
+}
+
+fn interpolated_entries(entries: Vec<Variant>, args: &ArgStack) -> Vec<Variant> {
+    entries
+        .into_iter()
+        .map(|entry| match entry {
+            Variant::String(line) => Variant::String(args.interpolate(line.trim())),
+            other => other,
+        })
+        .collect()
+}
+
+fn references_variable(entry: &Variant) -> bool {
+    matches!(entry, Variant::String(line) if variable_references(line).next().is_some())
 }
 
 fn weight_values(entries: &[Variant]) -> Result<Vec<f64>, ConfigProblem> {
@@ -97,14 +111,11 @@ struct PickConfig {
 }
 
 fn read_config(config: &SubActionConfig, args: &ArgStack) -> Result<PickConfig, ConfigProblem> {
-    let items: Vec<Variant> = written_entries(ITEMS.read(config, args)?)
-        .into_iter()
-        .map(|item| match item {
-            Variant::String(line) => Variant::String(args.interpolate(line.trim())),
-            other => other,
-        })
-        .collect();
-    let weights = weight_values(&written_entries(WEIGHTS.read(config, args)?))?;
+    let items = interpolated_entries(written_entries(ITEMS.read(config, args)?), args);
+    let weights = weight_values(&interpolated_entries(
+        written_entries(WEIGHTS.read(config, args)?),
+        args,
+    ))?;
     Ok(PickConfig {
         weights: weighted_choice(items.len(), &weights)?,
         items,
@@ -153,7 +164,14 @@ impl SubActionRunner for CoreRandomPickRunner {
         ) else {
             return Ok(());
         };
-        let weights = weight_values(&written_entries(weights))?;
+        let weights = match (interpolation, written_entries(weights)) {
+            (Interpolation::Against(args), written) => interpolated_entries(written, args),
+            (Interpolation::Deferred, written) if written.iter().any(references_variable) => {
+                return Ok(());
+            }
+            (Interpolation::Deferred, written) => written,
+        };
+        let weights = weight_values(&weights)?;
         weighted_choice(written_entries(items).len(), &weights).map(|_| ())
     }
 

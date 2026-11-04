@@ -168,6 +168,10 @@ impl<F: TypedField> TypedField for OptionalField<F> {
         }
     }
 
+    fn render_template(&self, template: &str, args: &ArgStack) -> String {
+        self.field.render_template(template, args)
+    }
+
     fn read(
         &self,
         config: &SubActionConfig,

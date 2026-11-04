@@ -167,8 +167,8 @@ fn read_call(
     };
     Ok(HttpCall {
         url: URL.read(config, args)?,
-        headers: interpolated_strings(&HEADERS, HEADERS.read(config, args)?, args)?,
-        query_params: interpolated_strings(&QUERY_PARAMS, QUERY_PARAMS.read(config, args)?, args)?,
+        headers: string_entries(&HEADERS, HEADERS.read(config, args)?)?,
+        query_params: string_entries(&QUERY_PARAMS, QUERY_PARAMS.read(config, args)?)?,
         payload,
         timeout: TIMEOUT.read(config, args)?,
         follow_redirects: FOLLOW_REDIRECTS.read(config, args)?,
@@ -357,10 +357,9 @@ impl SubActionRunner for CoreHttpRunner {
     }
 }
 
-fn interpolated_strings(
+fn string_entries(
     field: &JsonObjectField,
     map: serde_json::Map<String, serde_json::Value>,
-    arg_stack: &ArgStack,
 ) -> Result<BTreeMap<String, String>, ConfigProblem> {
     map.into_iter()
         .map(|(key, value)| {
@@ -374,7 +373,7 @@ fn interpolated_strings(
                 }
                 other => other.to_string(),
             };
-            Ok((key, arg_stack.interpolate(&text)))
+            Ok((key, text))
         })
         .collect()
 }

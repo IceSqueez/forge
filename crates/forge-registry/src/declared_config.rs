@@ -38,6 +38,9 @@ pub trait TypedField: Sync {
         value: &'a Variant,
     ) -> Result<FieldLiteral<'a, Self::Value>, ConfigReason>;
     fn parse_text(&self, text: &str) -> Result<Self::Value, ConfigReason>;
+    fn render_template(&self, template: &str, args: &ArgStack) -> String {
+        args.interpolate(template)
+    }
 
     fn read(
         &self,
@@ -68,7 +71,7 @@ pub(crate) fn read_stored<F: TypedField + ?Sized>(
     {
         FieldLiteral::Value(parsed) => Ok(parsed),
         FieldLiteral::Template(text) => field
-            .parse_text(&args.interpolate(text))
+            .parse_text(&field.render_template(text, args))
             .map_err(|reason| problem(field, reason)),
     }
 }

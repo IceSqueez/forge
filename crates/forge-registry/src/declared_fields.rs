@@ -4,7 +4,7 @@ use std::time::Duration;
 
 use serde_json::{Map as JsonMap, Value as JsonValue};
 
-use forge_types::{SubActionConfig, Variant, datetime_from_text, strip_var_decoration};
+use forge_types::{ArgStack, SubActionConfig, Variant, datetime_from_text, strip_var_decoration};
 use time::OffsetDateTime;
 
 use crate::config_choice::ConfigChoice;
@@ -16,6 +16,7 @@ use crate::config_problem::{ConfigProblem, ConfigReason, ValueBounds};
 use crate::declared_config::{FieldLiteral, Interpolation, TypedField};
 use crate::duration_bounds::DurationBounds;
 use crate::form::{CodeKind, CodeLanguage, FormField};
+use crate::json_template::interpolate_json;
 
 const TOGGLE_WIRE_NAMES: [&str; 2] = ["true", "false"];
 
@@ -889,9 +890,16 @@ impl TypedField for JsonObjectField {
                 JsonValue::Object(map) => Ok(FieldLiteral::Value(map)),
                 _ => Err(not_a_json_object()),
             },
-            Variant::String(text) => self.parse_text(text).map(FieldLiteral::Value),
+            Variant::String(text) => match FieldLiteral::of_text(text) {
+                Some(template) => Ok(template),
+                None => self.parse_text(text).map(FieldLiteral::Value),
+            },
             _ => Err(ConfigReason::NotText),
         }
+    }
+
+    fn render_template(&self, template: &str, args: &ArgStack) -> String {
+        interpolate_json(template, args)
     }
 
     fn parse_text(&self, text: &str) -> Result<Self::Value, ConfigReason> {

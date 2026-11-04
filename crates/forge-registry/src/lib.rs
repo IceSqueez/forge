@@ -23,6 +23,7 @@ mod first_chatter;
 mod flow_kinds;
 mod form;
 mod integration_references;
+mod json_template;
 mod kind_platform_contract;
 #[cfg(any(test, feature = "test-support"))]
 mod leaf_context;

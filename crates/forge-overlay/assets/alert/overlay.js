@@ -17,18 +17,8 @@ var TEXT_OVERFLOW_ELLIPSIS = "ellipsis";
 var CARD_BOUNDS = [
   { key: "card_min_width", property: "--card-min-width" },
   { key: "card_min_height", property: "--card-min-height" },
-  {
-    key: "card_max_width",
-    property: "--card-max-width",
-    limitedBy: "card_width_limited",
-    cappedClass: "width-capped",
-  },
-  {
-    key: "card_max_height",
-    property: "--card-max-height",
-    limitedBy: "card_height_limited",
-    cappedClass: "height-capped",
-  },
+  { key: "card_max_width", property: "--card-max-width" },
+  { key: "card_max_height", property: "--card-max-height" },
 ];
 var IMAGE_PLAY_PARAMETER = "?play=";
 var FALLBACK_SURFACE = "#14141c";
@@ -95,14 +85,10 @@ function sizeCard(config) {
 
   CARD_BOUNDS.forEach(function (bound) {
     var value = config[bound.key];
-    var applies = !bound.limitedBy || config[bound.limitedBy] === true;
-    if (!applies || typeof value !== "number" || !isFinite(value) || value <= 0) {
+    if (typeof value !== "number" || !isFinite(value) || value <= 0) {
       return;
     }
     stage.style.setProperty(bound.property, value + "px");
-    if (bound.cappedClass) {
-      stage.classList.add(bound.cappedClass);
-    }
   });
   if (config.text_overflow === TEXT_OVERFLOW_ELLIPSIS) {
     stage.classList.add(TEXT_CUT_CLASS);

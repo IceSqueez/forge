@@ -33,22 +33,14 @@ body {
   justify-content: safe center;
   min-width: min(var(--card-min-width, 0px), 100%);
   min-height: min(var(--card-min-height, 0px), 100%);
-  max-width: 100%;
-  max-height: 100%;
+  max-width: min(var(--card-max-width, 100%), 100%);
+  max-height: min(var(--card-max-height, 100%), 100%);
   overflow: hidden;
   padding: calc(16px * var(--text-scale)) calc(22px * var(--text-scale));
   border: 1px solid var(--border-color);
   border-radius: calc(12px * var(--text-scale));
   background: rgba(20, 20, 28, 0.86);
   font-family: var(--font);
-}
-
-#stage.width-capped {
-  max-width: min(var(--card-max-width), 100%);
-}
-
-#stage.height-capped {
-  max-height: min(var(--card-max-height), 100%);
 }
 
 #stage.image-above,

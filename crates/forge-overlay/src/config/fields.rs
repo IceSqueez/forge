@@ -496,20 +496,10 @@ pub(crate) fn image_fields() -> [SectionedField; 3] {
 
 pub(crate) fn card_size_fields() -> [SectionedField; 5] {
     [
-        card_min_field(CARD_MIN_WIDTH, "Min card width"),
-        card_min_field(CARD_MIN_HEIGHT, "Min card height"),
-        card_max_field(
-            CARD_WIDTH_LIMITED,
-            "Limit card width",
-            CARD_MAX_WIDTH,
-            "Max card width",
-        ),
-        card_max_field(
-            CARD_HEIGHT_LIMITED,
-            "Limit card height",
-            CARD_MAX_HEIGHT,
-            "Max card height",
-        ),
+        card_size_field(CARD_MIN_WIDTH, "Min card width"),
+        card_size_field(CARD_MIN_HEIGHT, "Min card height"),
+        card_size_field(CARD_MAX_WIDTH, "Max card width"),
+        card_size_field(CARD_MAX_HEIGHT, "Max card height"),
         in_section(
             ConfigSection::Text,
             FormField::Select {
@@ -521,51 +511,25 @@ pub(crate) fn card_size_fields() -> [SectionedField; 5] {
     ]
 }
 
-fn card_min_field(key: &'static str, label: &'static str) -> SectionedField {
+fn card_size_field(key: &'static str, label: &'static str) -> SectionedField {
     in_section(
         ConfigSection::Card,
         FormField::Integer {
             key,
             label,
-            min: CARD_MIN_SIZE_MIN_PX,
+            min: CARD_SIZE_UNBOUNDED_PX,
             max: CARD_SIZE_MAX_PX,
         },
     )
 }
 
-fn card_max_field(
-    toggle_key: &'static str,
-    toggle_label: &'static str,
-    key: &'static str,
-    label: &'static str,
-) -> SectionedField {
-    in_section(
-        ConfigSection::Card,
-        FormField::Optional {
-            key: toggle_key,
-            label: toggle_label,
-            inner: Box::new(FormField::Integer {
-                key,
-                label,
-                min: CARD_MAX_SIZE_MIN_PX,
-                max: CARD_SIZE_MAX_PX,
-            }),
-        },
-    )
-}
-
 pub(crate) fn card_size_defaults() -> OverlayConfig {
+    let unbounded = |key: &str| (key.to_owned(), Variant::Int(CARD_SIZE_UNBOUNDED_PX));
     OverlayConfig::from([
-        (
-            CARD_MIN_WIDTH.to_owned(),
-            Variant::Int(DEFAULT_CARD_MIN_SIZE_PX),
-        ),
-        (
-            CARD_MIN_HEIGHT.to_owned(),
-            Variant::Int(DEFAULT_CARD_MIN_SIZE_PX),
-        ),
-        (CARD_WIDTH_LIMITED.to_owned(), Variant::Bool(false)),
-        (CARD_HEIGHT_LIMITED.to_owned(), Variant::Bool(false)),
+        unbounded(CARD_MIN_WIDTH),
+        unbounded(CARD_MIN_HEIGHT),
+        unbounded(CARD_MAX_WIDTH),
+        unbounded(CARD_MAX_HEIGHT),
         (TEXT_OVERFLOW.to_owned(), text(TEXT_OVERFLOW_WRAP)),
     ])
 }

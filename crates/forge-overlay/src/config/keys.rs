@@ -31,9 +31,7 @@ pub const LABEL_OFFSET_Y: &str = "label_offset_y";
 pub const IMAGE_HEIGHT: &str = "image_height";
 pub const CARD_MIN_WIDTH: &str = "card_min_width";
 pub const CARD_MIN_HEIGHT: &str = "card_min_height";
-pub const CARD_WIDTH_LIMITED: &str = "card_width_limited";
 pub const CARD_MAX_WIDTH: &str = "card_max_width";
-pub const CARD_HEIGHT_LIMITED: &str = "card_height_limited";
 pub const CARD_MAX_HEIGHT: &str = "card_max_height";
 pub const TEXT_OVERFLOW: &str = "text_overflow";
 
@@ -154,10 +152,8 @@ pub const IMAGE_HEIGHT_MIN_PX: i64 = 16;
 pub const IMAGE_HEIGHT_MAX_PX: i64 = 480;
 pub const DEFAULT_IMAGE_HEIGHT_PX: i64 = 120;
 
-pub const CARD_MIN_SIZE_MIN_PX: i64 = 0;
-pub const CARD_MAX_SIZE_MIN_PX: i64 = DESIGN_SIZE_MIN_PX;
+pub const CARD_SIZE_UNBOUNDED_PX: i64 = 0;
 pub const CARD_SIZE_MAX_PX: i64 = DESIGN_SIZE_MAX_PX;
-pub const DEFAULT_CARD_MIN_SIZE_PX: i64 = CARD_MIN_SIZE_MIN_PX;
 
 pub const TEXT_OVERFLOW_WRAP: &str = "wrap";
 pub const TEXT_OVERFLOW_ELLIPSIS: &str = "ellipsis";

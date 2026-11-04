@@ -14,7 +14,7 @@ use crate::render::preview::{PreviewComposition, PreviewShape, compose};
 
 pub const KIND_ID: &str = "overlay.alert";
 
-pub const CONFIG_SCHEMA_VERSION: u32 = 8;
+pub const CONFIG_SCHEMA_VERSION: u32 = 9;
 
 const DESIGN_WIDTH_PX: u32 = 800;
 const DESIGN_HEIGHT_PX: u32 = 600;

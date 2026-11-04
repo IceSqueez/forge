@@ -301,32 +301,21 @@ fn card_of(shape: PreviewShape, config: &OverlayConfig) -> Option<PreviewCard> {
     if shape != PreviewShape::BadgeBanner {
         return None;
     }
-    let least = |key| {
+    let extent = |key| {
         bounded_px(
             config,
             key,
-            config::CARD_MIN_SIZE_MIN_PX,
+            config::CARD_SIZE_UNBOUNDED_PX,
             config::CARD_SIZE_MAX_PX,
         )
         .unwrap_or_default()
     };
-    let most = |toggle, key| {
-        (config.get(toggle).and_then(Variant::as_bool) == Some(true))
-            .then(|| {
-                bounded_px(
-                    config,
-                    key,
-                    config::CARD_MAX_SIZE_MIN_PX,
-                    config::CARD_SIZE_MAX_PX,
-                )
-            })
-            .flatten()
-    };
+    let cap = |key| Some(extent(key)).filter(|&px| i64::from(px) != config::CARD_SIZE_UNBOUNDED_PX);
     Some(PreviewCard {
-        min_width: least(config::CARD_MIN_WIDTH),
-        min_height: least(config::CARD_MIN_HEIGHT),
-        max_width: most(config::CARD_WIDTH_LIMITED, config::CARD_MAX_WIDTH),
-        max_height: most(config::CARD_HEIGHT_LIMITED, config::CARD_MAX_HEIGHT),
+        min_width: extent(config::CARD_MIN_WIDTH),
+        min_height: extent(config::CARD_MIN_HEIGHT),
+        max_width: cap(config::CARD_MAX_WIDTH),
+        max_height: cap(config::CARD_MAX_HEIGHT),
         overflow: match config::read_str(config, config::TEXT_OVERFLOW) {
             config::TEXT_OVERFLOW_ELLIPSIS => PreviewTextOverflow::Ellipsis,
             _ => PreviewTextOverflow::Wrap,

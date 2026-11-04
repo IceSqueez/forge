@@ -580,11 +580,157 @@ fn json_object_field_parses_nested_objects_and_keeps_nulls() {
     );
 }
 
+const AWKWARD_MESSAGE: &str = "say \"hi\" to C:\\temp\nnext line";
+
+fn json_args() -> ArgStack {
+    args()
+        .set("msg".to_owned(), text(AWKWARD_MESSAGE))
+        .set("ratio".to_owned(), Variant::Float(1.5))
+        .set("on".to_owned(), Variant::Bool(true))
+        .set(
+            "obj".to_owned(),
+            Variant::Object(BTreeMap::from([("k".to_owned(), Variant::Int(1))])),
+        )
+        .set(
+            "list".to_owned(),
+            Variant::Array(vec![text("a"), Variant::Int(2)]),
+        )
+}
+
+fn json_map(value: serde_json::Value) -> serde_json::Map<String, serde_json::Value> {
+    value.as_object().unwrap().clone()
+}
+
+fn read_json(template: &str) -> Result<serde_json::Map<String, serde_json::Value>, ConfigProblem> {
+    PAYLOAD.read(&stored("payload", text(template)), &json_args())
+}
+
 #[test]
-fn json_object_field_keeps_variable_references_verbatim() {
+fn json_object_field_substitutes_a_reference_inside_a_string() {
     assert_eq!(
-        read(&PAYLOAD, text(r#"{"who": "%who%"}"#)),
-        Ok(json!({"who": "%who%"}).as_object().unwrap().clone())
+        read_json(r#"{"who": "hi %who%!"}"#),
+        Ok(json_map(json!({"who": "hi ann!"})))
+    );
+}
+
+#[test]
+fn json_object_field_escapes_a_value_with_quotes_backslashes_and_newlines_inside_a_string() {
+    assert_eq!(
+        read_json(r#"{"m": "%msg%", "after": %who%}"#),
+        Ok(json_map(json!({"m": AWKWARD_MESSAGE, "after": "ann"})))
+    );
+}
+
+#[test]
+fn json_object_field_follows_escaped_quotes_and_backslashes_written_in_the_template() {
+    for (template, expected) in [
+        (r#"{"q": "say \"%who%\""}"#, json!({"q": "say \"ann\""})),
+        (
+            r#"{"p": "C:\\", "w": %who%}"#,
+            json!({"p": "C:\\", "w": "ann"}),
+        ),
+    ] {
+        assert_eq!(read_json(template), Ok(json_map(expected)), "{template}");
+    }
+}
+
+#[test]
+fn json_object_field_inserts_a_bare_reference_as_its_json_value() {
+    assert_eq!(
+        read_json(r#"{"n": %n%, "s": %who%, "f": %ratio%, "b": %on%, "o": %obj%, "l": %list%}"#),
+        Ok(json_map(json!({
+            "n": 7,
+            "s": "ann",
+            "f": 1.5,
+            "b": true,
+            "o": {"k": 1},
+            "l": ["a", 2],
+        })))
+    );
+}
+
+#[test]
+fn json_object_field_quotes_a_bare_formatted_reference_as_a_string() {
+    assert_eq!(
+        read_json(r#"{"n": %n:x%}"#),
+        Ok(json_map(json!({"n": "7"})))
+    );
+}
+
+#[test]
+fn json_object_field_keeps_an_unknown_reference_inside_a_string_verbatim() {
+    assert_eq!(
+        read_json(r#"{"g": "%ghost%"}"#),
+        Ok(json_map(json!({"g": "%ghost%"})))
+    );
+}
+
+#[test]
+fn json_object_field_refuses_an_unknown_bare_reference_as_not_json() {
+    assert!(matches!(
+        read_json(r#"{"g": %ghost%}"#),
+        Err(ConfigProblem {
+            reason: ConfigReason::Coded(message),
+            ..
+        }) if message.code().name() == "not_json"
+    ));
+}
+
+#[test]
+fn json_object_field_leaves_a_reference_after_a_pending_escape_unresolved() {
+    for msg in [r#"", "evil": true, "x": ""#, "n"] {
+        let scope = ArgStack::new().set("msg".to_owned(), text(msg));
+        let result = PAYLOAD.read(&stored("payload", text(r#"{"text": "\%msg%"}"#)), &scope);
+        assert!(
+            matches!(
+                &result,
+                Err(ConfigProblem {
+                    reason: ConfigReason::Coded(message),
+                    ..
+                }) if message.code().name() == "not_json"
+            ),
+            "{msg:?}: {result:?}"
+        );
+    }
+}
+
+#[test]
+fn json_object_field_keeps_percent_signs_that_are_not_references() {
+    let template = r#"{"a":"50%","b":"20%"}"#;
+    let expected = json_map(json!({"a": "50%", "b": "20%"}));
+
+    assert_eq!(
+        (read_json(template), deferred(&PAYLOAD, text(template))),
+        (Ok(expected.clone()), Ok(Some(expected)))
+    );
+}
+
+#[test]
+fn json_object_field_defers_text_with_references_but_still_refuses_a_literal_non_object() {
+    assert_eq!(
+        (
+            deferred(&PAYLOAD, text(r#"{"text": "%who%"}"#)),
+            deferred(&PAYLOAD, text(r#"{"vol": %n%}"#)),
+            deferred(&PAYLOAD, text("[1]")),
+        ),
+        (
+            Ok(None),
+            Ok(None),
+            rejected("payload", config_code("not_a_json_object")),
+        )
+    );
+}
+
+#[test]
+fn optional_json_object_field_renders_references_json_aware() {
+    let optional_payload = OptionalField {
+        field: PAYLOAD,
+        switch: OptionalSwitch::SharedKey { label: None },
+    };
+
+    assert_eq!(
+        optional_payload.read(&stored("payload", text(r#"{"m": "%msg%"}"#)), &json_args()),
+        Ok(Some(json_map(json!({"m": AWKWARD_MESSAGE}))))
     );
 }
 

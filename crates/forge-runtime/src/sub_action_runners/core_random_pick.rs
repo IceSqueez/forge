@@ -405,4 +405,66 @@ mod tests {
             );
         }
     }
+
+    fn weighted_cfg(weights: &str) -> SubActionConfig {
+        let mut cfg = cfg(Variant::String("a\nb".to_owned()), "chosen");
+        cfg.insert("weights".to_owned(), Variant::String(weights.to_owned()));
+        cfg
+    }
+
+    fn weight_problem(position: usize) -> Result<(), ConfigProblem> {
+        Err(ConfigProblem::field(
+            "weights",
+            ConfigReason::Coded(crate::core_messages::weight_not_a_number(position)),
+        ))
+    }
+
+    #[test]
+    fn editing_defers_a_referenced_weight_but_still_checks_literal_ones() {
+        let runner = CoreRandomPickRunner;
+        assert_eq!(
+            (
+                runner.check_config(&weighted_cfg("%w%\n1"), Interpolation::Deferred),
+                runner.check_config(&weighted_cfg("abc\n1"), Interpolation::Deferred),
+            ),
+            (Ok(()), weight_problem(1))
+        );
+    }
+
+    #[test]
+    fn checking_against_arguments_validates_the_substituted_weight() {
+        let runner = CoreRandomPickRunner;
+        let numeric = ArgStack::new().set("w".to_owned(), Variant::Int(3));
+        let wordy = ArgStack::new().set("w".to_owned(), Variant::String("abc".to_owned()));
+        let cfg = weighted_cfg("%w%\n1");
+        assert_eq!(
+            (
+                runner.check_config(&cfg, Interpolation::Against(&numeric)),
+                runner.check_config(&cfg, Interpolation::Against(&wordy)),
+            ),
+            (Ok(()), weight_problem(1))
+        );
+    }
+
+    #[tokio::test]
+    async fn pick_uses_weights_substituted_from_the_scope() {
+        let runner = CoreRandomPickRunner;
+        let stack = ArgStack::new()
+            .set("never".to_owned(), Variant::Int(0))
+            .set("always".to_owned(), Variant::String("2".to_owned()));
+        let cfg = weighted_cfg("%never%\n%always%");
+        for _ in 0..50 {
+            let ctx = RunContext::leaf(&stack, 0, EventId::new(), &NullPublisher);
+            let (telemetry, produced) = runner.execute(&cfg, &ctx).await;
+            assert!(
+                matches!(telemetry.outcome, SubActionOutcome::Success),
+                "{:?}",
+                telemetry.outcome
+            );
+            assert_eq!(
+                produced.unwrap().get("chosen"),
+                Some(&Variant::String("b".to_owned()))
+            );
+        }
+    }
 }

@@ -62,3 +62,20 @@ fn push_string_contents(result: &mut String, text: &str) {
     let quoted = serde_json::Value::String(text.to_owned()).to_string();
     result.push_str(&quoted[QUOTE.len_utf8()..quoted.len() - QUOTE.len_utf8()]);
 }
+
+#[cfg(test)]
+mod tests {
+    use forge_types::{ArgStack, Variant};
+
+    use super::interpolate_json;
+
+    #[test]
+    fn an_unresolved_bare_reference_with_a_quote_keeps_string_tracking_in_step_with_the_output() {
+        let args = ArgStack::new().set("msg".to_owned(), Variant::String("a\"b".to_owned()));
+
+        assert_eq!(
+            interpolate_json(r#"%ghost:"%%msg%""#, &args),
+            r#"%ghost:"%a\"b""#
+        );
+    }
+}

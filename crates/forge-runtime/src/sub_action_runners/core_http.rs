@@ -841,6 +841,25 @@ mod tests {
         }
     }
 
+    #[test]
+    fn a_header_or_query_value_holding_a_reference_is_substituted_only_once() {
+        let args = ArgStack::new()
+            .set("pasted".to_owned(), Variant::String("%secret%".to_owned()))
+            .set("secret".to_owned(), Variant::String("expanded".to_owned()));
+        let mut cfg = url_cfg("https://example.com".to_owned());
+        for key in [HEADERS.key, QUERY_PARAMS.key] {
+            cfg.insert(
+                key.to_owned(),
+                Variant::String(r#"{"x": "%pasted%"}"#.to_owned()),
+            );
+        }
+
+        let call = read_call(&cfg, &args, false).unwrap();
+
+        let once = BTreeMap::from([("x".to_owned(), "%secret%".to_owned())]);
+        assert_eq!((call.headers, call.query_params), (once.clone(), once));
+    }
+
     #[tokio::test]
     async fn validate_config_rejects_non_object_headers_and_query_params() {
         let dp = backend().await;

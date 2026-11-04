@@ -161,6 +161,34 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn execute_hands_the_sink_settings_with_a_referenced_text_substituted() {
+        let left_text = "12:34 \"left\" \\ side";
+        let sink = RecordingSink::new();
+        let runner = SetInputSettingsRunner::new(Arc::clone(&sink) as Arc<dyn ObsSink>);
+        let stack = ArgStack::new().set(
+            "left_text".to_owned(),
+            Variant::String(left_text.to_owned()),
+        );
+        let config = config_with(
+            Variant::String(r#"{"text": "%left_text%"}"#.to_owned()),
+            true,
+        );
+
+        let (tel, _) = runner.execute(&config, &make_ctx(&stack)).await;
+
+        let serde_json::Value::Object(expected) = json!({"text": left_text}) else {
+            unreachable!()
+        };
+        assert_eq!(
+            (tel.outcome, sink.input_settings_calls()),
+            (
+                SubActionOutcome::Success,
+                vec![("Webcam".to_owned(), expected, true)]
+            )
+        );
+    }
+
+    #[tokio::test]
     async fn settings_that_are_not_a_json_object_fail_validation_and_execution_without_a_sink_call()
     {
         let cases = [

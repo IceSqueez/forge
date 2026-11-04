@@ -85,6 +85,7 @@ pub(super) fn text_message_event(
         (chat_fields::MESSAGE_ID): id,
         (chat_fields::MESSAGE_TEXT): text,
         (chat_fields::AUTHOR): author_json(author_details),
+        (chat_fields::AUTHOR_AVATAR_URL): extract_author_avatar_url(author_details),
         (chat_fields::BROADCASTER_CHANNEL_ID): channel_id,
     });
 

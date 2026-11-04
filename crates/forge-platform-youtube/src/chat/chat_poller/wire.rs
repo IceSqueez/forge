@@ -29,6 +29,16 @@ pub(super) fn extract_author_channel_id(
         .map(ToOwned::to_owned)
 }
 
+pub(super) fn extract_author_avatar_url(
+    author_details: Option<&serde_json::Value>,
+) -> Option<String> {
+    author_details
+        .and_then(|ad| ad.get("profileImageUrl"))
+        .and_then(|v| v.as_str())
+        .filter(|s| !s.is_empty())
+        .map(ToOwned::to_owned)
+}
+
 pub(super) fn non_empty(s: String) -> Option<String> {
     if s.is_empty() { None } else { Some(s) }
 }

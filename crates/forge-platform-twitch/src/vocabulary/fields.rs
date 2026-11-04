@@ -5,7 +5,6 @@ pub(crate) mod chat {
     pub(crate) const USER_ID: &str = "id";
     pub(crate) const USER_DISPLAY_NAME: &str = "display_name";
     pub(crate) const MESSAGE: &str = "message";
-    pub(crate) const COLOR: &str = "color";
     pub(crate) const CHEER: &str = "cheer";
     pub(crate) const CHEER_BITS: &str = "bits";
     pub(crate) const FROM_CHANNEL: &str = "from_channel";

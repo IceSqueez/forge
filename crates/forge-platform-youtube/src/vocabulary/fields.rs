@@ -7,6 +7,7 @@ pub(crate) mod chat {
     pub(crate) const MESSAGE_ID: &str = "message_id";
     pub(crate) const MESSAGE_TEXT: &str = "message_text";
     pub(crate) const AUTHOR: &str = "author";
+    pub(crate) const AUTHOR_AVATAR_URL: &str = "author_avatar_url";
     pub(crate) const BROADCASTER_CHANNEL_ID: &str = "broadcaster_channel_id";
 }
 

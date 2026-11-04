@@ -5,6 +5,10 @@ use forge_types::{
     ArgStack, DeclaredVariable, MoneyAmount, PlatformId, TriggerConfig, VariableSchema, Variant,
 };
 
+use crate::chat_author_look::{
+    chat_badges_text, chat_name_color, user_avatar_declaration, user_badges_declaration,
+    user_color_declaration,
+};
 use crate::command_phrase::{
     MatchedCommand, command_args_declaration, command_name_declaration, command_tail_declaration,
 };
@@ -246,6 +250,29 @@ impl TriggerVariables {
                     .map(|(name, id)| (name, Variant::String(id)))
                     .collect(),
             )
+        })
+    }
+
+    pub fn chat_author_look<F>(self, read_avatar: F) -> Self
+    where
+        F: Fn(&Event) -> Option<String> + Send + Sync + 'static,
+    {
+        self.chat_badges()
+            .chat_name_color()
+            .event_specific(user_avatar_declaration(), move |event| {
+                Variant::String(read_avatar(event).unwrap_or_default())
+            })
+    }
+
+    fn chat_badges(self) -> Self {
+        self.event_specific(user_badges_declaration(), |event| {
+            Variant::String(chat_badges_text(event))
+        })
+    }
+
+    fn chat_name_color(self) -> Self {
+        self.event_specific(user_color_declaration(), |event| {
+            Variant::String(chat_name_color(event))
         })
     }
 

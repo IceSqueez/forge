@@ -98,6 +98,7 @@ pub(super) fn chat_line_variables() -> TriggerVariables {
             },
             |event| Variant::String(sender_color(event)),
         )
+        .chat_author_look(|_| None)
         .event_specific(
             DeclaredVariable {
                 name: variables::chat::REPLY_TO_ID.to_owned(),

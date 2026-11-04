@@ -23,14 +23,7 @@ pub(super) fn base_chat_variables() -> TriggerVariables {
             },
             |event| Variant::String(text_field(event, fields::CHANNEL)),
         )
-        .event_specific(
-            DeclaredVariable {
-                name: "user_color".to_owned(),
-                kind: VariantKind::String,
-                synthesis: None,
-            },
-            |event| Variant::String(text_field(event, fields::COLOR)),
-        )
+        .chat_author_look(|_| None)
         .first_chat_message()
         .message_emotes()
         .message_emote_ids()

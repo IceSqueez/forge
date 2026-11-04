@@ -26,6 +26,10 @@ pub(super) fn author_identity(event: &Event) -> ActorIdentity {
     identity(event.payload.get(chat_fields::AUTHOR))
 }
 
+pub(super) fn author_avatar_url(event: &Event) -> Option<String> {
+    Some(text(event, chat_fields::AUTHOR_AVATAR_URL)).filter(|url| !url.is_empty())
+}
+
 pub(super) fn gifter_identity(event: &Event) -> ActorIdentity {
     identity(event.payload.get(gift_fields::GIFTER))
 }

@@ -1,16 +1,21 @@
 #![expect(clippy::expect_used, reason = "test fixtures assert directly")]
 mod common;
-use common::{ALERT_KIND, BLOB_IDENTITY, FRAME_KIND, TICKER_KIND, registry, sub_alert_instance};
+use common::{
+    ALERT_KIND, BLANK_KIND, BLOB_IDENTITY, CHAT_KIND, FRAME_KIND, GOAL_KIND, LATEST_KIND,
+    TICKER_KIND, registry, sub_alert_instance,
+};
 
 use forge_overlay::config::{
-    BACKGROUND_COLOR, BACKGROUND_OPACITY, BORDER_COLOR, DEFAULT_BACKGROUND_COLOR,
+    ACCENT, BACKGROUND_COLOR, BACKGROUND_OPACITY, BORDER_COLOR, DEFAULT_BACKGROUND_COLOR,
     DEFAULT_BACKGROUND_OPACITY_PERCENT, DEFAULT_IMAGE_HEIGHT_PX, IMAGE, IMAGE_HEIGHT,
     IMAGE_HEIGHT_MAX_PX, IMAGE_HEIGHT_MIN_PX, IMAGE_POSITION, IMAGE_POSITION_ABOVE,
     IMAGE_POSITION_BELOW, IMAGE_POSITION_LEFT, IMAGE_POSITION_OPTIONS, IMAGE_POSITION_RIGHT,
     LABEL_OFFSET_MAX_PX, LABEL_OFFSET_MIN_PX, LABEL_OFFSET_X, LABEL_OFFSET_Y, LABEL_SIDE,
-    LABEL_SIDE_CENTER, LABEL_SIDE_LEFT, LABEL_SIDE_RIGHT, TEXT_COLOR,
+    LABEL_SIDE_CENTER, LABEL_SIDE_LEFT, LABEL_SIDE_RIGHT, MAIN_TEXT_COLOR, TEXT_COLOR,
 };
-use forge_overlay::metrics::{ALERT, SURFACE_RGB};
+use forge_overlay::metrics::{
+    ALERT, BORDER_COLOR_PROPERTY, MAIN_TEXT_COLOR_PROPERTY, SURFACE_RGB, TEXT_COLOR_PROPERTY,
+};
 use forge_overlay::{
     GENERATED_MEDIA_DIRECTORY, IconValue, ImageReference, MediaSlot, OverlayConfig, OverlayError,
     OverlayMedia, PreviewAccent, PreviewImage, PreviewImageSide, PreviewLabel, PreviewLabelSide,
@@ -22,6 +27,15 @@ use forge_types::{NamesLanguage, Variant};
 use serde_json::Value;
 
 const GIF: &str = "gif";
+const WHITE: [u8; 3] = [255, 255, 255];
+const TEXT_KINDS: [&str; 6] = [
+    ALERT_KIND,
+    CHAT_KIND,
+    FRAME_KIND,
+    GOAL_KIND,
+    LATEST_KIND,
+    TICKER_KIND,
+];
 
 fn text(key: &str, value: &str) -> OverlayConfig {
     OverlayConfig::from([(key.to_owned(), Variant::String(value.to_owned()))])
@@ -446,19 +460,35 @@ fn the_runtime_publishes_a_custom_color_verbatim_and_maps_a_named_one() {
     assert!(RUNTIME_SOURCE.contains("var CUSTOM_ACCENT = /^#[0-9a-f]{6}$/i;"));
     assert!(
         palette_color
-            .contains("returnCUSTOM_ACCENT.test(value)?value:ACCENT_HEX[value]||FALLBACK_ACCENT;")
+            .contains("returnCUSTOM_ACCENT.test(value)?value:ACCENT_HEX[value]||fallback;")
     );
 }
 
 #[test]
-fn the_runtime_sets_each_color_property_from_its_own_config_key() {
+fn the_runtime_sets_each_color_property_from_its_own_config_key_and_fallback() {
     let compact: String = common::js_function(RUNTIME_SOURCE, "applyAppearance")
         .split_whitespace()
         .collect();
 
-    for (constant, property, key) in [
-        ("TEXT_COLOR_PROPERTY", "--text-color", TEXT_COLOR),
-        ("BORDER_COLOR_PROPERTY", "--border-color", BORDER_COLOR),
+    for (constant, property, key, fallback) in [
+        (
+            "MAIN_TEXT_COLOR_PROPERTY",
+            MAIN_TEXT_COLOR_PROPERTY,
+            MAIN_TEXT_COLOR,
+            "FALLBACK_MAIN_TEXT_COLOR",
+        ),
+        (
+            "TEXT_COLOR_PROPERTY",
+            TEXT_COLOR_PROPERTY,
+            TEXT_COLOR,
+            "FALLBACK_ACCENT",
+        ),
+        (
+            "BORDER_COLOR_PROPERTY",
+            BORDER_COLOR_PROPERTY,
+            BORDER_COLOR,
+            "FALLBACK_ACCENT",
+        ),
     ] {
         assert!(
             RUNTIME_SOURCE.contains(&format!("var {constant} = \"{property}\";")),
@@ -466,11 +496,96 @@ fn the_runtime_sets_each_color_property_from_its_own_config_key() {
         );
         assert!(
             compact.contains(&format!(
-                "setProperty({constant},paletteColor(values.{key})"
+                "setProperty({constant},paletteColor(values.{key},{fallback})"
             )),
-            "{property} is not fed from config key '{key}'"
+            "{property} is not fed from config key '{key}' with {fallback} behind it"
         );
     }
+}
+
+#[test]
+fn a_page_whose_config_carries_no_main_text_color_paints_its_main_text_white() {
+    let fallback = RUNTIME_SOURCE
+        .lines()
+        .find_map(|line| {
+            line.trim()
+                .strip_prefix("var FALLBACK_MAIN_TEXT_COLOR = \"")
+        })
+        .and_then(|rest| rest.strip_suffix("\";"))
+        .expect("the runtime declares a main text fallback");
+
+    assert_eq!(hex_color_channels(fallback), Some(WHITE));
+}
+
+#[test]
+fn an_overlay_saved_before_the_main_text_color_existed_keeps_white_main_text() {
+    for kind_id in TEXT_KINDS {
+        for legacy in [text(ACCENT, "#102030"), text(TEXT_COLOR, "sky")] {
+            let page = kind_page_config(kind_id, legacy.clone(), OverlayMedia::default());
+            let delivered = page[MAIN_TEXT_COLOR].as_str().unwrap_or_default();
+            assert_eq!(
+                hex_color_channels(delivered),
+                Some(WHITE),
+                "{kind_id} page gets {delivered:?} for {legacy:?}"
+            );
+
+            assert_eq!(
+                composition(kind_id, legacy.clone()).main_text_color,
+                PreviewAccent::Custom(WHITE),
+                "{kind_id} preview for {legacy:?}"
+            );
+        }
+    }
+}
+
+#[test]
+fn the_main_text_color_takes_any_hex_color_but_no_palette_name() {
+    for kind_id in TEXT_KINDS {
+        for accepted in ["#ff8800", "#FF8800", "#000000"] {
+            assert!(
+                accepts(kind_id, &text(MAIN_TEXT_COLOR, accepted)),
+                "{kind_id} {accepted:?}"
+            );
+        }
+        for refused in ["sky", "mauve", "", "ff8800", "#ff88", "var(--x)"] {
+            assert!(
+                !accepts(kind_id, &text(MAIN_TEXT_COLOR, refused)),
+                "{kind_id} {refused:?}"
+            );
+        }
+    }
+}
+
+#[test]
+fn the_preview_paints_main_text_in_the_exact_channels_of_a_chosen_hex() {
+    for kind_id in TEXT_KINDS {
+        assert_eq!(
+            composition(kind_id, text(MAIN_TEXT_COLOR, "#FF8800")).main_text_color,
+            PreviewAccent::Custom([255, 136, 0]),
+            "{kind_id}"
+        );
+    }
+}
+
+#[test]
+fn a_kind_offers_the_main_text_color_exactly_when_it_draws_a_page() {
+    let reg = registry();
+    let mut blank_seen = false;
+    for descriptor in reg.all() {
+        blank_seen |= descriptor.id() == BLANK_KIND;
+        let offers = descriptor
+            .config_fields()
+            .iter()
+            .any(|sectioned| sectioned.field.key() == MAIN_TEXT_COLOR);
+
+        assert_eq!(
+            offers,
+            descriptor.has_visual_page(),
+            "{} disagrees about having main text to color",
+            descriptor.id()
+        );
+    }
+    assert!(blank_seen, "the blank look is not registered");
 }
 
 #[test]

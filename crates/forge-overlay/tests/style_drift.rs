@@ -5,13 +5,13 @@ use common::{ALERT_KIND, CHAT_KIND, FRAME_KIND, GOAL_KIND, LATEST_KIND, TICKER_K
 use std::collections::BTreeSet;
 
 use forge_overlay::PreviewAccent;
-use forge_overlay::config::{BORDER_COLOR, TEXT_COLOR};
+use forge_overlay::config::{BORDER_COLOR, MAIN_TEXT_COLOR, TEXT_COLOR};
 use forge_types::Variant;
 
 use forge_overlay::metrics::{
     ALERT, AlertMetrics, BORDER_COLOR_PROPERTY, CHAT, ChatMetrics, FRAME, FrameMetrics, GOAL,
-    GoalMetrics, LATEST, LatestMetrics, TEXT_COLOR_PROPERTY, TEXT_SCALE_PROPERTY, TICKER,
-    TickerMetrics,
+    GoalMetrics, LATEST, LatestMetrics, MAIN_TEXT_COLOR_PROPERTY, TEXT_COLOR_PROPERTY,
+    TEXT_SCALE_PROPERTY, TICKER, TickerMetrics,
 };
 
 const SCALED_NUMBERS: &[(&str, &[f32])] = &[
@@ -46,6 +46,15 @@ const BREAKING_TEXT: &[(&str, &[&str])] = &[
 ];
 
 const ELLIPSIZING_TEXT: &[(&str, &str)] = &[(LATEST_KIND, ".value"), (TICKER_KIND, ".body")];
+
+const MAIN_INK: &[(&str, &str, &str)] = &[
+    (ALERT_KIND, ".headline", "color"),
+    (CHAT_KIND, ".message", "color"),
+    (FRAME_KIND, ".headline", "color"),
+    (GOAL_KIND, ".label", "color"),
+    (LATEST_KIND, ".headline", "color"),
+    (TICKER_KIND, ".headline", "color"),
+];
 
 const TEXT_INK: &[(&str, &str, &str)] = &[
     (ALERT_KIND, ".subline", "color"),
@@ -251,6 +260,11 @@ fn assert_painted_with(table: &[(&str, &str, &str)], ink: &str, other: &str) {
 }
 
 #[test]
+fn each_kind_paints_its_main_text_with_the_main_text_color() {
+    assert_painted_with(MAIN_INK, MAIN_TEXT_COLOR_PROPERTY, TEXT_COLOR_PROPERTY);
+}
+
+#[test]
 fn each_kind_paints_its_text_with_the_text_color() {
     assert_painted_with(TEXT_INK, TEXT_COLOR_PROPERTY, BORDER_COLOR_PROPERTY);
 }
@@ -261,7 +275,7 @@ fn each_kind_paints_its_edges_and_marks_with_the_border_color() {
 }
 
 #[test]
-fn each_kind_page_starts_both_colors_at_the_kinds_default_before_its_config_arrives() {
+fn each_kind_page_starts_every_color_at_the_kinds_default_before_its_config_arrives() {
     let reg = registry();
     for kind_id in [
         ALERT_KIND,
@@ -278,6 +292,7 @@ fn each_kind_page_starts_both_colors_at_the_kinds_default_before_its_config_arri
         let root = format!("\n{}", stylesheet(kind_id));
 
         for (key, property) in [
+            (MAIN_TEXT_COLOR, MAIN_TEXT_COLOR_PROPERTY),
             (TEXT_COLOR, TEXT_COLOR_PROPERTY),
             (BORDER_COLOR, BORDER_COLOR_PROPERTY),
         ] {
@@ -431,36 +446,40 @@ fn only_the_looks_that_keep_position_read_it_from_the_page() {
 
 #[test]
 fn every_ink_the_preview_paints_is_the_ink_its_page_rule_states() {
-    let bright = "color: #fff;";
-    for (kind_id, selector, declaration) in [
-        (ALERT_KIND, ".headline", bright),
+    let bright = "color: #fff;".to_owned();
+    let main = format!("color: var({MAIN_TEXT_COLOR_PROPERTY});");
+    let fixed_inks = [
         (CHAT_KIND, ".author", bright),
-        (CHAT_KIND, ".message", "color: #eee;"),
-        (FRAME_KIND, ".headline", bright),
-        (GOAL_KIND, ".label", bright),
         (
             GOAL_KIND,
             ".track",
-            "background: rgba(255, 255, 255, 0.14);",
+            "background: rgba(255, 255, 255, 0.14);".to_owned(),
         ),
-        (GOAL_KIND, ".sep", "color: rgba(255, 255, 255, 0.5);"),
-        (LATEST_KIND, ".headline", bright),
-        (LATEST_KIND, ".subline", "color: rgba(255, 255, 255, 0.7);"),
-        (TICKER_KIND, ".headline", bright),
-    ] {
+        (
+            GOAL_KIND,
+            ".sep",
+            "color: rgba(255, 255, 255, 0.5);".to_owned(),
+        ),
+        (
+            LATEST_KIND,
+            ".subline",
+            "color: rgba(255, 255, 255, 0.7);".to_owned(),
+        ),
+    ];
+    let main_inks = MAIN_INK
+        .iter()
+        .map(|(kind_id, selector, _)| (*kind_id, *selector, main.clone()));
+
+    for (kind_id, selector, declaration) in fixed_inks.into_iter().chain(main_inks) {
         assert!(
-            rule_block(stylesheet(kind_id), selector).contains(declaration),
+            rule_block(stylesheet(kind_id), selector).contains(&declaration),
             "{kind_id} {selector} no longer states '{declaration}'"
         );
         let guards = registry().style_guards();
         assert!(
-            guards.iter().any(|guard| {
-                guard.kind_id == kind_id
-                    && guard
-                        .declarations
-                        .iter()
-                        .any(|guarded| guarded == declaration)
-            }),
+            guards
+                .iter()
+                .any(|guard| guard.kind_id == kind_id && guard.declarations.contains(&declaration)),
             "{kind_id} does not guard '{declaration}', so its preview ink can drift"
         );
     }

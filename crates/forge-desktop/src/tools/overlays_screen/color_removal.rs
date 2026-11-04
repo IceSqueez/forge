@@ -363,7 +363,9 @@ mod tests {
     use std::sync::Mutex;
 
     use forge_components::{Density, Presentation, ThemeId, Toasts};
-    use forge_overlay::config::{ACCENT, BACKGROUND_COLOR, BORDER_COLOR, HEADLINE, TEXT_COLOR};
+    use forge_overlay::config::{
+        ACCENT, BACKGROUND_COLOR, BORDER_COLOR, HEADLINE, MAIN_TEXT_COLOR, TEXT_COLOR,
+    };
     use forge_overlay::kinds::alert::KIND_ID;
     use forge_runtime::{EventBus, OverlayFrameSink, OverlayReceivers, OverlayServiceParts};
     use forge_storage::{StorageError, read_stored_setting};
@@ -730,6 +732,7 @@ mod tests {
                 FIRST,
                 KIND_ID,
                 config(&[
+                    (MAIN_TEXT_COLOR, CUSTOM),
                     (TEXT_COLOR, CUSTOM),
                     (BORDER_COLOR, CUSTOM),
                     (BACKGROUND_COLOR, CUSTOM),
@@ -749,7 +752,7 @@ mod tests {
             .iter()
             .map(|reset| (reset.id.as_str(), reset.fields))
             .collect();
-        assert_eq!(counted, vec![(FIRST, 3), (SECOND, 1)]);
+        assert_eq!(counted, vec![(FIRST, 4), (SECOND, 1)]);
     }
 
     #[test]

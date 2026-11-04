@@ -9,15 +9,22 @@ use common::{CHAT_KIND, registry};
 use std::collections::BTreeSet;
 
 use forge_overlay::config::{
-    ACCENT, BORDER_COLOR, DESIGN_WIDTH, FONT, HEADLINE, MARGIN_LEFT, MARGIN_TOP, PLATFORM,
-    POSITION, TEXT_COLOR, TEXT_SIZE,
+    ACCENT, BORDER_COLOR, DESIGN_WIDTH, FONT, HEADLINE, MAIN_TEXT_COLOR, MARGIN_LEFT, MARGIN_TOP,
+    PLATFORM, POSITION, TEXT_COLOR, TEXT_SIZE,
 };
 use forge_overlay::{
     LookConfigKey, OverlayConfig, PAGE_CONTRACT, RUNTIME_SOURCE, SampleContext, latest_binding,
     latest_content, look_contract, sample_content, sample_latest_value,
 };
 
-const RUNTIME_APPLIED_LOOK_KEYS: [&str; 5] = [TEXT_COLOR, BORDER_COLOR, FONT, TEXT_SIZE, POSITION];
+const RUNTIME_APPLIED_LOOK_KEYS: [&str; 6] = [
+    MAIN_TEXT_COLOR,
+    TEXT_COLOR,
+    BORDER_COLOR,
+    FONT,
+    TEXT_SIZE,
+    POSITION,
+];
 
 fn header() -> &'static str {
     let end = RUNTIME_SOURCE

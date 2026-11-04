@@ -387,12 +387,59 @@ mod tests {
     #[test]
     fn each_color_field_starts_from_its_own_preset_list() {
         assert_eq!(
+            names(&offered(MAIN_TEXT_COLOR, &[], "")),
+            MAIN_TEXT_COLOR_OPTIONS.to_vec()
+        );
+        assert_eq!(
             names(&offered(TEXT_COLOR, &[], ACCENT_MAUVE)),
             ACCENT_OPTIONS.to_vec()
         );
         assert_eq!(
             names(&offered(BACKGROUND_COLOR, &[], DEFAULT_BACKGROUND_COLOR)),
             BACKGROUND_COLOR_OPTIONS.to_vec()
+        );
+    }
+
+    fn alert_kind<T>(body: impl FnOnce(&dyn forge_overlay::OverlayKindDescriptor) -> T) -> T {
+        let mut registry = forge_overlay::OverlayKindRegistry::new();
+        forge_overlay::register_builtin_kinds(&mut registry).unwrap();
+        body(registry.get(forge_overlay::kinds::alert::KIND_ID).unwrap())
+    }
+
+    #[test]
+    fn every_swatch_a_color_row_offers_is_a_value_its_overlay_field_accepts() {
+        alert_kind(|descriptor| {
+            for key in COLOR_FIELD_KEYS {
+                for (name, _) in offered(key, &[], "") {
+                    let config = OverlayConfig::from([(
+                        key.to_owned(),
+                        forge_types::Variant::String(name.clone()),
+                    )]);
+
+                    assert!(
+                        forge_overlay::validate_overlay_config(descriptor, &config).is_ok(),
+                        "clicking {name:?} in the {key} row stores a value the overlay refuses"
+                    );
+                }
+            }
+        });
+    }
+
+    #[test]
+    fn the_main_text_row_leads_with_the_white_an_untouched_overlay_already_paints() {
+        let untouched = alert_kind(|descriptor| {
+            descriptor
+                .default_config()
+                .get(MAIN_TEXT_COLOR)
+                .and_then(forge_types::Variant::as_str)
+                .map(str::to_owned)
+        });
+        let offered = offered(MAIN_TEXT_COLOR, &[], "");
+
+        assert_eq!(offered.first().map(|(name, _)| name.clone()), untouched);
+        assert_eq!(
+            offered.first().map(|(_, tint)| *tint),
+            Some(stored_color_tint("#ffffff"))
         );
     }
 

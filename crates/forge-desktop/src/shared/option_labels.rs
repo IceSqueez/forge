@@ -54,6 +54,7 @@ mod tests {
     const SELECT_KEYS_WITH_UNTRANSLATED_OPTIONS: &[&str] = &[
         "content_type",
         "font",
+        "main_text_color",
         "text_color",
         "border_color",
         "background_color",

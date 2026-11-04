@@ -2,10 +2,10 @@ use forge_registry::{FormField, effective_config};
 use forge_types::Variant;
 
 use super::accent_split::with_split_accent;
-use super::keys::{BACKGROUND_COLOR, BORDER_COLOR, IMAGE, MAIN_TEXT_COLOR, TEXT_COLOR};
+use super::keys::{BACKGROUND_COLOR, BORDER_COLOR, MAIN_TEXT_COLOR, TEXT_COLOR};
 use crate::catalog::descriptor::{OverlayConfig, OverlayKindDescriptor, SectionedField};
 use crate::error::OverlayError;
-use crate::files::media::names_a_library_image;
+use crate::files::media::{MediaSlot, media_slot, names_a_library_image};
 
 const HEX_COLOR_PREFIX: char = '#';
 const HEX_COLOR_DIGITS: usize = 6;
@@ -111,9 +111,9 @@ fn is_custom_color(key: &str, value: &str) -> bool {
 }
 
 fn is_well_formed(key: &str, value: &str) -> bool {
-    match key {
-        IMAGE => value.is_empty() || names_a_library_image(value),
-        _ => true,
+    match media_slot(key) {
+        Some(MediaSlot::Image) => value.is_empty() || names_a_library_image(value),
+        Some(MediaSlot::Sound | MediaSlot::Icon) | None => true,
     }
 }
 

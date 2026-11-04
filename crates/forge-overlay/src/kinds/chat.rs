@@ -19,7 +19,7 @@ use crate::render::row_filter::ChatRowFilter;
 
 pub const KIND_ID: &str = "overlay.chat";
 
-pub const CONFIG_SCHEMA_VERSION: u32 = 7;
+pub const CONFIG_SCHEMA_VERSION: u32 = 8;
 
 const ROW_ENTRANCE_MS: i64 = 300;
 const ROW_TEMPLATE_ID: &str = "row-template";
@@ -101,6 +101,21 @@ impl OverlayKindDescriptor for ChatOverlayKind {
         defaults.insert(config::AVATAR.to_owned(), config::text(""));
         defaults.insert(config::SHOW_AVATARS.to_owned(), Variant::Bool(false));
         defaults.insert(config::THIRD_PARTY_EMOTES.to_owned(), Variant::Bool(true));
+        defaults.extend(config::chat_platform_icon_defaults());
+        defaults.extend([
+            (
+                config::BACKGROUND_COLOR.to_owned(),
+                config::text(config::DEFAULT_BACKGROUND_COLOR),
+            ),
+            (
+                config::BACKGROUND_OPACITY.to_owned(),
+                Variant::Int(config::DEFAULT_CHAT_BACKGROUND_OPACITY_PERCENT),
+            ),
+            (
+                config::ROW_WIDTH.to_owned(),
+                config::text(config::ROW_WIDTH_FULL),
+            ),
+        ]);
         defaults.extend(config::chat_row_defaults());
         defaults.extend(config::chat_filter_defaults());
         defaults
@@ -118,7 +133,10 @@ impl OverlayKindDescriptor for ChatOverlayKind {
             config::chat_event_field(),
             config::chat_avatar_field(),
         ];
+        fields.extend(config::chat_platform_icon_fields());
         fields.extend(config::shared_style_fields());
+        fields.extend(config::background_fields());
+        fields.push(config::row_width_field());
         fields.push(config::position_field("Newest message at"));
         fields.extend(config::chat_row_fields());
         fields.extend(config::chat_filter_fields());

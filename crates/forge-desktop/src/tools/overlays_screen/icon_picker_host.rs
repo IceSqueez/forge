@@ -2,7 +2,7 @@ use forge_components::{
     ActivePresentation, ForgePalette, GridPicker, GridPickerArt, GridPickerConfig, GridPickerEvent,
     GridPickerSubtitle, Icon, OverlayPosition, focus_inside_modal, overlay, tr,
 };
-use forge_overlay::config::{ICON, IMAGE};
+use forge_overlay::config::ICON;
 use forge_overlay::effective_overlay_config;
 use forge_storage::{MediaBlob, MediaRepo, OverlayDefinition, StorageError};
 use gpui::{
@@ -17,11 +17,12 @@ use super::icon_choice::{
     image_dialog_extensions, image_rows, import_outcome, offers_library_images_only, picked_icon,
     picker_groups,
 };
-use super::property_panel::{IconPickRequested, IconPickResult, OverlayPropertyPanel};
+pub(crate) use super::property_panel::IconPickResult;
+use super::property_panel::{IconPickRequested, OverlayPropertyPanel};
 use crate::app::async_bridge::{self, DialogFilter};
 use crate::shared::picker_favorites::{StoredFavorites, bind_picker, follow_picker_event};
 
-pub(super) enum IconHostEvent {
+pub(crate) enum IconHostEvent {
     ImagesChanged,
     Picked {
         key: String,
@@ -48,7 +49,7 @@ struct OpenIconPicker {
     _favorites: Subscription,
 }
 
-pub(super) struct IconPickerHost {
+pub(crate) struct IconPickerHost {
     images: Vec<IconImage>,
     picker: Option<OpenIconPicker>,
     images_gen: async_bridge::Generation,
@@ -60,7 +61,7 @@ pub(super) struct IconPickerHost {
 impl EventEmitter<IconHostEvent> for IconPickerHost {}
 
 impl IconPickerHost {
-    pub(super) fn new(
+    pub(crate) fn new(
         media: Arc<dyn MediaRepo>,
         rt_handle: tokio::runtime::Handle,
         favorites: Entity<StoredFavorites>,
@@ -78,11 +79,11 @@ impl IconPickerHost {
         host
     }
 
-    pub(super) fn images(&self) -> &[IconImage] {
+    pub(crate) fn images(&self) -> &[IconImage] {
         &self.images
     }
 
-    pub(super) fn load_images(&mut self, cx: &mut Context<Self>) {
+    pub(crate) fn load_images(&mut self, cx: &mut Context<Self>) {
         let ticket = self.images_gen.next();
         let media = Arc::clone(&self.media);
         async_bridge::run_async(
@@ -140,7 +141,7 @@ impl IconPickerHost {
         cx.notify();
     }
 
-    pub(super) fn open_picker(&mut self, key: String, accent: Rgba, cx: &mut Context<Self>) {
+    pub(crate) fn open_picker(&mut self, key: String, accent: Rgba, cx: &mut Context<Self>) {
         let palette = cx.palette();
         let groups = picker_groups(&key, &self.images, accent, &palette);
         let (title, subtitle, search) = if offers_library_images_only(&key) {
@@ -254,7 +255,7 @@ impl IconPickerHost {
         cx.notify();
     }
 
-    pub(super) fn render_overlay(
+    pub(crate) fn render_overlay(
         &self,
         palette: &ForgePalette,
         cx: &mut Context<Self>,
@@ -271,7 +272,7 @@ impl IconPickerHost {
         )
     }
 
-    pub(super) fn focus_picker(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+    pub(crate) fn focus_picker(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         let Some(open) = self.picker.as_mut().filter(|open| !open.focused) else {
             return;
         };
@@ -354,11 +355,12 @@ impl OverlaysView {
     pub(super) fn preview_image(
         &self,
         definition: &OverlayDefinition,
+        key: &str,
         cx: &App,
     ) -> Option<Arc<Path>> {
         let descriptor = self.handles.kinds.get(&definition.kind_id)?;
         let config = effective_overlay_config(descriptor, &definition.config);
-        let stored = config.get(IMAGE).and_then(forge_types::Variant::as_str)?;
+        let stored = config.get(key).and_then(forge_types::Variant::as_str)?;
         match icon_choice(stored, self.icon_host.read(cx).images()) {
             IconChoice::Image(image) => Some(Arc::clone(&image.path)),
             IconChoice::None | IconChoice::Glyph(_) | IconChoice::Unresolved(_) => None,

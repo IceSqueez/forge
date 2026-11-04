@@ -16,6 +16,13 @@ var SCOPE_USER = "user";
 var SCOPE_PLATFORM = "platform";
 var SECURE_SCHEME = "https://";
 var EMOTE_CLASS = "emote";
+var PLATFORM_ICON_KEYS = { twitch: "twitch_icon", youtube: "youtube_icon", kick: "kick_icon" };
+var FALLBACK_SURFACE = "#14141c";
+var HEX_COLOR = /^#([0-9a-f]{2})([0-9a-f]{2})([0-9a-f]{2})$/i;
+var HEX_RADIX = 16;
+var PERCENT = 100;
+var ROW_WIDTH_FIT = "fit";
+var FIT_ROWS_CLASS = "fit-rows";
 
 function wholeIn(value, min, max) {
   return typeof value === "number" && Math.floor(value) === value && value >= min && value <= max;
@@ -102,6 +109,46 @@ function fillMessage(target, values) {
   });
 }
 
+function hexChannels(color) {
+  var match = HEX_COLOR.exec(color || "");
+
+  return match && [parseInt(match[1], HEX_RADIX), parseInt(match[2], HEX_RADIX), parseInt(match[3], HEX_RADIX)];
+}
+
+function rowSurfaceOf(config) {
+  var opacity = config.background_opacity;
+
+  if (typeof opacity !== "number") {
+    return "";
+  }
+  var channels = hexChannels(config.background_color) || hexChannels(FALLBACK_SURFACE);
+  return "rgba(" + channels.join(", ") + ", " + opacity / PERCENT + ")";
+}
+
+function platformIconsOf(config) {
+  var icons = {};
+  Object.keys(PLATFORM_ICON_KEYS).forEach(function (platform) {
+    var file = config[PLATFORM_ICON_KEYS[platform]];
+    if (typeof file === "string" && file !== "") {
+      icons[platform] = file;
+    }
+  });
+  return icons;
+}
+
+function showPlatformIcon(row, file) {
+  var image = row.querySelector(".platform-icon");
+  if (!image || !file) {
+    return;
+  }
+  image.onerror = function () {
+    image.hidden = true;
+    image.removeAttribute("src");
+  };
+  image.src = encodeURI(file);
+  image.hidden = false;
+}
+
 function awaitsAvatar(row, avatar) {
   var image = row.querySelector(".avatar");
   return (
@@ -120,6 +167,9 @@ forge.ready(function (config) {
   var rowLimit = rowLimitOf(config);
   var hideAfterMs = hideAfterMsOf(config);
   var showsAvatars = config.show_avatars === true;
+  var rowSurface = rowSurfaceOf(config);
+  var platformIcons = platformIconsOf(config);
+  rows.classList.toggle(FIT_ROWS_CLASS, config.row_width === ROW_WIDTH_FIT);
 
   function detach(row) {
     if (row.parentNode === rows) {
@@ -154,6 +204,13 @@ forge.ready(function (config) {
     row.dataset.platform = values.platform || "";
     row.dataset.messageId = values.message_id || "";
     row.dataset.userId = values.user_id || "";
+
+    if (rowSurface) {
+      row.style.background = rowSurface;
+    }
+    if (Object.prototype.hasOwnProperty.call(platformIcons, row.dataset.platform)) {
+      showPlatformIcon(row, platformIcons[row.dataset.platform]);
+    }
 
     if (showsAvatars) {
       showAvatar(row, values.avatar || "");

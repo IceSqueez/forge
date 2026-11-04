@@ -1,9 +1,9 @@
-use forge_types::{LATEST_DONATION_SLOT, NOW_PLAYING_SLOT, Variant};
+use forge_types::{LATEST_DONATION_SLOT, NOW_PLAYING_SLOT, PlatformId, Variant};
 
 use crate::catalog::descriptor::OverlayConfig;
 use crate::catalog::source_box::{ContentMargins, DesignSize};
 use crate::config;
-use crate::metrics::{ALERT, BRIGHT_INK_RGB, ElementSizing, SURFACE_RGB};
+use crate::metrics::{ALERT, BRIGHT_INK_RGB, CHAT, ElementSizing, SURFACE_RGB};
 
 const PERCENT_SCALE: f32 = 100.0;
 pub const TALLY_SEPARATOR: &str = " / ";
@@ -192,6 +192,22 @@ pub struct PreviewComposition {
     pub card: Option<PreviewCard>,
     pub label: Option<PreviewLabel>,
     pub author_ink: Option<[u8; 3]>,
+    pub platform_icon: Option<&'static str>,
+    pub fit_rows: bool,
+}
+
+impl PreviewComposition {
+    pub fn picture_key(&self) -> Option<&'static str> {
+        match self.shape {
+            PreviewShape::BadgeBanner => Some(config::IMAGE),
+            PreviewShape::MessageFeed => self.platform_icon,
+            PreviewShape::Blank
+            | PreviewShape::BorderedFrame
+            | PreviewShape::LatestCard
+            | PreviewShape::ProgressBar
+            | PreviewShape::Strip => None,
+        }
+    }
 }
 
 pub(crate) fn compose(
@@ -217,7 +233,29 @@ pub(crate) fn compose(
         card: card_of(shape, config),
         label: label_of(shape, config),
         author_ink: author_ink_of(shape, config),
+        platform_icon: platform_icon_of(shape, config),
+        fit_rows: shape == PreviewShape::MessageFeed
+            && config::read_str(config, config::ROW_WIDTH) == config::ROW_WIDTH_FIT,
     }
+}
+
+fn platform_icon_key(platform: PlatformId) -> &'static str {
+    match platform {
+        PlatformId::Twitch => config::TWITCH_ICON,
+        PlatformId::YouTube => config::YOUTUBE_ICON,
+        PlatformId::Kick => config::KICK_ICON,
+    }
+}
+
+fn platform_icon_of(shape: PreviewShape, config: &OverlayConfig) -> Option<&'static str> {
+    if shape != PreviewShape::MessageFeed {
+        return None;
+    }
+    let chosen = |key: &&'static str| !config::read_str(config, key).is_empty();
+    PlatformId::from_wire(config::read_str(config, config::PLATFORM))
+        .map(platform_icon_key)
+        .filter(chosen)
+        .or_else(|| config::PLATFORM_ICON_KEYS.into_iter().find(chosen))
 }
 
 fn author_ink_of(shape: PreviewShape, config: &OverlayConfig) -> Option<[u8; 3]> {
@@ -253,9 +291,15 @@ fn label_offset(config: &OverlayConfig, key: &str) -> i16 {
 }
 
 fn surface_of(shape: PreviewShape, config: &OverlayConfig) -> Option<PreviewSurface> {
-    if shape != PreviewShape::BadgeBanner {
-        return None;
-    }
+    let fallback_alpha = match shape {
+        PreviewShape::BadgeBanner => ALERT.surface_alpha,
+        PreviewShape::MessageFeed => CHAT.surface_alpha,
+        PreviewShape::Blank
+        | PreviewShape::BorderedFrame
+        | PreviewShape::LatestCard
+        | PreviewShape::ProgressBar
+        | PreviewShape::Strip => return None,
+    };
     let percent = config
         .get(config::BACKGROUND_OPACITY)
         .and_then(Variant::as_int)
@@ -269,9 +313,7 @@ fn surface_of(shape: PreviewShape, config: &OverlayConfig) -> Option<PreviewSurf
     Some(PreviewSurface {
         rgb: config::hex_color_channels(config::read_str(config, config::BACKGROUND_COLOR))
             .unwrap_or(SURFACE_RGB),
-        alpha: percent.map_or(ALERT.surface_alpha, |percent| {
-            f32::from(percent) / PERCENT_SCALE
-        }),
+        alpha: percent.map_or(fallback_alpha, |percent| f32::from(percent) / PERCENT_SCALE),
     })
 }
 

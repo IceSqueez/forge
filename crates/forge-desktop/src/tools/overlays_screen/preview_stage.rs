@@ -158,12 +158,15 @@ impl OverlaysView {
         let next = self.selected_definition().and_then(|definition| {
             let composition = self.preview_composition(definition, language)?;
             let plan = ElementPlan::of(composition.element);
+            let image = composition
+                .picture_key()
+                .and_then(|key| self.preview_image(definition, key, cx));
             Some(StagePreview {
                 overlay: definition.id.clone(),
                 composition,
                 plan,
                 icon: self.preview_icon(definition, cx),
-                image: self.preview_image(definition, cx),
+                image,
             })
         });
         self.stage.preview = next;

@@ -53,9 +53,26 @@ body[data-position="top"] #stage {
   background: rgba(20, 20, 28, 0.78);
 }
 
+#rows.fit-rows .row {
+  align-self: flex-start;
+  box-sizing: border-box;
+  max-width: 100%;
+}
+
 .row.leaving {
   opacity: 0;
   transition: opacity 300ms ease-in;
+}
+
+.platform-icon {
+  flex: none;
+  align-self: center;
+  height: calc(18px * var(--text-scale));
+  width: auto;
+}
+
+.platform-icon[hidden] {
+  display: none;
 }
 
 .badges {

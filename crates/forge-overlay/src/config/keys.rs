@@ -43,6 +43,11 @@ pub const MESSAGE_ID: &str = "message_id";
 pub const USER_ID: &str = "user_id";
 pub const EVENT: &str = "event";
 pub const AVATAR: &str = "avatar";
+pub const TWITCH_ICON: &str = "twitch_icon";
+pub const YOUTUBE_ICON: &str = "youtube_icon";
+pub const KICK_ICON: &str = "kick_icon";
+pub const PLATFORM_ICON_KEYS: [&str; 3] = [TWITCH_ICON, YOUTUBE_ICON, KICK_ICON];
+pub const ROW_WIDTH: &str = "row_width";
 pub const SHOW_AVATARS: &str = "show_avatars";
 pub const MESSAGE_PARTS: &str = "message_parts";
 pub const THIRD_PARTY_EMOTES: &str = "third_party_emotes";
@@ -147,6 +152,7 @@ pub const BACKGROUND_COLOR_OPTIONS: &[&str] = &[
 pub const BACKGROUND_OPACITY_MIN_PERCENT: i64 = 0;
 pub const BACKGROUND_OPACITY_MAX_PERCENT: i64 = 100;
 pub const DEFAULT_BACKGROUND_OPACITY_PERCENT: i64 = 86;
+pub const DEFAULT_CHAT_BACKGROUND_OPACITY_PERCENT: i64 = 78;
 
 pub const IMAGE_HEIGHT_MIN_PX: i64 = 16;
 pub const IMAGE_HEIGHT_MAX_PX: i64 = 480;
@@ -171,6 +177,10 @@ pub const HIDE_ROWS_AFTER_MAX_SECS: i64 = 300;
 pub const DEFAULT_HIDE_ROWS_AFTER_SECS: i64 = 30;
 
 pub const DEFAULT_COMMAND_PREFIX: &str = "!";
+
+pub const ROW_WIDTH_FULL: &str = "full";
+pub const ROW_WIDTH_FIT: &str = "fit";
+pub const ROW_WIDTH_OPTIONS: &[&str] = &[ROW_WIDTH_FULL, ROW_WIDTH_FIT];
 
 pub const DESIGN_SIZE_MIN_PX: i64 = 40;
 pub const DESIGN_SIZE_MAX_PX: i64 = 7680;

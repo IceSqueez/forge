@@ -230,6 +230,42 @@ pub(crate) fn chat_avatar_field() -> SectionedField {
     )
 }
 
+pub(crate) fn chat_platform_icon_fields() -> [SectionedField; 3] {
+    [
+        (TWITCH_ICON, "Twitch icon"),
+        (YOUTUBE_ICON, "YouTube icon"),
+        (KICK_ICON, "Kick icon"),
+    ]
+    .map(|(key, label)| {
+        in_section(
+            ConfigSection::Content,
+            FormField::DynamicSelect {
+                key,
+                label,
+                options_key: ICON_OPTIONS_KEY,
+            },
+        )
+    })
+}
+
+pub(crate) fn chat_platform_icon_defaults() -> OverlayConfig {
+    PLATFORM_ICON_KEYS
+        .into_iter()
+        .map(|key| (key.to_owned(), text("")))
+        .collect()
+}
+
+pub(crate) fn row_width_field() -> SectionedField {
+    in_section(
+        ConfigSection::Card,
+        FormField::Select {
+            key: ROW_WIDTH,
+            label: "Row width",
+            options: ROW_WIDTH_OPTIONS,
+        },
+    )
+}
+
 pub(crate) fn show_avatars_field() -> SectionedField {
     in_section(
         ConfigSection::Chat,

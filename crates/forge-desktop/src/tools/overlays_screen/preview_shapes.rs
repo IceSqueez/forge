@@ -164,7 +164,14 @@ pub(super) fn render_composition(
         PreviewShape::BadgeBanner => badge_banner(composition, plan, scale, inks, family, glyphs),
         PreviewShape::BorderedFrame => bordered_frame(composition, scale, inks, family),
         PreviewShape::LatestCard => latest_card(composition, plan, scale, inks, family),
-        PreviewShape::MessageFeed => message_feed(composition, plan, scale, inks, family),
+        PreviewShape::MessageFeed => message_feed(
+            composition,
+            plan,
+            scale,
+            inks,
+            family,
+            glyphs.image.as_ref(),
+        ),
         PreviewShape::ProgressBar => progress_bar(composition, plan, scale, inks, family),
         PreviewShape::Strip => strip(composition, plan, scale, inks, family),
     }
@@ -419,6 +426,7 @@ fn message_feed(
     scale: Scale,
     inks: Inks,
     family: SharedString,
+    platform_icon: Option<&Arc<Path>>,
 ) -> AnyElement {
     let author = line_text(composition, PreviewLineRole::Headline);
     let message = line_text(composition, PreviewLineRole::Subline)
@@ -426,14 +434,30 @@ fn message_feed(
     let badges = line_text(composition, PreviewLineRole::Label);
 
     let row = div()
-        .w_full()
+        .map(|row| {
+            if composition.fit_rows {
+                row.self_start().max_w_full()
+            } else {
+                row.w_full()
+            }
+        })
         .flex()
         .items_baseline()
         .gap(scale.text_at(CHAT.row_gap))
         .py(scale.text_at(CHAT.row_padding_block))
         .px(scale.text_at(CHAT.row_padding_inline))
         .rounded(scale.text_at(CHAT.row_radius))
-        .bg(surface(CHAT.surface_alpha))
+        .bg(composition.surface.map_or_else(
+            || surface(CHAT.surface_alpha),
+            |chosen| page_color(chosen.rgb, chosen.alpha),
+        ))
+        .children(platform_icon.map(|path| {
+            img(Arc::clone(path))
+                .id("overlays-preview-platform-icon")
+                .flex_none()
+                .self_center()
+                .h(scale.text_at(CHAT.platform_icon_size))
+        }))
         .children(badges.map(|text| {
             div()
                 .flex_none()

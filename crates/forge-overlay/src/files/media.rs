@@ -1,7 +1,7 @@
 use sha2::{Digest, Sha256};
 
 use crate::catalog::descriptor::OverlayConfig;
-use crate::config::{ICON, IMAGE, SOUND};
+use crate::config::{ICON, IMAGE, KICK_ICON, SOUND, TWITCH_ICON, YOUTUBE_ICON};
 use crate::error::OverlayError;
 use crate::files::icons::curated_icon;
 
@@ -9,7 +9,7 @@ pub use forge_registry::{CLIP_REFERENCE_PREFIX, IMAGE_REFERENCE_PREFIX};
 
 pub const GENERATED_MEDIA_DIRECTORY: &str = "forge-media";
 
-pub const MEDIA_KEYS: &[&str] = &[SOUND, ICON, IMAGE];
+pub const MEDIA_KEYS: &[&str] = &[SOUND, ICON, IMAGE, TWITCH_ICON, YOUTUBE_ICON, KICK_ICON];
 
 const PAGE_PATH_SEPARATOR: char = '/';
 const EXTENSION_SEPARATOR: char = '.';
@@ -28,7 +28,7 @@ pub fn media_slot(key: &str) -> Option<MediaSlot> {
     match key {
         SOUND => Some(MediaSlot::Sound),
         ICON => Some(MediaSlot::Icon),
-        IMAGE => Some(MediaSlot::Image),
+        IMAGE | TWITCH_ICON | YOUTUBE_ICON | KICK_ICON => Some(MediaSlot::Image),
         _ => None,
     }
 }

@@ -77,7 +77,7 @@ pub(super) struct IconPickRequested {
 }
 
 #[derive(Clone)]
-pub(super) enum IconPickResult {
+pub(crate) enum IconPickResult {
     Chosen(String),
     Refused(String),
 }

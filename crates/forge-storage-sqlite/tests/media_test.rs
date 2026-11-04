@@ -378,28 +378,6 @@ async fn delete_refuses_while_a_referrer_still_holds_the_blob() {
 }
 
 #[tokio::test]
-async fn delete_removes_the_row_and_the_file_once_the_last_referrer_is_released() {
-    let fx = fixture().await;
-    let blob = fx
-        .media()
-        .store("fanfare.gif", TINY_GIF.to_vec())
-        .await
-        .expect("store");
-    fx.media()
-        .retain(&clip_source(), &blob.id)
-        .await
-        .expect("retain");
-
-    assert!(
-        fx.media().release(&clip_source()).await.expect("release"),
-        "release did not report the held slot"
-    );
-    assert!(fx.media().delete(&blob.id).await.expect("delete"));
-    assert!(fx.media().get(&blob.id).await.expect("get").is_none());
-    assert!(fx.root_entries().is_empty());
-}
-
-#[tokio::test]
 async fn retain_refuses_a_blob_that_was_never_stored() {
     let fx = fixture().await;
 

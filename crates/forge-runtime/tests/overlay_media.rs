@@ -119,6 +119,7 @@ fn media_library(world: &World) -> OverlayMediaLibrary {
         Ok(match referrer.kind {
             MediaReferrerKind::SoundboardClip => seen.source_blob.clone(),
             MediaReferrerKind::Overlay => seen.slots.get(&referrer.slot).cloned(),
+            MediaReferrerKind::Library => MediaBlobId::from_stored(referrer.id.as_str()).ok(),
         })
     });
 

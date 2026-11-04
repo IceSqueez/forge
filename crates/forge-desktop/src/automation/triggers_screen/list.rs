@@ -13,12 +13,14 @@ use forge_components::{
     menu_button, menu_divider, menu_item, overlay, primary_button_with_icon, scaled, spacing,
     status_dot, toggle, tr,
 };
+use forge_components::{MultiSelection, SelectGesture};
 use gpui::{
     AnyElement, App, ClickEvent, Context, Div, Entity, FontWeight, MouseButton, MouseDownEvent,
     Pixels, Point, Rgba, ScrollStrategy, SharedString, Window, div, px, uniform_list,
 };
 use std::sync::Arc;
 
+mod bulk;
 mod modal_layers;
 mod render;
 #[cfg(test)]
@@ -54,6 +56,7 @@ pub(super) struct TriggerList {
     focused_once: bool,
     pub(super) list_cursor: Option<TriggerInstanceId>,
     pub(super) selected: Option<TriggerInstanceId>,
+    marked: MultiSelection<TriggerInstanceId>,
     hovered: Option<TriggerInstanceId>,
     menu_open: Option<TriggerInstanceId>,
     menu_focus: FocusHandle,
@@ -66,6 +69,8 @@ pub(super) struct TriggerList {
     rename_requested: Option<TriggerInstanceId>,
     pending_delete: Confirm<TriggerInstanceId>,
     confirm_disable: Confirm<TriggerInstanceId>,
+    pending_bulk_delete: Confirm<Vec<TriggerInstanceId>>,
+    confirm_bulk_disable: Confirm<Vec<TriggerInstanceId>>,
     integrations: Option<SwitchWatch>,
     _search_sub: Subscription,
 }
@@ -79,6 +84,10 @@ impl TriggerList {
         let search = SearchState::new(cx, tr!("triggers_search_placeholder"));
         let search_sub = cx.subscribe(search.field(), Self::on_search_event);
         let enabled_writers = KeyedSnapshotWriters::new(&deps.rt_handle);
+        let mut marked = MultiSelection::default();
+        if let Some(id) = preselect {
+            marked.select_only(id);
+        }
         let list = Self {
             deps,
             list_load: Loadable::Loading,
@@ -91,6 +100,7 @@ impl TriggerList {
             focused_once: false,
             list_cursor: preselect,
             selected: preselect,
+            marked,
             hovered: None,
             menu_open: None,
             menu_focus: cx.focus_handle(),
@@ -103,6 +113,8 @@ impl TriggerList {
             rename_requested: None,
             pending_delete: Confirm::default(),
             confirm_disable: Confirm::default(),
+            pending_bulk_delete: Confirm::default(),
+            confirm_bulk_disable: Confirm::default(),
             integrations: None,
             _search_sub: search_sub,
         };
@@ -130,7 +142,7 @@ impl TriggerList {
     }
 
     pub(super) fn delete_pending(&self) -> bool {
-        self.pending_delete.get().is_some()
+        self.pending_delete.get().is_some() || self.pending_bulk_delete.is_pending()
     }
 
     pub(super) fn reload(&self, cx: &mut Context<Self>) {
@@ -231,6 +243,9 @@ impl TriggerList {
 
     pub(super) fn clear_selection(&mut self, cx: &mut Context<Self>) {
         self.selected = None;
+        if !self.marked.is_bulk() {
+            self.marked.clear();
+        }
         cx.notify();
     }
 
@@ -299,6 +314,16 @@ impl TriggerList {
             .map(|(index, _)| index)
             .collect();
         self.visible = visible;
+        let shown = self.visible_ids();
+        self.marked.retain_visible(&shown);
+    }
+
+    fn visible_ids(&self) -> Vec<TriggerInstanceId> {
+        self.visible
+            .iter()
+            .filter_map(|&index| self.instances.get(index))
+            .map(|row| row.id)
+            .collect()
     }
 
     fn passes(&self, instance: &TriggerInstanceRow) -> bool {
@@ -367,8 +392,28 @@ impl TriggerList {
         cx.notify();
     }
 
+    fn click_row(&mut self, id: TriggerInstanceId, gesture: SelectGesture, cx: &mut Context<Self>) {
+        if gesture == SelectGesture::Single {
+            self.select(id, cx);
+            return;
+        }
+        let shown = self.visible_ids();
+        self.marked.apply(id, gesture, &shown);
+        self.list_cursor = Some(id);
+        cx.notify();
+    }
+
+    fn clear_marked(&mut self, cx: &mut Context<Self>) {
+        match self.selected {
+            Some(id) => self.marked.select_only(id),
+            None => self.marked.clear(),
+        }
+        cx.notify();
+    }
+
     fn select(&mut self, id: TriggerInstanceId, cx: &mut Context<Self>) {
         self.selected = Some(id);
+        self.marked.select_only(id);
         self.list_cursor = Some(id);
         match self.listed_row(id) {
             Some(row) => cx.emit(TriggerListEvent::Selected(row)),
@@ -611,6 +656,14 @@ impl NavigableList for TriggerList {
             .filter(|&id| self.visible_position(id).is_some())
         {
             self.select(id, cx);
+        }
+    }
+
+    fn cancel_list(&mut self, cx: &mut Context<Self>) {
+        if self.marked.is_bulk() {
+            self.clear_marked(cx);
+        } else {
+            cx.propagate();
         }
     }
 }

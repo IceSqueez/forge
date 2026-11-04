@@ -31,6 +31,7 @@ mod key_activation;
 mod locale;
 mod menu;
 mod modal;
+mod multi_selection;
 mod overlay;
 mod page_frame;
 mod palette;
@@ -45,6 +46,7 @@ mod save_state;
 mod search_state;
 mod section_label;
 mod segmented;
+mod selection_bar;
 mod setting_list;
 mod side_sheet;
 mod slider;
@@ -127,6 +129,7 @@ pub use menu::{
     menu_item,
 };
 pub use modal::{Modal, busy_modal, modal};
+pub use multi_selection::{MultiSelection, SelectGesture};
 pub use overlay::{
     Overlay, OverlayPosition, anchored_popover, drive_overlay_focus, focus_inside_modal, overlay,
 };
@@ -145,6 +148,7 @@ pub use save_state::{SaveState, save_indicator};
 pub use search_state::{SearchState, contains_folded};
 pub use section_label::{SectionLabel, section_label};
 pub use segmented::{segment, segmented};
+pub use selection_bar::{SelectionBar, selection_bar, selection_bar_height};
 pub use setting_list::{
     SettingRow, setting_block, setting_groups, setting_row, setting_rows, setting_sections,
     setting_value_row,

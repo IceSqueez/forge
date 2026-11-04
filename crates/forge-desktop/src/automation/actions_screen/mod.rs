@@ -243,6 +243,11 @@ impl ScreenActionsView {
                 self.editor
                     .update(cx, |editor, cx| editor.write_action(id, write, cx));
             }
+            ActionTreeEvent::ArchiveMany(ids) => {
+                let ids = ids.clone();
+                self.editor
+                    .update(cx, |editor, cx| editor.archive_in_bulk(ids, cx));
+            }
             ActionTreeEvent::DeletePromptChanged => self.sync_step_drag_lock(cx),
         }
     }

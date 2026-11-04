@@ -38,6 +38,9 @@ pub(in crate::automation::actions_screen) enum ActionWrite {
     Archive {
         name: String,
     },
+    ArchiveInBulk {
+        batch: u64,
+    },
     Restore,
 }
 
@@ -63,7 +66,13 @@ impl ActionWrite {
 
 enum WriteEffect {
     Select(ActionId),
-    ArchiveUndo { name: String },
+    ArchiveUndo {
+        name: String,
+    },
+    BulkArchived {
+        batch: u64,
+        archived: Result<(), RepoFailure>,
+    },
 }
 
 #[derive(Default)]
@@ -134,6 +143,7 @@ pub(super) fn apply_action_edit(action: &mut Action, write: &ActionWrite) -> boo
         ActionWrite::Create(_)
         | ActionWrite::Duplicate { .. }
         | ActionWrite::Archive { .. }
+        | ActionWrite::ArchiveInBulk { .. }
         | ActionWrite::Restore => false,
     }
 }
@@ -171,6 +181,14 @@ async fn perform_operation(
         ActionWrite::Archive { name } => {
             repo.archive(id).await.map_err(ActionWriteError::storage)?;
             Ok(Some(WriteEffect::ArchiveUndo { name }))
+        }
+        ActionWrite::ArchiveInBulk { batch } => {
+            let archived = repo
+                .archive(id)
+                .await
+                .map(drop)
+                .map_err(|error| ActionWriteError::storage(error).failure());
+            Ok(Some(WriteEffect::BulkArchived { batch, archived }))
         }
         ActionWrite::Restore => {
             repo.restore(id).await.map_err(ActionWriteError::storage)?;
@@ -413,6 +431,9 @@ impl ActionEditor {
             match effect {
                 WriteEffect::Select(new_id) => cx.emit(ActionEditorEvent::SelectAction(new_id)),
                 WriteEffect::ArchiveUndo { name } => self.raise_undo_toast(id, name, cx),
+                WriteEffect::BulkArchived { batch, archived } => {
+                    self.settle_bulk_archive(batch, id, archived, cx)
+                }
             }
         }
         if drained {

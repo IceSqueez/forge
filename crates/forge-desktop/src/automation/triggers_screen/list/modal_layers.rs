@@ -16,8 +16,19 @@ impl TriggerList {
             .get()
             .copied()
             .map(|id| self.render_delete_confirm(id, palette, cx));
+        let bulk_disable = self
+            .confirm_bulk_disable
+            .get()
+            .map(|ids| self.render_bulk_disable_confirm(ids, palette, cx));
+        let bulk_delete = self
+            .pending_bulk_delete
+            .get()
+            .map(|ids| self.render_bulk_delete_confirm(ids, palette, cx));
         let row_menu = self.render_row_context_menu(palette, cx);
-        [disable, delete, row_menu].into_iter().flatten().collect()
+        [disable, delete, bulk_disable, bulk_delete, row_menu]
+            .into_iter()
+            .flatten()
+            .collect()
     }
 
     fn render_row_context_menu(

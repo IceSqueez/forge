@@ -2,12 +2,14 @@ use super::*;
 use crate::app::navigable_list::{ListCursor, ListStep, NavigableList, navigable_list};
 use crate::shared::load_notice::{LoadNotice, NoticeWidth, load_notice};
 use forge_components::{
-    Confirm, FONT_XS, InlineEditEvent, InputEvent, Spacing, inline_edit, spacing,
+    Confirm, FONT_XS, InlineEditEvent, InputEvent, MultiSelection, SelectGesture, Spacing,
+    inline_edit, spacing,
 };
 use forge_storage::ScheduledRunRepo;
 use gpui::ScrollHandle;
 use std::sync::atomic::AtomicU64;
 
+mod bulk;
 mod delete_confirm_count;
 mod render;
 #[cfg(test)]
@@ -72,6 +74,7 @@ pub(super) enum ActionTreeEvent {
     SelectedListed,
     SelectionLost,
     Write(ActionId, ActionWrite),
+    ArchiveMany(Vec<ActionId>),
     DeletePromptChanged,
 }
 
@@ -90,9 +93,11 @@ pub(super) struct ActionTree {
     search: SearchState,
     _search_sub: Subscription,
     selected: Option<ActionId>,
+    marked: MultiSelection<ActionId>,
     hovered: Option<ActionId>,
     renaming: Option<Renaming>,
     pending_delete: Confirm<ActionId>,
+    pending_bulk_delete: Confirm<Vec<ActionId>>,
     delete_scheduled_count: Option<(ActionId, u64)>,
     row_open: Option<ActionId>,
     menu_pos: Option<Point<Pixels>>,
@@ -114,6 +119,10 @@ impl ActionTree {
     ) -> Self {
         let search = SearchState::new(cx, tr!("actions_search_placeholder"));
         let search_sub = cx.subscribe(search.field(), Self::on_search_event);
+        let mut marked = MultiSelection::default();
+        if let Some(id) = selected {
+            marked.select_only(id);
+        }
         let tree = Self {
             deps,
             scheduled_runs: None,
@@ -129,9 +138,11 @@ impl ActionTree {
             search,
             _search_sub: search_sub,
             selected,
+            marked,
             hovered: None,
             renaming: None,
             pending_delete: Confirm::default(),
+            pending_bulk_delete: Confirm::default(),
             delete_scheduled_count: None,
             row_open: None,
             menu_pos: None,
@@ -176,7 +187,7 @@ impl ActionTree {
     }
 
     pub(super) fn delete_pending(&self) -> bool {
-        self.pending_delete.get().is_some()
+        self.pending_delete.get().is_some() || self.pending_bulk_delete.is_pending()
     }
 
     fn set_tree_width(&mut self, width: Pixels, cx: &mut Context<Self>) {
@@ -257,6 +268,7 @@ impl ActionTree {
             }
         }
         self.groups = groups;
+        self.prune_marked();
         self.reload_filter_actions(cx);
 
         if let Some(selected) = self.selected {
@@ -309,6 +321,7 @@ impl ActionTree {
         cx: &mut Context<Self>,
     ) {
         self.filter_action_ids = ids;
+        self.prune_marked();
         cx.notify();
     }
 
@@ -329,6 +342,7 @@ impl ActionTree {
                 members.remove(&id);
             }
         }
+        self.prune_marked();
     }
 }
 
@@ -354,6 +368,14 @@ impl NavigableList for ActionTree {
         let ids: Vec<ActionId> = self.tree_action_rows().iter().map(|row| row.id).collect();
         if let Some(id) = self.keys.activation_target(&ids) {
             self.select(id, cx);
+        }
+    }
+
+    fn cancel_list(&mut self, cx: &mut Context<Self>) {
+        if self.marked.is_bulk() {
+            self.clear_marked(cx);
+        } else {
+            cx.propagate();
         }
     }
 }
@@ -397,18 +419,21 @@ impl ActionTree {
         cx: &mut Context<Self>,
     ) {
         if self.search.on_changed(event) {
+            self.prune_marked();
             cx.notify();
         }
     }
 
     fn set_filter(&mut self, filter: ActionsFilter, cx: &mut Context<Self>) {
         self.filter = filter;
+        self.prune_marked();
         cx.notify();
     }
 
     fn toggle_group(&mut self, index: usize, cx: &mut Context<Self>) {
         if let Some(group) = self.groups.get_mut(index) {
             group.collapsed = !group.collapsed;
+            self.prune_marked();
             cx.notify();
         }
     }
@@ -419,8 +444,37 @@ impl ActionTree {
         cx: &mut Context<Self>,
     ) {
         self.selected = Some(id);
+        self.marked.select_only(id);
         self.keys.move_to(id);
         cx.emit(ActionTreeEvent::Selected(id));
+        cx.notify();
+    }
+
+    fn click_row(&mut self, id: ActionId, gesture: SelectGesture, cx: &mut Context<Self>) {
+        if gesture == SelectGesture::Single {
+            self.select(id, cx);
+            return;
+        }
+        let visible = self.visible_action_ids();
+        self.marked.apply(id, gesture, &visible);
+        self.keys.move_to(id);
+        cx.notify();
+    }
+
+    fn visible_action_ids(&self) -> Vec<ActionId> {
+        self.tree_action_rows().iter().map(|row| row.id).collect()
+    }
+
+    fn prune_marked(&mut self) {
+        let visible = self.visible_action_ids();
+        self.marked.retain_visible(&visible);
+    }
+
+    fn clear_marked(&mut self, cx: &mut Context<Self>) {
+        match self.selected {
+            Some(id) => self.marked.select_only(id),
+            None => self.marked.clear(),
+        }
         cx.notify();
     }
 

@@ -1,5 +1,5 @@
 use super::*;
-use forge_components::ActivePresentation;
+use forge_components::{ActivePresentation, selection_bar_height};
 use gpui::App;
 
 impl Render for TriggerList {
@@ -25,7 +25,9 @@ impl Render for TriggerList {
             .flex_col()
             .flex_1()
             .min_h(px(0.0))
+            .relative()
             .child(self.render_list(&palette, cx))
+            .children(self.render_bulk_bar(&palette, cx))
     }
 }
 
@@ -322,7 +324,10 @@ impl TriggerList {
         )
         .track_scroll(&self.list_scroll)
         .flex_1()
-        .min_h(px(0.0));
+        .min_h(px(0.0))
+        .when(self.marked.is_bulk(), |list| {
+            list.pb(selection_bar_height(density))
+        });
 
         div()
             .id("triggers-list")
@@ -460,7 +465,7 @@ impl TriggerList {
     ) -> AnyElement {
         let density = cx.density();
         let id = instance.id;
-        let selected = self.selected == Some(id);
+        let selected = self.selected == Some(id) || self.marked.bulk_contains(&id);
         let cursor = self.list_cursor == Some(id);
         let hovered = self.hovered == Some(id);
         let dot_color = platform_dot_color(&instance.kind_id, &self.deps.registry, palette);
@@ -599,9 +604,9 @@ impl TriggerList {
             );
         if !renaming {
             select_region = select_region.cursor_pointer().on_click(cx.listener(
-                move |this, _: &ClickEvent, window, cx| {
+                move |this, event: &ClickEvent, window, cx| {
                     window.focus(&this.list_focus, cx);
-                    this.select(id, cx);
+                    this.click_row(id, SelectGesture::from_modifiers(&event.modifiers()), cx);
                 },
             ));
         }

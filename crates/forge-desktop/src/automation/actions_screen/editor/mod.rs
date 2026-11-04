@@ -11,6 +11,7 @@ use gpui::{AnyElement, App, Context, Task, div};
 
 pub(in crate::automation::actions_screen) mod action_writes;
 mod branch;
+mod bulk_archive;
 mod cards;
 mod collection_choices;
 mod detail_load;
@@ -104,6 +105,7 @@ pub(in crate::automation::actions_screen) struct ActionEditor {
     step_drag_focus: FocusHandle,
     step_drag_locked: bool,
     action_writes: HashMap<ActionId, action_writes::ActionWriteQueue>,
+    bulk_archives: bulk_archive::BulkArchives,
     nav_path: Vec<nav::NavFrame>,
     case_fields: BTreeMap<(usize, usize), CaseField>,
     step_health: Vec<forge_registry::StepHealth>,
@@ -158,6 +160,7 @@ impl ActionEditor {
             step_drag_focus: cx.focus_handle(),
             step_drag_locked: false,
             action_writes: HashMap::new(),
+            bulk_archives: bulk_archive::BulkArchives::default(),
             nav_path: Vec::new(),
             case_fields: BTreeMap::new(),
             step_health: Vec::new(),

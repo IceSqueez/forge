@@ -1205,6 +1205,49 @@ triggers_confirm_delete_body = Це назавжди видалить екзем
 
 ## Реєстр тригерів - діалог перейменування
 
+## Списки дій і тригерів - масовий вибір
+
+bulk_selected_count = Вибрано: { $count }
+bulk_enable_all = Увімкнути всі
+bulk_disable_all = Вимкнути всі
+bulk_delete_all = Видалити всі
+bulk_clear = Очистити
+bulk_delete_actions_title = { $count ->
+    [one] Видалити { $count } дію?
+    [few] Видалити { $count } дії?
+    [many] Видалити { $count } дій?
+   *[other] Видалити { $count } дій?
+}
+bulk_delete_actions_body = Це видалить вибрані дії разом з усіма їхніми кроками й тригерами. Заплановані запуски цих дій також буде скасовано.
+bulk_deleted_actions_toast = { $count ->
+    [one] Видалено { $count } дію
+    [few] Видалено { $count } дії
+    [many] Видалено { $count } дій
+   *[other] Видалено { $count } дій
+}
+bulk_disable_triggers_title = { $count ->
+    [one] Вимкнути { $count } тригер?
+    [few] Вимкнути { $count } тригери?
+    [many] Вимкнути { $count } тригерів?
+   *[other] Вимкнути { $count } тригерів?
+}
+bulk_disable_triggers_body = Вибраних тригерів, які використовують дії: { $count }. Вимкнення призупинить їх для цих дій. Продовжити?
+bulk_delete_triggers_title = { $count ->
+    [one] Видалити { $count } тригер?
+    [few] Видалити { $count } тригери?
+    [many] Видалити { $count } тригерів?
+   *[other] Видалити { $count } тригерів?
+}
+bulk_delete_triggers_body = Це назавжди видалить вибрані екземпляри тригерів.
+bulk_delete_triggers_body_kept = Це назавжди видалить вибрані екземпляри тригерів. Тригерів, які використовують дії, буде збережено: { $kept }.
+bulk_delete_triggers_blocked = Приберіть ці тригери з усіх дій перед видаленням.
+bulk_deleted_triggers_toast = { $count ->
+    [one] Видалено { $count } тригер
+    [few] Видалено { $count } тригери
+    [many] Видалено { $count } тригерів
+   *[other] Видалено { $count } тригерів
+}
+
 ## Реєстр тригерів - сповіщення про скасування видалення
 
 triggers_toast_deleted = Видалено '{ $name }'

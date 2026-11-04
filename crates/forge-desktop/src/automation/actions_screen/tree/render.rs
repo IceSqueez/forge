@@ -4,7 +4,7 @@ use forge_components::SEARCH_FIELD_WIDTH;
 use forge_components::{
     ActivePresentation, BORDER_THIN, ChipGlyph, ConfirmTone, FONT_XS, FONT_XXS, Icon, ResizeEdge,
     ResizeRange, chip, confirm_modal, context_menu, header_stat, header_stats, icon,
-    install_resize, menu_divider, menu_item, scaled,
+    install_resize, menu_divider, menu_item, scaled, selection_bar_height,
 };
 use gpui::{App, MouseButton, MouseDownEvent, Rgba};
 
@@ -233,6 +233,9 @@ impl ActionTree {
             .min_h(px(0.0))
             .py(spacing(Spacing::Xs, density))
             .overflow_y_scroll()
+            .when(self.marked.is_bulk(), |list| {
+                list.pb(selection_bar_height(density))
+            })
             .children(rows);
 
         let panel = div()
@@ -244,7 +247,9 @@ impl ActionTree {
             .bg(palette.shell)
             .border_r(BORDER_THIN)
             .border_color(palette.border_regular)
-            .child(inner);
+            .relative()
+            .child(inner)
+            .children(self.render_bulk_bar(palette, cx));
 
         install_resize(
             panel,
@@ -315,7 +320,7 @@ impl ActionTree {
     ) -> AnyElement {
         let density = cx.density();
         let id = action.id;
-        let selected = self.selected == Some(id);
+        let selected = self.selected == Some(id) || self.marked.bulk_contains(&id);
         let hovered = self.hovered == Some(id);
         let renaming = self.renaming.as_ref().filter(|r| r.id == id);
 
@@ -398,7 +403,9 @@ impl ActionTree {
             return row.into_any_element();
         }
         row.cursor_pointer()
-            .on_click(cx.listener(move |this, _: &ClickEvent, _, cx| this.select(id, cx)))
+            .on_click(cx.listener(move |this, event: &ClickEvent, _, cx| {
+                this.click_row(id, SelectGesture::from_modifiers(&event.modifiers()), cx)
+            }))
             .into_any_element()
     }
 
@@ -510,6 +517,9 @@ impl ActionTree {
         palette: &ForgePalette,
         cx: &mut Context<Self>,
     ) -> Option<AnyElement> {
+        if let Some(ids) = self.pending_bulk_delete.get() {
+            return Some(self.render_bulk_delete_confirm(ids.len(), palette, cx));
+        }
         let id = self.pending_delete.get().copied()?;
         Some(self.render_delete_confirm(id, palette, cx))
     }

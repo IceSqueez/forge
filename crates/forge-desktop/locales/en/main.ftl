@@ -1177,6 +1177,45 @@ triggers_confirm_delete_body = This deletes the trigger instance permanently.
 
 ## Triggers registry - rename dialog
 
+## Actions and triggers lists - bulk selection
+
+bulk_selected_count = { $count } selected
+bulk_enable_all = Enable all
+bulk_disable_all = Disable all
+bulk_delete_all = Delete all
+bulk_clear = Clear
+bulk_delete_actions_title = { $count ->
+    [one] Delete { $count } action?
+   *[other] Delete { $count } actions?
+}
+bulk_delete_actions_body = This will remove the selected actions and all of their steps and triggers. Any pending scheduled runs of these actions will be cancelled too.
+bulk_deleted_actions_toast = { $count ->
+    [one] Deleted { $count } action
+   *[other] Deleted { $count } actions
+}
+bulk_disable_triggers_title = { $count ->
+    [one] Disable { $count } trigger?
+   *[other] Disable { $count } triggers?
+}
+bulk_disable_triggers_body = { $count ->
+    [one] { $count } of the selected triggers is used by actions. Disabling pauses it for those actions. Continue?
+   *[other] { $count } of the selected triggers are used by actions. Disabling pauses them for those actions. Continue?
+}
+bulk_delete_triggers_title = { $count ->
+    [one] Delete { $count } trigger?
+   *[other] Delete { $count } triggers?
+}
+bulk_delete_triggers_body = This deletes the selected trigger instances permanently.
+bulk_delete_triggers_body_kept = This deletes the selected trigger instances permanently. { $kept ->
+    [one] { $kept } trigger used by actions will be kept.
+   *[other] { $kept } triggers used by actions will be kept.
+}
+bulk_delete_triggers_blocked = Remove these triggers from all actions before deleting.
+bulk_deleted_triggers_toast = { $count ->
+    [one] Deleted { $count } trigger
+   *[other] Deleted { $count } triggers
+}
+
 ## Triggers registry - delete undo toast
 
 triggers_toast_deleted = Deleted '{ $name }'

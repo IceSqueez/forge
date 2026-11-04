@@ -103,14 +103,14 @@ mod tests {
         fn config_fields(&self) -> Vec<SectionedField> {
             vec![
                 in_section(
-                    ConfigSection::Behavior,
+                    ConfigSection::Timing,
                     FormField::Toggle {
                         key: PROBE_TOGGLE,
                         label: "Toggle",
                     },
                 ),
                 in_section(
-                    ConfigSection::Behavior,
+                    ConfigSection::Timing,
                     FormField::Integer {
                         key: PROBE_INTEGER,
                         label: "Integer",
@@ -119,7 +119,7 @@ mod tests {
                     },
                 ),
                 in_section(
-                    ConfigSection::Behavior,
+                    ConfigSection::Timing,
                     FormField::UnitAmount {
                         key: PROBE_AMOUNT,
                         label: "Amount",
@@ -128,7 +128,7 @@ mod tests {
                     },
                 ),
                 in_section(
-                    ConfigSection::Behavior,
+                    ConfigSection::Timing,
                     FormField::Duration {
                         key: PROBE_DURATION,
                         label: "Duration",
@@ -136,7 +136,7 @@ mod tests {
                     },
                 ),
                 in_section(
-                    ConfigSection::Behavior,
+                    ConfigSection::Timing,
                     FormField::Optional {
                         key: PROBE_OPTIONAL,
                         label: "Optional",

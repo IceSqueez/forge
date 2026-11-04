@@ -4,7 +4,7 @@ use common::{ALERT_KIND, registry};
 use std::collections::BTreeSet;
 
 use forge_overlay::config::POSITION_OPTIONS;
-use forge_overlay::{BEHAVIOR_FILE, ConfigSection, RESERVED_DIRECTORY, RUNTIME_ASSET, STYLE_FILE};
+use forge_overlay::{BEHAVIOR_FILE, RESERVED_DIRECTORY, RUNTIME_ASSET, STYLE_FILE};
 
 const ICON_BOX_MARKER: &str = "class=\"icon\"";
 
@@ -132,10 +132,9 @@ fn every_kind_that_draws_a_page_takes_its_colors_and_font_from_runtime_custom_pr
 fn a_look_that_draws_no_page_adds_no_style_or_behavior_field_of_its_own() {
     for descriptor in registry().all().filter(|d| !d.has_visual_page()) {
         for sectioned in descriptor.look_fields() {
-            assert_eq!(
-                sectioned.section,
-                ConfigSection::Content,
-                "{} declares {} outside its content group, which nothing on a silent page reads",
+            assert!(
+                sectioned.delivered,
+                "{} declares {} that is not delivered per show, which nothing on a silent page reads",
                 descriptor.id(),
                 sectioned.field.key()
             );

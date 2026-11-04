@@ -574,7 +574,8 @@ mod panel_tests {
     fn color_specs() -> Vec<SectionedField> {
         vec![
             SectionedField {
-                section: ConfigSection::Style,
+                section: ConfigSection::Text,
+                delivered: false,
                 field: FormField::Swatch {
                     key: TEXT_COLOR,
                     label: "Text color",
@@ -582,7 +583,8 @@ mod panel_tests {
                 },
             },
             SectionedField {
-                section: ConfigSection::Style,
+                section: ConfigSection::Card,
+                delivered: false,
                 field: FormField::Swatch {
                     key: BORDER_COLOR,
                     label: "Border color",
@@ -590,7 +592,8 @@ mod panel_tests {
                 },
             },
             SectionedField {
-                section: ConfigSection::Style,
+                section: ConfigSection::Card,
+                delivered: false,
                 field: FormField::Swatch {
                     key: BACKGROUND_COLOR,
                     label: "Background color",

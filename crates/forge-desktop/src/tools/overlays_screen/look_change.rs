@@ -176,7 +176,8 @@ mod tests {
 
         fn look_fields(&self) -> Vec<SectionedField> {
             vec![SectionedField {
-                section: ConfigSection::Style,
+                section: ConfigSection::Card,
+                delivered: false,
                 field: FormField::Optional {
                     key: GUARDED,
                     label: "Outline",

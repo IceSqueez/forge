@@ -8,7 +8,6 @@ use common::{CHAT_KIND, registry};
 
 use std::collections::BTreeSet;
 
-use forge_overlay::ConfigSection;
 use forge_overlay::config::{
     ACCENT, BORDER_COLOR, DESIGN_WIDTH, FONT, HEADLINE, MARGIN_LEFT, MARGIN_TOP, PLATFORM,
     POSITION, TEXT_COLOR, TEXT_SIZE,
@@ -261,7 +260,7 @@ fn a_look_lists_its_own_config_keys_in_descriptor_order_without_the_ones_the_run
         let mut expected = Vec::new();
         for sectioned in descriptor.look_fields() {
             let key = sectioned.field.key();
-            if sectioned.section == ConfigSection::Content {
+            if sectioned.delivered {
                 continue;
             }
             if RUNTIME_APPLIED_LOOK_KEYS.contains(&key) {

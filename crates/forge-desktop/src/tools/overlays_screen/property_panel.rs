@@ -842,7 +842,7 @@ pub(crate) mod tests {
     use forge_components::{Density, ThemeId};
     use forge_overlay::config::{
         ACCENT, ACCENT_MAUVE_HEX, ACCENT_OPTIONS, ACCENT_SKY_HEX, HEADLINE, ICON, ICON_OPTIONS_KEY,
-        SOUND, TEXT_COLOR, with_split_accent,
+        POSITION, SOUND, TEXT_COLOR, with_split_accent,
     };
     use forge_overlay::config::{
         DESIGN_HEIGHT, DESIGN_SIZE_MAX_PX, DESIGN_SIZE_MIN_PX, DESIGN_WIDTH, MARGIN_BOTTOM,
@@ -861,7 +861,6 @@ pub(crate) mod tests {
 
     use super::super::base_sections::BaseLaunch;
     use super::super::look_change::look_summary;
-    use super::super::sizing_section::is_source_box_key;
     use super::*;
     use crate::test_support::{StubEventLog, click_selector, pump, runtime, test_backend};
     use forge_components::Presentation;
@@ -994,6 +993,7 @@ pub(crate) mod tests {
         vec![
             SectionedField {
                 section: ConfigSection::Content,
+                delivered: true,
                 field: FormField::Text {
                     key: HEADLINE,
                     label: "Headline",
@@ -1001,7 +1001,8 @@ pub(crate) mod tests {
                 },
             },
             SectionedField {
-                section: ConfigSection::Style,
+                section: ConfigSection::Card,
+                delivered: false,
                 field: FormField::Integer {
                     key: ELEMENT_WIDTH,
                     label: "Width",
@@ -1010,7 +1011,8 @@ pub(crate) mod tests {
                 },
             },
             SectionedField {
-                section: ConfigSection::Style,
+                section: ConfigSection::Text,
+                delivered: false,
                 field: FormField::Swatch {
                     key: TEXT_COLOR,
                     label: "Text color",
@@ -1018,7 +1020,8 @@ pub(crate) mod tests {
                 },
             },
             SectionedField {
-                section: ConfigSection::Style,
+                section: ConfigSection::Card,
+                delivered: false,
                 field: FormField::Swatch {
                     key: BORDER_COLOR,
                     label: "Border color",
@@ -1094,7 +1097,8 @@ pub(crate) mod tests {
         ) -> Self {
             let mut sound_specs = specs();
             sound_specs.push(SectionedField {
-                section: ConfigSection::Behavior,
+                section: ConfigSection::Audio,
+                delivered: false,
                 field: FormField::DynamicSelect {
                     key: SOUND,
                     label: "Sound",
@@ -1516,7 +1520,8 @@ pub(crate) mod tests {
         fn with_icon_field(cx: &mut gpui::TestAppContext, stored: OverlayConfig) -> Self {
             let mut icon_specs = specs();
             icon_specs.push(SectionedField {
-                section: ConfigSection::Style,
+                section: ConfigSection::Content,
+                delivered: false,
                 field: FormField::DynamicSelect {
                     key: ICON,
                     label: "Icon",
@@ -1685,7 +1690,7 @@ pub(crate) mod tests {
         FrameOverlayKind
             .config_fields()
             .into_iter()
-            .filter(|sectioned| is_source_box_key(sectioned.field.key()))
+            .filter(|sectioned| sectioned.section == ConfigSection::Placement)
             .collect()
     }
 
@@ -1825,11 +1830,19 @@ pub(crate) mod tests {
     }
 
     fn show(cx: &mut gpui::TestAppContext, stored: OverlayConfig) -> Shown<'_> {
+        show_specs(cx, stored, source_specs())
+    }
+
+    fn show_specs(
+        cx: &mut gpui::TestAppContext,
+        stored: OverlayConfig,
+        specs: Vec<SectionedField>,
+    ) -> Shown<'_> {
         cx.update(forge_components::bind_picker_keys);
         let (launch, _repo, rt) = launch(
             cx,
             stored,
-            source_specs(),
+            specs,
             FrameOverlayKind.default_config(),
             HashMap::new(),
         );
@@ -1973,6 +1986,134 @@ pub(crate) mod tests {
             effective.get(BORDER_COLOR),
             Some(&Variant::String("mauve".into())),
             "saved {saved:?}"
+        );
+    }
+
+    const PROBE_OPTIONS: &[&str] = &["one", "two"];
+    const TALL_PANEL_H: f32 = 4000.0;
+    const PROBES_IN_PANEL_ORDER: [(ConfigSection, &str, &str); 8] = [
+        (
+            ConfigSection::Content,
+            "probe_content",
+            "overlays-panel-probe_content",
+        ),
+        (
+            ConfigSection::Text,
+            "probe_text",
+            "overlays-panel-probe_text",
+        ),
+        (
+            ConfigSection::Card,
+            "probe_card",
+            "overlays-panel-probe_card",
+        ),
+        (
+            ConfigSection::Placement,
+            POSITION,
+            "overlays-panel-position",
+        ),
+        (
+            ConfigSection::Motion,
+            "probe_motion",
+            "overlays-panel-probe_motion",
+        ),
+        (
+            ConfigSection::Chat,
+            "probe_chat",
+            "overlays-panel-probe_chat",
+        ),
+        (
+            ConfigSection::Audio,
+            "probe_audio",
+            "overlays-panel-probe_audio",
+        ),
+        (
+            ConfigSection::Timing,
+            "probe_timing",
+            "overlays-panel-probe_timing",
+        ),
+    ];
+
+    fn probe(section: ConfigSection, key: &'static str) -> SectionedField {
+        SectionedField {
+            section,
+            delivered: false,
+            field: FormField::Select {
+                key,
+                label: key,
+                options: PROBE_OPTIONS,
+            },
+        }
+    }
+
+    #[gpui::test]
+    fn sections_render_in_the_panel_order_whatever_order_the_look_declares_them(
+        cx: &mut gpui::TestAppContext,
+    ) {
+        let declared_backwards = PROBES_IN_PANEL_ORDER
+            .iter()
+            .rev()
+            .map(|(section, key, _)| probe(*section, key))
+            .collect();
+        let shown = show_specs(cx, OverlayConfig::new(), declared_backwards);
+        shown
+            .vcx
+            .simulate_resize(gpui::size(PANE_W, px(TALL_PANEL_H)));
+        shown.vcx.run_until_parked();
+
+        let tops: Vec<(&str, Pixels)> = PROBES_IN_PANEL_ORDER
+            .iter()
+            .map(|(_, key, selector)| {
+                let bounds = shown
+                    .vcx
+                    .debug_bounds(selector)
+                    .unwrap_or_else(|| panic!("the panel never painted {key}"));
+                (*key, bounds.origin.y)
+            })
+            .collect();
+        for pair in tops.windows(2) {
+            assert!(
+                pair[0].1 < pair[1].1,
+                "{} rendered below {}, against the panel section order",
+                pair[0].0,
+                pair[1].0
+            );
+        }
+    }
+
+    #[gpui::test]
+    fn a_section_the_look_gives_no_field_is_left_out_of_the_panel(cx: &mut gpui::TestAppContext) {
+        let fixture = Fixture::new(cx, OverlayConfig::new());
+
+        let rendered: Vec<(ConfigSection, bool)> = fixture.panel().update(cx, |panel, cx| {
+            let palette = cx.palette();
+            FIELD_SECTIONS
+                .iter()
+                .map(|section| {
+                    let shown = match section {
+                        ConfigSection::Placement => {
+                            panel.render_placement_section(&palette, cx).is_some()
+                        }
+                        _ => panel.render_section(*section, &palette, cx).is_some(),
+                    };
+                    (*section, shown)
+                })
+                .collect()
+        });
+
+        assert_eq!(
+            rendered,
+            vec![
+                (ConfigSection::Content, true),
+                (ConfigSection::Text, true),
+                (ConfigSection::Card, true),
+                (ConfigSection::Placement, false),
+                (ConfigSection::Motion, false),
+                (ConfigSection::Chat, false),
+                (ConfigSection::Audio, false),
+                (ConfigSection::Timing, true),
+            ],
+            "only the sections holding a field, plus timing with its test fire, may show"
         );
     }
 }

@@ -197,10 +197,9 @@ impl OverlayPropertyPanel {
 
 #[cfg(test)]
 mod tests {
-    use forge_overlay::ConfigSection;
     use forge_overlay::config::{
         DESIGN_HEIGHT, DESIGN_WIDTH, DURATION, HEADLINE, MARGIN_BOTTOM, MARGIN_LEFT,
-        MARGIN_MAX_PERCENT, MARGIN_MIN_PERCENT, MARGIN_RIGHT, MARGIN_TOP, SOUND,
+        MARGIN_MAX_PERCENT, MARGIN_MIN_PERCENT, MARGIN_RIGHT, MARGIN_TOP,
     };
     use forge_overlay::kinds::chat::ChatOverlayKind;
     use forge_types::Variant;
@@ -391,27 +390,6 @@ mod tests {
             ),
             "the target look dropped the box the panel carried into the change"
         );
-    }
-
-    #[test]
-    fn source_box_keys_move_to_the_source_section_whatever_section_the_look_declares() {
-        for (key, declared, expected) in [
-            (DESIGN_WIDTH, ConfigSection::Style, PanelSection::Source),
-            (DESIGN_HEIGHT, ConfigSection::Content, PanelSection::Source),
-            (MARGIN_TOP, ConfigSection::Style, PanelSection::Source),
-            (MARGIN_RIGHT, ConfigSection::Behavior, PanelSection::Source),
-            (MARGIN_BOTTOM, ConfigSection::Style, PanelSection::Source),
-            (MARGIN_LEFT, ConfigSection::Style, PanelSection::Source),
-            (HEADLINE, ConfigSection::Style, PanelSection::Style),
-            (SOUND, ConfigSection::Behavior, PanelSection::Audio),
-            (DURATION, ConfigSection::Behavior, PanelSection::Display),
-        ] {
-            assert_eq!(
-                PanelSection::of(key, declared),
-                expected,
-                "{key} declared in {declared:?}"
-            );
-        }
     }
 
     #[test]

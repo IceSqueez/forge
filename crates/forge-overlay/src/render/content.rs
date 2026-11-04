@@ -93,9 +93,14 @@ mod tests {
     }
 
     #[test]
-    fn a_supplied_key_outside_the_kinds_content_group_never_reaches_the_page() {
+    fn a_supplied_key_the_kind_does_not_take_per_show_never_reaches_the_page() {
         let mut supplied = one(config::TEXT_COLOR, "red");
         supplied.insert(config::DURATION.to_owned(), Variant::Int(99));
+        supplied.insert(config::ICON.to_owned(), Variant::String("heart".to_owned()));
+        supplied.insert(
+            config::IMAGE.to_owned(),
+            Variant::String("cover".to_owned()),
+        );
         supplied.insert("vendor.future_key".to_owned(), Variant::Bool(true));
         supplied.insert(
             config::HEADLINE.to_owned(),
@@ -110,7 +115,13 @@ mod tests {
         );
 
         assert_eq!(text_at(&content, config::HEADLINE), "kept");
-        for smuggled in [config::TEXT_COLOR, config::DURATION, "vendor.future_key"] {
+        for smuggled in [
+            config::TEXT_COLOR,
+            config::DURATION,
+            config::ICON,
+            config::IMAGE,
+            "vendor.future_key",
+        ] {
             assert!(
                 !content.contains_key(smuggled),
                 "a step overrode '{smuggled}', which belongs to the overlay and not to a delivery"

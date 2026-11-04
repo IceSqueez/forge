@@ -61,6 +61,10 @@ impl FormSchemaSource for OverlayContentSchema {
 
 #[cfg(test)]
 mod tests {
+    use forge_overlay::config::{
+        AUTHOR, AUTHOR_COLOR, AVATAR, BADGES, EVENT, HEADLINE, LABEL, MESSAGE, MESSAGE_ID,
+        PLACEHOLDER, PLATFORM, SPEECH, SUBLINE, TARGET, USER_ID, VALUE,
+    };
     use forge_overlay::register_builtin_kinds;
 
     use super::*;
@@ -81,6 +85,51 @@ mod tests {
             ("overlay.removed_in_a_later_build", true),
         ] {
             assert_eq!(schema.takes_sends(kind_id), expected, "{kind_id}");
+        }
+    }
+
+    #[test]
+    fn the_send_form_of_each_look_offers_exactly_the_fields_a_show_carries_in_their_order() {
+        let looks = [
+            ("overlay.alert", vec![HEADLINE, SUBLINE, SPEECH]),
+            ("overlay.blank", vec![SPEECH]),
+            (
+                "overlay.chat",
+                vec![
+                    AUTHOR,
+                    AUTHOR_COLOR,
+                    BADGES,
+                    MESSAGE,
+                    PLATFORM,
+                    MESSAGE_ID,
+                    USER_ID,
+                    EVENT,
+                    AVATAR,
+                    SPEECH,
+                ],
+            ),
+            ("overlay.frame", vec![HEADLINE, SUBLINE, SPEECH]),
+            ("overlay.goal", vec![LABEL, VALUE, TARGET, SPEECH]),
+            (
+                "overlay.latest",
+                vec![LABEL, HEADLINE, SUBLINE, PLACEHOLDER],
+            ),
+            ("overlay.ticker", vec![HEADLINE, SUBLINE, SPEECH]),
+        ];
+        let schema = schema().with_identities(
+            looks
+                .iter()
+                .map(|(kind_id, _)| ((*kind_id).to_owned(), (*kind_id).to_owned()))
+                .collect(),
+        );
+
+        for (kind_id, expected) in looks {
+            let offered: Vec<String> = schema
+                .fields_for(CONTENT_SCHEMA_KEY, kind_id)
+                .iter()
+                .map(|field| field.key().to_owned())
+                .collect();
+            assert_eq!(offered, expected, "{kind_id}");
         }
     }
 }

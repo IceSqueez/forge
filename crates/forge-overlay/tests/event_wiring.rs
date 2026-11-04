@@ -11,9 +11,7 @@ use std::collections::BTreeSet;
 use forge_overlay::PreviewComposition;
 use forge_overlay::config::{HEADLINE, SUBLINE};
 use forge_overlay::kinds::alert::AlertOverlayKind;
-use forge_overlay::{
-    ConfigSection, DeliveryDisposition, OverlayConfig, OverlayKindDescriptor, SectionedField,
-};
+use forge_overlay::{DeliveryDisposition, OverlayConfig, OverlayKindDescriptor, SectionedField};
 use forge_overlay::{
     EventWiringTrigger, OverlayKindRegistry, PageAssets, accepts_event_wiring, order_curated_first,
     register_builtin_kinds, suggested_content,
@@ -318,7 +316,7 @@ fn a_content_key_the_model_has_no_line_for_is_left_out_rather_than_invented() {
     let content_keys: BTreeSet<&str> = goal
         .config_fields()
         .iter()
-        .filter(|sectioned| sectioned.section == ConfigSection::Content)
+        .filter(|sectioned| sectioned.delivered)
         .map(|sectioned| sectioned.field.key())
         .collect();
 

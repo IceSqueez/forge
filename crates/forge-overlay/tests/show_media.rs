@@ -9,9 +9,9 @@ use std::fs;
 
 use forge_overlay::config::{HEADLINE, IMAGE, SOUND};
 use forge_overlay::{
-    OverlayConfig, OverlayError, RUNTIME_SOURCE, ResolvedMedia, SHOW_IMAGE, SHOW_MEDIA_DIRECTORY,
-    SHOW_SOUND, clear_show_media, clip_reference, image_reference, materialize_overlay,
-    place_show_media, show_media_overrides, show_media_page_path, without_show_media,
+    OverlayConfig, RUNTIME_SOURCE, ResolvedMedia, SHOW_IMAGE, SHOW_MEDIA_DIRECTORY, SHOW_SOUND,
+    clear_show_media, clip_reference, image_reference, materialize_overlay, place_show_media,
+    show_media_overrides, show_media_page_path, without_show_media,
 };
 use forge_types::{ArgStack, Variant};
 use tempfile::TempDir;
@@ -204,11 +204,17 @@ fn a_show_media_folder_that_is_a_symbolic_link_is_refused_both_ways() {
     let cleared = clear_show_media(&root, IDENTITY);
 
     assert!(
-        matches!(placed, Err(OverlayError::SymlinkedPath { .. })),
+        matches!(
+            placed,
+            Err(forge_overlay::OverlayError::SymlinkedPath { .. })
+        ),
         "{placed:?}"
     );
     assert!(
-        matches!(cleared, Err(OverlayError::SymlinkedPath { .. })),
+        matches!(
+            cleared,
+            Err(forge_overlay::OverlayError::SymlinkedPath { .. })
+        ),
         "{cleared:?}"
     );
     assert_eq!(names_in(&elsewhere), vec!["keep.txt".to_owned()]);

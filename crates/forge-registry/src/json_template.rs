@@ -32,8 +32,11 @@ pub(crate) fn interpolate_json(template: &str, args: &ArgStack) -> String {
                 state.advance(text);
                 result.push_str(text);
             }
+            TemplatePiece::Reference { raw, .. } if state.in_string && state.escaped => {
+                state.advance(raw);
+                result.push_str(raw);
+            }
             TemplatePiece::Reference { raw, .. } if state.in_string => {
-                state.escaped = false;
                 push_string_contents(&mut result, &args.interpolate(raw));
             }
             TemplatePiece::Reference { name, format, raw } => match args.resolve(name) {
@@ -45,7 +48,10 @@ pub(crate) fn interpolate_json(template: &str, args: &ArgStack) -> String {
                     push_string_contents(&mut result, &args.interpolate(raw));
                     result.push(QUOTE);
                 }
-                None => result.push_str(raw),
+                None => {
+                    state.advance(raw);
+                    result.push_str(raw);
+                }
             },
         }
     }

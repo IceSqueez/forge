@@ -115,13 +115,13 @@ fn sized(root: Div, plan: ElementPlan) -> Div {
 
     let root = match sizing.width {
         Some(AxisBound::Exact) => root.w(whole_box()),
-        Some(AxisBound::AtMost) => root.max_w(whole_box()),
+        Some(AxisBound::AtMost | AxisBound::AtMostCardMax) => root.max_w(whole_box()),
         None => root,
     };
 
     match sizing.height {
         Some(AxisBound::Exact) => root.h(whole_box()),
-        Some(AxisBound::AtMost) => root.max_h(whole_box()),
+        Some(AxisBound::AtMost | AxisBound::AtMostCardMax) => root.max_h(whole_box()),
         None => root,
     }
 }

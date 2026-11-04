@@ -199,6 +199,7 @@ pub const TICKER: TickerMetrics = TickerMetrics {
 pub enum AxisBound {
     Exact,
     AtMost,
+    AtMostCardMax,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -209,8 +210,8 @@ pub struct ElementSizing {
 }
 
 pub const ALERT_SIZING: ElementSizing = ElementSizing {
-    width: Some(AxisBound::AtMost),
-    height: Some(AxisBound::AtMost),
+    width: Some(AxisBound::AtMostCardMax),
+    height: Some(AxisBound::AtMostCardMax),
     base_text_size: ALERT.headline_size,
 };
 
@@ -422,10 +423,15 @@ fn text_scale(base: f32) -> String {
     format!("{TEXT_SCALE_PROPERTY}: calc(var({TEXT_SIZE_PROPERTY}, {base}) / {base});")
 }
 
+const CARD_MAX_PROPERTY_PREFIX: &str = "--card-max-";
+
 fn axis_extent(axis: &str, bound: AxisBound) -> String {
     match bound {
         AxisBound::Exact => format!("{axis}: {WHOLE_BOX};"),
         AxisBound::AtMost => format!("max-{axis}: {WHOLE_BOX};"),
+        AxisBound::AtMostCardMax => format!(
+            "max-{axis}: min(var({CARD_MAX_PROPERTY_PREFIX}{axis}, {WHOLE_BOX}), {WHOLE_BOX});"
+        ),
     }
 }
 

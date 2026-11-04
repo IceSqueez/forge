@@ -193,7 +193,10 @@ impl TriggerList {
         .density(density)
         .action(
             icon_button(Icon::CircleCheckFilled, palette)
-                .tooltip(tr!("bulk_enable_selected", count = count_arg(self.marked_where(|row| !row.enabled).len())))
+                .tooltip(tr!(
+                    "bulk_enable_selected",
+                    count = count_arg(self.marked_where(|row| !row.enabled).len())
+                ))
                 .disabled(!any_disabled)
                 .on_click(
                     "triggers-bulk-enable",
@@ -202,7 +205,10 @@ impl TriggerList {
         )
         .action(
             icon_button(Icon::Circle, palette)
-                .tooltip(tr!("bulk_disable_selected", count = count_arg(self.marked_where(|row| row.enabled).len())))
+                .tooltip(tr!(
+                    "bulk_disable_selected",
+                    count = count_arg(self.marked_where(|row| row.enabled).len())
+                ))
                 .disabled(!any_enabled)
                 .on_click(
                     "triggers-bulk-disable",
@@ -211,7 +217,10 @@ impl TriggerList {
         )
         .action(
             icon_button(Icon::Eraser, palette)
-                .tooltip(tr!("bulk_delete_selected", count = count_arg(self.marked.len())))
+                .tooltip(tr!(
+                    "bulk_delete_selected",
+                    count = count_arg(self.marked.len())
+                ))
                 .ink(palette.danger)
                 .on_click(
                     "triggers-bulk-delete",

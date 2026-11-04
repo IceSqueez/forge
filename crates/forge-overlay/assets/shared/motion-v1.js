@@ -329,6 +329,7 @@
       layer: null,
       frame: 0,
       timer: 0,
+      particlesEndMs: 0,
       done: null,
       settled: false,
     };
@@ -372,6 +373,12 @@
   function cancelAll() {
     Array.from(active.values()).forEach(function (handle) {
       settle(handle, false);
+    });
+  }
+
+  function finishAll() {
+    Array.from(active.values()).forEach(function (handle) {
+      settle(handle, true);
     });
   }
 
@@ -459,6 +466,9 @@
       settle(handle, true);
       return;
     }
+    handle.timer = window.setTimeout(function () {
+      settle(handle, true);
+    }, plannedEndMs(handle));
     Promise.all(
       handle.animations
         .map(function (animation) {
@@ -471,6 +481,12 @@
       },
       function () {},
     );
+  }
+
+  function plannedEndMs(handle) {
+    return handle.animations.reduce(function (latest, animation) {
+      return Math.max(latest, animation.effect.getComputedTiming().endTime);
+    }, handle.particlesEndMs);
   }
 
   function textTargets(element) {
@@ -1074,9 +1090,11 @@
     if (!surface) {
       return;
     }
-    handle.pending.push(
-      runParticles(handle, surface, build(localRect(rect, surface.box), rect)),
-    );
+    var particles = build(localRect(rect, surface.box), rect);
+    handle.particlesEndMs = particles.reduce(function (latest, particle) {
+      return Math.max(latest, particle.delay + particle.life);
+    }, handle.particlesEndMs);
+    handle.pending.push(runParticles(handle, surface, particles));
   }
 
   function burst(handle, motionPlan, rng) {
@@ -1465,6 +1483,7 @@
     exit: exit,
     cancel: cancel,
     cancelAll: cancelAll,
+    finishAll: finishAll,
     owns: owns,
   });
 })();

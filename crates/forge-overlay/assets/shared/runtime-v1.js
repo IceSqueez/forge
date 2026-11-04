@@ -140,6 +140,15 @@
  * that cannot be delivered, and a clip that never produces one, are both left
  * to forge's own window to close. A preview page ignores audio transport.
  *
+ * A page nobody can see shows content without motion. While the document is
+ * hidden, or OBS reports the browser source not visible through its
+ * obsSourceVisibleChanged event, a reveal or hide lands on its final state at
+ * once, because a hidden page may never run the frames an entrance waits on.
+ * When either visibility changes, motion still playing jumps to its end and a
+ * hide whose time already passed happens then, so a persistent overlay is up
+ * the moment its source is seen and a transient show that ran out unseen
+ * never appears late.
+ *
  * A clear frame arrives just before forge closes the connection because this
  * overlay was disabled. The page is hidden in place, not reloaded, so nothing
  * stale keeps showing while the socket sits closed. The connection's own
@@ -174,6 +183,8 @@
   var RECONNECT_CAP_MS = 15000;
   var RELOAD_DELAY_MS = 250;
   var LOG_PREFIX = "forge overlay:";
+  var VISIBILITY_EVENT = "visibilitychange";
+  var SOURCE_VISIBLE_EVENT = "obsSourceVisibleChanged";
 
   var VERDICT_PLAYED = "played";
   var VERDICT_REFUSED = "refused";
@@ -235,6 +246,7 @@
   var showSeed = 0;
   var previewSample = null;
   var hidesAfterSpeech = [];
+  var sourceHidden = false;
 
   var config = null;
   var credential = "";
@@ -944,19 +956,24 @@
     return target && target.nodeType === window.Node.ELEMENT_NODE ? [target] : [];
   }
 
+  function unseen() {
+    return document_.hidden || sourceHidden;
+  }
+
   function reveal(node, windowMs) {
     var engine = motion();
     if (engine) {
       engine.cancel(node);
     }
     node.classList.remove(HIDDEN_CLASS);
-    if (engine && config) {
+    if (engine && config && !unseen()) {
       engine.enter(node, engine.plan(config, windowMs), showSeed);
     }
   }
 
   function conceal(nodes, then) {
     var engine = motion();
+    var still = unseen();
     var remaining = nodes.length;
     var concealed = function (node) {
       node.classList.add(HIDDEN_CLASS);
@@ -970,7 +987,10 @@
       return;
     }
     nodes.forEach(function (node) {
-      if (!engine || !config) {
+      if (!engine || !config || still) {
+        if (engine) {
+          engine.cancel(node);
+        }
         concealed(node);
         return;
       }
@@ -1003,22 +1023,44 @@
 
     var pending = hideTimers.get(target);
     if (pending) {
-      window.clearTimeout(pending);
+      window.clearTimeout(pending.timer);
       hideTimers.delete(target);
     }
     if (!(windowMs > 0)) {
       return;
     }
 
-    hideTimers.set(
-      target,
-      window.setTimeout(function () {
+    var hide = {
+      dueAt: window.performance.now() + windowMs,
+      fire: function () {
+        window.clearTimeout(hide.timer);
         hideTimers.delete(target);
         hideAfterSpeech(function () {
           conceal(nodes, replayPreview);
         });
-      }, windowMs),
-    );
+      },
+    };
+    hide.timer = window.setTimeout(hide.fire, windowMs);
+    hideTimers.set(target, hide);
+  }
+
+  function catchUp() {
+    var engine = motion();
+    if (engine) {
+      engine.finishAll();
+    }
+    var now = window.performance.now();
+    Array.from(hideTimers.values()).forEach(function (hide) {
+      if (hide.dueAt <= now) {
+        hide.fire();
+      }
+    });
+  }
+
+  function sourceVisibilityChanged(event) {
+    var detail = event && event.detail;
+    sourceHidden = Boolean(detail && detail.visible === false);
+    catchUp();
   }
 
   /* The page plays the sound, so it reaches the stream through the browser
@@ -1068,6 +1110,9 @@
     remove: remove,
     avatar: avatar,
   });
+
+  document_.addEventListener(VISIBILITY_EVENT, catchUp);
+  window.addEventListener(SOURCE_VISIBLE_EVENT, sourceVisibilityChanged);
 
   window.addEventListener("resize", function () {
     if (config) {

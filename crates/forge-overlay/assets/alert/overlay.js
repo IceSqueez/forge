@@ -12,6 +12,24 @@ var IMAGE_BELOW_CLASS = "image-below";
 var IMAGE_POSITION_BELOW = "below";
 var IMAGE_POSITION_LEFT = "left";
 var IMAGE_POSITION_RIGHT = "right";
+var TEXT_CUT_CLASS = "text-cut";
+var TEXT_OVERFLOW_ELLIPSIS = "ellipsis";
+var CARD_BOUNDS = [
+  { key: "card_min_width", property: "--card-min-width" },
+  { key: "card_min_height", property: "--card-min-height" },
+  {
+    key: "card_max_width",
+    property: "--card-max-width",
+    limitedBy: "card_width_limited",
+    cappedClass: "width-capped",
+  },
+  {
+    key: "card_max_height",
+    property: "--card-max-height",
+    limitedBy: "card_height_limited",
+    cappedClass: "height-capped",
+  },
+];
 var IMAGE_PLAY_PARAMETER = "?play=";
 var FALLBACK_SURFACE = "#14141c";
 var HEX_COLOR = /^#([0-9a-f]{2})([0-9a-f]{2})([0-9a-f]{2})$/i;
@@ -21,6 +39,7 @@ var imagePlays = 0;
 forge.ready(function (config) {
   placeIcon(config.icon);
   paintSurface(config);
+  sizeCard(config);
   var image = placeImage(config);
 
   forge.content(function (values, durationMs) {
@@ -69,6 +88,25 @@ function paintSurface(config) {
   var channels = hexChannels(config.background_color) || hexChannels(FALLBACK_SURFACE);
   document.querySelector(STAGE_SELECTOR).style.background =
     "rgba(" + channels.join(", ") + ", " + opacity / PERCENT + ")";
+}
+
+function sizeCard(config) {
+  var stage = document.querySelector(STAGE_SELECTOR);
+
+  CARD_BOUNDS.forEach(function (bound) {
+    var value = config[bound.key];
+    var applies = !bound.limitedBy || config[bound.limitedBy] === true;
+    if (!applies || typeof value !== "number" || !isFinite(value) || value <= 0) {
+      return;
+    }
+    stage.style.setProperty(bound.property, value + "px");
+    if (bound.cappedClass) {
+      stage.classList.add(bound.cappedClass);
+    }
+  });
+  if (config.text_overflow === TEXT_OVERFLOW_ELLIPSIS) {
+    stage.classList.add(TEXT_CUT_CLASS);
+  }
 }
 
 function placeImage(config) {

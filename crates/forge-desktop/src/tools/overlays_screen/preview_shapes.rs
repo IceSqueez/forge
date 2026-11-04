@@ -6,12 +6,13 @@ use forge_overlay::metrics::{
     ALERT, BRIGHT_INK_RGB, CHAT, FRAME, GOAL, LATEST, MESSAGE_INK_RGB, SURFACE_RGB, TICKER,
 };
 use forge_overlay::{
-    AxisBound, ElementSizing, PreviewComposition, PreviewElement, PreviewFont, PreviewImageSide,
-    PreviewLabelSide, PreviewLineRole, PreviewMark, PreviewPosition, PreviewShape, TALLY_SEPARATOR,
+    AxisBound, ElementSizing, PreviewCard, PreviewComposition, PreviewElement, PreviewFont,
+    PreviewImageSide, PreviewLabelSide, PreviewLineRole, PreviewMark, PreviewPosition,
+    PreviewShape, PreviewTextOverflow, TALLY_SEPARATOR,
 };
 use gpui::{
     AnyElement, App, Div, FontWeight, HighlightStyle, Hsla, Length, Pixels, Rgba, SharedString,
-    StyledText, div, img, prelude::*, px, relative,
+    Size, StyledText, div, img, prelude::*, px, relative,
 };
 use std::ops::Range;
 use std::path::Path;
@@ -51,6 +52,7 @@ impl Scale {
 pub(super) struct ElementPlan {
     sizing: Option<ElementSizing>,
     text_scale: f32,
+    room: Option<Size<Pixels>>,
 }
 
 impl ElementPlan {
@@ -59,12 +61,50 @@ impl ElementPlan {
         let text_scale = sizing
             .zip(element.text_size)
             .map_or(UNSCALED_TEXT, |(sizing, size)| sizing.text_scale(size));
-        Self { sizing, text_scale }
+        Self {
+            sizing,
+            text_scale,
+            room: None,
+        }
+    }
+
+    pub(super) fn within(self, room: Size<Pixels>) -> Self {
+        Self {
+            room: Some(room),
+            ..self
+        }
     }
 
     pub(super) fn text_scale(self) -> f32 {
         self.text_scale
     }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub(super) struct CardExtent {
+    pub(super) least: Pixels,
+    pub(super) most: Option<Pixels>,
+}
+
+pub(super) fn card_extent(least: u32, most: Option<u32>, room: Pixels, scale: Scale) -> CardExtent {
+    let least = scale.at(least as f32).min(room);
+    CardExtent {
+        least,
+        most: most.map(|most| scale.at(most as f32).min(room).max(least)),
+    }
+}
+
+fn bounded_card(card: Div, bounds: Option<PreviewCard>, plan: ElementPlan, scale: Scale) -> Div {
+    let Some((bounds, room)) = bounds.zip(plan.room) else {
+        return card;
+    };
+    let width = card_extent(bounds.min_width, bounds.max_width, room.width, scale);
+    let height = card_extent(bounds.min_height, bounds.max_height, room.height, scale);
+
+    card.min_w(width.least)
+        .min_h(height.least)
+        .when_some(width.most, Div::max_w)
+        .when_some(height.most, Div::max_h)
 }
 
 fn sized(root: Div, plan: ElementPlan) -> Div {
@@ -170,10 +210,13 @@ fn badge_banner(
     glyphs: &StageGlyphs,
 ) -> AnyElement {
     let art = glyphs.icon.as_ref();
+    let cut = composition
+        .card
+        .is_some_and(|card| card.overflow == PreviewTextOverflow::Ellipsis);
     let mut lines = div().flex_1().min_w(px(0.0)).flex().flex_col();
 
     if let Some(text) = line_text(composition, PreviewLineRole::Headline) {
-        lines = lines.child(banner_headline(text, scale, family.clone()));
+        lines = lines.child(banner_headline(text, scale, family.clone(), cut));
     }
     if let Some(text) = line_text(composition, PreviewLineRole::Subline) {
         lines = lines.child(
@@ -181,11 +224,12 @@ fn badge_banner(
                 .font_family(family.clone())
                 .text_size(scale.text_at(ALERT.subline_size))
                 .text_color(accent)
+                .when(cut, Styled::truncate)
                 .child(text),
         );
     }
     if composition.lines.is_empty() {
-        lines = lines.child(banner_headline(PLACEHOLDER.into(), scale, family));
+        lines = lines.child(banner_headline(PLACEHOLDER.into(), scale, family, cut));
     }
 
     let message = div()
@@ -220,7 +264,9 @@ fn badge_banner(
         .flex_none()
         .flex()
         .items_center()
+        .justify_center()
         .when(stacked, |card| card.flex_col())
+        .overflow_hidden()
         .gap(scale.text_at(ALERT.gap))
         .py(scale.text_at(ALERT.padding_block))
         .px(scale.text_at(ALERT.padding_inline))
@@ -235,7 +281,7 @@ fn badge_banner(
         .child(message)
         .children(trailing);
 
-    sized(card, plan).into_any_element()
+    bounded_card(sized(card, plan), composition.card, plan, scale).into_any_element()
 }
 
 fn banner_picture(path: &Arc<Path>, height: u16, scale: Scale) -> impl IntoElement {
@@ -245,12 +291,18 @@ fn banner_picture(path: &Arc<Path>, height: u16, scale: Scale) -> impl IntoEleme
         .h(scale.at(f32::from(height)))
 }
 
-fn banner_headline(text: SharedString, scale: Scale, family: SharedString) -> impl IntoElement {
+fn banner_headline(
+    text: SharedString,
+    scale: Scale,
+    family: SharedString,
+    cut: bool,
+) -> impl IntoElement {
     div()
         .font_family(family)
         .font_weight(FontWeight::BOLD)
         .text_size(scale.text_at(ALERT.headline_size))
         .text_color(bright_ink())
+        .when(cut, Styled::truncate)
         .child(text)
 }
 

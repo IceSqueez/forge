@@ -118,6 +118,21 @@ pub struct PreviewImage {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum PreviewTextOverflow {
+    Wrap,
+    Ellipsis,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct PreviewCard {
+    pub min_width: u32,
+    pub min_height: u32,
+    pub max_width: Option<u32>,
+    pub max_height: Option<u32>,
+    pub overflow: PreviewTextOverflow,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum PreviewLabelSide {
     Left,
     Center,
@@ -172,6 +187,7 @@ pub struct PreviewComposition {
     pub mark: Option<PreviewMark>,
     pub surface: Option<PreviewSurface>,
     pub image: Option<PreviewImage>,
+    pub card: Option<PreviewCard>,
     pub label: Option<PreviewLabel>,
     pub author_ink: Option<[u8; 3]>,
 }
@@ -194,6 +210,7 @@ pub(crate) fn compose(
         mark: mark_of(shape, config),
         surface: surface_of(shape, config),
         image: image_of(shape, config),
+        card: card_of(shape, config),
         label: label_of(shape, config),
         author_ink: author_ink_of(shape, config),
     }
@@ -273,6 +290,43 @@ fn image_of(shape: PreviewShape, config: &OverlayConfig) -> Option<PreviewImage>
             config::IMAGE_HEIGHT_MAX_PX,
         )?)
         .ok()?,
+    })
+}
+
+fn card_of(shape: PreviewShape, config: &OverlayConfig) -> Option<PreviewCard> {
+    if shape != PreviewShape::BadgeBanner {
+        return None;
+    }
+    let least = |key| {
+        bounded_px(
+            config,
+            key,
+            config::CARD_MIN_SIZE_MIN_PX,
+            config::CARD_SIZE_MAX_PX,
+        )
+        .unwrap_or_default()
+    };
+    let most = |toggle, key| {
+        (config.get(toggle).and_then(Variant::as_bool) == Some(true))
+            .then(|| {
+                bounded_px(
+                    config,
+                    key,
+                    config::CARD_MAX_SIZE_MIN_PX,
+                    config::CARD_SIZE_MAX_PX,
+                )
+            })
+            .flatten()
+    };
+    Some(PreviewCard {
+        min_width: least(config::CARD_MIN_WIDTH),
+        min_height: least(config::CARD_MIN_HEIGHT),
+        max_width: most(config::CARD_WIDTH_LIMITED, config::CARD_MAX_WIDTH),
+        max_height: most(config::CARD_HEIGHT_LIMITED, config::CARD_MAX_HEIGHT),
+        overflow: match config::read_str(config, config::TEXT_OVERFLOW) {
+            config::TEXT_OVERFLOW_ELLIPSIS => PreviewTextOverflow::Ellipsis,
+            _ => PreviewTextOverflow::Wrap,
+        },
     })
 }
 

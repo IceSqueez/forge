@@ -14,7 +14,7 @@ use crate::render::preview::{PreviewComposition, PreviewShape, compose};
 
 pub const KIND_ID: &str = "overlay.alert";
 
-pub const CONFIG_SCHEMA_VERSION: u32 = 5;
+pub const CONFIG_SCHEMA_VERSION: u32 = 6;
 
 const DESIGN_WIDTH_PX: u32 = 800;
 const DESIGN_HEIGHT_PX: u32 = 600;
@@ -107,6 +107,7 @@ impl OverlayKindDescriptor for AlertOverlayKind {
                 Variant::Int(config::DEFAULT_IMAGE_HEIGHT_PX),
             ),
         ]);
+        defaults.extend(config::card_size_defaults());
         defaults
     }
 
@@ -115,6 +116,7 @@ impl OverlayKindDescriptor for AlertOverlayKind {
         fields.push(config::icon_field());
         fields.extend(config::background_fields());
         fields.extend(config::image_fields());
+        fields.extend(config::card_size_fields());
         fields
     }
 

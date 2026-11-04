@@ -8,11 +8,12 @@ use forge_components::{
     toggle, tr,
 };
 use forge_overlay::config::{
-    BACKGROUND_COLOR, BACKGROUND_OPACITY, COMMAND_PREFIX, DESIGN_HEIGHT, DESIGN_WIDTH, DURATION,
-    HIDDEN_ACCOUNTS, HIDE_COMMANDS, HIDE_ROWS, HIDE_ROWS_AFTER_SECS, IMAGE, IMAGE_HEIGHT,
-    IMAGE_POSITION, LABEL_OFFSET_X, LABEL_OFFSET_Y, LABEL_SIDE, MARGIN_BOTTOM, MARGIN_LEFT,
-    MARGIN_RIGHT, MARGIN_TOP, ROW_LIMIT, SHOW_AVATARS, SOUND, SPEECH, SPEECH_VOICE,
-    THIRD_PARTY_EMOTES,
+    BACKGROUND_COLOR, BACKGROUND_OPACITY, CARD_HEIGHT_LIMITED, CARD_MAX_HEIGHT, CARD_MAX_WIDTH,
+    CARD_MIN_HEIGHT, CARD_MIN_WIDTH, CARD_WIDTH_LIMITED, COMMAND_PREFIX, DESIGN_HEIGHT,
+    DESIGN_WIDTH, DURATION, HIDDEN_ACCOUNTS, HIDE_COMMANDS, HIDE_ROWS, HIDE_ROWS_AFTER_SECS, IMAGE,
+    IMAGE_HEIGHT, IMAGE_POSITION, LABEL_OFFSET_X, LABEL_OFFSET_Y, LABEL_SIDE, MARGIN_BOTTOM,
+    MARGIN_LEFT, MARGIN_RIGHT, MARGIN_TOP, ROW_LIMIT, SHOW_AVATARS, SOUND, SPEECH, SPEECH_VOICE,
+    TEXT_OVERFLOW, THIRD_PARTY_EMOTES,
 };
 use forge_overlay::{ConfigSection, DeliveryDisposition, OverlayConfig};
 use forge_runtime::{OverlayDelivery, OverlayDispatch, ShowEnd, ShowTicket};
@@ -91,6 +92,13 @@ pub(super) fn base_label(key: &str) -> Option<String> {
         IMAGE => Some(tr!("overlays_alert_image")),
         IMAGE_POSITION => Some(tr!("overlays_alert_image_position")),
         IMAGE_HEIGHT => Some(tr!("overlays_alert_image_height")),
+        CARD_MIN_WIDTH => Some(tr!("overlays_alert_card_min_width")),
+        CARD_MIN_HEIGHT => Some(tr!("overlays_alert_card_min_height")),
+        CARD_WIDTH_LIMITED => Some(tr!("overlays_alert_card_width_limited")),
+        CARD_MAX_WIDTH => Some(tr!("overlays_alert_card_max_width")),
+        CARD_HEIGHT_LIMITED => Some(tr!("overlays_alert_card_height_limited")),
+        CARD_MAX_HEIGHT => Some(tr!("overlays_alert_card_max_height")),
+        TEXT_OVERFLOW => Some(tr!("overlays_alert_text_overflow")),
         ROW_LIMIT => Some(tr!("overlays_chat_row_limit")),
         HIDE_ROWS => Some(tr!("overlays_chat_hide_rows")),
         HIDE_ROWS_AFTER_SECS => Some(tr!("overlays_chat_hide_rows_after")),
@@ -119,6 +127,9 @@ pub(super) fn base_hint(key: &str) -> Option<String> {
         DURATION => Some(tr!("overlays_base_duration_hint")),
         BACKGROUND_COLOR => Some(tr!("overlays_alert_background_color_hint")),
         IMAGE => Some(tr!("overlays_alert_image_hint")),
+        CARD_MIN_WIDTH | CARD_MIN_HEIGHT => Some(tr!("overlays_alert_card_min_hint")),
+        CARD_WIDTH_LIMITED | CARD_HEIGHT_LIMITED => Some(tr!("overlays_alert_card_limit_hint")),
+        TEXT_OVERFLOW => Some(tr!("overlays_alert_text_overflow_hint")),
         ROW_LIMIT => Some(tr!("overlays_chat_row_limit_hint")),
         HIDE_ROWS => Some(tr!("overlays_chat_hide_rows_hint")),
         HIDE_COMMANDS => Some(tr!("overlays_chat_hide_commands_hint")),

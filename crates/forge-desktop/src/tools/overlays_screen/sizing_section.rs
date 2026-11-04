@@ -1,6 +1,7 @@
 use forge_components::{ActivePresentation, ForgePalette, field_label, scaled, section_label, tr};
 use forge_overlay::config::{
-    DESIGN_HEIGHT, DESIGN_SIZE_MAX_PX, DESIGN_SIZE_MIN_PX, DESIGN_WIDTH, MARGIN_SIDES,
+    CARD_MAX_HEIGHT, CARD_MAX_WIDTH, DESIGN_HEIGHT, DESIGN_SIZE_MAX_PX, DESIGN_SIZE_MIN_PX,
+    DESIGN_WIDTH, MARGIN_SIDES,
 };
 use forge_overlay::{ContentMargins, DesignSize, OverlayConfig};
 use gpui::{AnyElement, Context, Pixels, div, prelude::*, px};
@@ -23,6 +24,14 @@ pub(super) fn bounded_design_px(typed: &str, current: i64) -> i64 {
         .clamp(DESIGN_SIZE_MIN_PX, DESIGN_SIZE_MAX_PX)
 }
 
+pub(super) fn source_extent_seed(key: &str, size: DesignSize) -> Option<u32> {
+    match key {
+        CARD_MAX_WIDTH => Some(size.width),
+        CARD_MAX_HEIGHT => Some(size.height),
+        _ => None,
+    }
+}
+
 pub(super) fn with_source_box(defaults: &OverlayConfig, sparse: OverlayConfig) -> OverlayConfig {
     let mut effective = defaults.clone();
     effective.extend(
@@ -40,6 +49,32 @@ impl OverlayPropertyPanel {
     fn stored_design_size(&self) -> DesignSize {
         let fallback = DesignSize::read(&self.defaults, DesignSize::BROWSER_SOURCE_DEFAULT);
         DesignSize::read(&self.stored, fallback)
+    }
+
+    pub(super) fn seed_opened_gate(&self, gate: &str, cx: &mut Context<Self>) {
+        let size = self.stored_design_size();
+        let seeds: Vec<_> = self
+            .fields
+            .iter()
+            .filter_map(|field| {
+                let ConfigField::Input {
+                    key,
+                    gate: Some(owner),
+                    input,
+                    ..
+                } = field
+                else {
+                    return None;
+                };
+                if owner != gate || !input.read(cx).content().trim().is_empty() {
+                    return None;
+                }
+                source_extent_seed(key, size).map(|extent| (input.clone(), extent.to_string()))
+            })
+            .collect();
+        for (input, extent) in seeds {
+            input.update(cx, |input, cx| input.set_content(extent, cx));
+        }
     }
 
     pub(super) fn bound_design_inputs(&self, cx: &mut Context<Self>) {

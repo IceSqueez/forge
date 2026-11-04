@@ -478,6 +478,82 @@ pub(crate) fn image_fields() -> [SectionedField; 3] {
     ]
 }
 
+pub(crate) fn card_size_fields() -> [SectionedField; 5] {
+    [
+        card_min_field(CARD_MIN_WIDTH, "Min card width"),
+        card_min_field(CARD_MIN_HEIGHT, "Min card height"),
+        card_max_field(
+            CARD_WIDTH_LIMITED,
+            "Limit card width",
+            CARD_MAX_WIDTH,
+            "Max card width",
+        ),
+        card_max_field(
+            CARD_HEIGHT_LIMITED,
+            "Limit card height",
+            CARD_MAX_HEIGHT,
+            "Max card height",
+        ),
+        in_section(
+            ConfigSection::Style,
+            FormField::Select {
+                key: TEXT_OVERFLOW,
+                label: "Text overflow",
+                options: TEXT_OVERFLOW_OPTIONS,
+            },
+        ),
+    ]
+}
+
+fn card_min_field(key: &'static str, label: &'static str) -> SectionedField {
+    in_section(
+        ConfigSection::Style,
+        FormField::Integer {
+            key,
+            label,
+            min: CARD_MIN_SIZE_MIN_PX,
+            max: CARD_SIZE_MAX_PX,
+        },
+    )
+}
+
+fn card_max_field(
+    toggle_key: &'static str,
+    toggle_label: &'static str,
+    key: &'static str,
+    label: &'static str,
+) -> SectionedField {
+    in_section(
+        ConfigSection::Style,
+        FormField::Optional {
+            key: toggle_key,
+            label: toggle_label,
+            inner: Box::new(FormField::Integer {
+                key,
+                label,
+                min: CARD_MAX_SIZE_MIN_PX,
+                max: CARD_SIZE_MAX_PX,
+            }),
+        },
+    )
+}
+
+pub(crate) fn card_size_defaults() -> OverlayConfig {
+    OverlayConfig::from([
+        (
+            CARD_MIN_WIDTH.to_owned(),
+            Variant::Int(DEFAULT_CARD_MIN_SIZE_PX),
+        ),
+        (
+            CARD_MIN_HEIGHT.to_owned(),
+            Variant::Int(DEFAULT_CARD_MIN_SIZE_PX),
+        ),
+        (CARD_WIDTH_LIMITED.to_owned(), Variant::Bool(false)),
+        (CARD_HEIGHT_LIMITED.to_owned(), Variant::Bool(false)),
+        (TEXT_OVERFLOW.to_owned(), text(TEXT_OVERFLOW_WRAP)),
+    ])
+}
+
 pub(crate) fn label_placement_fields() -> [SectionedField; 3] {
     [
         in_section(

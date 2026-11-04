@@ -25,6 +25,13 @@ pub const LABEL_SIDE: &str = "label_side";
 pub const LABEL_OFFSET_X: &str = "label_offset_x";
 pub const LABEL_OFFSET_Y: &str = "label_offset_y";
 pub const IMAGE_HEIGHT: &str = "image_height";
+pub const CARD_MIN_WIDTH: &str = "card_min_width";
+pub const CARD_MIN_HEIGHT: &str = "card_min_height";
+pub const CARD_WIDTH_LIMITED: &str = "card_width_limited";
+pub const CARD_MAX_WIDTH: &str = "card_max_width";
+pub const CARD_HEIGHT_LIMITED: &str = "card_height_limited";
+pub const CARD_MAX_HEIGHT: &str = "card_max_height";
+pub const TEXT_OVERFLOW: &str = "text_overflow";
 
 pub const AUTHOR: &str = "author";
 pub const AUTHOR_COLOR: &str = "author_color";
@@ -131,6 +138,15 @@ pub const DEFAULT_BACKGROUND_OPACITY_PERCENT: i64 = 86;
 pub const IMAGE_HEIGHT_MIN_PX: i64 = 16;
 pub const IMAGE_HEIGHT_MAX_PX: i64 = 480;
 pub const DEFAULT_IMAGE_HEIGHT_PX: i64 = 120;
+
+pub const CARD_MIN_SIZE_MIN_PX: i64 = 0;
+pub const CARD_MAX_SIZE_MIN_PX: i64 = DESIGN_SIZE_MIN_PX;
+pub const CARD_SIZE_MAX_PX: i64 = DESIGN_SIZE_MAX_PX;
+pub const DEFAULT_CARD_MIN_SIZE_PX: i64 = CARD_MIN_SIZE_MIN_PX;
+
+pub const TEXT_OVERFLOW_WRAP: &str = "wrap";
+pub const TEXT_OVERFLOW_ELLIPSIS: &str = "ellipsis";
+pub const TEXT_OVERFLOW_OPTIONS: &[&str] = &[TEXT_OVERFLOW_WRAP, TEXT_OVERFLOW_ELLIPSIS];
 
 pub const DURATION_MIN_SECS: i64 = 1;
 pub const DURATION_MAX_SECS: i64 = 15;

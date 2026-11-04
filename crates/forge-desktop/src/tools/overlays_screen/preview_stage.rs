@@ -685,6 +685,7 @@ fn render_canvas(
         );
 
     let inset = MarginInset::of(composition.margins, fit);
+    let plan = plan.within(inset.room(fit));
     let mut content = div()
         .absolute()
         .top(inset.top)
@@ -749,6 +750,13 @@ impl MarginInset {
             right: share(fit.width, margins.right),
             bottom: share(fit.height, margins.bottom),
             left: share(fit.width, margins.left),
+        }
+    }
+
+    fn room(self, fit: CanvasFit) -> Size<Pixels> {
+        Size {
+            width: (fit.width - self.left - self.right).max(px(0.0)),
+            height: (fit.height - self.top - self.bottom).max(px(0.0)),
         }
     }
 

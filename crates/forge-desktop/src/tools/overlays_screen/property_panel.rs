@@ -392,6 +392,11 @@ impl OverlayPropertyPanel {
 
     fn toggle_field(&mut self, key: String, cx: &mut Context<Self>) {
         toggle_bool_field(&mut self.fields, &key);
+        if self.fields.iter().any(
+            |field| matches!(field, ConfigField::Bool { key: k, value: true, .. } if *k == key),
+        ) {
+            self.seed_opened_gate(&key, cx);
+        }
         self.emit_save(cx);
         cx.notify();
     }

@@ -1,6 +1,103 @@
 # Changelog
 All notable changes to this project will be documented in this file.
 
+## [0.7.2] - 2026-11-04
+### ⚙️ Miscellaneous Tasks
+- *(deps)* Bump taiki-e/install-action from 2.87.31 to 2.88.1 (#123)
+- *(deps)* Bump zbus from 6.1.0 to 6.2.0 (#125)
+- *(deps)* Bump rustix from 1.1.5 to 1.1.6 (#126)
+- *(deps)* Bump zeroize from 1.9.0 to 1.9.1 (#127)
+- *(deps)* Bump log from 0.4.34 to 0.4.35 (#124)
+- *(deps)* Bump sysinfo to 0.40 and handle fallible system queries
+
+### 🎨 Styling
+- *(automation)* Format the bulk bar button labels
+
+### 🐛 Bug Fixes
+- *(transfer)* Keep the pack import preview compact (closes #108)
+- *(actions)* Name test run rows after step labels (closes #109)
+- *(overlays)* Say the preview ignores custom code (closes #110)
+- *(integrations)* Count every enabled external service (closes #111)
+- *(discord)* Show offline until a webhook exists (closes #112)
+- *(tts)* Pick alias voices from a list, sort by alphabet (closes #114)
+- *(overlays)* Drop moderated messages from the chat overlay (closes #116)
+- *(overlays)* Stop avatar lookups while a platform refuses them
+- *(overlays)* Drop channel emotes only after their loader stops
+- *(updates)* Fetch the manifest only for a newer release (closes #121)
+- *(emulator)* Serve emote providers from a loopback fake
+- *(media)* Delete media files once nothing uses them (closes #135)
+- *(overlays)* Guard the alert card against its configured maximum size
+- *(automation)* Highlight only the marked rows while a bulk selection is active
+- *(overlays)* Replay retained content only to the page that just connected (closes #139)
+- *(packs)* Carry media picked in action steps and library images through packs (closes #137)
+
+### 📚 Documentation
+- *(contributing)* Make issue templates plain for users (closes #115)
+
+### 🚀 Features
+- *(tts)* Group voices by language and add filters (closes #113)
+- *(overlays)* Set chat row count and fade-out delay (closes #117)
+- *(overlays)* Hide chat commands and chosen accounts in chat overlays
+- *(overlays)* Mark stream event rows in the chat overlay (closes #118)
+- *(overlays)* Show viewer avatars in the chat overlay (closes #119)
+- *(overlays)* Show 7TV, BTTV, FFZ and Twitch emotes (closes #120)
+- *(donations)* Monobank jar progress trigger (closes #122)
+- *(overlays)* Bound the alert card size and choose wrap or ellipsis (closes #129)
+- *(overlays)* Split the accent into separate text and border colors (#130)
+- *(overlays)* Regroup overlay settings into fixed sections (closes #130)
+- *(overlays)* Add a main text color to every overlay with text (closes #131)
+- *(overlays)* Treat a zero card maximum as no limit like the minimum (#129)
+- *(overlays)* Add chat platform icons, row background and row width (closes #133)
+- *(overlays)* Let a send step pick the image and sound for one show (closes #132)
+- *(automation)* Multi-select actions and triggers with bulk enable, disable and delete (closes #136)
+- *(automation)* Name bulk buttons by how many selected rows they change
+- *(overlays)* Add a Card overlay that keeps an icon and text on screen (closes #134)
+- *(chat)* Publish badges, name color and avatar from every chat trigger (closes #138)
+
+### 🧪 Testing
+- *(transfer)* Pin apply-to-all and grouped overlay files on import
+- *(actions)* Pin test run row names
+- *(integrations)* Pin the connection tally and live Discord status
+- *(integrations)* Pin the status of configured integrations
+- *(tts)* Pin voice filtering, grouping and listing cache
+- *(tts)* Pin the alias voice list and alphabet sort
+- *(overlays)* Pin chat row removal per platform and frame
+- *(tts)* Run fake piper binaries one at a time to avoid busy text files
+- *(overlays)* Pin chat row limit and hide-after bounds and page keys
+- *(overlays)* Match withheld overlay sends in show queue tests
+- *(overlays)* Pin chat overlay command and account filters
+- *(overlays)* Expect the chat event field in pinned samples
+- *(overlays)* Pin chat event marking, labels and event-row filtering
+- *(overlays)* Pin chat avatar vetting, lookups and delivery
+- *(overlays)* Pin the avatar lookup pause and its end
+- *(overlays)* Expect the emote size in the chat style pin
+- *(overlays)* Pin emote catalogs, precedence and message parts
+- *(overlays)* Read a padded platform the same for emotes and avatars
+- *(updates)* Fetch release-scoped manifests in update tests
+- *(integrations)* List monobank among trigger-owning integrations
+- *(donations)* Pin monobank jar progress tracking, polling and trigger
+- *(overlays)* Cover alert card size bounds and text overflow
+- *(overlays)* Cover the text and border color split
+- *(overlays)* Cover the settings panel regroup and delivered fields
+- *(overlays)* Cover the main text color across page, preview and panel
+- *(overlays)* Cover zero as no card maximum and drop limit toggle tests
+- *(media)* Cover collecting unreferenced media blobs and files
+- *(overlays)* Cover chat platform icons, row look and per-show media
+- *(automation)* Cover multi-select gestures, bulk bar and bulk enable, disable and delete
+- *(overlays)* Cover connect replay reaching only the connecting page
+- *(overlays)* Cover the card look, its opening content and panel edits
+- *(chat)* Cover badges, name color and avatar on every chat trigger
+- *(packs)* Cover step-picked media and library images through packs
+- *(overlays)* Keep the symlink-only error import off Windows builds
+
+## [0.7.1] - 2026-11-01
+### 🐛 Bug Fixes
+- *(ci)* Bake Kick client credentials into release builds
+- *(integrations)* Give first-run connect flows their sign-in
+
+### 🧪 Testing
+- *(integrations)* Pin a ready sign-in on a first-run connect flow
+
 ## [0.7.0] - 2026-11-01
 ### ⚠️ BREAKING CHANGES
 - **obs**: 30 OBS trigger ids and 23 OBS step ids are renamed; old ids are migrated in storage and on import, external clients naming them stop matching
@@ -179,6 +276,7 @@ All notable changes to this project will be documented in this file.
 ### 📚 Documentation
 - *(readme)* Correct the OBS trigger count
 - *(readme)* Retake every screenshot on the current app
+- *(release)* Release v0.7.0
 
 ### 🚀 Features
 - *(platform)* Let integrations declare option lists for pickers

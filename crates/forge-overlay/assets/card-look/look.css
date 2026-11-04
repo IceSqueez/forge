@@ -120,3 +120,7 @@ body {
 #stage.hidden {
   opacity: 0;
 }
+
+[hidden] {
+  display: none !important;
+}

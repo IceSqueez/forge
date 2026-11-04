@@ -1,4 +1,4 @@
-use forge_types::{MessageCode, Variant};
+use forge_types::MessageCode;
 
 use crate::catalog::descriptor::{
     DeliveryDisposition, OverlayConfig, OverlayKindDescriptor, SectionedField,
@@ -74,50 +74,16 @@ impl OverlayKindDescriptor for AlertOverlayKind {
     }
 
     fn look_defaults(&self) -> OverlayConfig {
-        let mut defaults = config::shared_style_defaults(
+        config::card_look_defaults(
             config::ACCENT_MAUVE,
             config::FONT_RUBIK,
-            metrics::ALERT_SIZING,
-        );
-        defaults.insert(
-            config::HEADLINE.to_owned(),
-            config::text("Thanks for the sub!"),
-        );
-        defaults.insert(
-            config::SUBLINE.to_owned(),
-            config::text("%sub_cumulative_months% months subscribed"),
-        );
-        defaults.insert(config::ICON.to_owned(), config::text(config::DEFAULT_ICON));
-        defaults.extend([
-            (
-                config::BACKGROUND_COLOR.to_owned(),
-                config::text(config::DEFAULT_BACKGROUND_COLOR),
-            ),
-            (
-                config::BACKGROUND_OPACITY.to_owned(),
-                Variant::Int(config::DEFAULT_BACKGROUND_OPACITY_PERCENT),
-            ),
-            (config::IMAGE.to_owned(), config::text("")),
-            (
-                config::IMAGE_POSITION.to_owned(),
-                config::text(config::IMAGE_POSITION_ABOVE),
-            ),
-            (
-                config::IMAGE_HEIGHT.to_owned(),
-                Variant::Int(config::DEFAULT_IMAGE_HEIGHT_PX),
-            ),
-        ]);
-        defaults.extend(config::card_size_defaults());
-        defaults
+            "Thanks for the sub!",
+            "%sub_cumulative_months% months subscribed",
+        )
     }
 
     fn look_fields(&self) -> Vec<SectionedField> {
-        let mut fields = config::shared_fields();
-        fields.push(config::icon_field());
-        fields.extend(config::background_fields());
-        fields.extend(config::card_size_fields());
-        fields.extend(config::image_fields());
-        fields
+        config::card_look_fields()
     }
 
     fn sizing(&self) -> Option<ElementSizing> {
@@ -131,8 +97,11 @@ impl OverlayKindDescriptor for AlertOverlayKind {
     fn page_assets(&self) -> PageAssets {
         PageAssets {
             markup: include_str!("../../assets/alert/index.html"),
-            style: include_str!("../../assets/alert/overlay.css"),
-            behavior: include_str!("../../assets/alert/overlay.js"),
+            style: include_str!("../../assets/card-look/look.css"),
+            behavior: concat!(
+                include_str!("../../assets/card-look/look.js"),
+                include_str!("../../assets/alert/overlay.js")
+            ),
         }
     }
 

@@ -71,6 +71,12 @@ pub trait OverlayKindDescriptor: Send + Sync {
     fn implied_content(&self, _args: &ArgStack) -> OverlayConfig {
         OverlayConfig::new()
     }
+    fn opening_content(&self, _stored: &OverlayConfig) -> Option<OverlayConfig> {
+        None
+    }
+    fn panel_replaces_content(&self, _before: &OverlayConfig, _after: &OverlayConfig) -> bool {
+        false
+    }
     fn withholds(
         &self,
         _stored: &OverlayConfig,

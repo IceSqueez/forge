@@ -5,7 +5,7 @@ use forge_types::Variant;
 use super::keys::*;
 use super::text;
 use crate::catalog::descriptor::{ConfigSection, OverlayConfig, SectionedField};
-use crate::metrics::ElementSizing;
+use crate::metrics::{ALERT_SIZING, ElementSizing};
 
 pub(crate) fn shared_fields() -> Vec<SectionedField> {
     let mut fields = vec![
@@ -647,6 +647,42 @@ pub(crate) fn delivered_in(section: ConfigSection, field: FormField) -> Sectione
         delivered: true,
         field,
     }
+}
+
+pub(crate) fn card_look_fields() -> Vec<SectionedField> {
+    let mut fields = shared_fields();
+    fields.push(icon_field());
+    fields.extend(background_fields());
+    fields.extend(card_size_fields());
+    fields.extend(image_fields());
+    fields
+}
+
+pub(crate) fn card_look_defaults(
+    accent: &str,
+    font: &str,
+    headline: &str,
+    subline: &str,
+) -> OverlayConfig {
+    let mut defaults = shared_style_defaults(accent, font, ALERT_SIZING);
+    defaults.extend([
+        (HEADLINE.to_owned(), text(headline)),
+        (SUBLINE.to_owned(), text(subline)),
+        (ICON.to_owned(), text(DEFAULT_ICON)),
+        (BACKGROUND_COLOR.to_owned(), text(DEFAULT_BACKGROUND_COLOR)),
+        (
+            BACKGROUND_OPACITY.to_owned(),
+            Variant::Int(DEFAULT_BACKGROUND_OPACITY_PERCENT),
+        ),
+        (IMAGE.to_owned(), text("")),
+        (IMAGE_POSITION.to_owned(), text(IMAGE_POSITION_ABOVE)),
+        (
+            IMAGE_HEIGHT.to_owned(),
+            Variant::Int(DEFAULT_IMAGE_HEIGHT_PX),
+        ),
+    ]);
+    defaults.extend(card_size_defaults());
+    defaults
 }
 
 pub(crate) fn shared_style_defaults(

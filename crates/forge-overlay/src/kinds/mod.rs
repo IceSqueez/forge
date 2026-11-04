@@ -1,5 +1,6 @@
 pub mod alert;
 pub mod blank;
+pub mod card;
 pub mod chat;
 pub mod frame;
 pub mod goal;
@@ -12,6 +13,7 @@ use crate::error::OverlayError;
 pub fn register_builtin_kinds(reg: &mut OverlayKindRegistry) -> Result<(), OverlayError> {
     reg.register(Box::new(alert::AlertOverlayKind))?;
     reg.register(Box::new(blank::BlankOverlayKind))?;
+    reg.register(Box::new(card::CardOverlayKind))?;
     reg.register(Box::new(chat::ChatOverlayKind))?;
     reg.register(Box::new(frame::FrameOverlayKind))?;
     reg.register(Box::new(goal::GoalOverlayKind))?;

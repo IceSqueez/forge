@@ -161,7 +161,9 @@ pub(super) fn render_composition(
 
     match composition.shape {
         PreviewShape::Blank => blank_note(glyphs.badge, family, palette, density),
-        PreviewShape::BadgeBanner => badge_banner(composition, plan, scale, inks, family, glyphs),
+        PreviewShape::BadgeBanner | PreviewShape::Card => {
+            badge_banner(composition, plan, scale, inks, family, glyphs)
+        }
         PreviewShape::BorderedFrame => bordered_frame(composition, scale, inks, family),
         PreviewShape::LatestCard => latest_card(composition, plan, scale, inks, family),
         PreviewShape::MessageFeed => message_feed(
@@ -231,6 +233,7 @@ fn badge_banner(
     let cut = composition
         .card
         .is_some_and(|card| card.overflow == PreviewTextOverflow::Ellipsis);
+    let collapses_empty_parts = composition.shape == PreviewShape::Card;
     let mut lines = div().flex_1().min_w(px(0.0)).flex().flex_col();
 
     if let Some(text) = line_text(composition, PreviewLineRole::Headline) {
@@ -246,7 +249,7 @@ fn badge_banner(
                 .child(text),
         );
     }
-    if composition.lines.is_empty() {
+    if composition.lines.is_empty() && !collapses_empty_parts {
         lines = lines.child(banner_headline(
             PLACEHOLDER.into(),
             scale,
@@ -255,21 +258,24 @@ fn badge_banner(
             cut,
         ));
     }
+    let worded = !composition.lines.is_empty() || !collapses_empty_parts;
 
-    let message = div()
-        .min_w(px(0.0))
-        .flex()
-        .items_center()
-        .gap(scale.text_at(ALERT.gap))
-        .children(art.map(|art| {
-            div().flex_none().child(glyph_art(
-                art,
-                scale.text_at(ALERT.icon_size),
-                inks.border,
-                "overlays-preview-icon",
-            ))
-        }))
-        .child(lines);
+    let message = (worded || art.is_some()).then(|| {
+        div()
+            .min_w(px(0.0))
+            .flex()
+            .items_center()
+            .gap(scale.text_at(ALERT.gap))
+            .children(art.map(|art| {
+                div().flex_none().child(glyph_art(
+                    art,
+                    scale.text_at(ALERT.icon_size),
+                    inks.border,
+                    "overlays-preview-icon",
+                ))
+            }))
+            .when(worded, |message| message.child(lines))
+    });
 
     let picture = composition
         .image
@@ -284,6 +290,9 @@ fn badge_banner(
         Some((_, picture)) => (Some(picture), None),
         None => (None, None),
     };
+    if message.is_none() && leading.is_none() && trailing.is_none() {
+        return div().into_any_element();
+    }
     let card = div()
         .flex_none()
         .flex()
@@ -302,7 +311,7 @@ fn badge_banner(
             |chosen| page_color(chosen.rgb, chosen.alpha),
         ))
         .children(leading)
-        .child(message)
+        .children(message)
         .children(trailing);
 
     bounded_card(sized(card, plan), composition.card, plan, scale).into_any_element()

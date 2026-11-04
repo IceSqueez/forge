@@ -483,7 +483,33 @@ impl OverlayServiceHandle {
         self.inner
             .kinds
             .validate_stored(&definition.kind_id, config)?;
-        Ok(self.inner.repo.update_config(id, config).await?)
+        let stored = self.inner.repo.update_config(id, config).await?;
+        if stored {
+            self.retain_panel_content(&definition, config).await?;
+        }
+        Ok(stored)
+    }
+
+    async fn retain_panel_content(
+        &self,
+        before: &OverlayDefinition,
+        after: &OverlayConfig,
+    ) -> Result<(), RuntimeError> {
+        let Some(descriptor) = self.inner.kinds.get(&before.kind_id) else {
+            return Ok(());
+        };
+        if !descriptor.panel_replaces_content(&before.config, after) {
+            return Ok(());
+        }
+        let Some(content) = descriptor.opening_content(after) else {
+            return Ok(());
+        };
+        let _lane = self.inner.lanes.enter(&before.id).await;
+        self.inner
+            .repo
+            .set_retained_content(&before.id, &content)
+            .await?;
+        Ok(())
     }
 
     pub async fn rename(&self, id: &OverlayId, display_name: &str) -> Result<bool, RuntimeError> {
@@ -873,7 +899,9 @@ impl OverlayServiceHandle {
         if !descriptor.delivery_disposition().retains_last_content() {
             return Ok(());
         }
-        let Some(content) = self.inner.repo.get_retained_content(id).await? else {
+        let retained = self.inner.repo.get_retained_content(id).await?;
+        let Some(content) = retained.or_else(|| descriptor.opening_content(&definition.config))
+        else {
             return Ok(());
         };
         self.send(id, &content, None).await;

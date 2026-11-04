@@ -13,10 +13,17 @@ pub enum PreviewShape {
     BadgeBanner,
     Blank,
     BorderedFrame,
+    Card,
     LatestCard,
     MessageFeed,
     ProgressBar,
     Strip,
+}
+
+impl PreviewShape {
+    pub fn draws_card(self) -> bool {
+        matches!(self, Self::BadgeBanner | Self::Card)
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -199,7 +206,7 @@ pub struct PreviewComposition {
 impl PreviewComposition {
     pub fn picture_key(&self) -> Option<&'static str> {
         match self.shape {
-            PreviewShape::BadgeBanner => Some(config::IMAGE),
+            PreviewShape::BadgeBanner | PreviewShape::Card => Some(config::IMAGE),
             PreviewShape::MessageFeed => self.platform_icon,
             PreviewShape::Blank
             | PreviewShape::BorderedFrame
@@ -292,7 +299,7 @@ fn label_offset(config: &OverlayConfig, key: &str) -> i16 {
 
 fn surface_of(shape: PreviewShape, config: &OverlayConfig) -> Option<PreviewSurface> {
     let fallback_alpha = match shape {
-        PreviewShape::BadgeBanner => ALERT.surface_alpha,
+        PreviewShape::BadgeBanner | PreviewShape::Card => ALERT.surface_alpha,
         PreviewShape::MessageFeed => CHAT.surface_alpha,
         PreviewShape::Blank
         | PreviewShape::BorderedFrame
@@ -318,7 +325,7 @@ fn surface_of(shape: PreviewShape, config: &OverlayConfig) -> Option<PreviewSurf
 }
 
 fn image_of(shape: PreviewShape, config: &OverlayConfig) -> Option<PreviewImage> {
-    if shape != PreviewShape::BadgeBanner || config::read_str(config, config::IMAGE).is_empty() {
+    if !shape.draws_card() || config::read_str(config, config::IMAGE).is_empty() {
         return None;
     }
     let side = match config::read_str(config, config::IMAGE_POSITION) {
@@ -340,7 +347,7 @@ fn image_of(shape: PreviewShape, config: &OverlayConfig) -> Option<PreviewImage>
 }
 
 fn card_of(shape: PreviewShape, config: &OverlayConfig) -> Option<PreviewCard> {
-    if shape != PreviewShape::BadgeBanner {
+    if !shape.draws_card() {
         return None;
     }
     let extent = |key| {

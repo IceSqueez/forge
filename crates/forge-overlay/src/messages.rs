@@ -8,6 +8,9 @@ pub(crate) const ALERT_SUMMARY: MessageCode =
 pub(crate) const BLANK_LABEL: MessageCode = MessageCode::from_static(NAMESPACE, "kind_blank");
 pub(crate) const BLANK_SUMMARY: MessageCode =
     MessageCode::from_static(NAMESPACE, "kind_blank_summary");
+pub(crate) const CARD_LABEL: MessageCode = MessageCode::from_static(NAMESPACE, "kind_card");
+pub(crate) const CARD_SUMMARY: MessageCode =
+    MessageCode::from_static(NAMESPACE, "kind_card_summary");
 pub(crate) const CHAT_LABEL: MessageCode = MessageCode::from_static(NAMESPACE, "kind_chat");
 pub(crate) const CHAT_SUMMARY: MessageCode =
     MessageCode::from_static(NAMESPACE, "kind_chat_summary");
@@ -58,6 +61,8 @@ macro_rules! catalog {
         ALERT_SUMMARY,
         BLANK_LABEL,
         BLANK_SUMMARY,
+        CARD_LABEL,
+        CARD_SUMMARY,
         CHAT_LABEL,
         CHAT_SUMMARY,
         FRAME_LABEL,

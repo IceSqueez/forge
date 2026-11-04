@@ -176,7 +176,8 @@ pub struct PreviewElement {
 #[derive(Debug, Clone, PartialEq)]
 pub struct PreviewComposition {
     pub shape: PreviewShape,
-    pub accent: PreviewAccent,
+    pub text_color: PreviewAccent,
+    pub border_color: PreviewAccent,
     pub font: PreviewFont,
     pub position: PreviewPosition,
     pub canvas: PreviewCanvas,
@@ -199,7 +200,8 @@ pub(crate) fn compose(
 ) -> PreviewComposition {
     PreviewComposition {
         shape,
-        accent: accent_of(config),
+        text_color: color_of(config, config::TEXT_COLOR),
+        border_color: color_of(config, config::BORDER_COLOR),
         font: font_of(config),
         position: position_of(shape, config),
         canvas: DesignSize::read(config, DesignSize::BROWSER_SOURCE_DEFAULT).into(),
@@ -330,8 +332,8 @@ fn card_of(shape: PreviewShape, config: &OverlayConfig) -> Option<PreviewCard> {
     })
 }
 
-fn accent_of(config: &OverlayConfig) -> PreviewAccent {
-    PreviewAccent::from_stored(config::read_str(config, config::ACCENT))
+fn color_of(config: &OverlayConfig, key: &str) -> PreviewAccent {
+    PreviewAccent::from_stored(config::read_str(config, key))
 }
 
 fn font_of(config: &OverlayConfig) -> PreviewFont {

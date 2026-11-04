@@ -1,5 +1,6 @@
 :root {
-  --accent: #a6e3a1;
+  --text-color: #a6e3a1;
+  --border-color: #a6e3a1;
   --font: sans-serif;
   --text-scale: calc(var(--text-size, 14) / 14);
 }
@@ -30,7 +31,7 @@ body {
   overflow: hidden;
   box-sizing: border-box;
   padding: calc(14px * var(--text-scale)) calc(18px * var(--text-scale));
-  border: 1px solid var(--accent);
+  border: 1px solid var(--border-color);
   border-radius: calc(12px * var(--text-scale));
   background: rgba(20, 20, 28, 0.86);
   font-family: var(--font);
@@ -56,12 +57,12 @@ body {
   height: 100%;
   width: 0%;
   border-radius: 999px;
-  background: var(--accent);
+  background: var(--border-color);
   transition: width 0.3s ease;
 }
 
 .figure {
-  color: var(--accent);
+  color: var(--text-color);
   font-size: calc(12px * var(--text-scale));
   font-weight: 600;
   min-width: 0;

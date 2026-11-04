@@ -1,3 +1,4 @@
+mod accent_split;
 mod fields;
 mod keys;
 mod validation;
@@ -6,6 +7,7 @@ use forge_types::Variant;
 
 use crate::catalog::descriptor::OverlayConfig;
 
+pub use accent_split::with_split_accent;
 pub(crate) use fields::*;
 pub use keys::*;
 pub use validation::{effective_overlay_config, hex_color_channels, validate_overlay_config};

@@ -2,7 +2,7 @@ use std::collections::HashSet;
 use std::sync::Arc;
 
 use forge_components::Icon;
-use forge_overlay::config::SOUND;
+use forge_overlay::config::{SOUND, with_split_accent};
 use forge_overlay::{ContentFeed, OverlayConfig, OverlayKindDescriptor, SectionedField};
 use forge_registry::FormField;
 use forge_storage::OverlayId;
@@ -44,10 +44,9 @@ pub(super) fn carried_config(
     for sectioned in descriptor.config_fields() {
         declared_keys(&sectioned.field, &mut declared);
     }
-    config
-        .iter()
+    with_split_accent(config)
+        .into_iter()
         .filter(|(key, _)| declared.contains(key.as_str()))
-        .map(|(key, value)| (key.clone(), value.clone()))
         .collect()
 }
 

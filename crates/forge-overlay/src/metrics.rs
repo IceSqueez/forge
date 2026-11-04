@@ -3,7 +3,8 @@ pub const BRIGHT_INK_RGB: [u8; 3] = [255, 255, 255];
 pub const MESSAGE_INK_RGB: [u8; 3] = [238, 238, 238];
 pub const PILL_RADIUS: f32 = 999.0;
 
-pub const ACCENT_PROPERTY: &str = "--accent";
+pub const TEXT_COLOR_PROPERTY: &str = "--text-color";
+pub const BORDER_COLOR_PROPERTY: &str = "--border-color";
 pub const FONT_PROPERTY: &str = "--font";
 pub const TEXT_SIZE_PROPERTY: &str = "--text-size";
 pub const TEXT_SCALE_PROPERTY: &str = "--text-scale";
@@ -283,10 +284,10 @@ impl AlertMetrics {
         vec![
             scaled_length("gap", self.gap),
             scaled_length_pair("padding", self.padding_block, self.padding_inline),
-            accent_border("border", self.border),
+            colored_border("border", self.border),
             scaled_length("border-radius", self.radius),
             scaled_length("height", self.icon_size),
-            accent_fill(),
+            border_color_fill(),
             opaque_ink(BRIGHT_INK_RGB),
             scaled_length("font-size", self.headline_size),
             scaled_length("font-size", self.subline_size),
@@ -315,7 +316,7 @@ impl FrameMetrics {
     pub fn declarations(&self) -> Vec<String> {
         vec![
             scaled_length("margin", self.inset),
-            accent_border("border", self.border),
+            colored_border("border", self.border),
             length("border-radius", self.radius),
             length("left", self.label_inset_inline),
             scaled_negative_length("bottom", self.label_overhang),
@@ -325,7 +326,7 @@ impl FrameMetrics {
                 self.label_padding_block,
                 self.label_padding_inline,
             ),
-            accent_border("border", self.label_border),
+            colored_border("border", self.label_border),
             length("border-radius", self.label_radius),
             opaque_ink(BRIGHT_INK_RGB),
             scaled_length("font-size", self.headline_size),
@@ -340,7 +341,7 @@ impl GoalMetrics {
         vec![
             scaled_length("gap", self.gap),
             scaled_length_pair("padding", self.padding_block, self.padding_inline),
-            accent_border("border", self.border),
+            colored_border("border", self.border),
             scaled_length("border-radius", self.radius),
             scaled_length("font-size", self.label_size),
             scaled_length("height", self.track_height),
@@ -360,7 +361,7 @@ impl LatestMetrics {
         vec![
             scaled_length("gap", self.gap),
             scaled_length_pair("padding", self.padding_block, self.padding_inline),
-            accent_border("border", self.border),
+            colored_border("border", self.border),
             scaled_length("border-radius", self.radius),
             scaled_length("width", self.icon_size),
             scaled_length("height", self.icon_size),
@@ -381,8 +382,8 @@ impl TickerMetrics {
         vec![
             scaled_length("gap", self.gap),
             scaled_length_pair("padding", self.padding_block, self.padding_inline),
-            accent_border("border-top", self.edge_border),
-            accent_border("border-bottom", self.edge_border),
+            colored_border("border-top", self.edge_border),
+            colored_border("border-bottom", self.edge_border),
             scaled_length("width", self.mark_width),
             scaled_length("height", self.mark_height),
             scaled_length("border-radius", self.mark_radius),
@@ -437,12 +438,12 @@ fn content_margins() -> String {
     format!("padding: {sides};")
 }
 
-fn accent_border(property: &str, width: f32) -> String {
-    format!("{property}: {width}px solid var({ACCENT_PROPERTY});")
+fn colored_border(property: &str, width: f32) -> String {
+    format!("{property}: {width}px solid var({BORDER_COLOR_PROPERTY});")
 }
 
-fn accent_fill() -> String {
-    format!("background-color: var({ACCENT_PROPERTY});")
+fn border_color_fill() -> String {
+    format!("background-color: var({BORDER_COLOR_PROPERTY});")
 }
 
 fn opaque_ink([red, green, blue]: [u8; 3]) -> String {

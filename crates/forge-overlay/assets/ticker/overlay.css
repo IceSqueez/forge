@@ -1,5 +1,6 @@
 :root {
-  --accent: #f9e2af;
+  --text-color: #f9e2af;
+  --border-color: #f9e2af;
   --font: sans-serif;
   --text-scale: calc(var(--text-size, 19) / 19);
 }
@@ -29,8 +30,8 @@ body {
   overflow: hidden;
   box-sizing: border-box;
   padding: calc(10px * var(--text-scale)) calc(26px * var(--text-scale));
-  border-top: 1px solid var(--accent);
-  border-bottom: 1px solid var(--accent);
+  border-top: 1px solid var(--border-color);
+  border-bottom: 1px solid var(--border-color);
   background: rgba(20, 20, 28, 0.9);
   font-family: var(--font);
   white-space: nowrap;
@@ -41,7 +42,7 @@ body {
   width: calc(6px * var(--text-scale));
   height: calc(22px * var(--text-scale));
   border-radius: calc(3px * var(--text-scale));
-  background: var(--accent);
+  background: var(--border-color);
 }
 
 .body {
@@ -60,7 +61,7 @@ body {
 
 .subline {
   margin-left: calc(12px * var(--text-scale));
-  color: var(--accent);
+  color: var(--text-color);
   font-size: calc(13px * var(--text-scale));
 }
 

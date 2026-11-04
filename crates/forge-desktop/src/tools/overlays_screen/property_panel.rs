@@ -11,7 +11,7 @@ use forge_components::{
     ActivePresentation, BORDER_THIN, FONT_XXS, ForgePalette, KeyActivated, Picker, PickerEvent,
     PickerItem, PickerLabels, field_label, scaled, section_label, tr,
 };
-use forge_overlay::config::{ACCENT, SOUND_OPTIONS_KEY, SPEECH_VOICE};
+use forge_overlay::config::{BORDER_COLOR, SOUND_OPTIONS_KEY, SPEECH_VOICE, with_split_accent};
 use forge_overlay::{ConfigSection, MediaIssue, MediaSlot, SectionedField, media_slot};
 use forge_registry::FormField;
 use forge_runtime::{OverlaySampleSource, OverlayServiceHandle};
@@ -256,7 +256,7 @@ impl OverlayPropertyPanel {
     }
 
     fn accent_tint(&self, palette: &ForgePalette) -> Rgba {
-        self.selected_color(ACCENT)
+        self.selected_color(BORDER_COLOR)
             .map_or(palette.brand, stored_color_tint)
     }
 
@@ -312,7 +312,7 @@ impl OverlayPropertyPanel {
 
     pub(super) fn pending_config(&self, cx: &App) -> OverlayConfig {
         let mut buffer = self.defaults.clone();
-        buffer.extend(self.stored.clone());
+        buffer.extend(with_split_accent(&self.stored));
         collect_field_values(&self.fields, &mut buffer, cx);
         sparse_overrides(&self.defaults, &buffer)
     }

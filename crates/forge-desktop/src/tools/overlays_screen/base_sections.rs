@@ -8,12 +8,12 @@ use forge_components::{
     toggle, tr,
 };
 use forge_overlay::config::{
-    BACKGROUND_COLOR, BACKGROUND_OPACITY, CARD_HEIGHT_LIMITED, CARD_MAX_HEIGHT, CARD_MAX_WIDTH,
-    CARD_MIN_HEIGHT, CARD_MIN_WIDTH, CARD_WIDTH_LIMITED, COMMAND_PREFIX, DESIGN_HEIGHT,
-    DESIGN_WIDTH, DURATION, HIDDEN_ACCOUNTS, HIDE_COMMANDS, HIDE_ROWS, HIDE_ROWS_AFTER_SECS, IMAGE,
-    IMAGE_HEIGHT, IMAGE_POSITION, LABEL_OFFSET_X, LABEL_OFFSET_Y, LABEL_SIDE, MARGIN_BOTTOM,
-    MARGIN_LEFT, MARGIN_RIGHT, MARGIN_TOP, ROW_LIMIT, SHOW_AVATARS, SOUND, SPEECH, SPEECH_VOICE,
-    TEXT_OVERFLOW, THIRD_PARTY_EMOTES,
+    BACKGROUND_COLOR, BACKGROUND_OPACITY, BORDER_COLOR, CARD_HEIGHT_LIMITED, CARD_MAX_HEIGHT,
+    CARD_MAX_WIDTH, CARD_MIN_HEIGHT, CARD_MIN_WIDTH, CARD_WIDTH_LIMITED, COMMAND_PREFIX,
+    DESIGN_HEIGHT, DESIGN_WIDTH, DURATION, HIDDEN_ACCOUNTS, HIDE_COMMANDS, HIDE_ROWS,
+    HIDE_ROWS_AFTER_SECS, IMAGE, IMAGE_HEIGHT, IMAGE_POSITION, LABEL_OFFSET_X, LABEL_OFFSET_Y,
+    LABEL_SIDE, MARGIN_BOTTOM, MARGIN_LEFT, MARGIN_RIGHT, MARGIN_TOP, ROW_LIMIT, SHOW_AVATARS,
+    SOUND, SPEECH, SPEECH_VOICE, TEXT_COLOR, TEXT_OVERFLOW, THIRD_PARTY_EMOTES,
 };
 use forge_overlay::{ConfigSection, DeliveryDisposition, OverlayConfig};
 use forge_runtime::{OverlayDelivery, OverlayDispatch, ShowEnd, ShowTicket};
@@ -87,6 +87,8 @@ pub(super) fn base_label(key: &str) -> Option<String> {
         SPEECH => Some(tr!("overlays_base_speech")),
         SPEECH_VOICE => Some(tr!("overlays_base_voice")),
         DURATION => Some(tr!("overlays_base_duration")),
+        TEXT_COLOR => Some(tr!("overlays_text_color")),
+        BORDER_COLOR => Some(tr!("overlays_border_color")),
         BACKGROUND_COLOR => Some(tr!("overlays_alert_background_color")),
         BACKGROUND_OPACITY => Some(tr!("overlays_alert_background_opacity")),
         IMAGE => Some(tr!("overlays_alert_image")),

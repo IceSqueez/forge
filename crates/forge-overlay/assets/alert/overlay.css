@@ -1,5 +1,6 @@
 :root {
-  --accent: #cba6f7;
+  --text-color: #cba6f7;
+  --border-color: #cba6f7;
   --font: sans-serif;
   --text-scale: calc(var(--text-size, 20) / 20);
 }
@@ -35,7 +36,7 @@ body {
   max-height: 100%;
   overflow: hidden;
   padding: calc(16px * var(--text-scale)) calc(22px * var(--text-scale));
-  border: 1px solid var(--accent);
+  border: 1px solid var(--border-color);
   border-radius: calc(12px * var(--text-scale));
   background: rgba(20, 20, 28, 0.86);
   font-family: var(--font);
@@ -84,7 +85,7 @@ body {
 }
 
 .icon.tinted {
-  background-color: var(--accent);
+  background-color: var(--border-color);
   -webkit-mask: var(--icon-source) center / contain no-repeat;
   mask: var(--icon-source) center / contain no-repeat;
 }
@@ -119,7 +120,7 @@ body {
 }
 
 .subline {
-  color: var(--accent);
+  color: var(--text-color);
   font-size: calc(13px * var(--text-scale));
 }
 

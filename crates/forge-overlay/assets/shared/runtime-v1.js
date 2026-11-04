@@ -15,9 +15,10 @@
  *   forge.avatar(callback)       callback(avatar) per avatar frame
  *
  * config.json sits next to the page. Its config object is what the ready callback
- * receives, and the accent, font and position entries are applied here rather
- * than by the page: accent and font become the --accent and --font custom
- * properties, position becomes data-position on <body>. Stylesheets read those.
+ * receives, and the text_color, border_color, font and position entries are
+ * applied here rather than by the page: text_color, border_color and font become
+ * the --text-color, --border-color and --font custom properties, position
+ * becomes data-position on <body>. Stylesheets read those.
  *
  * The page viewport is the box: the browser source's own width and height. The
  * margin_top, margin_right, margin_bottom and margin_left entries are percents
@@ -198,6 +199,8 @@
   var CUSTOM_ACCENT = /^#[0-9a-f]{6}$/i;
   var FONT_NAME = /^[A-Za-z0-9 _-]+$/;
 
+  var TEXT_COLOR_PROPERTY = "--text-color";
+  var BORDER_COLOR_PROPERTY = "--border-color";
   var TEXT_SIZE_PROPERTY = "--text-size";
   var PIXEL_UNIT = "px";
   var NO_UNIT = "";
@@ -319,10 +322,14 @@
   }
 
   function applyAppearance(values) {
-    var accent = CUSTOM_ACCENT.test(values.accent)
-      ? values.accent
-      : ACCENT_HEX[values.accent] || FALLBACK_ACCENT;
-    document_.documentElement.style.setProperty("--accent", accent);
+    document_.documentElement.style.setProperty(
+      TEXT_COLOR_PROPERTY,
+      paletteColor(values.text_color),
+    );
+    document_.documentElement.style.setProperty(
+      BORDER_COLOR_PROPERTY,
+      paletteColor(values.border_color),
+    );
 
     var font = values.font;
     if (typeof font === "string" && FONT_NAME.test(font)) {
@@ -337,6 +344,12 @@
     applyMargins(values);
 
     document_.body.dataset.position = values.position || "";
+  }
+
+  function paletteColor(value) {
+    return CUSTOM_ACCENT.test(value)
+      ? value
+      : ACCENT_HEX[value] || FALLBACK_ACCENT;
   }
 
   function applySize(property, value, unit) {

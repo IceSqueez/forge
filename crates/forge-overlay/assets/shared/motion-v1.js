@@ -99,7 +99,7 @@
   var FRAME_SAMPLE = 8;
   var BUDGET_FLOOR = 0.25;
   var BUDGET_STEP = 0.5;
-  var ACCENT_PROPERTY = "--accent";
+  var PARTICLE_COLOR_PROPERTY = "--border-color";
   var FALLBACK_PARTICLE_COLOR = "#cba6f7";
   var HOT_PARTICLE_COLOR = "#fff8e7";
   var LIFTED_Z = "1";
@@ -1004,12 +1004,12 @@
     });
   }
 
-  function accentColor(element) {
-    var accent = window
+  function particleColor(element) {
+    var color = window
       .getComputedStyle(element)
-      .getPropertyValue(ACCENT_PROPERTY)
+      .getPropertyValue(PARTICLE_COLOR_PROPERTY)
       .trim();
-    return accent || FALLBACK_PARTICLE_COLOR;
+    return color || FALLBACK_PARTICLE_COLOR;
   }
 
   function liftAbove(handle) {
@@ -1404,7 +1404,7 @@
     var context = surface.context;
     var canvas = surface.canvas;
     var ratio = surface.ratio;
-    var accent = accentColor(handle.element);
+    var tint = particleColor(handle.element);
     var started = 0;
     var last = 0;
     var frames = 0;
@@ -1443,7 +1443,7 @@
           var progress = age / particle.life;
           particle.move(particle, seconds, progress);
           context.globalAlpha = Math.max(0, particle.fade(progress));
-          particle.draw(context, particle, ratio, particle.color || accent, progress);
+          particle.draw(context, particle, ratio, particle.color || tint, progress);
         });
         context.globalAlpha = 1;
         if (alive) {

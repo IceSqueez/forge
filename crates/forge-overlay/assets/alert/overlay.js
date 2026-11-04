@@ -1,6 +1,6 @@
 // Forge supplies window.forge. Nothing shows until an action delivers content;
 // the values arrive already expanded, so this page only places and reveals them.
-// A tintable icon is a mask the accent fills; an imported one is drawn as it was
+// A tintable icon is a mask the border color fills; an imported one is drawn as it was
 // imported. Neither is ever parsed into this document.
 var FALLBACK_MS = 5000;
 var ICON_SOURCE_PROPERTY = "--icon-source";

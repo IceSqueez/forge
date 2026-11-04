@@ -25,7 +25,7 @@ body {
   margin: 0;
   overflow: hidden;
   padding: 16px 20px;
-  border-left: 3px solid var(--accent);
+  border-left: 3px solid var(--border-color);
   background: rgba(20, 20, 28, 0.86);
   color: #cdd6f4;
   font-family: system-ui, sans-serif;

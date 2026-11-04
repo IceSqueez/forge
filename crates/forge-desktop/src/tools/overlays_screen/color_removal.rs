@@ -5,6 +5,7 @@ use forge_components::{
     overlay, tr,
 };
 use forge_overlay::OverlayKindRegistry;
+use forge_overlay::config::ACCENT;
 use forge_runtime::{OverlaySampleSource, OverlayServiceHandle};
 use forge_storage::settings::core_settings::OVERLAY_CUSTOM_ACCENTS;
 use forge_storage::{
@@ -38,12 +39,14 @@ fn holds_color(value: &Variant, color: &str) -> bool {
     matches!(value, Variant::String(text) if normalized_accent(text).as_deref() == Some(color))
 }
 
+fn is_color_key(key: &str) -> bool {
+    key == ACCENT || COLOR_FIELD_KEYS.contains(&key)
+}
+
 fn without_color(config: &OverlayConfig, color: &str) -> OverlayConfig {
     config
         .iter()
-        .filter(|(key, value)| {
-            !(COLOR_FIELD_KEYS.contains(&key.as_str()) && holds_color(value, color))
-        })
+        .filter(|(key, value)| !(is_color_key(key) && holds_color(value, color)))
         .map(|(key, value)| (key.clone(), value.clone()))
         .collect()
 }

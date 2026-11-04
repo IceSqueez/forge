@@ -3,7 +3,8 @@ use forge_components::{
     secondary_button, spacing, tr,
 };
 use forge_overlay::config::{
-    ACCENT, ACCENT_OPTIONS, BACKGROUND_COLOR, BACKGROUND_COLOR_OPTIONS, DEFAULT_BACKGROUND_COLOR,
+    ACCENT_OPTIONS, BACKGROUND_COLOR, BACKGROUND_COLOR_OPTIONS, BORDER_COLOR,
+    DEFAULT_BACKGROUND_COLOR, TEXT_COLOR,
 };
 use forge_overlay::{PreviewAccent, hex_color_channels};
 use forge_storage::OverlayConfig;
@@ -24,7 +25,7 @@ const SWATCH_ID_PREFIX: &str = "overlays-panel";
 const REMOVE_BADGE: Pixels = px(14.0);
 const REMOVE_GLYPH: Pixels = px(10.0);
 const REMOVE_BADGE_OVERHANG: Pixels = px(-5.0);
-pub(super) const COLOR_FIELD_KEYS: [&str; 2] = [ACCENT, BACKGROUND_COLOR];
+pub(super) const COLOR_FIELD_KEYS: [&str; 3] = [TEXT_COLOR, BORDER_COLOR, BACKGROUND_COLOR];
 
 struct ColorEntry {
     key: &'static str,

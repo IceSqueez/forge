@@ -149,7 +149,10 @@ pub(super) fn render_composition(
     density: Density,
     cx: &App,
 ) -> AnyElement {
-    let accent = accent_color(composition.accent);
+    let inks = Inks {
+        text: accent_color(composition.text_color),
+        border: accent_color(composition.border_color),
+    };
     let family = match composition.font {
         PreviewFont::Sans => cx.body_family(),
         PreviewFont::Mono => cx.mono_family(),
@@ -157,13 +160,19 @@ pub(super) fn render_composition(
 
     match composition.shape {
         PreviewShape::Blank => blank_note(glyphs.badge, family, palette, density),
-        PreviewShape::BadgeBanner => badge_banner(composition, plan, scale, accent, family, glyphs),
-        PreviewShape::BorderedFrame => bordered_frame(composition, scale, accent, family),
-        PreviewShape::LatestCard => latest_card(composition, plan, scale, accent, family),
-        PreviewShape::MessageFeed => message_feed(composition, plan, scale, accent, family),
-        PreviewShape::ProgressBar => progress_bar(composition, plan, scale, accent, family),
-        PreviewShape::Strip => strip(composition, plan, scale, accent, family),
+        PreviewShape::BadgeBanner => badge_banner(composition, plan, scale, inks, family, glyphs),
+        PreviewShape::BorderedFrame => bordered_frame(composition, scale, inks, family),
+        PreviewShape::LatestCard => latest_card(composition, plan, scale, inks, family),
+        PreviewShape::MessageFeed => message_feed(composition, plan, scale, inks, family),
+        PreviewShape::ProgressBar => progress_bar(composition, plan, scale, inks, family),
+        PreviewShape::Strip => strip(composition, plan, scale, inks, family),
     }
+}
+
+#[derive(Clone, Copy)]
+struct Inks {
+    text: Rgba,
+    border: Rgba,
 }
 
 fn blank_note(
@@ -205,7 +214,7 @@ fn badge_banner(
     composition: &PreviewComposition,
     plan: ElementPlan,
     scale: Scale,
-    accent: Rgba,
+    inks: Inks,
     family: SharedString,
     glyphs: &StageGlyphs,
 ) -> AnyElement {
@@ -223,7 +232,7 @@ fn badge_banner(
             div()
                 .font_family(family.clone())
                 .text_size(scale.text_at(ALERT.subline_size))
-                .text_color(accent)
+                .text_color(inks.text)
                 .when(cut, Styled::truncate)
                 .child(text),
         );
@@ -241,7 +250,7 @@ fn badge_banner(
             div().flex_none().child(glyph_art(
                 art,
                 scale.text_at(ALERT.icon_size),
-                accent,
+                inks.border,
                 "overlays-preview-icon",
             ))
         }))
@@ -272,7 +281,7 @@ fn badge_banner(
         .px(scale.text_at(ALERT.padding_inline))
         .rounded(scale.text_at(ALERT.radius))
         .border(scale.at(ALERT.border))
-        .border_color(accent)
+        .border_color(inks.border)
         .bg(composition.surface.map_or_else(
             || surface(ALERT.surface_alpha),
             |chosen| page_color(chosen.rgb, chosen.alpha),
@@ -309,7 +318,7 @@ fn banner_headline(
 fn bordered_frame(
     composition: &PreviewComposition,
     scale: Scale,
-    accent: Rgba,
+    inks: Inks,
     family: SharedString,
 ) -> AnyElement {
     let headline = line_text(composition, PreviewLineRole::Headline);
@@ -324,7 +333,7 @@ fn bordered_frame(
         .px(scale.text_at(FRAME.label_padding_inline))
         .rounded(scale.at(FRAME.label_radius))
         .border(scale.at(FRAME.label_border))
-        .border_color(accent)
+        .border_color(inks.border)
         .bg(surface(FRAME.surface_alpha))
         .font_family(family);
 
@@ -340,7 +349,7 @@ fn bordered_frame(
             div()
                 .font_weight(FontWeight::BOLD)
                 .text_size(scale.text_at(FRAME.subline_size))
-                .text_color(accent)
+                .text_color(inks.text)
                 .child(text)
         }))
         .when(empty, |label| {
@@ -382,7 +391,7 @@ fn bordered_frame(
         .size_full()
         .rounded(scale.at(FRAME.radius))
         .border(scale.at(FRAME.border))
-        .border_color(accent);
+        .border_color(inks.border);
 
     div()
         .absolute()
@@ -399,7 +408,7 @@ fn message_feed(
     composition: &PreviewComposition,
     plan: ElementPlan,
     scale: Scale,
-    accent: Rgba,
+    inks: Inks,
     family: SharedString,
 ) -> AnyElement {
     let author = line_text(composition, PreviewLineRole::Headline);
@@ -421,7 +430,7 @@ fn message_feed(
                 .flex_none()
                 .font_weight(FontWeight::BOLD)
                 .text_size(scale.text_at(CHAT.badges_size))
-                .text_color(accent)
+                .text_color(inks.text)
                 .child(text.to_uppercase())
         }))
         .children(author.map(|name| {
@@ -460,7 +469,7 @@ fn progress_bar(
     composition: &PreviewComposition,
     plan: ElementPlan,
     scale: Scale,
-    accent: Rgba,
+    inks: Inks,
     family: SharedString,
 ) -> AnyElement {
     let label = line_text(composition, PreviewLineRole::Headline)
@@ -478,7 +487,7 @@ fn progress_bar(
         .children(
             composition
                 .fill
-                .map(|share| div().h_full().w(relative(share)).bg(accent)),
+                .map(|share| div().h_full().w(relative(share)).bg(inks.border)),
         );
 
     let card = div()
@@ -491,7 +500,7 @@ fn progress_bar(
         .px(scale.text_at(GOAL.padding_inline))
         .rounded(scale.text_at(GOAL.radius))
         .border(scale.at(GOAL.border))
-        .border_color(accent)
+        .border_color(inks.border)
         .bg(surface(GOAL.surface_alpha))
         .font_family(family)
         .child(
@@ -510,7 +519,7 @@ fn progress_bar(
                 .min_w(px(0.0))
                 .font_weight(FontWeight::SEMIBOLD)
                 .text_size(scale.text_at(GOAL.figure_size))
-                .text_color(accent)
+                .text_color(inks.text)
                 .child(tally_text(figure)),
         );
 
@@ -521,7 +530,7 @@ fn strip(
     composition: &PreviewComposition,
     plan: ElementPlan,
     scale: Scale,
-    accent: Rgba,
+    inks: Inks,
     family: SharedString,
 ) -> AnyElement {
     let headline = line_text(composition, PreviewLineRole::Headline)
@@ -550,7 +559,7 @@ fn strip(
                 .min_w(px(0.0))
                 .truncate()
                 .text_size(scale.text_at(TICKER.subline_size))
-                .text_color(accent)
+                .text_color(inks.text)
                 .child(text)
         }));
 
@@ -564,7 +573,7 @@ fn strip(
         .px(scale.text_at(TICKER.padding_inline))
         .border_t(scale.at(TICKER.edge_border))
         .border_b(scale.at(TICKER.edge_border))
-        .border_color(accent)
+        .border_color(inks.border)
         .bg(surface(TICKER.surface_alpha))
         .font_family(family)
         .child(
@@ -573,7 +582,7 @@ fn strip(
                 .w(scale.text_at(TICKER.mark_width))
                 .h(scale.text_at(TICKER.mark_height))
                 .rounded(scale.text_at(TICKER.mark_radius))
-                .bg(accent),
+                .bg(inks.border),
         )
         .child(body);
 
@@ -584,7 +593,7 @@ fn latest_card(
     composition: &PreviewComposition,
     plan: ElementPlan,
     scale: Scale,
-    accent: Rgba,
+    inks: Inks,
     family: SharedString,
 ) -> AnyElement {
     let headline = line_text(composition, PreviewLineRole::Headline)
@@ -628,7 +637,7 @@ fn latest_card(
                 .w_full()
                 .font_weight(FontWeight::SEMIBOLD)
                 .text_size(scale.text_at(LATEST.label_size))
-                .text_color(accent)
+                .text_color(inks.text)
                 .child(text)
         }))
         .child(value);
@@ -640,7 +649,7 @@ fn latest_card(
         };
         div()
             .flex_none()
-            .child(icon(glyph, scale.text_at(LATEST.icon_size), accent))
+            .child(icon(glyph, scale.text_at(LATEST.icon_size), inks.border))
     });
 
     let card = div()
@@ -654,7 +663,7 @@ fn latest_card(
         .px(scale.text_at(LATEST.padding_inline))
         .rounded(scale.text_at(LATEST.radius))
         .border(scale.at(LATEST.border))
-        .border_color(accent)
+        .border_color(inks.border)
         .bg(surface(LATEST.surface_alpha))
         .font_family(family)
         .children(mark)

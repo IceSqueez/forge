@@ -1,5 +1,6 @@
 :root {
-  --accent: #fab387;
+  --text-color: #fab387;
+  --border-color: #fab387;
   --font: sans-serif;
   --text-scale: calc(var(--text-size, 13) / 13);
 }
@@ -24,7 +25,7 @@ body {
   flex: 1 1 auto;
   min-width: 0;
   margin: calc(16px * var(--text-scale));
-  border: 3px solid var(--accent);
+  border: 3px solid var(--border-color);
   border-radius: 14px;
   font-family: var(--font);
 }
@@ -38,7 +39,7 @@ body {
   align-items: center;
   gap: calc(8px * var(--text-scale));
   padding: calc(3px * var(--text-scale)) calc(14px * var(--text-scale));
-  border: 1px solid var(--accent);
+  border: 1px solid var(--border-color);
   border-radius: 999px;
   background: rgba(20, 20, 28, 0.92);
   transform: translate(var(--label-x, 0px), var(--label-y, 0px));
@@ -70,7 +71,7 @@ body[data-position="top"] .corner {
 }
 
 .subline {
-  color: var(--accent);
+  color: var(--text-color);
   font-size: calc(11px * var(--text-scale));
   font-weight: 700;
   letter-spacing: 0.12em;

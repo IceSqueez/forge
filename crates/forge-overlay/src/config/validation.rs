@@ -1,7 +1,8 @@
 use forge_registry::{FormField, effective_config};
 use forge_types::Variant;
 
-use super::keys::{ACCENT, BACKGROUND_COLOR, IMAGE};
+use super::accent_split::with_split_accent;
+use super::keys::{BACKGROUND_COLOR, BORDER_COLOR, IMAGE, TEXT_COLOR};
 use crate::catalog::descriptor::{OverlayConfig, OverlayKindDescriptor, SectionedField};
 use crate::error::OverlayError;
 use crate::files::media::names_a_library_image;
@@ -14,7 +15,7 @@ pub fn effective_overlay_config(
     descriptor: &dyn OverlayKindDescriptor,
     stored: &OverlayConfig,
 ) -> OverlayConfig {
-    effective_config(&descriptor.default_config(), stored)
+    effective_config(&descriptor.default_config(), &with_split_accent(stored))
 }
 
 pub fn hex_color_channels(value: &str) -> Option<[u8; 3]> {
@@ -103,7 +104,7 @@ pub(super) fn check_field(field: &FormField, config: &OverlayConfig) -> Result<(
 
 fn is_custom_color(key: &str, value: &str) -> bool {
     match key {
-        ACCENT => hex_color_channels(value).is_some(),
+        TEXT_COLOR | BORDER_COLOR => hex_color_channels(value).is_some(),
         BACKGROUND_COLOR => value.is_empty() || hex_color_channels(value).is_some(),
         _ => false,
     }

@@ -1,6 +1,9 @@
 pub const HEADLINE: &str = "headline";
 pub const SUBLINE: &str = "subline";
 pub const ACCENT: &str = "accent";
+pub const TEXT_COLOR: &str = "text_color";
+pub const BORDER_COLOR: &str = "border_color";
+pub const ACCENT_SPLIT_KEYS: [&str; 2] = [TEXT_COLOR, BORDER_COLOR];
 pub const FONT: &str = "font";
 pub const POSITION: &str = "position";
 pub const DESIGN_WIDTH: &str = "design_width";

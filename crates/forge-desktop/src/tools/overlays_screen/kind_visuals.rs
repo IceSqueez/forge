@@ -47,7 +47,7 @@ pub(super) fn kind_visuals(
     let effective = effective_overlay_config(descriptor, &definition.config);
     let accent = descriptor
         .preview(&effective, NamesLanguage::default())
-        .accent;
+        .border_color;
     KindVisuals {
         icon: Icon::from_name(descriptor.icon_name()),
         accent: chrome_accent(accent, palette),

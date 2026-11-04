@@ -337,7 +337,7 @@ async fn stage_and_plan(
         .map_err(|error| PlanFailure::Refused(RestoreProblem::of(&error)))?;
     match services.load_source().await {
         Ok(source) => {
-            let registries = services.registries(&source);
+            let registries = services.registries();
             match plan_pack_import(&staged, &source.inventory, registries) {
                 Ok(plan) => Ok(Planned { staged, plan }),
                 Err(error) => {
@@ -359,17 +359,11 @@ async fn apply_staged(
     staged: StagedPack,
     plan: PackImportPlan,
 ) -> Applied {
-    let source = match services.load_source().await {
-        Ok(source) => source,
-        Err(message) => {
-            return Applied::Failed { staged, message };
-        }
-    };
     let snapshot_taken = plan.replaces_anything();
     let overlay_root = services.overlays.root().await;
     let applied = apply_pack_import(PackImportRequest {
         provider: Arc::clone(&services.backend),
-        registries: services.registries(&source),
+        registries: services.registries(),
         staged: &staged,
         plan: plan.clone(),
         data_dir,
@@ -402,21 +396,19 @@ async fn apply_staged(
 
 async fn replan(services: &PackServices, staged: StagedPack, previous: &PackImportPlan) -> Applied {
     match services.load_source().await {
-        Ok(source) => {
-            match plan_pack_import(&staged, &source.inventory, services.registries(&source)) {
-                Ok(mut plan) => {
-                    carry_choices(previous, &mut plan);
-                    Applied::Stale { staged, plan }
-                }
-                Err(error) => {
-                    tracing::warn!(%error, "pack replan failed");
-                    Applied::Failed {
-                        staged,
-                        message: RepoFailure::from(error),
-                    }
+        Ok(source) => match plan_pack_import(&staged, &source.inventory, services.registries()) {
+            Ok(mut plan) => {
+                carry_choices(previous, &mut plan);
+                Applied::Stale { staged, plan }
+            }
+            Err(error) => {
+                tracing::warn!(%error, "pack replan failed");
+                Applied::Failed {
+                    staged,
+                    message: RepoFailure::from(error),
                 }
             }
-        }
+        },
         Err(message) => Applied::Failed { staged, message },
     }
 }

@@ -17,7 +17,13 @@ pub(crate) struct PackReview {
 pub(crate) fn review_pack(staged: &StagedPack, registries: ClosureRegistries<'_>) -> PackReview {
     let manifest = staged.manifest();
     let documents = staged.documents();
-    let catalog = registries.catalog();
+    let schema = registries.content_schema(
+        documents
+            .overlays
+            .iter()
+            .map(|overlay| (overlay.id.as_str(), overlay.kind_id.as_str())),
+    );
+    let catalog = registries.catalog(&schema);
     let mut warnings = BTreeSet::new();
     let mut executable = BTreeSet::new();
 

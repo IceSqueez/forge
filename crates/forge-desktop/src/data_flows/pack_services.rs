@@ -1,7 +1,7 @@
 use std::sync::Arc;
 
 use forge_overlay::OverlayKindRegistry;
-use forge_registry::{FormSchemaSource, SubActionRegistry, TriggerRegistry};
+use forge_registry::{SubActionRegistry, TriggerRegistry};
 use forge_runtime::{
     OverlaySampleSource, OverlayServiceHandle, QueueSchedulerHandle, ScriptCatalog,
 };
@@ -10,7 +10,6 @@ use forge_transfer::{ClosureRegistries, PackInventory, load_pack_inventory};
 use tokio::runtime::Handle;
 
 use crate::app::runtime_handles::RuntimeHandles;
-use crate::automation::actions_screen::overlay_schema::OverlayContentSchema;
 use crate::shared::repo_failure::RepoFailure;
 
 #[derive(Clone)]
@@ -30,7 +29,6 @@ pub(crate) struct PackServices {
 #[derive(Clone)]
 pub(crate) struct PackSource {
     pub inventory: Arc<PackInventory>,
-    schema: Arc<OverlayContentSchema>,
 }
 
 impl PackServices {
@@ -49,12 +47,11 @@ impl PackServices {
         }
     }
 
-    pub(crate) fn registries<'a>(&'a self, source: &'a PackSource) -> ClosureRegistries<'a> {
+    pub(crate) fn registries(&self) -> ClosureRegistries<'_> {
         ClosureRegistries {
             sub_actions: &self.sub_actions,
             triggers: &self.triggers,
             overlays: &self.overlay_kinds,
-            schema: Some(source.schema.as_ref() as &(dyn FormSchemaSource + Sync)),
         }
     }
 
@@ -62,21 +59,8 @@ impl PackServices {
         let inventory = load_pack_inventory(self.backend.as_ref())
             .await
             .map_err(RepoFailure::from)?;
-        let overlays = self
-            .backend
-            .overlay_repo()
-            .list()
-            .await
-            .map_err(RepoFailure::from)?;
-        let kind_by_identity = overlays
-            .into_iter()
-            .map(|overlay| (overlay.id.to_string(), overlay.kind_id))
-            .collect();
-        let schema = OverlayContentSchema::new(Arc::clone(&self.overlay_kinds))
-            .with_identities(kind_by_identity);
         Ok(PackSource {
             inventory: Arc::new(inventory),
-            schema: Arc::new(schema),
         })
     }
 }

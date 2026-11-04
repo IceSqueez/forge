@@ -174,8 +174,7 @@ pub(crate) fn export_pack_carrying(
     rt.block_on(async {
         let source = world.services.load_source().await.unwrap();
         let mut selection =
-            resolve_pack_closure(&source.inventory, world.services.registries(&source), roots)
-                .unwrap();
+            resolve_pack_closure(&source.inventory, world.services.registries(), roots).unwrap();
         selection.overlays.extend(overlays.iter().cloned());
         write_pack(PackExportRequest {
             provider: Arc::clone(world.provider()),
@@ -206,12 +205,8 @@ pub(crate) fn stage_into(
             .await
             .unwrap();
         let source = world.services.load_source().await.unwrap();
-        let plan = plan_pack_import(
-            &staged,
-            &source.inventory,
-            world.services.registries(&source),
-        )
-        .unwrap();
+        let plan =
+            plan_pack_import(&staged, &source.inventory, world.services.registries()).unwrap();
         (staged, plan)
     })
 }

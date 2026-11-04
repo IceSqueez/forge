@@ -51,6 +51,7 @@ pub use render::browser_preview::{
     PREVIEW_CONNECTION_FIELD, PREVIEW_PARAM, PREVIEW_VALUE, preview_page_url,
 };
 pub use render::content::delivered_content;
+pub use render::content_schema::{CONTENT_SCHEMA_KEY, ContentSchemaByIdentity, content_fields};
 pub use render::document::{
     ICON_FILE_FIELD, ICON_TINTABLE_FIELD, config_document, sample_document,
 };

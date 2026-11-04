@@ -18,7 +18,7 @@ const DURATION_KEY: &str = "duration_seconds";
 const WAIT_KEY: &str = "wait_for_show";
 const MILLIS_PER_SECOND: u64 = 1_000;
 
-pub const CONTENT_SCHEMA_KEY: &str = "overlay.content_fields";
+pub use forge_overlay::CONTENT_SCHEMA_KEY;
 
 const TARGET: DynamicSelectField<String> =
     DynamicSelectField::new(OVERLAY_TARGET_KEY, "Overlay", OVERLAY_OPTIONS_KEY);

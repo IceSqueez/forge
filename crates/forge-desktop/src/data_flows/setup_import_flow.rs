@@ -327,15 +327,6 @@ async fn apply_staged(
     data_dir: PathBuf,
     staged: StagedSetup,
 ) -> SetupApplied {
-    let source = match services.load_source().await {
-        Ok(source) => source,
-        Err(message) => {
-            return SetupApplied::Failed {
-                staged: Box::new(staged),
-                message,
-            };
-        }
-    };
     let baseline = voice_baseline(services.backend.as_ref()).await;
     let overlay_root = services.overlays.root().await;
     let applied = apply_setup_import(SetupImportRequest {
@@ -345,7 +336,7 @@ async fn apply_staged(
             crate::automation::shortcut_overrides::KEYBOARD_SHORTCUTS.spec(),
             forge_hotkey::HOLD_CEILING.spec(),
         ],
-        registries: services.registries(&source),
+        registries: services.registries(),
         staged: &staged,
         data_dir,
         overlay_root,

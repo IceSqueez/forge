@@ -1,13 +1,13 @@
 use std::collections::{BTreeSet, VecDeque};
 
 use forge_overlay::{
-    MediaSlot, MediaValue, OverlayKindRegistry, clip_references, image_references, media_slot,
-    read_media_value,
+    ContentSchemaByIdentity, MediaSlot, MediaValue, OverlayKindRegistry, clip_references,
+    image_references, media_slot, read_media_value,
 };
 use forge_registry::LOCAL_FILE_NAMESPACE;
 use forge_registry::{
-    FormSchemaSource, InternalNamespace, ReferenceCatalog, ReferenceListing, ReferenceNamespace,
-    StepNode, StepReach, SubActionRegistry, TriggerRegistry, walk_steps,
+    InternalNamespace, ReferenceCatalog, ReferenceListing, ReferenceNamespace, StepNode, StepReach,
+    SubActionRegistry, TriggerRegistry, walk_steps,
 };
 use forge_storage::{MediaBlobId, OverlayId};
 use forge_types::{
@@ -23,16 +23,29 @@ pub struct ClosureRegistries<'a> {
     pub sub_actions: &'a SubActionRegistry,
     pub triggers: &'a TriggerRegistry,
     pub overlays: &'a OverlayKindRegistry,
-    pub schema: Option<&'a (dyn FormSchemaSource + Sync)>,
 }
 
 impl<'a> ClosureRegistries<'a> {
-    pub(crate) fn catalog(&self) -> ReferenceCatalog<'a> {
-        let catalog = ReferenceCatalog::new(self.sub_actions, self.triggers);
-        match self.schema {
-            Some(schema) => catalog.with_schema(schema),
-            None => catalog,
-        }
+    pub(crate) fn content_schema<'i>(
+        &self,
+        overlays: impl IntoIterator<Item = (&'i str, &'i str)>,
+    ) -> ContentSchemaByIdentity<'a> {
+        ContentSchemaByIdentity::new(
+            self.overlays,
+            overlays
+                .into_iter()
+                .map(|(identity, kind_id)| (identity.to_owned(), kind_id.to_owned())),
+        )
+    }
+
+    pub(crate) fn catalog<'s>(
+        &self,
+        schema: &'s ContentSchemaByIdentity<'_>,
+    ) -> ReferenceCatalog<'s>
+    where
+        'a: 's,
+    {
+        ReferenceCatalog::new(self.sub_actions, self.triggers).with_schema(schema)
     }
 }
 
@@ -61,10 +74,16 @@ pub fn resolve_pack_closure(
     if roots.is_empty() {
         return Err(TransferError::EmptyPack);
     }
+    let schema = registries.content_schema(
+        inventory
+            .overlays
+            .values()
+            .map(|overlay| (overlay.id.as_str(), overlay.kind_id.as_str())),
+    );
     let mut walk = ClosureWalk {
         inventory,
         registries,
-        catalog: registries.catalog(),
+        catalog: registries.catalog(&schema),
         selection: PackSelection {
             roots: roots.to_vec(),
             ..PackSelection::default()

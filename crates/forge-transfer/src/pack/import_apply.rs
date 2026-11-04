@@ -2,10 +2,10 @@ use std::collections::{BTreeMap, BTreeSet};
 use std::path::PathBuf;
 use std::sync::Arc;
 
-use forge_overlay::image_references;
+use forge_overlay::ContentSchemaByIdentity;
 use forge_registry::{InternalNamespace, ReferenceRemap};
 use forge_storage::{
-    DataProvider, MediaBlobId, NewOverlay, OverlayConfig, OverlayDefinition, OverlayId,
+    DataProvider, MediaBlobId, MediaKind, NewOverlay, OverlayConfig, OverlayDefinition, OverlayId,
     StoreChange, unique_overlay_id,
 };
 use forge_types::{ActionId, ClipId, QueueId, ScriptId, TriggerInstanceId};
@@ -375,23 +375,32 @@ impl<'a> PackImport<'_, 'a> {
         Ok(())
     }
 
-    fn needed_media(&self) -> BTreeSet<String> {
-        let documents = self.staged.documents();
-        let clips = documents
+    fn content_schema(&self) -> ContentSchemaByIdentity<'a> {
+        let staged = self.staged;
+        let local = self
+            .inventory
+            .overlays
+            .values()
+            .map(|overlay| (overlay.id.as_str(), overlay.kind_id.as_str()));
+        let carried = staged
+            .documents()
+            .overlays
+            .iter()
+            .map(|overlay| (overlay.id.as_str(), overlay.kind_id.as_str()));
+        self.registries.content_schema(local.chain(carried))
+    }
+
+    fn clip_held_media(&self) -> BTreeSet<String> {
+        self.staged
+            .documents()
             .clips
             .iter()
             .filter(|clip| self.is_written(&key(PackItemKind::Clip, clip.id.to_string())))
             .filter_map(|clip| match &clip.source {
                 ClipSourceDocument::Media { media_id } => Some(media_id.clone()),
                 ClipSourceDocument::File { .. } | ClipSourceDocument::Missing => None,
-            });
-        let overlays = documents
-            .overlays
-            .iter()
-            .filter(|overlay| self.is_written(&key(PackItemKind::Overlay, overlay.id.clone())))
-            .flat_map(|overlay| image_references(&overlay.config))
-            .map(|reference| reference.image);
-        clips.chain(overlays).collect()
+            })
+            .collect()
     }
 
     async fn store_staged(
@@ -410,11 +419,15 @@ impl<'a> PackImport<'_, 'a> {
     }
 
     async fn write_media(&mut self) -> Result<(), TransferError> {
-        let needed = self.needed_media();
+        let clip_held = self.clip_held_media();
         let staged = self.staged;
         for media in &staged.documents().media {
             let item = key(PackItemKind::Media, media.id.clone());
-            if !needed.contains(&media.id) {
+            if self.writable(&item).is_none() {
+                continue;
+            }
+            let held = media.format.kind() == MediaKind::Image || clip_held.contains(&media.id);
+            if !held {
                 self.skipped.push(item);
                 continue;
             }
@@ -609,6 +622,8 @@ impl<'a> PackImport<'_, 'a> {
 
     fn write_triggers(&mut self) -> Result<(), TransferError> {
         let staged = self.staged;
+        let schema = self.content_schema();
+        let catalog = self.registries.catalog(&schema);
         for document in &staged.documents().triggers {
             let item = key(PackItemKind::Trigger, document.id.to_string());
             let Some(target) = self.writable(&item) else {
@@ -620,9 +635,7 @@ impl<'a> PackImport<'_, 'a> {
             if target.mode == TargetMode::Copy {
                 trigger.user_defined = true;
             }
-            self.registries
-                .catalog()
-                .rewrite_trigger_instance(&mut trigger, &self.remap);
+            catalog.rewrite_trigger_instance(&mut trigger, &self.remap);
             let previous = target
                 .replaces()
                 .then(|| self.inventory.stored_trigger(&trigger.id))
@@ -642,6 +655,8 @@ impl<'a> PackImport<'_, 'a> {
 
     fn write_actions(&mut self) -> Result<Vec<(ActionId, &'a ActionDocument)>, TransferError> {
         let staged = self.staged;
+        let schema = self.content_schema();
+        let catalog = self.registries.catalog(&schema);
         let mut linkable = Vec::new();
         for document in &staged.documents().actions {
             let item = key(PackItemKind::Action, document.id.to_string());
@@ -651,8 +666,7 @@ impl<'a> PackImport<'_, 'a> {
             let mut action = action_of(document);
             action.id = ulid_id(target.preassigned_id()?)?;
             action.name = target.name.clone();
-            self.registries
-                .catalog()
+            catalog
                 .rewrite_action(&mut action, &self.remap)
                 .map_err(TransferError::damaged)?;
             let queue_available = self.written_queues.contains(&action.queue_id)

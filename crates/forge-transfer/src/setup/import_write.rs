@@ -1,5 +1,6 @@
 use std::collections::BTreeMap;
 
+use forge_overlay::ContentSchemaByIdentity;
 use forge_registry::InternalNamespace;
 use forge_storage::settings::core_settings;
 use forge_storage::{
@@ -24,7 +25,7 @@ const TTS_SETTINGS: [&str; 3] = [
     core_settings::TTS_MASTER_VOLUME.name(),
 ];
 
-impl SetupImport<'_, '_> {
+impl<'a> SetupImport<'_, 'a> {
     async fn store_staged(
         &mut self,
         setup_path: &str,
@@ -215,13 +216,25 @@ impl SetupImport<'_, '_> {
         id
     }
 
+    fn staged_content_schema(&self) -> ContentSchemaByIdentity<'a> {
+        let staged = self.staged;
+        self.registries.content_schema(
+            staged
+                .documents()
+                .configuration
+                .overlays
+                .iter()
+                .map(|overlay| (overlay.id.as_str(), overlay.kind_id.as_str())),
+        )
+    }
+
     pub(super) fn write_triggers(&mut self) {
         let staged = self.staged;
+        let schema = self.staged_content_schema();
+        let catalog = self.registries.catalog(&schema);
         for document in &staged.documents().configuration.triggers {
             let mut trigger = trigger_of(document);
-            self.registries
-                .catalog()
-                .rewrite_trigger_instance(&mut trigger, &self.remap);
+            catalog.rewrite_trigger_instance(&mut trigger, &self.remap);
             self.changes
                 .push(StoreChange::SaveTrigger(Box::new(trigger)));
             self.refresh.insert(SetupLivePart::Hotkeys);
@@ -231,10 +244,11 @@ impl SetupImport<'_, '_> {
     pub(super) fn write_actions(&mut self) -> Result<(), TransferError> {
         let queues = self.setup_queue_ids();
         let staged = self.staged;
+        let schema = self.staged_content_schema();
+        let catalog = self.registries.catalog(&schema);
         for document in &staged.documents().configuration.actions {
             let mut action = action_of(document);
-            self.registries
-                .catalog()
+            catalog
                 .rewrite_action(&mut action, &self.remap)
                 .map_err(TransferError::damaged)?;
             if !queues.contains(&action.queue_id) {

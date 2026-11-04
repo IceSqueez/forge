@@ -224,7 +224,7 @@ impl PackExportModal {
         async_bridge::run_blocking(
             &self.services.rt_handle,
             move || {
-                resolve_pack_closure(&source.inventory, services.registries(&source), &roots)
+                resolve_pack_closure(&source.inventory, services.registries(), &roots)
                     .map_err(RepoFailure::from)
             },
             move |this, result, cx| this.resolved(ticket, result, cx),

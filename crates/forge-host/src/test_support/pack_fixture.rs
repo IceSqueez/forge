@@ -66,7 +66,6 @@ impl Registries {
             sub_actions: &self.sub_actions,
             triggers: &self.triggers,
             overlays: &self.overlays,
-            schema: None,
         }
     }
 

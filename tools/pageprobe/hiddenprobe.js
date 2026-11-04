@@ -217,8 +217,8 @@ async function alertOverdueHideCase(browser, skipsExit, failures) {
       failures.push(`${label}: precondition - the hide timer was not starved ${JSON.stringify(overdue)}`);
       return;
     }
-    await probe.page.bringToFront();
     const seenAt = await now(probe.page);
+    await probe.page.bringToFront();
     const hidden = await hiddenAfter(probe.page, seenAt).catch(() => null);
     if (hidden === null) {
       failures.push(`${label}: an alert past its duration stayed up after the page became visible`);

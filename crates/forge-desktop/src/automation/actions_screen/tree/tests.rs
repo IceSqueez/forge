@@ -902,3 +902,310 @@ fn a_missing_or_blank_group_lands_in_the_ungrouped_bucket() {
         )]
     );
 }
+
+const BULK_DELETE_BUTTON: &str = "actions-bulk-delete";
+
+impl Fixture {
+    fn modified_click(
+        &self,
+        vcx: &mut gpui::VisualTestContext,
+        position: usize,
+        modifiers: gpui::Modifiers,
+    ) {
+        let bounds = self.row_bounds(vcx, position);
+        let name_area = gpui::point(bounds.left() + ROW_INDENT, bounds.center().y);
+        vcx.simulate_click(name_area, modifiers);
+        self.settle(vcx);
+    }
+
+    fn marked_names(&self, cx: &mut gpui::VisualTestContext) -> Vec<String> {
+        let ids = self
+            .view
+            .read_with(cx, |view, _| view.marked.ids().to_vec());
+        ids.into_iter()
+            .map(|id| self.name_of(id).to_owned())
+            .collect()
+    }
+
+    fn opened_name(&self, vcx: &mut gpui::VisualTestContext) -> Option<String> {
+        let editor = self.host.read_with(vcx, |host, _| host.editor.clone());
+        let opened = editor.read_with(vcx, |view, _| view.open_action_id());
+        opened.map(|id| self.name_of(id).to_owned())
+    }
+
+    fn search_typed(&self, cx: &mut gpui::VisualTestContext, query: &str) {
+        let changed = InputEvent::Changed(query.to_owned().into());
+        self.view.update(cx, |view, cx| {
+            let field = view.search.field().clone();
+            view.on_search_event(field, &changed, cx);
+        });
+    }
+
+    fn all_row_bounds(&self, vcx: &mut gpui::VisualTestContext) -> Vec<gpui::Bounds<Pixels>> {
+        let rows = self
+            .view
+            .read_with(vcx, |view, _| view.tree_action_rows().len());
+        (0..rows)
+            .map(|position| self.row_bounds(vcx, position))
+            .collect()
+    }
+}
+
+fn names(list: &[&str]) -> Vec<String> {
+    list.iter().map(|name| (*name).to_owned()).collect()
+}
+
+#[gpui::test]
+fn a_secondary_click_marks_the_row_and_keeps_the_open_row_open(cx: &mut gpui::TestAppContext) {
+    let fixture = Fixture::new(cx, &seeds());
+    let vcx = &mut fixture.in_window(cx);
+    fixture.click_row(vcx, 0);
+
+    fixture.modified_click(vcx, 2, gpui::Modifiers::secondary_key());
+
+    assert_eq!(
+        (
+            fixture.marked_names(vcx),
+            fixture.selected_name(vcx),
+            fixture.opened_name(vcx)
+        ),
+        (
+            names(&["Free hug", "Lurk"]),
+            Some("Free hug".to_owned()),
+            Some("Free hug".to_owned())
+        )
+    );
+}
+
+#[gpui::test]
+fn a_shift_click_marks_only_the_rendered_rows_between_the_open_row_and_the_target(
+    cx: &mut gpui::TestAppContext,
+) {
+    let fixture = Fixture::new(cx, &seeds());
+    let vcx = &mut fixture.in_window(cx);
+    fixture.collapse(vcx, "Misc");
+    vcx.run_until_parked();
+    fixture.click_row(vcx, 0);
+
+    fixture.modified_click(vcx, 3, gpui::Modifiers::shift());
+
+    assert_eq!(
+        fixture.marked_names(vcx),
+        names(&["Free hug", "Hydrate", "Lurk", "Raid train"])
+    );
+}
+
+#[gpui::test]
+fn a_plain_click_collapses_a_bulk_selection_to_the_clicked_row_and_opens_it(
+    cx: &mut gpui::TestAppContext,
+) {
+    let fixture = Fixture::new(cx, &seeds());
+    let vcx = &mut fixture.in_window(cx);
+    fixture.click_row(vcx, 0);
+    fixture.modified_click(vcx, 2, gpui::Modifiers::shift());
+
+    fixture.click_row(vcx, 4);
+
+    assert_eq!(
+        (fixture.marked_names(vcx), fixture.opened_name(vcx)),
+        (names(&["Shoutout"]), Some("Shoutout".to_owned()))
+    );
+}
+
+#[gpui::test]
+fn escape_collapses_a_bulk_selection_back_to_the_open_row(cx: &mut gpui::TestAppContext) {
+    let fixture = Fixture::new(cx, &seeds());
+    let vcx = &mut fixture.in_window(cx);
+    fixture.click_row(vcx, 1);
+    fixture.modified_click(vcx, 3, gpui::Modifiers::secondary_key());
+    fixture.modified_click(vcx, 5, gpui::Modifiers::secondary_key());
+
+    fixture.press(vcx, "escape");
+
+    assert_eq!(
+        (fixture.marked_names(vcx), fixture.selected_name(vcx)),
+        (names(&["Hydrate"]), Some("Hydrate".to_owned()))
+    );
+}
+
+#[gpui::test]
+fn rows_that_stop_being_listed_leave_the_bulk_selection(cx: &mut gpui::TestAppContext) {
+    type Hide = fn(&Fixture, &mut gpui::VisualTestContext);
+    let hides: [(&str, Hide, &[&str]); 3] = [
+        (
+            "collapse",
+            |fixture, vcx| fixture.collapse(vcx, "Chat Commands"),
+            &["Free hug"],
+        ),
+        (
+            "filter",
+            |fixture, vcx| fixture.set_filter(vcx, ActionsFilter::Chat),
+            &["Lurk"],
+        ),
+        (
+            "search",
+            |fixture, vcx| fixture.search_typed(vcx, "hu"),
+            &["Free hug"],
+        ),
+    ];
+    for (how, hide, kept) in hides {
+        let fixture = Fixture::new(cx, &seeds());
+        let vcx = &mut fixture.in_window(cx);
+        fixture.click_row(vcx, 0);
+        fixture.modified_click(vcx, 2, gpui::Modifiers::shift());
+
+        hide(&fixture, vcx);
+        vcx.run_until_parked();
+
+        assert_eq!(fixture.marked_names(vcx), names(kept), "{how}");
+    }
+}
+
+#[gpui::test]
+fn the_bulk_bar_shows_once_a_second_row_is_marked(cx: &mut gpui::TestAppContext) {
+    let fixture = Fixture::new(cx, &seeds());
+    let vcx = &mut fixture.in_window(cx);
+    fixture.click_row(vcx, 0);
+    let with_one = vcx.debug_bounds(BULK_DELETE_BUTTON).is_some();
+
+    fixture.modified_click(vcx, 1, gpui::Modifiers::secondary_key());
+    vcx.run_until_parked();
+
+    assert_eq!(
+        (with_one, vcx.debug_bounds(BULK_DELETE_BUTTON).is_some()),
+        (false, true)
+    );
+}
+
+#[gpui::test]
+fn marking_rows_for_the_bulk_bar_leaves_every_row_where_it_was(cx: &mut gpui::TestAppContext) {
+    let fixture = Fixture::new(cx, &seeds());
+    let vcx = &mut fixture.in_window(cx);
+    fixture.click_row(vcx, 0);
+    let before = fixture.all_row_bounds(vcx);
+
+    fixture.modified_click(vcx, 7, gpui::Modifiers::shift());
+    vcx.run_until_parked();
+
+    assert_eq!(fixture.all_row_bounds(vcx), before);
+}
+
+type EnabledWrites = std::rc::Rc<std::cell::RefCell<Vec<(ActionId, bool)>>>;
+
+fn record_enabled_writes(
+    cx: &mut gpui::TestAppContext,
+    tree: &Entity<ActionTree>,
+) -> EnabledWrites {
+    let writes = EnabledWrites::default();
+    let sink = writes.clone();
+    cx.update(|cx| {
+        cx.subscribe(tree, move |_, event: &ActionTreeEvent, _| {
+            if let ActionTreeEvent::Write(id, ActionWrite::SetEnabled(enabled)) = event {
+                sink.borrow_mut().push((*id, *enabled));
+            }
+        })
+        .detach();
+    });
+    writes
+}
+
+#[gpui::test]
+fn enable_all_and_disable_all_write_only_the_marked_rows_that_change(
+    cx: &mut gpui::TestAppContext,
+) {
+    use crate::automation::actions_screen::editor::action_writes::tests::Screen;
+
+    for enable in [true, false] {
+        let screen = Screen::open(cx);
+        let (alpha, bravo) = (screen.alpha, screen.bravo);
+        screen.write(cx, bravo, ActionWrite::SetEnabled(false));
+        screen.settle(cx);
+        let bravo_listed_off = screen
+            .tree
+            .read_with(cx, |view, _| view.find(bravo).map(|a| a.enabled));
+        assert_eq!(bravo_listed_off, Some(false), "precondition");
+        screen.tree.update(cx, |view, cx| {
+            view.click_row(bravo, SelectGesture::Toggle, cx)
+        });
+        let writes = record_enabled_writes(cx, &screen.tree);
+
+        screen
+            .tree
+            .update(cx, |view, cx| view.bulk_set_enabled(enable, cx));
+
+        let changed = if enable { bravo } else { alpha };
+        assert_eq!(
+            writes.borrow().clone(),
+            vec![(changed, enable)],
+            "enable all = {enable}"
+        );
+    }
+}
+
+fn undo_toasts(cx: &mut gpui::TestAppContext) -> Vec<String> {
+    cx.update(|cx| {
+        cx.global::<forge_components::Toasts>()
+            .items()
+            .iter()
+            .filter(|toast| toast.kind == forge_components::ToastKind::Undo)
+            .map(|toast| toast.message.to_string())
+            .collect()
+    })
+}
+
+fn delete_both_marked(
+    cx: &mut gpui::TestAppContext,
+    screen: &crate::automation::actions_screen::editor::action_writes::tests::Screen,
+) {
+    let bravo = screen.bravo;
+    screen.tree.update(cx, |view, cx| {
+        view.click_row(bravo, SelectGesture::Toggle, cx);
+        view.request_bulk_delete(cx);
+        view.confirm_bulk_delete(cx);
+    });
+}
+
+#[gpui::test]
+fn a_bulk_delete_raises_one_undo_toast_only_after_the_last_archive_lands(
+    cx: &mut gpui::TestAppContext,
+) {
+    use crate::automation::actions_screen::editor::action_writes::tests::Screen;
+
+    let screen = Screen::open(cx);
+    let release = screen.hold_next_list();
+    delete_both_marked(cx, &screen);
+    screen.settle(cx);
+    let while_one_is_pending = undo_toasts(cx);
+
+    release.send(()).unwrap();
+    screen.settle(cx);
+
+    assert_eq!(
+        (while_one_is_pending, undo_toasts(cx)),
+        (
+            Vec::<String>::new(),
+            vec![tr!("bulk_deleted_actions_toast", count = 2).to_string()]
+        )
+    );
+}
+
+#[gpui::test]
+fn undo_after_a_bulk_delete_lists_every_deleted_action_again(cx: &mut gpui::TestAppContext) {
+    use crate::automation::actions_screen::editor::action_writes::tests::Screen;
+
+    let screen = Screen::open(cx);
+    let (alpha, bravo) = (screen.alpha, screen.bravo);
+    let listed = |cx: &mut gpui::TestAppContext| {
+        screen.tree.read_with(cx, |view, _| {
+            (view.find(alpha).is_some(), view.find(bravo).is_some())
+        })
+    };
+    delete_both_marked(cx, &screen);
+    screen.settle(cx);
+    let after_delete = listed(cx);
+
+    crate::test_support::press_undo(cx);
+    screen.settle(cx);
+
+    assert_eq!((after_delete, listed(cx)), ((false, false), (true, true)));
+}

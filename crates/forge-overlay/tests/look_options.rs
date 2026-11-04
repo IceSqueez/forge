@@ -3,12 +3,12 @@ mod common;
 use common::{ALERT_KIND, BLOB_IDENTITY, FRAME_KIND, TICKER_KIND, registry, sub_alert_instance};
 
 use forge_overlay::config::{
-    ACCENT, BACKGROUND_COLOR, BACKGROUND_OPACITY, DEFAULT_BACKGROUND_COLOR,
+    BACKGROUND_COLOR, BACKGROUND_OPACITY, BORDER_COLOR, DEFAULT_BACKGROUND_COLOR,
     DEFAULT_BACKGROUND_OPACITY_PERCENT, DEFAULT_IMAGE_HEIGHT_PX, IMAGE, IMAGE_HEIGHT,
     IMAGE_HEIGHT_MAX_PX, IMAGE_HEIGHT_MIN_PX, IMAGE_POSITION, IMAGE_POSITION_ABOVE,
     IMAGE_POSITION_BELOW, IMAGE_POSITION_LEFT, IMAGE_POSITION_OPTIONS, IMAGE_POSITION_RIGHT,
     LABEL_OFFSET_MAX_PX, LABEL_OFFSET_MIN_PX, LABEL_OFFSET_X, LABEL_OFFSET_Y, LABEL_SIDE,
-    LABEL_SIDE_CENTER, LABEL_SIDE_LEFT, LABEL_SIDE_RIGHT,
+    LABEL_SIDE_CENTER, LABEL_SIDE_LEFT, LABEL_SIDE_RIGHT, TEXT_COLOR,
 };
 use forge_overlay::metrics::{ALERT, SURFACE_RGB};
 use forge_overlay::{
@@ -394,18 +394,21 @@ fn the_editor_preview_places_a_chosen_image_and_reserves_nothing_without_one() {
 }
 
 #[test]
-fn a_custom_accent_is_accepted_on_every_kind_and_a_named_one_stays_named() {
-    assert!(accepts(ALERT_KIND, &text(ACCENT, "#ff8800")));
-    assert!(accepts(FRAME_KIND, &text(ACCENT, "#FF8800")));
-    for refused in ["teal", "#ff88", "ff8800", "var(--x)", ""] {
-        assert!(!accepts(ALERT_KIND, &text(ACCENT, refused)), "{refused:?}");
+fn a_custom_color_is_accepted_for_both_inks_on_every_kind_and_a_named_one_stays_named() {
+    for key in [TEXT_COLOR, BORDER_COLOR] {
+        assert!(accepts(ALERT_KIND, &text(key, "#ff8800")), "{key}");
+        assert!(accepts(FRAME_KIND, &text(key, "#FF8800")), "{key}");
+        for refused in ["teal", "#ff88", "ff8800", "var(--x)", ""] {
+            assert!(
+                !accepts(ALERT_KIND, &text(key, refused)),
+                "{key} {refused:?}"
+            );
+        }
     }
+    let custom = composition(ALERT_KIND, text(BORDER_COLOR, "#ff8800"));
+    assert_eq!(custom.border_color, PreviewAccent::Custom([255, 136, 0]));
     assert_eq!(
-        composition(ALERT_KIND, text(ACCENT, "#ff8800")).accent,
-        PreviewAccent::Custom([255, 136, 0])
-    );
-    assert_eq!(
-        composition(ALERT_KIND, text(ACCENT, "sky")).accent,
+        composition(ALERT_KIND, text(TEXT_COLOR, "sky")).text_color,
         PreviewAccent::Sky
     );
     assert_eq!(PreviewAccent::Custom([0, 0, 0]).name(), None);
@@ -435,12 +438,39 @@ fn the_preview_paints_the_exact_channels_the_page_gets_for_a_stored_accent() {
 }
 
 #[test]
-fn the_runtime_publishes_a_custom_accent_verbatim_through_the_same_property() {
-    let apply = common::js_function(RUNTIME_SOURCE, "applyAppearance");
+fn the_runtime_publishes_a_custom_color_verbatim_and_maps_a_named_one() {
+    let palette_color: String = common::js_function(RUNTIME_SOURCE, "paletteColor")
+        .split_whitespace()
+        .collect();
 
     assert!(RUNTIME_SOURCE.contains("var CUSTOM_ACCENT = /^#[0-9a-f]{6}$/i;"));
-    assert!(apply.contains("CUSTOM_ACCENT.test(values.accent)"));
-    assert!(apply.contains("setProperty(\"--accent\", accent)"));
+    assert!(
+        palette_color
+            .contains("returnCUSTOM_ACCENT.test(value)?value:ACCENT_HEX[value]||FALLBACK_ACCENT;")
+    );
+}
+
+#[test]
+fn the_runtime_sets_each_color_property_from_its_own_config_key() {
+    let compact: String = common::js_function(RUNTIME_SOURCE, "applyAppearance")
+        .split_whitespace()
+        .collect();
+
+    for (constant, property, key) in [
+        ("TEXT_COLOR_PROPERTY", "--text-color", TEXT_COLOR),
+        ("BORDER_COLOR_PROPERTY", "--border-color", BORDER_COLOR),
+    ] {
+        assert!(
+            RUNTIME_SOURCE.contains(&format!("var {constant} = \"{property}\";")),
+            "{constant} no longer names {property}"
+        );
+        assert!(
+            compact.contains(&format!(
+                "setProperty({constant},paletteColor(values.{key})"
+            )),
+            "{property} is not fed from config key '{key}'"
+        );
+    }
 }
 
 #[test]

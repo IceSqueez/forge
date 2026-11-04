@@ -363,7 +363,7 @@ mod tests {
     use std::sync::Mutex;
 
     use forge_components::{Density, Presentation, ThemeId, Toasts};
-    use forge_overlay::config::{ACCENT, BACKGROUND_COLOR, HEADLINE};
+    use forge_overlay::config::{ACCENT, BACKGROUND_COLOR, BORDER_COLOR, HEADLINE, TEXT_COLOR};
     use forge_overlay::kinds::alert::KIND_ID;
     use forge_runtime::{EventBus, OverlayFrameSink, OverlayReceivers, OverlayServiceParts};
     use forge_storage::{StorageError, read_stored_setting};
@@ -712,10 +712,10 @@ mod tests {
         [
             (
                 FIRST,
-                config(&[(ACCENT, CUSTOM), (BACKGROUND_COLOR, CUSTOM)]),
+                config(&[(TEXT_COLOR, CUSTOM), (BACKGROUND_COLOR, CUSTOM)]),
             ),
-            (SECOND, config(&[(ACCENT, CUSTOM), (HEADLINE, "kept")])),
-            (UNTOUCHED, config(&[(ACCENT, OTHER)])),
+            (SECOND, config(&[(TEXT_COLOR, CUSTOM), (HEADLINE, "kept")])),
+            (UNTOUCHED, config(&[(TEXT_COLOR, OTHER)])),
         ]
     }
 
@@ -729,13 +729,17 @@ mod tests {
             definition(
                 FIRST,
                 KIND_ID,
-                config(&[(ACCENT, CUSTOM), (BACKGROUND_COLOR, CUSTOM)]),
+                config(&[
+                    (TEXT_COLOR, CUSTOM),
+                    (BORDER_COLOR, CUSTOM),
+                    (BACKGROUND_COLOR, CUSTOM),
+                ]),
             ),
-            definition(SECOND, KIND_ID, config(&[(BACKGROUND_COLOR, CUSTOM)])),
+            definition(SECOND, KIND_ID, config(&[(ACCENT, CUSTOM)])),
             definition(
                 UNTOUCHED,
                 KIND_ID,
-                config(&[(ACCENT, OTHER), (HEADLINE, CUSTOM)]),
+                config(&[(TEXT_COLOR, OTHER), (HEADLINE, CUSTOM)]),
             ),
         ];
 
@@ -745,12 +749,16 @@ mod tests {
             .iter()
             .map(|reset| (reset.id.as_str(), reset.fields))
             .collect();
-        assert_eq!(counted, vec![(FIRST, 2), (SECOND, 1)]);
+        assert_eq!(counted, vec![(FIRST, 3), (SECOND, 1)]);
     }
 
     #[test]
     fn the_count_reads_a_stored_color_in_any_letter_case() {
-        let rows = [definition(FIRST, KIND_ID, config(&[(ACCENT, "#ABCDEF")]))];
+        let rows = [definition(
+            FIRST,
+            KIND_ID,
+            config(&[(TEXT_COLOR, "#ABCDEF")]),
+        )];
 
         let resets = color_resets(&rows, None, "#abcdef", &builtin_kinds());
 
@@ -762,7 +770,7 @@ mod tests {
         let rows = [definition(
             FIRST,
             VANISHED_KIND,
-            config(&[(ACCENT, CUSTOM)]),
+            config(&[(TEXT_COLOR, CUSTOM)]),
         )];
 
         assert!(color_resets(&rows, None, CUSTOM, &builtin_kinds()).is_empty());
@@ -771,7 +779,7 @@ mod tests {
     #[test]
     fn the_open_overlay_counts_by_what_its_panel_shows_and_restores_what_is_stored() {
         let stored = config(&[(HEADLINE, "stored")]);
-        let shown = config(&[(HEADLINE, "typed"), (ACCENT, CUSTOM)]);
+        let shown = config(&[(HEADLINE, "typed"), (TEXT_COLOR, CUSTOM)]);
         let rows = [definition(FIRST, KIND_ID, stored.clone())];
         let open = OpenConfig {
             id: OverlayId::new(FIRST),
@@ -815,7 +823,7 @@ mod tests {
     fn an_unused_color_goes_at_once_without_a_prompt(cx: &mut TestAppContext) {
         let rig = rig(
             cx,
-            &[(UNTOUCHED, config(&[(ACCENT, OTHER)]))],
+            &[(UNTOUCHED, config(&[(TEXT_COLOR, OTHER)]))],
             &[CUSTOM, OTHER],
         );
 
@@ -838,7 +846,7 @@ mod tests {
 
         assert_eq!(rig.repo.stored(FIRST), OverlayConfig::new());
         assert_eq!(rig.repo.stored(SECOND), config(&[(HEADLINE, "kept")]));
-        assert_eq!(rig.repo.stored(UNTOUCHED), config(&[(ACCENT, OTHER)]));
+        assert_eq!(rig.repo.stored(UNTOUCHED), config(&[(TEXT_COLOR, OTHER)]));
         assert_eq!(rig.listed(cx), list(&[OTHER]));
         assert_eq!(rig.stored_list(), Some(list(&[OTHER])));
         assert_eq!(rig.reloads(), list(&[FIRST, SECOND]));
@@ -857,11 +865,11 @@ mod tests {
 
     #[gpui::test]
     fn confirm_saves_the_open_overlays_typed_changes_with_the_reset(cx: &mut TestAppContext) {
-        let rig = rig(cx, &[(FIRST, config(&[(ACCENT, CUSTOM)]))], &[CUSTOM]);
+        let rig = rig(cx, &[(FIRST, config(&[(TEXT_COLOR, CUSTOM)]))], &[CUSTOM]);
         rig.request(
             Some(OpenConfig {
                 id: OverlayId::new(FIRST),
-                config: config(&[(ACCENT, CUSTOM), (HEADLINE, "typed")]),
+                config: config(&[(TEXT_COLOR, CUSTOM), (HEADLINE, "typed")]),
             }),
             cx,
         );

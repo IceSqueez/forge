@@ -10,14 +10,15 @@ use std::collections::BTreeSet;
 
 use forge_overlay::ConfigSection;
 use forge_overlay::config::{
-    ACCENT, DESIGN_WIDTH, FONT, HEADLINE, MARGIN_LEFT, MARGIN_TOP, PLATFORM, POSITION, TEXT_SIZE,
+    ACCENT, BORDER_COLOR, DESIGN_WIDTH, FONT, HEADLINE, MARGIN_LEFT, MARGIN_TOP, PLATFORM,
+    POSITION, TEXT_COLOR, TEXT_SIZE,
 };
 use forge_overlay::{
     LookConfigKey, OverlayConfig, PAGE_CONTRACT, RUNTIME_SOURCE, SampleContext, latest_binding,
     latest_content, look_contract, sample_content, sample_latest_value,
 };
 
-const RUNTIME_APPLIED_LOOK_KEYS: [&str; 4] = [ACCENT, FONT, TEXT_SIZE, POSITION];
+const RUNTIME_APPLIED_LOOK_KEYS: [&str; 5] = [TEXT_COLOR, BORDER_COLOR, FONT, TEXT_SIZE, POSITION];
 
 fn header() -> &'static str {
     let end = RUNTIME_SOURCE
@@ -215,14 +216,16 @@ fn the_runtime_toggles_visibility_with_the_declared_hidden_class() {
 fn applies_config_key_covers_the_body_attribute_and_every_custom_property_and_nothing_else() {
     for (key, applied) in [
         (POSITION, true),
-        (ACCENT, true),
+        (TEXT_COLOR, true),
+        (BORDER_COLOR, true),
+        (ACCENT, false),
         (MARGIN_TOP, true),
         (MARGIN_LEFT, true),
         (DESIGN_WIDTH, false),
         (HEADLINE, false),
         ("", false),
         ("Accent", false),
-        ("--accent", false),
+        ("--text-color", false),
         ("data-position", false),
     ] {
         assert_eq!(

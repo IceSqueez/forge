@@ -45,7 +45,7 @@ const CLIP_DURATION_MS: u64 = 2_500;
 const LABEL_KEY: &str = "label";
 const VALUE_KEY: &str = "value";
 const TARGET_KEY: &str = "target";
-const ACCENT_KEY: &str = "accent";
+const TEXT_COLOR_KEY: &str = "text_color";
 const HEADLINE_KEY: &str = "headline";
 const SUBLINE_KEY: &str = "subline";
 const POSITION_KEY: &str = "position";
@@ -838,7 +838,7 @@ async fn sending_content_funnels_the_step_fields_over_the_overlays_own_and_retai
     stored.config = text_config(&[
         (LABEL_KEY, "%label% goal"),
         (TARGET_KEY, "100"),
-        (ACCENT_KEY, "green"),
+        (TEXT_COLOR_KEY, "green"),
     ]);
     let harness = harness(vec![stored.clone()], true);
     let args = ArgStack::new()
@@ -849,7 +849,7 @@ async fn sending_content_funnels_the_step_fields_over_the_overlays_own_and_retai
         .service
         .send_to(
             &stored.id,
-            &text_config(&[(VALUE_KEY, "%bits%"), (ACCENT_KEY, "red")]),
+            &text_config(&[(VALUE_KEY, "%bits%"), (TEXT_COLOR_KEY, "red")]),
             &args,
             forge_runtime::OverlaySendOptions {
                 duration_ms: Some(2_000),

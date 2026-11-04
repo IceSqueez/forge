@@ -14,7 +14,7 @@ const puppeteer = require("puppeteer");
     const cs = getComputedStyle(el); const r = el.getBoundingClientRect();
     return { hidden: el.hidden, w: r.width, h: r.height, tinted: el.classList.contains("tinted"), background: cs.backgroundColor,
              mask: (cs.maskImage || cs.webkitMaskImage || "").slice(0, 60), img: !!el.querySelector("img"), svgInDom: !!document.querySelector("svg"),
-             accent: getComputedStyle(document.documentElement).getPropertyValue("--accent").trim() };
+             borderColor: getComputedStyle(document.documentElement).getPropertyValue("--border-color").trim() };
   });
   if (out) { const stage = await page.$("#stage"); await (stage || page).screenshot({ path: out }); }
   console.log(JSON.stringify({ media, icon }, null, 1));

@@ -4,9 +4,14 @@ use common::{ALERT_KIND, CHAT_KIND, FRAME_KIND, GOAL_KIND, LATEST_KIND, TICKER_K
 
 use std::collections::BTreeSet;
 
+use forge_overlay::PreviewAccent;
+use forge_overlay::config::{BORDER_COLOR, TEXT_COLOR};
+use forge_types::Variant;
+
 use forge_overlay::metrics::{
-    ALERT, AlertMetrics, CHAT, ChatMetrics, FRAME, FrameMetrics, GOAL, GoalMetrics, LATEST,
-    LatestMetrics, TEXT_SCALE_PROPERTY, TICKER, TickerMetrics,
+    ALERT, AlertMetrics, BORDER_COLOR_PROPERTY, CHAT, ChatMetrics, FRAME, FrameMetrics, GOAL,
+    GoalMetrics, LATEST, LatestMetrics, TEXT_COLOR_PROPERTY, TEXT_SCALE_PROPERTY, TICKER,
+    TickerMetrics,
 };
 
 const SCALED_NUMBERS: &[(&str, &[f32])] = &[
@@ -41,6 +46,31 @@ const BREAKING_TEXT: &[(&str, &[&str])] = &[
 ];
 
 const ELLIPSIZING_TEXT: &[(&str, &str)] = &[(LATEST_KIND, ".value"), (TICKER_KIND, ".body")];
+
+const TEXT_INK: &[(&str, &str, &str)] = &[
+    (ALERT_KIND, ".subline", "color"),
+    (CHAT_KIND, ".badges", "color"),
+    (FRAME_KIND, ".subline", "color"),
+    (GOAL_KIND, ".figure", "color"),
+    (LATEST_KIND, ".label", "color"),
+    (TICKER_KIND, ".subline", "color"),
+];
+
+const BORDER_INK: &[(&str, &str, &str)] = &[
+    (ALERT_KIND, "#stage", "border"),
+    (ALERT_KIND, ".icon.tinted", "background-color"),
+    (CHAT_KIND, ".event", "background"),
+    (CHAT_KIND, ".row.event-row", "box-shadow"),
+    (FRAME_KIND, "#stage", "border"),
+    (FRAME_KIND, ".corner", "border"),
+    (GOAL_KIND, "#stage", "border"),
+    (GOAL_KIND, ".fill", "background"),
+    (LATEST_KIND, "#stage", "border"),
+    (LATEST_KIND, ".icon", "color"),
+    (TICKER_KIND, "#stage", "border-top"),
+    (TICKER_KIND, "#stage", "border-bottom"),
+    (TICKER_KIND, ".mark", "background"),
+];
 
 fn scaled_multiplicands(style: &str) -> Vec<f32> {
     let opening = "calc(";
@@ -177,7 +207,7 @@ fn a_metric_that_drifts_from_its_stylesheet_fails_its_guard() {
 }
 
 #[test]
-fn the_icon_box_spends_the_guarded_height_and_accent_on_the_icon_itself() {
+fn the_icon_box_spends_the_guarded_height_on_the_icon_itself() {
     let style = stylesheet(ALERT_KIND);
     let icon_height = ALERT
         .declarations()
@@ -194,10 +224,76 @@ fn the_icon_box_spends_the_guarded_height_and_accent_on_the_icon_itself() {
         box_rule.contains("aspect-ratio: 1;"),
         "the icon box is free to stretch, so a wide glyph is drawn distorted"
     );
-    assert!(
-        rule_block(style, ".icon.tinted").contains("background-color: var(--accent);"),
-        "a tintable glyph is not filled with the overlay accent"
-    );
+}
+
+fn declaration_value(style: &str, selector: &str, property: &str) -> String {
+    let block = rule_block(style, selector);
+    let opening = format!("\n  {property}: ");
+    let start = block
+        .find(&opening)
+        .unwrap_or_else(|| panic!("'{selector}' declares no '{property}'"))
+        + opening.len();
+    let rest = &block[start..];
+    let end = rest
+        .find(';')
+        .unwrap_or_else(|| panic!("'{selector} {{ {property}' is never terminated"));
+    rest[..end].to_owned()
+}
+
+fn assert_painted_with(table: &[(&str, &str, &str)], ink: &str, other: &str) {
+    for (kind_id, selector, property) in table {
+        let value = declaration_value(stylesheet(kind_id), selector, property);
+        assert!(
+            value.contains(&format!("var({ink})")) && !value.contains(&format!("var({other})")),
+            "{kind_id} {selector} {property} is '{value}', not painted with {ink}"
+        );
+    }
+}
+
+#[test]
+fn each_kind_paints_its_text_with_the_text_color() {
+    assert_painted_with(TEXT_INK, TEXT_COLOR_PROPERTY, BORDER_COLOR_PROPERTY);
+}
+
+#[test]
+fn each_kind_paints_its_edges_and_marks_with_the_border_color() {
+    assert_painted_with(BORDER_INK, BORDER_COLOR_PROPERTY, TEXT_COLOR_PROPERTY);
+}
+
+#[test]
+fn each_kind_page_starts_both_colors_at_the_kinds_default_before_its_config_arrives() {
+    let reg = registry();
+    for kind_id in [
+        ALERT_KIND,
+        CHAT_KIND,
+        FRAME_KIND,
+        GOAL_KIND,
+        LATEST_KIND,
+        TICKER_KIND,
+    ] {
+        let descriptor = reg
+            .get(kind_id)
+            .unwrap_or_else(|| panic!("{kind_id} is registered"));
+        let defaults = descriptor.default_config();
+        let root = format!("\n{}", stylesheet(kind_id));
+
+        for (key, property) in [
+            (TEXT_COLOR, TEXT_COLOR_PROPERTY),
+            (BORDER_COLOR, BORDER_COLOR_PROPERTY),
+        ] {
+            let stored = defaults
+                .get(key)
+                .and_then(Variant::as_str)
+                .unwrap_or_default();
+            let [red, green, blue] = PreviewAccent::from_stored(stored).channels();
+            assert_eq!(
+                declaration_value(&root, ":root", property),
+                format!("#{red:02x}{green:02x}{blue:02x}"),
+                "{kind_id} paints {property} before its config arrives with something other \
+                 than its default {key}"
+            );
+        }
+    }
 }
 
 #[test]

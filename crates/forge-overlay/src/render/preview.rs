@@ -504,7 +504,7 @@ mod tests {
     fn every_offered_accent_maps_to_its_own_swatch() {
         let accents: Vec<PreviewAccent> = config::ACCENT_OPTIONS
             .iter()
-            .map(|name| appearance(config::ACCENT, name).accent)
+            .map(|name| appearance(config::TEXT_COLOR, name).text_color)
             .collect();
 
         for (index, accent) in accents.iter().enumerate() {
@@ -518,6 +518,23 @@ mod tests {
                 );
             }
         }
+    }
+
+    #[test]
+    fn text_and_border_colors_are_read_from_their_own_keys() {
+        let composition = compose(
+            PreviewShape::Strip,
+            None,
+            &OverlayConfig::from([
+                (config::TEXT_COLOR.to_owned(), config::text("red")),
+                (config::BORDER_COLOR.to_owned(), config::text("sky")),
+            ]),
+        );
+
+        assert_eq!(
+            (composition.text_color, composition.border_color),
+            (PreviewAccent::Red, PreviewAccent::Sky)
+        );
     }
 
     #[test]
@@ -587,21 +604,27 @@ mod tests {
             (
                 "written by a newer build",
                 OverlayConfig::from([
-                    (config::ACCENT.to_owned(), config::text("teal")),
+                    (config::TEXT_COLOR.to_owned(), config::text("teal")),
+                    (config::BORDER_COLOR.to_owned(), config::text("teal")),
                     (config::FONT.to_owned(), config::text("Comic Sans")),
                 ]),
             ),
             (
                 "stored with the wrong type",
                 OverlayConfig::from([
-                    (config::ACCENT.to_owned(), Variant::Int(3)),
+                    (config::TEXT_COLOR.to_owned(), Variant::Int(3)),
+                    (config::BORDER_COLOR.to_owned(), Variant::Int(3)),
                     (config::FONT.to_owned(), Variant::Bool(true)),
                 ]),
             ),
         ] {
             let composition = compose(PreviewShape::Strip, None, &config);
 
-            assert_eq!(composition.accent, PreviewAccent::Mauve, "accent {label}");
+            assert_eq!(
+                (composition.text_color, composition.border_color),
+                (PreviewAccent::Mauve, PreviewAccent::Mauve),
+                "colors {label}"
+            );
             assert_eq!(composition.font, PreviewFont::Sans, "font {label}");
         }
     }

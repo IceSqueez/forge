@@ -842,7 +842,8 @@ pub(crate) mod tests {
 
     use forge_components::{Density, ThemeId};
     use forge_overlay::config::{
-        ACCENT_MAUVE_HEX, ACCENT_OPTIONS, ACCENT_SKY_HEX, HEADLINE, ICON, ICON_OPTIONS_KEY, SOUND,
+        ACCENT, ACCENT_MAUVE_HEX, ACCENT_OPTIONS, ACCENT_SKY_HEX, HEADLINE, ICON, ICON_OPTIONS_KEY,
+        SOUND, TEXT_COLOR, with_split_accent,
     };
     use forge_overlay::config::{
         DESIGN_HEIGHT, DESIGN_SIZE_MAX_PX, DESIGN_SIZE_MIN_PX, DESIGN_WIDTH, MARGIN_BOTTOM,
@@ -985,7 +986,8 @@ pub(crate) mod tests {
     pub(crate) fn defaults() -> OverlayConfig {
         config(&[
             (HEADLINE, Variant::String(DEFAULT_HEADLINE.into())),
-            (ACCENT, Variant::String("mauve".into())),
+            (TEXT_COLOR, Variant::String("mauve".into())),
+            (BORDER_COLOR, Variant::String("mauve".into())),
         ])
     }
 
@@ -1011,8 +1013,16 @@ pub(crate) mod tests {
             SectionedField {
                 section: ConfigSection::Style,
                 field: FormField::Swatch {
-                    key: ACCENT,
-                    label: "Accent",
+                    key: TEXT_COLOR,
+                    label: "Text color",
+                    options: ACCENT_OPTIONS,
+                },
+            },
+            SectionedField {
+                section: ConfigSection::Style,
+                field: FormField::Swatch {
+                    key: BORDER_COLOR,
+                    label: "Border color",
                     options: ACCENT_OPTIONS,
                 },
             },
@@ -1048,9 +1058,7 @@ pub(crate) mod tests {
             latest: None,
         });
         let mut effective = defaults.clone();
-        for (key, value) in &stored {
-            effective.insert(key.clone(), value.clone());
-        }
+        effective.extend(with_split_accent(&stored));
         let launch = PanelLaunch {
             overlay_id: OverlayId::new(OVERLAY),
             specs,
@@ -1651,20 +1659,20 @@ pub(crate) mod tests {
     }
 
     #[gpui::test]
-    fn the_icon_tile_is_tinted_by_the_color_the_page_paints_for_the_stored_accent(
-        cx: &mut gpui::TestAppContext,
-    ) {
-        for (stored, painted) in [
-            ("sky", ACCENT_SKY_HEX),
-            ("#102030", "#102030"),
-            ("chartreuse", ACCENT_MAUVE_HEX),
+    fn the_icon_tile_is_tinted_by_the_border_color_the_page_paints(cx: &mut gpui::TestAppContext) {
+        for (key, stored, painted) in [
+            (BORDER_COLOR, "sky", ACCENT_SKY_HEX),
+            (BORDER_COLOR, "#102030", "#102030"),
+            (BORDER_COLOR, "chartreuse", ACCENT_MAUVE_HEX),
+            (ACCENT, "sky", ACCENT_SKY_HEX),
+            (TEXT_COLOR, "sky", ACCENT_MAUVE_HEX),
         ] {
-            let fixture = Fixture::new(cx, config(&[(ACCENT, Variant::String(stored.into()))]));
+            let fixture = Fixture::new(cx, config(&[(key, Variant::String(stored.into()))]));
 
             assert_eq!(
                 fixture.icon_tint(cx),
                 stored_color_tint(painted),
-                "{stored}"
+                "{key} = {stored}"
             );
         }
     }
@@ -1945,6 +1953,27 @@ pub(crate) mod tests {
                 .map(|(look, _)| look)
                 .collect::<Vec<_>>(),
             vec![GoalOverlayKind.id().to_owned()]
+        );
+    }
+
+    #[gpui::test]
+    fn picking_the_default_border_color_on_a_legacy_accent_record_keeps_that_choice(
+        cx: &mut gpui::TestAppContext,
+    ) {
+        let fixture = Fixture::new(cx, config(&[(ACCENT, Variant::String("red".into()))]));
+
+        fixture.panel().update(cx, |panel, cx| {
+            panel.pick_swatch(BORDER_COLOR.to_owned(), "mauve".to_owned(), cx);
+        });
+        cx.run_until_parked();
+
+        let saved = fixture.saves(cx).pop().expect("the pick was saved");
+        let mut effective = defaults();
+        effective.extend(with_split_accent(&saved));
+        assert_eq!(
+            effective.get(BORDER_COLOR),
+            Some(&Variant::String("mauve".into())),
+            "saved {saved:?}"
         );
     }
 }

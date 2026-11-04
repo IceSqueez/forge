@@ -114,11 +114,11 @@ fn a_page_reads_config_members_its_own_form_declares_and_reads_none_when_it_draw
 }
 
 #[test]
-fn every_kind_that_draws_a_page_takes_its_accent_and_font_from_runtime_custom_properties() {
+fn every_kind_that_draws_a_page_takes_its_colors_and_font_from_runtime_custom_properties() {
     for descriptor in registry().all().filter(|d| d.has_visual_page()) {
         let style = descriptor.page_assets().style;
 
-        for property in ["var(--accent)", "var(--font)"] {
+        for property in ["var(--text-color)", "var(--border-color)", "var(--font)"] {
             assert!(
                 style.contains(property),
                 "{} hardcodes what {property} should supply at runtime",

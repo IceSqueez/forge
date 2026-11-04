@@ -115,7 +115,9 @@ impl OverlaysView {
 
 #[cfg(test)]
 mod tests {
-    use forge_overlay::config::{ACCENT, DURATION, HEADLINE, ICON, SOUND, SPEECH, SPEECH_VOICE};
+    use forge_overlay::config::{
+        ACCENT, BORDER_COLOR, DURATION, HEADLINE, ICON, SOUND, SPEECH, SPEECH_VOICE, TEXT_COLOR,
+    };
     use forge_overlay::kinds::alert::AlertOverlayKind;
     use forge_overlay::kinds::chat::ChatOverlayKind;
     use forge_overlay::{
@@ -211,7 +213,8 @@ mod tests {
             HEADLINE,
             ICON,
             DURATION,
-            ACCENT,
+            TEXT_COLOR,
+            BORDER_COLOR,
             SOUND,
             SPEECH,
             SPEECH_VOICE,
@@ -221,18 +224,36 @@ mod tests {
 
         assert_eq!(
             keys(&carried),
-            vec![ACCENT, SOUND, SPEECH, SPEECH_VOICE],
-            "a chat look must keep the sound, speech and accent and drop the alert's own fields"
+            vec![BORDER_COLOR, SOUND, SPEECH, SPEECH_VOICE, TEXT_COLOR],
+            "a chat look must keep the sound, speech and both colors and drop the alert's own fields"
         );
     }
 
     #[test]
     fn a_carried_value_keeps_what_the_old_look_stored_rather_than_the_new_looks_default() {
-        let from_alert = stored(&[ACCENT, SPEECH]);
+        let from_alert = stored(&[TEXT_COLOR, SPEECH]);
 
         let carried = carried_config(&ChatOverlayKind, &from_alert);
 
         assert_eq!(carried, from_alert);
+    }
+
+    #[test]
+    fn a_look_change_turns_a_legacy_accent_into_whichever_color_the_record_lacks() {
+        let legacy = OverlayConfig::from([
+            (ACCENT.to_owned(), Variant::String("red".to_owned())),
+            (TEXT_COLOR.to_owned(), Variant::String("sky".to_owned())),
+        ]);
+
+        let carried = carried_config(&ChatOverlayKind, &legacy);
+
+        assert_eq!(
+            carried,
+            OverlayConfig::from([
+                (TEXT_COLOR.to_owned(), Variant::String("sky".to_owned())),
+                (BORDER_COLOR.to_owned(), Variant::String("red".to_owned())),
+            ])
+        );
     }
 
     #[test]

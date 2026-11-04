@@ -187,8 +187,8 @@ mod tests {
             "the stored value must win over the kind default"
         );
         assert_eq!(
-            effective.get(ACCENT),
-            defaults.get(ACCENT),
+            effective.get(TEXT_COLOR),
+            defaults.get(TEXT_COLOR),
             "a key the stored config omits must fall back to the kind default"
         );
         assert_eq!(
@@ -196,6 +196,68 @@ mod tests {
             Some(&Variant::Bool(true)),
             "a key written by a newer build must survive the merge"
         );
+    }
+
+    #[test]
+    fn each_effective_color_prefers_its_stored_key_then_the_stored_accent_then_the_kind_default() {
+        let descriptor = AlertOverlayKind;
+        let defaults = descriptor.default_config();
+        let kind_default = defaults.get(TEXT_COLOR).cloned();
+        assert_ne!(
+            kind_default,
+            Some(text("red")),
+            "the fixture needs a distinct accent"
+        );
+
+        for (label, stored, expected_text, expected_border) in [
+            (
+                "nothing stored",
+                OverlayConfig::new(),
+                kind_default.clone(),
+                kind_default.clone(),
+            ),
+            (
+                "only a legacy accent",
+                one(ACCENT, text("red")),
+                Some(text("red")),
+                Some(text("red")),
+            ),
+            (
+                "a legacy accent and a chosen text color",
+                OverlayConfig::from([
+                    (ACCENT.to_owned(), text("red")),
+                    (TEXT_COLOR.to_owned(), text("sky")),
+                ]),
+                Some(text("sky")),
+                Some(text("red")),
+            ),
+            (
+                "a legacy accent and a chosen border color",
+                OverlayConfig::from([
+                    (ACCENT.to_owned(), text("red")),
+                    (BORDER_COLOR.to_owned(), text("#102030")),
+                ]),
+                Some(text("red")),
+                Some(text("#102030")),
+            ),
+            (
+                "only a chosen border color",
+                one(BORDER_COLOR, text("green")),
+                kind_default.clone(),
+                Some(text("green")),
+            ),
+        ] {
+            let effective = effective_overlay_config(&descriptor, &stored);
+
+            assert_eq!(
+                (
+                    effective.get(TEXT_COLOR).cloned(),
+                    effective.get(BORDER_COLOR).cloned()
+                ),
+                (expected_text, expected_border),
+                "{label}"
+            );
+        }
     }
 
     #[test]
@@ -221,14 +283,16 @@ mod tests {
         let chat = ChatOverlayKind;
 
         for (descriptor, key, value) in [
-            (&alert as &dyn OverlayKindDescriptor, ACCENT, "teal"),
+            (&alert as &dyn OverlayKindDescriptor, TEXT_COLOR, "teal"),
+            (&alert, BORDER_COLOR, "teal"),
             (&alert, FONT, "Comic Sans"),
             (&alert, motion::ENTRANCE, "shatter"),
             (&alert, motion::EXIT, "typewriter"),
             (&alert, motion::TEXT_EFFECT, "burst"),
             (&alert, motion::INTENSITY, "extreme"),
             (&chat, motion::ENTRANCE, "explode"),
-            (&alert, ACCENT, ""),
+            (&alert, TEXT_COLOR, ""),
+            (&alert, BORDER_COLOR, ""),
             (&chat, POSITION, "diagonal"),
             (&chat, POSITION, "center"),
         ] {
@@ -253,7 +317,8 @@ mod tests {
                 HEADLINE,
                 Variant::Int(1),
             ),
-            (&alert, ACCENT, Variant::Bool(true)),
+            (&alert, TEXT_COLOR, Variant::Bool(true)),
+            (&alert, BORDER_COLOR, Variant::Bool(true)),
             (&alert, FONT, Variant::Array(Vec::new())),
             (&alert, DURATION, text("5")),
             (&alert, DURATION, Variant::Float(5.0)),

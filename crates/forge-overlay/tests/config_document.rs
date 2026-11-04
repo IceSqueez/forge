@@ -3,8 +3,9 @@ mod common;
 use common::{ALERT_KIND, BLOB_IDENTITY, PAGE_CREDENTIAL};
 
 use forge_overlay::config::{
-    ACCENT, DEFAULT_ICON, DESIGN_HEIGHT, DESIGN_WIDTH, DURATION, FONT, HEADLINE, ICON,
-    MARGIN_BOTTOM, MARGIN_LEFT, MARGIN_RIGHT, MARGIN_TOP, SOUND, SUBLINE, TEXT_SIZE,
+    ACCENT, BORDER_COLOR, DEFAULT_ICON, DESIGN_HEIGHT, DESIGN_WIDTH, DURATION, FONT, HEADLINE,
+    ICON, MARGIN_BOTTOM, MARGIN_LEFT, MARGIN_RIGHT, MARGIN_TOP, SOUND, SUBLINE, TEXT_COLOR,
+    TEXT_SIZE,
 };
 use forge_overlay::motion::{
     ENTRANCE, ENTRANCE_MS, EXIT, EXIT_MS, INTENSITY, TEXT_EFFECT, TEXT_STAGGER_CUSTOM, TEXT_UNIT,
@@ -92,7 +93,8 @@ fn config_keys_reach_the_page_exactly_as_they_are_stored() {
     for key in [
         HEADLINE,
         SUBLINE,
-        ACCENT,
+        TEXT_COLOR,
+        BORDER_COLOR,
         FONT,
         ENTRANCE,
         ENTRANCE_MS,
@@ -121,6 +123,19 @@ fn config_keys_reach_the_page_exactly_as_they_are_stored() {
     assert!(
         !config.contains_key("legacySoundPath"),
         "the envelope's camelCase rename must not reach the config keys themselves"
+    );
+}
+
+#[test]
+fn a_record_saved_with_one_accent_sends_it_to_the_page_as_both_colors() {
+    let doc = document(OverlayConfig::from([(
+        ACCENT.to_owned(),
+        Variant::String("#102030".to_owned()),
+    )]));
+
+    assert_eq!(
+        (&doc["config"][TEXT_COLOR], &doc["config"][BORDER_COLOR]),
+        (&json!("#102030"), &json!("#102030"))
     );
 }
 

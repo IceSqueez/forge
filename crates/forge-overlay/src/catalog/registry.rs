@@ -282,4 +282,23 @@ mod tests {
             assert_eq!(verdict, expected, "{label}");
         }
     }
+
+    #[test]
+    fn validate_stored_judges_a_legacy_accent_as_the_colors_it_becomes() {
+        use crate::config::{ACCENT, ACCENT_SPLIT_KEYS};
+
+        let registry = builtin();
+        let legacy = |value: &str| chat_config(&[(ACCENT, text(value))]);
+
+        assert!(
+            registry
+                .validate_stored(chat::KIND_ID, &legacy("#102030"))
+                .is_ok()
+        );
+        assert!(matches!(
+            registry.validate_stored(chat::KIND_ID, &legacy("teal")),
+            Err(OverlayError::UnknownChoice { key, value })
+                if ACCENT_SPLIT_KEYS.contains(&key.as_str()) && value == "teal"
+        ));
+    }
 }

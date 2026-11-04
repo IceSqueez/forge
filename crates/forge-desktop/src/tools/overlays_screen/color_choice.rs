@@ -386,7 +386,7 @@ mod tests {
     #[test]
     fn each_color_field_starts_from_its_own_preset_list() {
         assert_eq!(
-            names(&offered(ACCENT, &[], ACCENT_MAUVE)),
+            names(&offered(TEXT_COLOR, &[], ACCENT_MAUVE)),
             ACCENT_OPTIONS.to_vec()
         );
         assert_eq!(
@@ -404,7 +404,7 @@ mod tests {
 
     #[test]
     fn a_named_accent_and_its_background_hex_paint_the_same_color() {
-        let accents = offered(ACCENT, &[], ACCENT_MAUVE);
+        let accents = offered(TEXT_COLOR, &[], ACCENT_MAUVE);
         let backgrounds = offered(BACKGROUND_COLOR, &[], DEFAULT_BACKGROUND_COLOR);
 
         for (name, hex) in [
@@ -425,7 +425,7 @@ mod tests {
     #[test]
     fn saved_colors_follow_the_presets_in_saved_order() {
         assert_eq!(
-            names(&offered(ACCENT, &[OTHER_CUSTOM, CUSTOM], ACCENT_MAUVE)),
+            names(&offered(TEXT_COLOR, &[OTHER_CUSTOM, CUSTOM], ACCENT_MAUVE)),
             extended(ACCENT_OPTIONS, &[OTHER_CUSTOM, CUSTOM])
         );
     }
@@ -445,7 +445,11 @@ mod tests {
     #[test]
     fn a_saved_hex_equal_to_a_named_preset_adds_no_second_swatch() {
         assert_eq!(
-            names(&offered(ACCENT, &[ACCENT_MAUVE_HEX, CUSTOM], ACCENT_SKY)),
+            names(&offered(
+                TEXT_COLOR,
+                &[ACCENT_MAUVE_HEX, CUSTOM],
+                ACCENT_SKY
+            )),
             extended(ACCENT_OPTIONS, &[CUSTOM])
         );
     }
@@ -485,7 +489,7 @@ mod tests {
     #[test]
     fn an_unsaved_selection_is_offered_last_in_its_normalized_form() {
         assert_eq!(
-            names(&offered(ACCENT, &[CUSTOM], "  #ABCDEF ")),
+            names(&offered(TEXT_COLOR, &[CUSTOM], "  #ABCDEF ")),
             extended(ACCENT_OPTIONS, &[CUSTOM, OTHER_CUSTOM])
         );
     }
@@ -493,7 +497,7 @@ mod tests {
     #[test]
     fn a_saved_selection_is_not_offered_twice() {
         assert_eq!(
-            names(&offered(ACCENT, &[CUSTOM], CUSTOM)),
+            names(&offered(TEXT_COLOR, &[CUSTOM], CUSTOM)),
             extended(ACCENT_OPTIONS, &[CUSTOM])
         );
     }
@@ -506,7 +510,7 @@ mod tests {
             ("", ""),
         ] {
             assert_eq!(
-                names(&offered(ACCENT, &[saved], selected)),
+                names(&offered(TEXT_COLOR, &[saved], selected)),
                 ACCENT_OPTIONS.to_vec(),
                 "{saved:?} with {selected:?} selected"
             );
@@ -532,7 +536,7 @@ mod tests {
     #[test]
     fn settling_replaces_only_the_background_selection() {
         let mut fields = [
-            swatch(ACCENT, ACCENT_MAUVE),
+            swatch(TEXT_COLOR, ACCENT_MAUVE),
             swatch(BACKGROUND_COLOR, ACCENT_MAUVE),
         ];
 
@@ -560,11 +564,11 @@ mod panel_tests {
 
     const CUSTOM: &str = "#102030";
     const OTHER_CUSTOM: &str = "#405060";
-    const CUSTOM_SWATCH: &str = "overlays-panel-accent-#102030";
-    const CUSTOM_REMOVE: &str = "overlays-color-remove-accent-#102030";
+    const CUSTOM_SWATCH: &str = "overlays-panel-text_color-#102030";
+    const CUSTOM_REMOVE: &str = "overlays-color-remove-text_color-#102030";
     const CUSTOM_BACKGROUND_REMOVE: &str = "overlays-color-remove-background_color-#102030";
-    const PRESET_REMOVE: &str = "overlays-color-remove-accent-mauve";
-    const OFF_LIST_REMOVE: &str = "overlays-color-remove-accent-#405060";
+    const PRESET_REMOVE: &str = "overlays-color-remove-text_color-mauve";
+    const OFF_LIST_REMOVE: &str = "overlays-color-remove-text_color-#405060";
     const PANEL_SIZE: gpui::Pixels = px(1600.0);
 
     fn color_specs() -> Vec<SectionedField> {
@@ -572,8 +576,16 @@ mod panel_tests {
             SectionedField {
                 section: ConfigSection::Style,
                 field: FormField::Swatch {
-                    key: ACCENT,
-                    label: "Accent",
+                    key: TEXT_COLOR,
+                    label: "Text color",
+                    options: ACCENT_OPTIONS,
+                },
+            },
+            SectionedField {
+                section: ConfigSection::Style,
+                field: FormField::Swatch {
+                    key: BORDER_COLOR,
+                    label: "Border color",
                     options: ACCENT_OPTIONS,
                 },
             },
@@ -608,7 +620,8 @@ mod panel_tests {
 
     fn open(cx: &mut TestAppContext, stored: OverlayConfig, colors: &[&str]) -> Rig {
         let defaults = colors_config(&[
-            (ACCENT, ACCENT_MAUVE),
+            (TEXT_COLOR, ACCENT_MAUVE),
+            (BORDER_COLOR, ACCENT_MAUVE),
             (BACKGROUND_COLOR, DEFAULT_BACKGROUND_COLOR),
         ]);
         let (mut panel_launch, _repo, rt) =
@@ -668,13 +681,13 @@ mod panel_tests {
 
     #[gpui::test]
     fn asking_to_remove_a_listed_color_changes_nothing_until_the_answer(cx: &mut TestAppContext) {
-        let rig = open(cx, colors_config(&[(ACCENT, CUSTOM)]), &[CUSTOM]);
+        let rig = open(cx, colors_config(&[(TEXT_COLOR, CUSTOM)]), &[CUSTOM]);
 
-        rig.remove(ACCENT, CUSTOM, cx);
+        rig.remove(TEXT_COLOR, CUSTOM, cx);
 
         assert_eq!(rig.removed(cx), vec![CUSTOM.to_owned()]);
-        assert_eq!(rig.selected(ACCENT, cx), CUSTOM);
-        assert!(rig.offers(ACCENT, CUSTOM, cx));
+        assert_eq!(rig.selected(TEXT_COLOR, cx), CUSTOM);
+        assert!(rig.offers(TEXT_COLOR, CUSTOM, cx));
     }
 
     #[gpui::test]
@@ -683,7 +696,7 @@ mod panel_tests {
     ) {
         let rig = open(
             cx,
-            colors_config(&[(ACCENT, CUSTOM), (BACKGROUND_COLOR, CUSTOM)]),
+            colors_config(&[(TEXT_COLOR, CUSTOM), (BACKGROUND_COLOR, CUSTOM)]),
             &[CUSTOM, OTHER_CUSTOM],
         );
 
@@ -692,11 +705,11 @@ mod panel_tests {
             panel.adopt_color_reset(OverlayConfig::new(), CUSTOM, cx);
         });
 
-        assert_eq!(rig.selected(ACCENT, cx), ACCENT_MAUVE);
+        assert_eq!(rig.selected(TEXT_COLOR, cx), ACCENT_MAUVE);
         assert_eq!(rig.selected(BACKGROUND_COLOR, cx), DEFAULT_BACKGROUND_COLOR);
-        assert!(!rig.offers(ACCENT, CUSTOM, cx));
+        assert!(!rig.offers(TEXT_COLOR, CUSTOM, cx));
         assert!(!rig.offers(BACKGROUND_COLOR, CUSTOM, cx));
-        assert!(rig.offers(ACCENT, OTHER_CUSTOM, cx));
+        assert!(rig.offers(TEXT_COLOR, OTHER_CUSTOM, cx));
         rig.panel.read_with(cx, |panel, cx| {
             assert_eq!(panel.pending_config(cx), panel.stored);
         });
@@ -707,7 +720,7 @@ mod panel_tests {
         let kept = colors_config(&[(BACKGROUND_COLOR, OTHER_CUSTOM)]);
         let rig = open(
             cx,
-            colors_config(&[(ACCENT, CUSTOM), (BACKGROUND_COLOR, OTHER_CUSTOM)]),
+            colors_config(&[(TEXT_COLOR, CUSTOM), (BACKGROUND_COLOR, OTHER_CUSTOM)]),
             &[CUSTOM, OTHER_CUSTOM],
         );
 
@@ -719,25 +732,25 @@ mod panel_tests {
 
     #[gpui::test]
     fn a_color_off_the_list_stays_shown_until_another_one_is_picked(cx: &mut TestAppContext) {
-        let rig = open(cx, colors_config(&[(ACCENT, CUSTOM)]), &[]);
+        let rig = open(cx, colors_config(&[(TEXT_COLOR, CUSTOM)]), &[]);
 
-        assert_eq!(rig.selected(ACCENT, cx), CUSTOM);
-        assert!(rig.offers(ACCENT, CUSTOM, cx));
-        assert!(!rig.removable(ACCENT, CUSTOM, cx));
+        assert_eq!(rig.selected(TEXT_COLOR, cx), CUSTOM);
+        assert!(rig.offers(TEXT_COLOR, CUSTOM, cx));
+        assert!(!rig.removable(TEXT_COLOR, CUSTOM, cx));
 
         rig.panel.update(cx, |panel, cx| {
-            panel.pick_swatch(ACCENT.to_owned(), ACCENT_SKY.to_owned(), cx);
+            panel.pick_swatch(TEXT_COLOR.to_owned(), ACCENT_SKY.to_owned(), cx);
         });
 
-        assert!(!rig.offers(ACCENT, CUSTOM, cx));
+        assert!(!rig.offers(TEXT_COLOR, CUSTOM, cx));
     }
 
     #[gpui::test]
     fn remove_asks_nothing_for_a_color_off_the_list_or_a_preset(cx: &mut TestAppContext) {
-        let rig = open(cx, colors_config(&[(ACCENT, CUSTOM)]), &[OTHER_CUSTOM]);
+        let rig = open(cx, colors_config(&[(TEXT_COLOR, CUSTOM)]), &[OTHER_CUSTOM]);
 
-        rig.remove(ACCENT, CUSTOM, cx);
-        rig.remove(ACCENT, ACCENT_MAUVE, cx);
+        rig.remove(TEXT_COLOR, CUSTOM, cx);
+        rig.remove(TEXT_COLOR, ACCENT_MAUVE, cx);
         rig.remove(BACKGROUND_COLOR, DEFAULT_BACKGROUND_COLOR, cx);
 
         assert!(rig.removed(cx).is_empty());
@@ -747,9 +760,9 @@ mod panel_tests {
     fn a_listed_color_is_removable_in_both_fields_while_neither_selects_it(
         cx: &mut TestAppContext,
     ) {
-        let rig = open(cx, colors_config(&[(ACCENT, ACCENT_SKY)]), &[CUSTOM]);
+        let rig = open(cx, colors_config(&[(TEXT_COLOR, ACCENT_SKY)]), &[CUSTOM]);
 
-        assert!(rig.removable(ACCENT, CUSTOM, cx));
+        assert!(rig.removable(TEXT_COLOR, CUSTOM, cx));
         assert!(rig.removable(BACKGROUND_COLOR, CUSTOM, cx));
     }
 
@@ -757,7 +770,7 @@ mod panel_tests {
     fn a_listed_color_equal_to_a_preset_is_a_preset_in_that_field(cx: &mut TestAppContext) {
         let rig = open(cx, OverlayConfig::new(), &[DEFAULT_BACKGROUND_COLOR]);
 
-        assert!(rig.removable(ACCENT, DEFAULT_BACKGROUND_COLOR, cx));
+        assert!(rig.removable(TEXT_COLOR, DEFAULT_BACKGROUND_COLOR, cx));
         assert!(!rig.removable(BACKGROUND_COLOR, DEFAULT_BACKGROUND_COLOR, cx));
     }
 
@@ -765,7 +778,7 @@ mod panel_tests {
     fn a_listed_hex_equal_to_a_named_preset_is_a_preset_in_that_field(cx: &mut TestAppContext) {
         let rig = open(cx, OverlayConfig::new(), &["#cba6f7"]);
 
-        assert!(!rig.removable(ACCENT, "#cba6f7", cx));
+        assert!(!rig.removable(TEXT_COLOR, "#cba6f7", cx));
     }
 
     struct Shown<'a> {
@@ -777,7 +790,8 @@ mod panel_tests {
 
     fn show<'a>(cx: &'a mut TestAppContext, stored: OverlayConfig, colors: &[&str]) -> Shown<'a> {
         let defaults = colors_config(&[
-            (ACCENT, ACCENT_MAUVE),
+            (TEXT_COLOR, ACCENT_MAUVE),
+            (BORDER_COLOR, ACCENT_MAUVE),
             (BACKGROUND_COLOR, DEFAULT_BACKGROUND_COLOR),
         ]);
         let (mut panel_launch, _repo, rt) =
@@ -828,23 +842,23 @@ mod panel_tests {
     fn clicking_the_remove_control_asks_to_remove_without_selecting_the_swatch(
         cx: &mut TestAppContext,
     ) {
-        let mut shown = show(cx, colors_config(&[(ACCENT, ACCENT_SKY)]), &[CUSTOM]);
+        let mut shown = show(cx, colors_config(&[(TEXT_COLOR, ACCENT_SKY)]), &[CUSTOM]);
 
         click_selector(shown.vcx, CUSTOM_REMOVE);
         shown.vcx.run_until_parked();
 
         assert_eq!(shown.removed(), vec![CUSTOM.to_owned()]);
-        assert_eq!(shown.selected(ACCENT), ACCENT_SKY);
+        assert_eq!(shown.selected(TEXT_COLOR), ACCENT_SKY);
     }
 
     #[gpui::test]
     fn clicking_a_removable_swatch_selects_it_and_removes_nothing(cx: &mut TestAppContext) {
-        let mut shown = show(cx, colors_config(&[(ACCENT, ACCENT_SKY)]), &[CUSTOM]);
+        let mut shown = show(cx, colors_config(&[(TEXT_COLOR, ACCENT_SKY)]), &[CUSTOM]);
 
         click_selector(shown.vcx, CUSTOM_SWATCH);
         shown.vcx.run_until_parked();
 
-        assert_eq!(shown.selected(ACCENT), CUSTOM);
+        assert_eq!(shown.selected(TEXT_COLOR), CUSTOM);
         assert!(shown.removed().is_empty());
     }
 
@@ -852,7 +866,7 @@ mod panel_tests {
     fn the_remove_control_paints_on_listed_colors_in_both_rows_and_nowhere_else(
         cx: &mut TestAppContext,
     ) {
-        let shown = show(cx, colors_config(&[(ACCENT, OTHER_CUSTOM)]), &[CUSTOM]);
+        let shown = show(cx, colors_config(&[(TEXT_COLOR, OTHER_CUSTOM)]), &[CUSTOM]);
 
         for (selector, painted) in [
             (CUSTOM_REMOVE, true),

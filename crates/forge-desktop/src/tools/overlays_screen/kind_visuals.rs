@@ -68,7 +68,7 @@ mod tests {
     use forge_overlay::config::{
         ACCENT, ACCENT_GREEN, ACCENT_GREEN_HEX, ACCENT_MAUVE, ACCENT_MAUVE_HEX, ACCENT_OPTIONS,
         ACCENT_PEACH, ACCENT_PEACH_HEX, ACCENT_RED, ACCENT_RED_HEX, ACCENT_SKY, ACCENT_SKY_HEX,
-        ACCENT_YELLOW, ACCENT_YELLOW_HEX,
+        ACCENT_YELLOW, ACCENT_YELLOW_HEX, BORDER_COLOR, TEXT_COLOR,
     };
     use forge_overlay::hex_color_channels;
     use forge_overlay::{OverlayConfig, register_builtin_kinds};
@@ -182,12 +182,21 @@ mod tests {
         }
     }
 
+    fn alert_with(key: &str, value: &str) -> OverlayDefinition {
+        let mut alert = definition("overlay.alert");
+        alert.config = OverlayConfig::from([(key.to_owned(), Variant::String(value.to_owned()))]);
+        alert
+    }
+
+    fn hex_rgba(hex: &str) -> Rgba {
+        let [red, green, blue] = hex_color_channels(hex).expect("a valid accent hex");
+        rgb(u32::from_be_bytes([0, red, green, blue]))
+    }
+
     #[test]
-    fn the_stage_paints_the_hex_the_overlay_page_gets_for_every_offered_accent() {
+    fn the_stage_paints_the_hex_the_overlay_page_gets_for_every_offered_border_color() {
         let registry = registry();
-        let descriptor = registry
-            .get("overlay.alert")
-            .expect("the alert kind ships in this build");
+        let palette = ThemeId::default().palette();
 
         for (name, hex) in [
             (ACCENT_MAUVE, ACCENT_MAUVE_HEX),
@@ -198,15 +207,25 @@ mod tests {
             (ACCENT_RED, ACCENT_RED_HEX),
         ] {
             assert!(ACCENT_OPTIONS.contains(&name));
-            let config =
-                OverlayConfig::from([(ACCENT.to_owned(), Variant::String(name.to_owned()))]);
-            let [red, green, blue] = hex_color_channels(hex).expect("a valid accent hex");
+            let visuals = kind_visuals(&alert_with(BORDER_COLOR, name), &registry, &palette);
 
-            assert_eq!(
-                accent_color(descriptor.preview(&config, NamesLanguage::default()).accent),
-                rgb(u32::from_be_bytes([0, red, green, blue])),
-                "{name}"
-            );
+            assert_eq!(visuals.page_accent, hex_rgba(hex), "{name}");
+        }
+    }
+
+    #[test]
+    fn the_stage_follows_the_border_color_and_a_legacy_accent_but_not_the_text_color() {
+        let registry = registry();
+        let palette = ThemeId::default().palette();
+
+        for (key, painted) in [
+            (BORDER_COLOR, ACCENT_SKY_HEX),
+            (ACCENT, ACCENT_SKY_HEX),
+            (TEXT_COLOR, ACCENT_MAUVE_HEX),
+        ] {
+            let visuals = kind_visuals(&alert_with(key, ACCENT_SKY), &registry, &palette);
+
+            assert_eq!(visuals.page_accent, hex_rgba(painted), "{key}");
         }
     }
 

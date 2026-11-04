@@ -8,3 +8,4 @@ pub(crate) mod overlay_media;
 pub(crate) mod overlay_samples;
 pub(crate) mod overlay_service;
 pub(crate) mod overlay_shows;
+pub(crate) mod show_media_holds;

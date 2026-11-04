@@ -71,6 +71,12 @@
  *
  * Every content delivery also plays the overlay's configured sound, whatever
  * its look: the sound belongs to the overlay, so a look never plays it itself.
+ * A delivery whose content carries a non-empty show_sound plays that file
+ * instead, for that show only; show_sound is removed before the look sees the
+ * content. A show_image entry names an image file for that show only and is
+ * left for a look that draws an image. Both name files under forge-show-media
+ * that stay until the show has ended, and neither is part of the content an
+ * overlay keeps, so a reconnecting page never replays them.
  * Actions reach a transient overlay one show at a time: forge sends the next
  * delivery only once the previous one has been up for its whole duration, and
  * holds the rest back in arrival order.
@@ -181,6 +187,7 @@
   var COMMAND_RESUME = "resume";
   var COMMAND_REVEAL = "reveal";
   var SHOW_KEY = "show";
+  var SHOW_SOUND_KEY = "show_sound";
   var SPEECH_WAIT_MS = 12000;
   var SOUND_LEAD_CAP_MS = 10000;
   var AUTOPLAY_ERROR = "NotAllowedError";
@@ -735,10 +742,11 @@
 
   function deliver(values, durationMs) {
     var token = textOf(values[SHOW_KEY]);
+    var sound = textOf(values[SHOW_SOUND_KEY]);
     var shown = withoutShowToken(values);
     dropWaitingShow();
     if (!token || previewing) {
-      present(shown, durationMs, "", null);
+      present(shown, durationMs, "", null, sound);
       return;
     }
 
@@ -746,6 +754,7 @@
       token: token,
       values: shown,
       durationMs: durationMs,
+      sound: sound,
       timer: window.setTimeout(function () {
         revealWaitingShow(token, null);
       }, SPEECH_WAIT_MS),
@@ -759,7 +768,7 @@
   function withoutShowToken(values) {
     var copy = {};
     Object.keys(values).forEach(function (key) {
-      if (key !== SHOW_KEY) {
+      if (key !== SHOW_KEY && key !== SHOW_SOUND_KEY) {
         copy[key] = values[key];
       }
     });
@@ -782,7 +791,7 @@
     }
     var show = waitingShow;
     dropWaitingShow();
-    present(show.values, show.durationMs, token, afterSound);
+    present(show.values, show.durationMs, token, afterSound, show.sound);
   }
 
   function clipOfShow(token) {
@@ -814,13 +823,13 @@
     });
   }
 
-  function present(values, durationMs, token, afterSound) {
+  function present(values, durationMs, token, afterSound, showSound) {
     unclear();
     shownToken = token;
     hidesAfterSpeech = [];
     var engine = motion();
     showSeed = engine ? engine.seed(values) : 0;
-    var configured = (config && config.sound) || "";
+    var configured = showSound || (config && config.sound) || "";
     playSound(configured, afterSound);
     playedThisDelivery = configured;
     contentCallbacks.forEach(function (callback) {

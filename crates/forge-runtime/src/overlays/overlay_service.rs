@@ -13,14 +13,15 @@ use forge_overlay::{
     RowRemoval, SampleContext, delivered_content, ensure_shared_directory, joined_to_show,
     latest_binding, latest_content, materialize_overlay, read_overlay_source,
     refresh_config_credential, remove_overlay_directory, sample_content, settle_chat_avatar,
-    settle_message_parts, show_timing, take_speech, write_overlay_source,
+    settle_message_parts, show_media_key, show_media_overrides, show_media_page_path, show_timing,
+    take_speech, without_show_media, write_overlay_source,
 };
 use forge_registry::CancelSignal;
 use forge_storage::{
     OverlayConfig, OverlayDefinition, OverlayId, OverlayRepo, SettingsRepo, read_setting,
     settings::core_settings,
 };
-use forge_types::{ArgStack, EventId, LatestValueReader, PlatformId};
+use forge_types::{ArgStack, EventId, LatestValueReader, PlatformId, Variant};
 use serde_json::json;
 use ulid::Ulid;
 
@@ -37,6 +38,7 @@ use crate::overlays::overlay_shows::{
     QueueFull, SHOW_CEILING, SHOW_QUEUE_CAPACITY, Show, ShowDepthWatch, ShowEnd, ShowSequencer,
     ShowTicket,
 };
+use crate::overlays::show_media_holds::{ShowMediaHolds, ShowMediaLease};
 use crate::speech::speak_dispatcher::{ShowSpeaker, ShowSpeech, SpeechOrigin, SpeechStartSignal};
 
 use forge_overlay::kinds::chat::KIND_ID as CHAT_KIND_ID;
@@ -173,6 +175,7 @@ struct OverlayService {
     date_names: DateNamesHandle,
     tasks: TaskOwner,
     default_root: PathBuf,
+    show_media: ShowMediaHolds,
 }
 
 pub struct OverlayServiceParts {
@@ -232,6 +235,7 @@ impl OverlayServiceHandle {
                 date_names,
                 tasks,
                 default_root,
+                show_media: ShowMediaHolds::default(),
             }),
         }
     }
@@ -455,6 +459,7 @@ impl OverlayServiceHandle {
         if removed {
             self.inner.definitions.advance();
             self.withdraw_shows(id);
+            self.inner.show_media.keep_applied(id, None);
             self.inner.frames.revoke(id).await;
         }
         Ok(removed)
@@ -580,11 +585,18 @@ impl OverlayServiceHandle {
             });
         let speech =
             speech.and_then(|speech| self.with_installed_voice(&definition, speech, caused_by));
+        let picked_media = show_media_overrides(descriptor, supplied, args);
+        let media_lease = self
+            .place_show_media(&definition.id, &picked_media, &mut content)
+            .await;
         let Some(timing) = show_timing(descriptor, &definition.config, duration_ms) else {
             let disposition = descriptor.delivery_disposition();
             let delivery = self
                 .push(&definition.id, disposition, &content, duration_ms)
                 .await?;
+            self.inner
+                .show_media
+                .keep_applied(&definition.id, media_lease);
             if let Some(speech) = speech {
                 self.speak_unheld(speech);
             }
@@ -601,6 +613,7 @@ impl OverlayServiceHandle {
             window: timing.window.min(SHOW_CEILING),
             exit_tail: timing.exit_tail,
             speech,
+            media: media_lease,
         };
         self.inner
             .shows
@@ -610,6 +623,55 @@ impl OverlayServiceHandle {
                 id: definition.id,
                 capacity: SHOW_QUEUE_CAPACITY,
             })
+    }
+
+    async fn place_show_media(
+        &self,
+        id: &OverlayId,
+        picked: &OverlayConfig,
+        content: &mut OverlayConfig,
+    ) -> Option<ShowMediaLease> {
+        if picked.is_empty() {
+            return None;
+        }
+        let Some(library) = &self.inner.media else {
+            tracing::warn!(overlay = %id, "show media skipped; the media library is not available");
+            return None;
+        };
+        let pass = library.resolve(picked).await;
+        for issue in &pass.media.issues {
+            tracing::warn!(overlay = %id, slot = issue.key(), ?issue, "show media did not resolve; the overlay keeps its own");
+        }
+        let resolved = pass.media.resolved;
+        if resolved.is_empty() {
+            return None;
+        }
+        let placed: Vec<(&'static str, String)> = resolved
+            .iter()
+            .filter_map(|media| Some((show_media_key(media.key())?, show_media_page_path(media))))
+            .collect();
+        let root = self.root().await;
+        let identity = id.as_str().to_owned();
+        let holds = self.inner.show_media.clone();
+        let written = blocking(move || holds.place(root, identity, &resolved))
+            .await
+            .and_then(|written| written.map_err(RuntimeError::from));
+        match written {
+            Ok(Some(lease)) => {
+                for (key, path) in placed {
+                    content.insert(key.to_owned(), Variant::String(path));
+                }
+                Some(lease)
+            }
+            Ok(None) => {
+                tracing::debug!(overlay = %id, "show media skipped; the overlay has no folder yet");
+                None
+            }
+            Err(error) => {
+                tracing::warn!(overlay = %id, %error, "show media could not be written; the overlay keeps its own");
+                None
+            }
+        }
     }
 
     fn fill_avatar(&self, slot: forge_overlay::ChatAvatarSlot, content: &mut OverlayConfig) {
@@ -829,7 +891,10 @@ impl OverlayServiceHandle {
             return Ok(self.send(id, content, duration_ms).await);
         }
         let _lane = self.inner.lanes.enter(id).await;
-        self.inner.repo.set_retained_content(id, content).await?;
+        self.inner
+            .repo
+            .set_retained_content(id, &without_show_media(content))
+            .await?;
         Ok(self.send(id, content, duration_ms).await)
     }
 

@@ -35,7 +35,7 @@ pub(super) const PICK_TILE: Pixels = px(44.0);
 pub(super) const PICK_ART: Pixels = px(22.0);
 
 #[derive(Clone, PartialEq, Eq)]
-pub(super) struct IconImage {
+pub(crate) struct IconImage {
     pub(super) id: String,
     pub(super) label: String,
     pub(super) format: MediaFormat,
@@ -88,7 +88,7 @@ pub(super) enum IconPick {
     Store(String),
 }
 
-pub(super) const ICON_FAVORITES: FavoritesList = FavoritesList {
+pub(crate) const ICON_FAVORITES: FavoritesList = FavoritesList {
     setting: &PICKER_FAVORITES_ICONS,
     from_stored: known_icon_favorites,
 };
@@ -296,7 +296,7 @@ fn imported_group(images: &[IconImage], accent: Rgba, palette: &ForgePalette) ->
     }
 }
 
-pub(super) fn icon_field_row(
+pub(crate) fn icon_field_row(
     key: &str,
     selected: &str,
     images: &[IconImage],

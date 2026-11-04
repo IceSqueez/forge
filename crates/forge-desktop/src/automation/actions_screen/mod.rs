@@ -183,6 +183,19 @@ impl ScreenActionsView {
     }
 
     #[must_use]
+    pub(crate) fn with_media_library(
+        self,
+        media: Arc<dyn forge_storage::MediaRepo>,
+        settings_repo: Arc<dyn SettingsRepo>,
+        cx: &mut Context<Self>,
+    ) -> Self {
+        self.editor.update(cx, |editor, cx| {
+            editor.attach_media_library(media, settings_repo, cx)
+        });
+        self
+    }
+
+    #[must_use]
     pub(crate) fn with_scheduled_runs(
         self,
         repo: Arc<dyn forge_storage::ScheduledRunRepo>,

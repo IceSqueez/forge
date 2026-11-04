@@ -300,6 +300,8 @@ impl AppShell {
         let clip_library = Arc::clone(handles.audio.soundboard_player.library());
         let globals_repo = handles.backend.globals_repo();
         let settings_repo = handles.backend.settings_repo();
+        let picker_settings_repo = Arc::clone(&settings_repo);
+        let media_repo = handles.backend.media_repo();
         let overlay_repo = handles.backend.overlay_repo();
         let overlay_kinds = Arc::clone(&handles.overlays.kinds);
         let speak = handles.speech.speak.clone();
@@ -335,6 +337,7 @@ impl AppShell {
                 cx,
             )
             .with_builtins(builtins, cx)
+            .with_media_library(media_repo, picker_settings_repo, cx)
             .with_scheduled_runs(scheduled_run_repo, cx)
             .with_pack_export(cx)
             .with_integration_switch(switch, cx)

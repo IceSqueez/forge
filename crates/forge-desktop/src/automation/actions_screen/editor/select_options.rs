@@ -5,18 +5,19 @@ use crate::integrations::donation_services::donation_provider_options;
 use crate::shared::config_form::dependent_options_key;
 use crate::shared::option_choices::ChoiceOption;
 use forge_components::tr;
+use forge_overlay::clip_reference;
 use forge_registry::FormSchemaSource;
 pub(super) use forge_registry::SOUNDBOARD_CLIP_OPTIONS_KEY as CLIP_OPTIONS_KEY;
 use forge_registry::{
-    ACTION_OPTIONS_KEY, GLOBAL_OPTIONS_KEY, OVERLAY_OPTIONS_KEY, QUEUE_OPTIONS_KEY,
-    SCRIPT_OPTIONS_KEY, TRIGGER_INSTANCE_OPTIONS_KEY,
+    ACTION_OPTIONS_KEY, GLOBAL_OPTIONS_KEY, OVERLAY_OPTIONS_KEY, OVERLAY_SOUND_OPTIONS_KEY,
+    QUEUE_OPTIONS_KEY, SCRIPT_OPTIONS_KEY, TRIGGER_INSTANCE_OPTIONS_KEY,
 };
 use forge_runtime::DONATION_PROVIDER_OPTIONS_KEY;
 use forge_runtime::{ENGINE_OPTIONS_KEY, VOICE_OPTIONS_PREFIX};
 use forge_soundboard::ClipLibrary;
 use forge_speak_queue::SpeakQueueHandle;
 use forge_speech_types::ENGINE_VOICE_OPTIONS_KEY;
-use forge_storage::{GlobalsRepo, OverlayRepo, QueueRepo, ScriptRepo};
+use forge_storage::{GlobalsRepo, OverlayRepo, QueueRepo, ScriptRepo, StoredClip};
 use gpui::Context;
 use std::collections::HashMap;
 
@@ -49,6 +50,18 @@ fn mark_unavailable_clips(clips: &mut [ChoiceOption], unavailable: &HashSet<Stri
             *label = format!("{label} - {suffix}");
         }
     }
+}
+
+fn show_sound_choices(clips: &[StoredClip]) -> impl Iterator<Item = ChoiceOption> {
+    std::iter::once(ChoiceOption::new(
+        String::new(),
+        tr!("actions_overlay_show_sound_own"),
+    ))
+    .chain(
+        clips
+            .iter()
+            .map(|clip| ChoiceOption::new(clip_reference(&clip.id.to_string()), clip.name.clone())),
+    )
 }
 
 struct SelectOptionSources {
@@ -157,22 +170,25 @@ impl SelectOptionSources {
     }
 
     async fn add_clips(&self, fetch: &mut SelectOptionsFetch) {
-        if let Some(clips) = fetch.listed(self.clip_library.list().await, CLIP_OPTIONS_KEY) {
-            fetch.unavailable_clip_ids = self
-                .clip_library
-                .availability_of(&clips)
-                .await
+        let Some(clips) = fetch.listed(self.clip_library.list().await, CLIP_OPTIONS_KEY) else {
+            fetch.failed_keys.push(OVERLAY_SOUND_OPTIONS_KEY);
+            return;
+        };
+        fetch.unavailable_clip_ids = self
+            .clip_library
+            .availability_of(&clips)
+            .await
+            .into_iter()
+            .filter(|(_, availability)| !availability.is_playable())
+            .map(|(id, _)| id.to_string())
+            .collect();
+        fetch.put(OVERLAY_SOUND_OPTIONS_KEY, show_sound_choices(&clips));
+        fetch.put(
+            CLIP_OPTIONS_KEY,
+            clips
                 .into_iter()
-                .filter(|(_, availability)| !availability.is_playable())
-                .map(|(id, _)| id.to_string())
-                .collect();
-            fetch.put(
-                CLIP_OPTIONS_KEY,
-                clips
-                    .into_iter()
-                    .map(|c| ChoiceOption::new(c.id.to_string(), c.name)),
-            );
-        }
+                .map(|c| ChoiceOption::new(c.id.to_string(), c.name)),
+        );
     }
 
     async fn add_globals(&self, fetch: &mut SelectOptionsFetch) {

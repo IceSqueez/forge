@@ -21,6 +21,7 @@ var CARD_BOUNDS = [
   { key: "card_max_height", property: "--card-max-height" },
 ];
 var IMAGE_PLAY_PARAMETER = "?play=";
+var SHOW_IMAGE_KEY = "show_image";
 var FALLBACK_SURFACE = "#14141c";
 var HEX_COLOR = /^#([0-9a-f]{2})([0-9a-f]{2})([0-9a-f]{2})$/i;
 var PERCENT = 100;
@@ -30,12 +31,12 @@ forge.ready(function (config) {
   placeIcon(config.icon);
   paintSurface(config);
   sizeCard(config);
-  var image = placeImage(config);
+  var image = config.image ? placeImage(config) : null;
 
   forge.content(function (values, durationMs) {
     forge.set("headline", values.headline);
     forge.set("subline", values.subline);
-    playImage(image, config);
+    image = playImage(image, values[SHOW_IMAGE_KEY] || config.image, config);
     forge.show(STAGE_SELECTOR, durationMs || config.duration * 1000 || FALLBACK_MS);
   });
 });
@@ -96,9 +97,6 @@ function sizeCard(config) {
 }
 
 function placeImage(config) {
-  if (!config.image) {
-    return null;
-  }
   var stage = document.querySelector(STAGE_SELECTOR);
   var image = document.createElement("img");
   image.className = "picture";
@@ -118,10 +116,23 @@ function placeImage(config) {
   return image;
 }
 
-function playImage(image, config) {
+function playImage(image, file, config) {
+  if (!file) {
+    removeImage(image);
+    return null;
+  }
+  var shown = image || placeImage(config);
+  imagePlays += 1;
+  shown.src = encodeURI(file) + IMAGE_PLAY_PARAMETER + imagePlays;
+  return shown;
+}
+
+function removeImage(image) {
   if (!image) {
     return;
   }
-  imagePlays += 1;
-  image.src = encodeURI(config.image) + IMAGE_PLAY_PARAMETER + imagePlays;
+  image.remove();
+  var stage = document.querySelector(STAGE_SELECTOR);
+  stage.classList.remove(IMAGE_ABOVE_CLASS, IMAGE_BELOW_CLASS);
+  stage.style.removeProperty(IMAGE_HEIGHT_PROPERTY);
 }

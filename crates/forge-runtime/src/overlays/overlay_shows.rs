@@ -14,6 +14,7 @@ use tokio::time::Instant;
 use forge_types::MessageRef;
 
 use crate::overlays::overlay_service::{OverlayDelivery, OverlayFrameSink, content_json};
+use crate::overlays::show_media_holds::ShowMediaLease;
 use crate::speech::speak_dispatcher::{ShowSpeaker, ShowSpeech, SpeechStartSignal};
 
 pub const SHOW_QUEUE_CAPACITY: usize = 1000;
@@ -46,6 +47,7 @@ pub(crate) struct Show {
     pub(crate) window: Duration,
     pub(crate) exit_tail: Duration,
     pub(crate) speech: Option<ShowSpeech>,
+    pub(crate) media: Option<ShowMediaLease>,
 }
 
 pub(crate) struct QueueFull;
@@ -205,12 +207,14 @@ impl ShowSequencer {
     }
 
     async fn present_all(self: Arc<Self>, id: OverlayId) {
-        while let Some(next) = self.next(&id) {
+        while let Some(mut next) = self.next(&id) {
             let delivery = self.present(&id, &next.show).await;
             let ceiling = Instant::now() + SHOW_CEILING;
             let exit_tail = next.show.exit_tail;
+            let media = next.show.media.take();
             self.hold(&id, next.show, ceiling).await;
             tokio::time::sleep_until((Instant::now() + exit_tail).min(ceiling)).await;
+            drop(media);
             #[expect(
                 clippy::let_underscore_must_use,
                 reason = "the requester may stop waiting for the reply"

@@ -13,3 +13,4 @@ pub(crate) mod row_emotes;
 pub(crate) mod row_filter;
 pub(crate) mod row_removal;
 pub(crate) mod sample;
+pub(crate) mod show_media;

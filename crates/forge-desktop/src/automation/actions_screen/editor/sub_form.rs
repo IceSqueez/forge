@@ -25,6 +25,7 @@ impl ActionEditor {
                 .with_variable_scope(scope)
         });
         self.modals._sub_form_sub = Some(cx.subscribe(&form, Self::on_sub_form_event));
+        self.offer_show_images(&form, cx);
         self.modals.sub_form = Some(form);
         self.fetch_select_options(cx);
         self.start_option_choices(cx);
@@ -53,6 +54,7 @@ impl ActionEditor {
                 }
                 self.close_sub_form();
                 self.step_open = None;
+                self.adopt_show_sound(&commit);
                 self.apply_sub_form_commit(commit, cx);
                 cx.notify();
             }
@@ -60,6 +62,7 @@ impl ActionEditor {
                 self.close_sub_form();
                 cx.notify();
             }
+            SubFormEvent::PickShowImage => self.open_show_image_picker(cx),
         }
     }
 

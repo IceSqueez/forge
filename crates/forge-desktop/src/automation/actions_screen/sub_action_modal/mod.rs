@@ -21,6 +21,7 @@ mod field_grid;
 mod modal;
 mod rejection;
 mod select_picker;
+mod show_image;
 mod submit;
 mod unit_amount;
 mod variable_insert;
@@ -63,6 +64,7 @@ pub(super) struct SubFormCommit {
 pub(super) enum SubFormEvent {
     Commit(SubFormCommit),
     Cancel,
+    PickShowImage,
 }
 
 pub(super) struct EditSubActionForm {
@@ -89,6 +91,7 @@ pub(super) struct EditSubActionForm {
     datetime_focus: FocusHandle,
     datetime_focus_restore: Option<FocusHandle>,
     rejection: Option<StepRejection>,
+    show_image: show_image::ShowImageChoice,
     rt_handle: tokio::runtime::Handle,
 }
 
@@ -154,6 +157,7 @@ impl EditSubActionForm {
             datetime_focus: cx.focus_handle(),
             datetime_focus_restore: None,
             rejection: None,
+            show_image: show_image::ShowImageChoice::default(),
             rt_handle,
         };
         form.rebuild_refined(cx);

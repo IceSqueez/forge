@@ -11,6 +11,7 @@ use crate::files::assets::{
 };
 use crate::files::media::{GENERATED_MEDIA_DIRECTORY, MediaIssue, ResolvedMedia};
 use crate::render::document::{config_document, sample_document};
+use crate::render::show_media::SHOW_MEDIA_DIRECTORY;
 
 pub const GENERATOR_VERSION: u32 = 5;
 
@@ -112,6 +113,42 @@ fn write_generated_media(
 
     sweep_generated_media(&namespace, &named, report);
     Ok(())
+}
+
+pub fn place_show_media(
+    root: &Path,
+    id: &str,
+    media: &[ResolvedMedia],
+) -> Result<bool, OverlayError> {
+    let Some(directory) = existing_overlay_directory(root, id)? else {
+        return Ok(false);
+    };
+    let namespace = directory.join(SHOW_MEDIA_DIRECTORY);
+    reject_symlink(&namespace)?;
+    create_dir(&namespace)?;
+    for placed in media {
+        if is_regular_file(&namespace.join(placed.file_name())) {
+            continue;
+        }
+        write_atomic(&namespace, placed.file_name(), placed.bytes())?;
+    }
+    Ok(true)
+}
+
+pub fn clear_show_media(root: &Path, id: &str) -> Result<(), OverlayError> {
+    let Some(directory) = existing_overlay_directory(root, id)? else {
+        return Ok(());
+    };
+    let namespace = directory.join(SHOW_MEDIA_DIRECTORY);
+    reject_symlink(&namespace)?;
+    match fs::remove_dir_all(&namespace) {
+        Ok(()) => Ok(()),
+        Err(source) if source.kind() == std::io::ErrorKind::NotFound => Ok(()),
+        Err(source) => Err(OverlayError::Io {
+            path: display(&namespace),
+            source,
+        }),
+    }
 }
 
 fn is_regular_file(path: &Path) -> bool {

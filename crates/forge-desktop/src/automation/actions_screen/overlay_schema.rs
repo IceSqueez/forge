@@ -1,7 +1,7 @@
 use std::collections::HashMap;
 use std::sync::Arc;
 
-use forge_overlay::{ContentFeed, OverlayKindRegistry};
+use forge_overlay::{ContentFeed, OverlayKindRegistry, show_media_fields};
 use forge_registry::{FormField, FormSchemaSource};
 use forge_runtime::CONTENT_SCHEMA_KEY;
 
@@ -48,12 +48,14 @@ impl FormSchemaSource for OverlayContentSchema {
             .get(selector_value.trim())
             .and_then(|kind_id| self.kinds.get(kind_id))
             .map(|descriptor| {
-                descriptor
+                let mut fields: Vec<FormField> = descriptor
                     .config_fields()
                     .into_iter()
                     .filter(|sectioned| sectioned.delivered)
                     .map(|sectioned| sectioned.field)
-                    .collect()
+                    .collect();
+                fields.extend(show_media_fields(descriptor));
+                fields
             })
             .unwrap_or_default()
     }

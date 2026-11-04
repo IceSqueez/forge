@@ -6,6 +6,7 @@ use crate::shared::config_field_label::{row_label, sender_bot_warning, sender_fi
 use crate::shared::config_form::{ConfigField, GateStates, InputFlavor};
 use crate::shared::option_choices::ChoiceOption;
 use forge_components::{ActivePresentation, FONT_SM, FONT_XXS, Spacing, scaled, spacing};
+use forge_overlay::{SHOW_IMAGE, SHOW_SOUND};
 use forge_registry::CodeLanguage;
 use gpui::{App, Div};
 
@@ -141,13 +142,18 @@ impl EditSubActionForm {
         cx: &mut Context<Self>,
     ) -> AnyElement {
         let density = cx.density();
-        let open_picker = self.open_picker_for(key);
-        let select =
-            self.render_select_field(key, label, options, selected, open_picker, palette, cx);
-        let select = match sender_field_helper(&self.kind_id, key) {
-            Some(helper) => with_field_helper(select, helper, palette, density, cx),
-            None => select,
+        let select = match self.show_image_item(key, label, selected, palette, cx) {
+            Some(image) => image,
+            None => {
+                let open_picker = self.open_picker_for(key);
+                self.render_select_field(key, label, options, selected, open_picker, palette, cx)
+            }
         };
+        let select =
+            match sender_field_helper(&self.kind_id, key).or_else(|| show_media_helper(key)) {
+                Some(helper) => with_field_helper(select, helper, palette, density, cx),
+                None => select,
+            };
         match sender_bot_warning(&self.kind_id, key, selected) {
             Some(warning) => with_field_warning(select, warning, palette, density, cx),
             None => select,
@@ -209,6 +215,10 @@ fn sub_field_is_half(field: &ConfigField) -> bool {
         }
         _ => false,
     }
+}
+
+fn show_media_helper(key: &str) -> Option<String> {
+    (key == SHOW_IMAGE || key == SHOW_SOUND).then(|| tr!("actions_overlay_show_media_helper"))
 }
 
 fn with_field_warning(

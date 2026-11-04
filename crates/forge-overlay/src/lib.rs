@@ -55,8 +55,8 @@ pub use render::document::{
     ICON_FILE_FIELD, ICON_TINTABLE_FIELD, config_document, sample_document,
 };
 pub use render::materialize::{
-    GENERATOR_VERSION, MaterializeReport, ensure_shared_directory, materialize_overlay,
-    refresh_config_credential, remove_overlay_directory,
+    GENERATOR_VERSION, MaterializeReport, clear_show_media, ensure_shared_directory,
+    materialize_overlay, place_show_media, refresh_config_credential, remove_overlay_directory,
 };
 pub use render::motion_scan::{MotionIssue, OverriddenSources, motion_issues};
 pub use render::page_contract::{
@@ -69,6 +69,10 @@ pub use render::preview::{
     PreviewPosition, PreviewShape, PreviewSurface, PreviewTextOverflow, TALLY_SEPARATOR,
 };
 pub use render::sample::{SampleContext, SampleTrigger, sample_content, sample_context};
+pub use render::show_media::{
+    SHOW_IMAGE, SHOW_MEDIA_DIRECTORY, SHOW_SOUND, show_media_fields, show_media_key,
+    show_media_overrides, show_media_page_path, without_show_media,
+};
 
 pub use render::page_contract::BindRule;
 pub use render::page_contract::RuntimeAttribute;

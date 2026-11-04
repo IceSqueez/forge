@@ -17,6 +17,7 @@ mod detail_load;
 mod header;
 pub(in crate::automation::actions_screen) mod integration_gating;
 mod select_options;
+mod show_media;
 mod stats;
 mod step_controls;
 mod step_drag;
@@ -112,13 +113,15 @@ pub(in crate::automation::actions_screen) struct ActionEditor {
     step_menu_pos: Option<Point<Pixels>>,
     choices: StepChoices,
     modals: EditorModals,
+    show_media: Option<show_media::ShowMediaPicker>,
 }
 
 impl EventEmitter<ActionEditorEvent> for ActionEditor {}
 
 impl Render for ActionEditor {
-    fn render(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+    fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         let palette = cx.palette();
+        self.focus_show_media_picker(window, cx);
         self.render_editor_pane(&palette, cx)
     }
 }
@@ -164,6 +167,7 @@ impl ActionEditor {
             step_menu_pos: None,
             choices: StepChoices::new(),
             modals: EditorModals::default(),
+            show_media: None,
         };
         editor.fetch_select_options(cx);
         editor
@@ -247,8 +251,9 @@ impl ActionEditor {
             .add_trigger
             .as_ref()
             .map(|stage| self.render_add_trigger(stage, palette, cx));
+        let show_media = self.render_show_media_layer(palette, cx);
         let drag_watch = self.step_drag_release_watch(cx);
-        [sub_form, grid_picker, add_trigger, drag_watch]
+        [sub_form, show_media, grid_picker, add_trigger, drag_watch]
             .into_iter()
             .flatten()
             .collect()

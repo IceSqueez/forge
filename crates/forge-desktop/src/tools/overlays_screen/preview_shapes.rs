@@ -829,4 +829,85 @@ mod tests {
             page_color([0x10, 0x20, 0x30], OPAQUE)
         );
     }
+
+    #[test]
+    fn a_card_extent_stays_inside_the_room_and_never_caps_below_its_own_minimum() {
+        let room = px(400.0);
+
+        for (least, most, expected) in [
+            (100, None, (px(50.0), None)),
+            (100, Some(600), (px(50.0), Some(px(300.0)))),
+            (800, None, (room, None)),
+            (1000, Some(1200), (room, Some(room))),
+            (0, Some(2000), (px(0.0), Some(room))),
+            (300, Some(100), (px(150.0), Some(px(150.0)))),
+        ] {
+            let extent = card_extent(least, most, room, scale());
+
+            assert_eq!(
+                (extent.least, extent.most),
+                expected,
+                "least {least}, most {most:?}"
+            );
+        }
+    }
+
+    fn card_bounds() -> PreviewCard {
+        PreviewCard {
+            min_width: 100,
+            min_height: 600,
+            max_width: Some(300),
+            max_height: None,
+            overflow: PreviewTextOverflow::Wrap,
+        }
+    }
+
+    fn card_extents(mut card: Div) -> [Option<Length>; 4] {
+        let style = card.style();
+        [
+            style.min_size.width,
+            style.max_size.width,
+            style.min_size.height,
+            style.max_size.height,
+        ]
+    }
+
+    #[test]
+    fn a_bounded_card_takes_each_axis_from_its_own_bounds_and_its_own_room() {
+        let room = Size {
+            width: px(1000.0),
+            height: px(200.0),
+        };
+        let plan = ElementPlan::of(element(FRAME_KIND, None)).within(room);
+
+        assert_eq!(
+            card_extents(bounded_card(div(), Some(card_bounds()), plan, scale())),
+            [
+                Some(px(50.0).into()),
+                Some(px(150.0).into()),
+                Some(px(200.0).into()),
+                None,
+            ]
+        );
+    }
+
+    #[test]
+    fn a_card_is_left_unbounded_without_card_bounds_or_a_known_room() {
+        let room = Size {
+            width: px(1000.0),
+            height: px(200.0),
+        };
+        let unplaced = ElementPlan::of(element(FRAME_KIND, None));
+
+        for (label, bounds, plan) in [
+            ("no card bounds", None, unplaced.within(room)),
+            ("no room yet", Some(card_bounds()), unplaced),
+        ] {
+            assert_eq!(
+                card_extents(bounded_card(div(), bounds, plan, scale())),
+                [None; 4],
+                "{label}"
+            );
+        }
+    }
 }

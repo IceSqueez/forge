@@ -414,4 +414,23 @@ mod tests {
             );
         }
     }
+
+    #[test]
+    fn opening_a_card_limit_seeds_its_maximum_from_the_matching_side_of_the_source_box() {
+        let size = DesignSize {
+            width: 1280,
+            height: 720,
+        };
+
+        for (key, expected) in [
+            (forge_overlay::config::CARD_MAX_WIDTH, Some(1280)),
+            (forge_overlay::config::CARD_MAX_HEIGHT, Some(720)),
+            (forge_overlay::config::CARD_MIN_WIDTH, None),
+            (forge_overlay::config::CARD_MIN_HEIGHT, None),
+            (DESIGN_WIDTH, None),
+            (DURATION, None),
+        ] {
+            assert_eq!(source_extent_seed(key, size), expected, "{key}");
+        }
+    }
 }

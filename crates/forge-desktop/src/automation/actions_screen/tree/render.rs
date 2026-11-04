@@ -320,7 +320,11 @@ impl ActionTree {
     ) -> AnyElement {
         let density = cx.density();
         let id = action.id;
-        let selected = self.selected == Some(id) || self.marked.bulk_contains(&id);
+        let selected = if self.marked.is_bulk() {
+            self.marked.bulk_contains(&id)
+        } else {
+            self.selected == Some(id)
+        };
         let hovered = self.hovered == Some(id);
         let renaming = self.renaming.as_ref().filter(|r| r.id == id);
 

@@ -465,7 +465,11 @@ impl TriggerList {
     ) -> AnyElement {
         let density = cx.density();
         let id = instance.id;
-        let selected = self.selected == Some(id) || self.marked.bulk_contains(&id);
+        let selected = if self.marked.is_bulk() {
+            self.marked.bulk_contains(&id)
+        } else {
+            self.selected == Some(id)
+        };
         let cursor = self.list_cursor == Some(id);
         let hovered = self.hovered == Some(id);
         let dot_color = platform_dot_color(&instance.kind_id, &self.deps.registry, palette);

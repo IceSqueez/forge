@@ -13,6 +13,7 @@ use tempfile::TempDir;
 
 pub(crate) const ALERT_KIND: &str = forge_overlay::kinds::alert::KIND_ID;
 pub(crate) const BLANK_KIND: &str = forge_overlay::kinds::blank::KIND_ID;
+pub(crate) const CARD_KIND: &str = forge_overlay::kinds::card::KIND_ID;
 pub(crate) const CHAT_KIND: &str = forge_overlay::kinds::chat::KIND_ID;
 pub(crate) const FRAME_KIND: &str = forge_overlay::kinds::frame::KIND_ID;
 pub(crate) const GOAL_KIND: &str = forge_overlay::kinds::goal::KIND_ID;

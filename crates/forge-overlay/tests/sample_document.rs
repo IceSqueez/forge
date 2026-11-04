@@ -1,7 +1,7 @@
 #![expect(clippy::expect_used, reason = "test fixtures assert directly")]
 mod common;
 use common::{
-    ALERT_KIND, BLANK_KIND, CHAT_KIND, FRAME_KIND, GOAL_KIND, IDENTITY, LATEST_KIND,
+    ALERT_KIND, BLANK_KIND, CARD_KIND, CHAT_KIND, FRAME_KIND, GOAL_KIND, IDENTITY, LATEST_KIND,
     PAGE_CREDENTIAL, TICKER_KIND, registry, sub_alert_instance,
 };
 
@@ -17,6 +17,7 @@ use serde_json::Value;
 const BUILTIN_IDS: &[&str] = &[
     ALERT_KIND,
     BLANK_KIND,
+    CARD_KIND,
     CHAT_KIND,
     FRAME_KIND,
     GOAL_KIND,
@@ -33,6 +34,13 @@ const EXPECTED_SAMPLE_CONTENT: &[(&str, &[(&str, &str)])] = &[
         ],
     ),
     (BLANK_KIND, &[]),
+    (
+        CARD_KIND,
+        &[
+            (HEADLINE, "Welcome to the stream"),
+            (SUBLINE, "Say hi in chat"),
+        ],
+    ),
     (
         CHAT_KIND,
         &[

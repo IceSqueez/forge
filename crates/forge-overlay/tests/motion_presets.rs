@@ -5,8 +5,8 @@
 )]
 mod common;
 use common::{
-    ALERT_KIND, BLANK_KIND, CHAT_KIND, FRAME_KIND, GOAL_KIND, LATEST_KIND, TICKER_KIND, text,
-    with_kind,
+    ALERT_KIND, BLANK_KIND, CARD_KIND, CHAT_KIND, FRAME_KIND, GOAL_KIND, LATEST_KIND, TICKER_KIND,
+    text, with_kind,
 };
 
 use std::collections::BTreeSet;
@@ -100,6 +100,7 @@ fn engine_function(name: &str) -> &'static str {
 fn each_look_offers_exactly_the_motion_axes_it_plays() {
     for (kind_id, entrance, text_effect, exit) in [
         (ALERT_KIND, true, true, true),
+        (CARD_KIND, true, true, false),
         (TICKER_KIND, true, true, true),
         (GOAL_KIND, true, true, false),
         (LATEST_KIND, true, true, false),
@@ -155,7 +156,7 @@ fn an_exit_of_none_adds_no_tail() {
 
 #[test]
 fn a_look_without_an_exit_axis_adds_no_tail_whatever_its_record_holds() {
-    for kind_id in [GOAL_KIND, CHAT_KIND, FRAME_KIND, BLANK_KIND] {
+    for kind_id in [CARD_KIND, GOAL_KIND, CHAT_KIND, FRAME_KIND, BLANK_KIND] {
         let stored = exit_config("burst", Some(Variant::Int(2_000)));
 
         assert_eq!(
@@ -208,7 +209,7 @@ fn a_show_is_timed_as_its_window_with_the_exit_tail_appended() {
 
 #[test]
 fn a_look_that_applies_content_on_arrival_is_not_timed_at_all() {
-    for kind_id in [GOAL_KIND, CHAT_KIND, FRAME_KIND] {
+    for kind_id in [CARD_KIND, GOAL_KIND, CHAT_KIND, FRAME_KIND] {
         let timing = with_kind(kind_id, |descriptor| {
             show_timing(descriptor, &OverlayConfig::new(), Some(5_000))
         });
@@ -346,7 +347,7 @@ fn the_agreed_motion_pacing_holds_three_intensities_and_a_quick_default_stagger(
 
 #[test]
 fn every_look_but_chat_enters_over_the_agreed_half_second_by_default() {
-    for kind_id in [ALERT_KIND, TICKER_KIND, GOAL_KIND, FRAME_KIND] {
+    for kind_id in [ALERT_KIND, CARD_KIND, TICKER_KIND, GOAL_KIND, FRAME_KIND] {
         let defaults = with_kind(kind_id, |descriptor| descriptor.default_config());
 
         assert_eq!(

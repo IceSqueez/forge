@@ -1,7 +1,7 @@
 mod common;
 use common::{
-    ALERT_KIND, BLANK_KIND, CHAT_KIND, FRAME_KIND, GOAL_KIND, LATEST_KIND, TICKER_KIND, registry,
-    text, with_kind,
+    ALERT_KIND, BLANK_KIND, CARD_KIND, CHAT_KIND, FRAME_KIND, GOAL_KIND, LATEST_KIND, TICKER_KIND,
+    registry, text, with_kind,
 };
 
 use forge_overlay::config::{
@@ -16,9 +16,10 @@ use forge_overlay::{
 use forge_registry::FormField;
 use forge_types::Variant;
 
-const ALL_KINDS: [&str; 7] = [
+const ALL_KINDS: [&str; 8] = [
     ALERT_KIND,
     BLANK_KIND,
+    CARD_KIND,
     CHAT_KIND,
     FRAME_KIND,
     GOAL_KIND,
@@ -29,6 +30,7 @@ const ALL_KINDS: [&str; 7] = [
 const BASE_TEXT_SIZE: &[(&str, Option<u32>)] = &[
     (ALERT_KIND, Some(20)),
     (BLANK_KIND, None),
+    (CARD_KIND, Some(20)),
     (CHAT_KIND, Some(13)),
     (FRAME_KIND, Some(13)),
     (GOAL_KIND, Some(14)),
@@ -323,7 +325,7 @@ fn every_look_offers_the_source_box_and_position_only_where_the_box_does_not_pla
         });
     }
 
-    for kind_id in [ALERT_KIND, TICKER_KIND, GOAL_KIND, LATEST_KIND] {
+    for kind_id in [ALERT_KIND, CARD_KIND, TICKER_KIND, GOAL_KIND, LATEST_KIND] {
         with_kind(kind_id, |descriptor| {
             assert!(
                 !offers(descriptor, POSITION),

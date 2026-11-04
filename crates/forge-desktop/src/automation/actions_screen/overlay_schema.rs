@@ -89,6 +89,10 @@ mod tests {
             ),
             ("overlay.blank", vec![SPEECH, SHOW_SOUND]),
             (
+                "overlay.card",
+                vec![HEADLINE, SUBLINE, SPEECH, SHOW_IMAGE, SHOW_SOUND],
+            ),
+            (
                 "overlay.chat",
                 vec![
                     AUTHOR,

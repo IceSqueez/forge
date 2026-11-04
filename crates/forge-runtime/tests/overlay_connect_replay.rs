@@ -227,6 +227,28 @@ async fn a_connecting_card_page_is_handed_its_opening_content_addressed_to_it_al
 }
 
 #[tokio::test]
+async fn a_connecting_card_page_is_handed_the_content_it_last_showed_over_its_opening_words() {
+    let card = OverlayId::new("pinned-card");
+    let harness = harness(
+        vec![overlay("pinned-card", CARD_KIND)],
+        HashMap::from([(
+            card.clone(),
+            OverlayConfig::from([(HEADLINE.to_owned(), text("Back in five"))]),
+        )]),
+    );
+
+    bounded(
+        harness
+            .service
+            .overlay_connected(&card, OverlayPage::new(7)),
+    )
+    .await;
+
+    let (_, _, content) = only_page_delivery(&harness.sink.delivered());
+    assert_eq!(content, serde_json::json!({ "headline": "Back in five" }));
+}
+
+#[tokio::test]
 async fn a_connecting_latest_page_is_handed_the_live_value_addressed_to_it_alone() {
     let latest = OverlayId::new("last-donation");
     let harness = harness(vec![overlay("last-donation", LATEST_KIND)], HashMap::new());

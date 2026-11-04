@@ -1,6 +1,8 @@
 #![expect(clippy::panic, reason = "test fixtures assert directly")]
 mod common;
-use common::{ALERT_KIND, CHAT_KIND, FRAME_KIND, GOAL_KIND, LATEST_KIND, TICKER_KIND, registry};
+use common::{
+    ALERT_KIND, CARD_KIND, CHAT_KIND, FRAME_KIND, GOAL_KIND, LATEST_KIND, TICKER_KIND, registry,
+};
 
 use std::collections::BTreeSet;
 
@@ -16,6 +18,7 @@ use forge_overlay::metrics::{
 
 const SCALED_NUMBERS: &[(&str, &[f32])] = &[
     (ALERT_KIND, &[12.0, 13.0, 14.0, 16.0, 20.0, 22.0, 26.0]),
+    (CARD_KIND, &[12.0, 13.0, 14.0, 16.0, 20.0, 22.0, 26.0]),
     (
         CHAT_KIND,
         &[
@@ -42,6 +45,7 @@ const SCALED_NUMBERS: &[(&str, &[f32])] = &[
 
 const BREAKING_TEXT: &[(&str, &[&str])] = &[
     (ALERT_KIND, &[".body"]),
+    (CARD_KIND, &[".body"]),
     (CHAT_KIND, &[".author", ".message"]),
     (GOAL_KIND, &[".label", ".figure"]),
 ];
@@ -280,6 +284,7 @@ fn each_kind_page_starts_every_color_at_the_kinds_default_before_its_config_arri
     let reg = registry();
     for kind_id in [
         ALERT_KIND,
+        CARD_KIND,
         CHAT_KIND,
         FRAME_KIND,
         GOAL_KIND,

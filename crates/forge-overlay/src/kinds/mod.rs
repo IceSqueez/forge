@@ -33,6 +33,7 @@ mod tests {
     const BUILTIN_IDS: &[&str] = &[
         "overlay.alert",
         "overlay.blank",
+        "overlay.card",
         "overlay.chat",
         "overlay.frame",
         "overlay.goal",

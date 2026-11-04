@@ -14,8 +14,8 @@ use forge_overlay::metrics::{
     TEXT_SCALE_PROPERTY, TEXT_SIZE_PROPERTY,
 };
 use forge_overlay::{
-    MOTION_ASSET, PREVIEW_CONNECTION_FIELD, PREVIEW_PARAM, PREVIEW_VALUE, RUNTIME_SOURCE,
-    SAMPLE_FILE,
+    MOTION_ASSET, MOTION_SOURCE, PREVIEW_CONNECTION_FIELD, PREVIEW_PARAM, PREVIEW_VALUE,
+    RUNTIME_SOURCE, SAMPLE_FILE,
 };
 
 fn function_body(name: &str) -> &'static str {
@@ -291,6 +291,42 @@ fn the_runtime_reads_every_field_an_avatar_frame_carries() {
         assert!(
             reader.contains(&format!("frame.{name}")),
             "the server pushes '{name}' on an avatar frame, which the runtime never reads"
+        );
+    }
+}
+
+#[test]
+fn every_motion_call_the_runtime_makes_is_one_the_motion_engine_publishes() {
+    let published = common::js_object_keys(MOTION_SOURCE, "window.forgeMotion = Object.freeze({");
+    let called = members_called_on(RUNTIME_SOURCE, "engine.");
+
+    let missing: BTreeSet<_> = called.difference(&published).collect();
+    assert!(
+        missing.is_empty(),
+        "the runtime calls {missing:?} on the motion engine, which does not publish them, so \
+         every page throws the first time it reaches that call"
+    );
+}
+
+#[test]
+fn the_runtime_catches_up_when_the_page_or_its_browser_source_changes_visibility() {
+    for (variable, event, subscription) in [
+        (
+            "VISIBILITY_EVENT",
+            "visibilitychange",
+            "document_.addEventListener(VISIBILITY_EVENT, catchUp);",
+        ),
+        (
+            "SOURCE_VISIBLE_EVENT",
+            "obsSourceVisibleChanged",
+            "window.addEventListener(SOURCE_VISIBLE_EVENT, sourceVisibilityChanged);",
+        ),
+    ] {
+        let declaration = format!("var {variable} = \"{event}\";");
+        assert!(
+            RUNTIME_SOURCE.contains(&declaration) && RUNTIME_SOURCE.contains(subscription),
+            "the runtime no longer reacts to {event}, so content delivered while nobody could \
+             see the page stays frozen mid-entrance or an expired show appears late"
         );
     }
 }

@@ -26,7 +26,7 @@ use super::property_panel::{
     FIELD_GAP, NOTICE_LINE_H, NOTICE_PAD, NOTICE_RADIUS, OverlayPropertyPanel, SECTION_GAP,
     SECTION_TOP_GAP,
 };
-use super::sizing_section::{is_source_box_key, with_source_box};
+use super::sizing_section::with_source_box;
 use crate::app::async_bridge;
 use crate::shared::config_form::{
     ChoiceDropdown, ConfigField, ConfigFieldHandlers, render_config_control,
@@ -37,47 +37,27 @@ const LOOK_FIELD_KEY: &str = "look";
 const ROW_GAP: Pixels = px(8.0);
 const FLAG_GLYPH: Pixels = px(12.0);
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(super) enum PanelSection {
-    Content,
-    Style,
-    Source,
-    Behavior,
-    Audio,
-    Display,
-}
-
-pub(super) const FIELD_SECTIONS: [PanelSection; 5] = [
-    PanelSection::Content,
-    PanelSection::Style,
-    PanelSection::Source,
-    PanelSection::Behavior,
-    PanelSection::Audio,
+pub(super) const FIELD_SECTIONS: [ConfigSection; 8] = [
+    ConfigSection::Content,
+    ConfigSection::Text,
+    ConfigSection::Card,
+    ConfigSection::Placement,
+    ConfigSection::Motion,
+    ConfigSection::Chat,
+    ConfigSection::Audio,
+    ConfigSection::Timing,
 ];
 
-impl PanelSection {
-    pub(super) fn of(key: &str, declared: ConfigSection) -> Self {
-        match key {
-            SOUND | SPEECH | SPEECH_VOICE => Self::Audio,
-            DURATION => Self::Display,
-            _ if is_source_box_key(key) => Self::Source,
-            _ => match declared {
-                ConfigSection::Content => Self::Content,
-                ConfigSection::Style => Self::Style,
-                ConfigSection::Behavior => Self::Behavior,
-            },
-        }
-    }
-
-    pub(super) fn heading(self) -> String {
-        match self {
-            Self::Content => tr!("overlays_panel_section_content"),
-            Self::Style => tr!("overlays_panel_section_style"),
-            Self::Source => tr!("overlays_panel_section_source"),
-            Self::Behavior => tr!("overlays_panel_section_behavior"),
-            Self::Audio => tr!("overlays_panel_section_audio"),
-            Self::Display => tr!("overlays_panel_section_display"),
-        }
+pub(super) fn section_heading(section: ConfigSection) -> String {
+    match section {
+        ConfigSection::Content => tr!("overlays_panel_section_content"),
+        ConfigSection::Text => tr!("overlays_panel_section_text"),
+        ConfigSection::Card => tr!("overlays_panel_section_card"),
+        ConfigSection::Placement => tr!("overlays_panel_section_placement"),
+        ConfigSection::Motion => tr!("overlays_panel_section_motion"),
+        ConfigSection::Chat => tr!("overlays_panel_section_chat"),
+        ConfigSection::Audio => tr!("overlays_panel_section_audio"),
+        ConfigSection::Timing => tr!("overlays_panel_section_timing"),
     }
 }
 

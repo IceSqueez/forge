@@ -115,8 +115,8 @@ impl OverlayKindDescriptor for AlertOverlayKind {
         let mut fields = config::shared_fields();
         fields.push(config::icon_field());
         fields.extend(config::background_fields());
-        fields.extend(config::image_fields());
         fields.extend(config::card_size_fields());
+        fields.extend(config::image_fields());
         fields
     }
 

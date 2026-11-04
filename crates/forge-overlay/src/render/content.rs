@@ -1,6 +1,6 @@
 use forge_types::{ArgStack, Variant};
 
-use crate::catalog::descriptor::{ConfigSection, OverlayConfig, OverlayKindDescriptor};
+use crate::catalog::descriptor::{OverlayConfig, OverlayKindDescriptor};
 use crate::config::effective_overlay_config;
 
 pub fn delivered_content(
@@ -15,7 +15,7 @@ pub fn delivered_content(
     descriptor
         .config_fields()
         .iter()
-        .filter(|sectioned| sectioned.section == ConfigSection::Content)
+        .filter(|sectioned| sectioned.delivered)
         .filter_map(|sectioned| {
             let key = sectioned.field.key();
             let value = supplied

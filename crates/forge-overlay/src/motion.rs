@@ -143,7 +143,7 @@ pub(crate) fn motion_fields(axes: MotionAxes) -> Vec<SectionedField> {
     if axes.text_effect {
         fields.push(select(TEXT_EFFECT, "Text effect", TEXT_EFFECT_OPTIONS));
         fields.push(select(TEXT_UNIT, "Text effect by", TEXT_UNIT_OPTIONS));
-        fields.push(behavior(FormField::Optional {
+        fields.push(motion_field(FormField::Optional {
             key: TEXT_STAGGER_CUSTOM,
             label: "Custom text stagger",
             inner: Box::new(FormField::Slider {
@@ -205,7 +205,7 @@ fn select(
     label: &'static str,
     options: &'static [&'static str],
 ) -> SectionedField {
-    behavior(FormField::Select {
+    motion_field(FormField::Select {
         key,
         label,
         options,
@@ -213,7 +213,7 @@ fn select(
 }
 
 fn milliseconds(key: &'static str, label: &'static str) -> SectionedField {
-    behavior(FormField::Slider {
+    motion_field(FormField::Slider {
         key,
         label,
         min: MOTION_MS_MIN,
@@ -222,9 +222,10 @@ fn milliseconds(key: &'static str, label: &'static str) -> SectionedField {
     })
 }
 
-fn behavior(field: FormField) -> SectionedField {
+fn motion_field(field: FormField) -> SectionedField {
     SectionedField {
-        section: ConfigSection::Behavior,
+        section: ConfigSection::Motion,
+        delivered: false,
         field,
     }
 }

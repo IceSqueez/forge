@@ -178,12 +178,13 @@ pub fn look_contract(descriptor: &dyn OverlayKindDescriptor) -> LookContract {
     let mut config_keys = Vec::new();
     for sectioned in descriptor.look_fields() {
         let key = sectioned.field.key();
-        match sectioned.section {
-            ConfigSection::Content => content_keys.push(key),
-            section if !PAGE_CONTRACT.applies_config_key(key) => {
-                config_keys.push(LookConfigKey { key, section });
-            }
-            _ => {}
+        if sectioned.delivered {
+            content_keys.push(key);
+        } else if !PAGE_CONTRACT.applies_config_key(key) {
+            config_keys.push(LookConfigKey {
+                key,
+                section: sectioned.section,
+            });
         }
     }
     LookContract {

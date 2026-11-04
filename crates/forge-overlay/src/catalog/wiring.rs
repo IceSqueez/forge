@@ -3,9 +3,7 @@ use std::collections::BTreeSet;
 use forge_registry::{ActorRole, ActorSlot, CanonicalVariable, TriggerVariable, VariableStanding};
 use forge_types::variable_references;
 
-use crate::catalog::descriptor::{
-    ConfigSection, DeliveryDisposition, OverlayConfig, OverlayKindDescriptor,
-};
+use crate::catalog::descriptor::{DeliveryDisposition, OverlayConfig, OverlayKindDescriptor};
 use crate::config;
 
 const PRINCIPAL_DISPLAY_NAME: CanonicalVariable =
@@ -94,7 +92,7 @@ pub fn suggested_content(
     descriptor
         .config_fields()
         .iter()
-        .filter(|sectioned| sectioned.section == ConfigSection::Content)
+        .filter(|sectioned| sectioned.delivered)
         .filter_map(|sectioned| {
             let key = sectioned.field.key();
             let line = match key {

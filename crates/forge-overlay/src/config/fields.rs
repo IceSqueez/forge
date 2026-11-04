@@ -9,7 +9,7 @@ use crate::metrics::ElementSizing;
 
 pub(crate) fn shared_fields() -> Vec<SectionedField> {
     let mut fields = vec![
-        in_section(
+        delivered_in(
             ConfigSection::Content,
             FormField::Text {
                 key: HEADLINE,
@@ -17,7 +17,7 @@ pub(crate) fn shared_fields() -> Vec<SectionedField> {
                 placeholder: "Thanks for the sub!",
             },
         ),
-        in_section(
+        delivered_in(
             ConfigSection::Content,
             FormField::Text {
                 key: SUBLINE,
@@ -33,7 +33,7 @@ pub(crate) fn shared_fields() -> Vec<SectionedField> {
 pub(crate) fn shared_style_fields() -> Vec<SectionedField> {
     vec![
         in_section(
-            ConfigSection::Style,
+            ConfigSection::Text,
             FormField::Swatch {
                 key: TEXT_COLOR,
                 label: "Text color",
@@ -41,7 +41,7 @@ pub(crate) fn shared_style_fields() -> Vec<SectionedField> {
             },
         ),
         in_section(
-            ConfigSection::Style,
+            ConfigSection::Card,
             FormField::Swatch {
                 key: BORDER_COLOR,
                 label: "Border color",
@@ -49,7 +49,7 @@ pub(crate) fn shared_style_fields() -> Vec<SectionedField> {
             },
         ),
         in_section(
-            ConfigSection::Style,
+            ConfigSection::Text,
             FormField::Select {
                 key: FONT,
                 label: "Font",
@@ -57,7 +57,7 @@ pub(crate) fn shared_style_fields() -> Vec<SectionedField> {
             },
         ),
         in_section(
-            ConfigSection::Style,
+            ConfigSection::Text,
             FormField::Integer {
                 key: TEXT_SIZE,
                 label: "Text size",
@@ -70,7 +70,7 @@ pub(crate) fn shared_style_fields() -> Vec<SectionedField> {
 
 pub(crate) fn position_field(label: &'static str) -> SectionedField {
     in_section(
-        ConfigSection::Style,
+        ConfigSection::Placement,
         FormField::Select {
             key: POSITION,
             label,
@@ -82,7 +82,7 @@ pub(crate) fn position_field(label: &'static str) -> SectionedField {
 pub(crate) fn design_size_fields() -> [SectionedField; 2] {
     [
         in_section(
-            ConfigSection::Style,
+            ConfigSection::Placement,
             FormField::Integer {
                 key: DESIGN_WIDTH,
                 label: "Source width",
@@ -91,7 +91,7 @@ pub(crate) fn design_size_fields() -> [SectionedField; 2] {
             },
         ),
         in_section(
-            ConfigSection::Style,
+            ConfigSection::Placement,
             FormField::Integer {
                 key: DESIGN_HEIGHT,
                 label: "Source height",
@@ -111,7 +111,7 @@ pub(crate) fn margin_fields() -> [SectionedField; 4] {
     ]
     .map(|(key, label)| {
         in_section(
-            ConfigSection::Style,
+            ConfigSection::Placement,
             FormField::Slider {
                 key,
                 label,
@@ -124,7 +124,7 @@ pub(crate) fn margin_fields() -> [SectionedField; 4] {
 }
 
 pub(crate) fn author_field() -> SectionedField {
-    in_section(
+    delivered_in(
         ConfigSection::Content,
         FormField::Text {
             key: AUTHOR,
@@ -135,7 +135,7 @@ pub(crate) fn author_field() -> SectionedField {
 }
 
 pub(crate) fn author_color_field() -> SectionedField {
-    in_section(
+    delivered_in(
         ConfigSection::Content,
         FormField::Text {
             key: AUTHOR_COLOR,
@@ -146,7 +146,7 @@ pub(crate) fn author_color_field() -> SectionedField {
 }
 
 pub(crate) fn badges_field() -> SectionedField {
-    in_section(
+    delivered_in(
         ConfigSection::Content,
         FormField::Text {
             key: BADGES,
@@ -157,7 +157,7 @@ pub(crate) fn badges_field() -> SectionedField {
 }
 
 pub(crate) fn message_field() -> SectionedField {
-    in_section(
+    delivered_in(
         ConfigSection::Content,
         FormField::Text {
             key: MESSAGE,
@@ -168,7 +168,7 @@ pub(crate) fn message_field() -> SectionedField {
 }
 
 pub(crate) fn chat_platform_field() -> SectionedField {
-    in_section(
+    delivered_in(
         ConfigSection::Content,
         FormField::Text {
             key: PLATFORM,
@@ -179,7 +179,7 @@ pub(crate) fn chat_platform_field() -> SectionedField {
 }
 
 pub(crate) fn chat_message_id_field() -> SectionedField {
-    in_section(
+    delivered_in(
         ConfigSection::Content,
         FormField::Text {
             key: MESSAGE_ID,
@@ -190,7 +190,7 @@ pub(crate) fn chat_message_id_field() -> SectionedField {
 }
 
 pub(crate) fn chat_user_id_field() -> SectionedField {
-    in_section(
+    delivered_in(
         ConfigSection::Content,
         FormField::Text {
             key: USER_ID,
@@ -201,7 +201,7 @@ pub(crate) fn chat_user_id_field() -> SectionedField {
 }
 
 pub(crate) fn chat_event_field() -> SectionedField {
-    in_section(
+    delivered_in(
         ConfigSection::Content,
         FormField::Text {
             key: EVENT,
@@ -212,7 +212,7 @@ pub(crate) fn chat_event_field() -> SectionedField {
 }
 
 pub(crate) fn chat_avatar_field() -> SectionedField {
-    in_section(
+    delivered_in(
         ConfigSection::Content,
         FormField::Text {
             key: AVATAR,
@@ -224,7 +224,7 @@ pub(crate) fn chat_avatar_field() -> SectionedField {
 
 pub(crate) fn show_avatars_field() -> SectionedField {
     in_section(
-        ConfigSection::Style,
+        ConfigSection::Chat,
         FormField::Toggle {
             key: SHOW_AVATARS,
             label: "Show avatars",
@@ -234,7 +234,7 @@ pub(crate) fn show_avatars_field() -> SectionedField {
 
 pub(crate) fn third_party_emotes_field() -> SectionedField {
     in_section(
-        ConfigSection::Style,
+        ConfigSection::Chat,
         FormField::Toggle {
             key: THIRD_PARTY_EMOTES,
             label: "Third-party emotes",
@@ -245,7 +245,7 @@ pub(crate) fn third_party_emotes_field() -> SectionedField {
 pub(crate) fn chat_row_fields() -> [SectionedField; 3] {
     [
         in_section(
-            ConfigSection::Behavior,
+            ConfigSection::Chat,
             FormField::Integer {
                 key: ROW_LIMIT,
                 label: "Messages kept",
@@ -254,14 +254,14 @@ pub(crate) fn chat_row_fields() -> [SectionedField; 3] {
             },
         ),
         in_section(
-            ConfigSection::Behavior,
+            ConfigSection::Chat,
             FormField::Toggle {
                 key: HIDE_ROWS,
                 label: "Hide messages",
             },
         ),
         in_section(
-            ConfigSection::Behavior,
+            ConfigSection::Chat,
             FormField::Slider {
                 key: HIDE_ROWS_AFTER_SECS,
                 label: "Hide after",
@@ -287,14 +287,14 @@ pub(crate) fn chat_row_defaults() -> OverlayConfig {
 pub(crate) fn chat_filter_fields() -> [SectionedField; 3] {
     [
         in_section(
-            ConfigSection::Behavior,
+            ConfigSection::Chat,
             FormField::Toggle {
                 key: HIDE_COMMANDS,
                 label: "Hide commands",
             },
         ),
         in_section(
-            ConfigSection::Behavior,
+            ConfigSection::Chat,
             FormField::Text {
                 key: COMMAND_PREFIX,
                 label: "Command prefix",
@@ -302,7 +302,7 @@ pub(crate) fn chat_filter_fields() -> [SectionedField; 3] {
             },
         ),
         in_section(
-            ConfigSection::Behavior,
+            ConfigSection::Chat,
             FormField::Text {
                 key: HIDDEN_ACCOUNTS,
                 label: "Hidden accounts",
@@ -321,7 +321,7 @@ pub(crate) fn chat_filter_defaults() -> OverlayConfig {
 }
 
 pub(crate) fn label_field() -> SectionedField {
-    in_section(
+    delivered_in(
         ConfigSection::Content,
         FormField::Text {
             key: LABEL,
@@ -332,7 +332,7 @@ pub(crate) fn label_field() -> SectionedField {
 }
 
 pub(crate) fn value_field() -> SectionedField {
-    in_section(
+    delivered_in(
         ConfigSection::Content,
         FormField::Text {
             key: VALUE,
@@ -343,7 +343,7 @@ pub(crate) fn value_field() -> SectionedField {
 }
 
 pub(crate) fn target_field() -> SectionedField {
-    in_section(
+    delivered_in(
         ConfigSection::Content,
         FormField::Text {
             key: TARGET,
@@ -355,7 +355,7 @@ pub(crate) fn target_field() -> SectionedField {
 
 pub(crate) fn slot_field(options: &'static [&'static str]) -> SectionedField {
     in_section(
-        ConfigSection::Behavior,
+        ConfigSection::Content,
         FormField::Select {
             key: SLOT,
             label: "Slot",
@@ -366,7 +366,7 @@ pub(crate) fn slot_field(options: &'static [&'static str]) -> SectionedField {
 
 pub(crate) fn platform_scope_field() -> SectionedField {
     in_section(
-        ConfigSection::Behavior,
+        ConfigSection::Content,
         FormField::Text {
             key: PLATFORM,
             label: "Platform",
@@ -376,7 +376,7 @@ pub(crate) fn platform_scope_field() -> SectionedField {
 }
 
 pub(crate) fn headline_field(placeholder: &'static str) -> SectionedField {
-    in_section(
+    delivered_in(
         ConfigSection::Content,
         FormField::Text {
             key: HEADLINE,
@@ -387,7 +387,7 @@ pub(crate) fn headline_field(placeholder: &'static str) -> SectionedField {
 }
 
 pub(crate) fn subline_field(placeholder: &'static str) -> SectionedField {
-    in_section(
+    delivered_in(
         ConfigSection::Content,
         FormField::Text {
             key: SUBLINE,
@@ -398,7 +398,7 @@ pub(crate) fn subline_field(placeholder: &'static str) -> SectionedField {
 }
 
 pub(crate) fn placeholder_field() -> SectionedField {
-    in_section(
+    delivered_in(
         ConfigSection::Content,
         FormField::Text {
             key: PLACEHOLDER,
@@ -410,7 +410,7 @@ pub(crate) fn placeholder_field() -> SectionedField {
 
 pub(crate) fn duration_field() -> SectionedField {
     in_section(
-        ConfigSection::Behavior,
+        ConfigSection::Timing,
         FormField::Slider {
             key: DURATION,
             label: "Duration",
@@ -423,7 +423,7 @@ pub(crate) fn duration_field() -> SectionedField {
 
 pub(crate) fn icon_field() -> SectionedField {
     in_section(
-        ConfigSection::Style,
+        ConfigSection::Content,
         FormField::DynamicSelect {
             key: ICON,
             label: "Icon",
@@ -435,7 +435,7 @@ pub(crate) fn icon_field() -> SectionedField {
 pub(crate) fn background_fields() -> [SectionedField; 2] {
     [
         in_section(
-            ConfigSection::Style,
+            ConfigSection::Card,
             FormField::Swatch {
                 key: BACKGROUND_COLOR,
                 label: "Background color",
@@ -443,7 +443,7 @@ pub(crate) fn background_fields() -> [SectionedField; 2] {
             },
         ),
         in_section(
-            ConfigSection::Style,
+            ConfigSection::Card,
             FormField::Slider {
                 key: BACKGROUND_OPACITY,
                 label: "Background opacity",
@@ -458,7 +458,7 @@ pub(crate) fn background_fields() -> [SectionedField; 2] {
 pub(crate) fn image_fields() -> [SectionedField; 3] {
     [
         in_section(
-            ConfigSection::Style,
+            ConfigSection::Content,
             FormField::DynamicSelect {
                 key: IMAGE,
                 label: "Image",
@@ -466,7 +466,7 @@ pub(crate) fn image_fields() -> [SectionedField; 3] {
             },
         ),
         in_section(
-            ConfigSection::Style,
+            ConfigSection::Card,
             FormField::Select {
                 key: IMAGE_POSITION,
                 label: "Image position",
@@ -474,7 +474,7 @@ pub(crate) fn image_fields() -> [SectionedField; 3] {
             },
         ),
         in_section(
-            ConfigSection::Style,
+            ConfigSection::Card,
             FormField::Slider {
                 key: IMAGE_HEIGHT,
                 label: "Image height",
@@ -503,7 +503,7 @@ pub(crate) fn card_size_fields() -> [SectionedField; 5] {
             "Max card height",
         ),
         in_section(
-            ConfigSection::Style,
+            ConfigSection::Text,
             FormField::Select {
                 key: TEXT_OVERFLOW,
                 label: "Text overflow",
@@ -515,7 +515,7 @@ pub(crate) fn card_size_fields() -> [SectionedField; 5] {
 
 fn card_min_field(key: &'static str, label: &'static str) -> SectionedField {
     in_section(
-        ConfigSection::Style,
+        ConfigSection::Card,
         FormField::Integer {
             key,
             label,
@@ -532,7 +532,7 @@ fn card_max_field(
     label: &'static str,
 ) -> SectionedField {
     in_section(
-        ConfigSection::Style,
+        ConfigSection::Card,
         FormField::Optional {
             key: toggle_key,
             label: toggle_label,
@@ -565,7 +565,7 @@ pub(crate) fn card_size_defaults() -> OverlayConfig {
 pub(crate) fn label_placement_fields() -> [SectionedField; 3] {
     [
         in_section(
-            ConfigSection::Style,
+            ConfigSection::Card,
             FormField::Select {
                 key: LABEL_SIDE,
                 label: "Caption side",
@@ -573,7 +573,7 @@ pub(crate) fn label_placement_fields() -> [SectionedField; 3] {
             },
         ),
         in_section(
-            ConfigSection::Style,
+            ConfigSection::Card,
             FormField::Integer {
                 key: LABEL_OFFSET_X,
                 label: "Caption offset right",
@@ -582,7 +582,7 @@ pub(crate) fn label_placement_fields() -> [SectionedField; 3] {
             },
         ),
         in_section(
-            ConfigSection::Style,
+            ConfigSection::Card,
             FormField::Integer {
                 key: LABEL_OFFSET_Y,
                 label: "Caption offset down",
@@ -595,7 +595,7 @@ pub(crate) fn label_placement_fields() -> [SectionedField; 3] {
 
 pub(crate) fn sound_field() -> SectionedField {
     in_section(
-        ConfigSection::Behavior,
+        ConfigSection::Audio,
         FormField::DynamicSelect {
             key: SOUND,
             label: "Sound",
@@ -605,8 +605,8 @@ pub(crate) fn sound_field() -> SectionedField {
 }
 
 pub(crate) fn speech_field() -> SectionedField {
-    in_section(
-        ConfigSection::Content,
+    delivered_in(
+        ConfigSection::Audio,
         FormField::TextArea {
             key: SPEECH,
             label: "Speech",
@@ -616,7 +616,7 @@ pub(crate) fn speech_field() -> SectionedField {
 
 pub(crate) fn speech_voice_field() -> SectionedField {
     in_section(
-        ConfigSection::Behavior,
+        ConfigSection::Audio,
         FormField::DynamicSelect {
             key: SPEECH_VOICE,
             label: "Speech voice",
@@ -626,7 +626,19 @@ pub(crate) fn speech_voice_field() -> SectionedField {
 }
 
 pub(crate) fn in_section(section: ConfigSection, field: FormField) -> SectionedField {
-    SectionedField { section, field }
+    SectionedField {
+        section,
+        delivered: false,
+        field,
+    }
+}
+
+pub(crate) fn delivered_in(section: ConfigSection, field: FormField) -> SectionedField {
+    SectionedField {
+        section,
+        delivered: true,
+        field,
+    }
 }
 
 pub(crate) fn shared_style_defaults(

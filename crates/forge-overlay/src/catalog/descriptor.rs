@@ -35,13 +35,19 @@ pub enum ContentFeed {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ConfigSection {
     Content,
-    Style,
-    Behavior,
+    Text,
+    Card,
+    Placement,
+    Motion,
+    Chat,
+    Audio,
+    Timing,
 }
 
 #[derive(Debug, Clone)]
 pub struct SectionedField {
     pub section: ConfigSection,
+    pub delivered: bool,
     pub field: FormField,
 }
 

@@ -2,8 +2,8 @@ use std::collections::HashMap;
 
 use forge_components::{ForgePalette, GridPickerGroup, GridPickerItem, GridScope, tr};
 use forge_overlay::{
-    ConfigSection, OverlayConfig, OverlayKindDescriptor, SampleTrigger, delivered_content,
-    is_curated, order_curated_first, sample_context,
+    OverlayConfig, OverlayKindDescriptor, SampleTrigger, delivered_content, is_curated,
+    order_curated_first, sample_context,
 };
 use forge_registry::{TriggerKindDescriptor, TriggerRegistry, declared_variables};
 use forge_runtime::{OverlayFeed, OverlayWiringRefusal, plan_overlay_wiring};
@@ -147,7 +147,7 @@ pub(super) fn draft_wiring(
 fn content_lines(kind: &dyn OverlayKindDescriptor, content: &OverlayConfig) -> Vec<String> {
     kind.config_fields()
         .iter()
-        .filter(|sectioned| sectioned.section == ConfigSection::Content)
+        .filter(|sectioned| sectioned.delivered)
         .filter_map(|sectioned| {
             content
                 .get(sectioned.field.key())

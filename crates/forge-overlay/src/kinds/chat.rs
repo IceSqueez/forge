@@ -119,11 +119,11 @@ impl OverlayKindDescriptor for ChatOverlayKind {
             config::chat_avatar_field(),
         ];
         fields.extend(config::shared_style_fields());
-        fields.push(config::show_avatars_field());
-        fields.push(config::third_party_emotes_field());
         fields.push(config::position_field("Newest message at"));
         fields.extend(config::chat_row_fields());
         fields.extend(config::chat_filter_fields());
+        fields.push(config::show_avatars_field());
+        fields.push(config::third_party_emotes_field());
         fields
     }
 

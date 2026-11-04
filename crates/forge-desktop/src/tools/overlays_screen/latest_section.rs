@@ -4,7 +4,7 @@ use std::sync::Arc;
 
 use forge_components::{
     ActivePresentation, BORDER_THIN, ConfirmTone, Density, FONT_XS, FONT_XXS, ForgePalette, Icon,
-    OverlayPosition, confirm_modal, ghost_button_with_icon, overlay, scaled, section_label, tr,
+    OverlayPosition, confirm_modal, field_label, ghost_button_with_icon, overlay, scaled, tr,
 };
 use forge_events::Event;
 use forge_overlay::config::{HEADLINE, PLACEHOLDER, PLATFORM, SLOT, SUBLINE};
@@ -18,7 +18,6 @@ use gpui::{AnyElement, App, ClickEvent, Context, FontWeight, Pixels, Task, div, 
 use super::OverlaysView;
 use super::property_panel::{
     FIELD_GAP, NOTICE_LINE_H, NOTICE_PAD, NOTICE_RADIUS, OverlayPropertyPanel, SECTION_GAP,
-    SECTION_TOP_GAP,
 };
 use crate::app::async_bridge::{self, BridgeFlow};
 use crate::app::runtime_event::{self, RuntimeEvent};
@@ -283,14 +282,14 @@ impl OverlayPropertyPanel {
         Some(shared_option_label(SLOT, slot))
     }
 
-    pub(super) fn render_latest_section(
+    pub(super) fn render_latest_extras(
         &self,
         palette: &ForgePalette,
         cx: &mut Context<Self>,
-    ) -> Option<AnyElement> {
+    ) -> Vec<AnyElement> {
         let density = cx.density();
         if !self.latest.is_bound() {
-            return None;
+            return Vec::new();
         }
         let reset = ghost_button_with_icon(Icon::Eraser, tr!("overlays_latest_reset"), palette)
             .full_width()
@@ -305,39 +304,32 @@ impl OverlayPropertyPanel {
             ResetStage::Idle | ResetStage::Confirming => (tr!("overlays_latest_reset_hint"), false),
         };
 
-        Some(
+        let current = field_label(
+            palette,
+            tr!("overlays_latest_section").to_uppercase(),
+            value_card(self.latest.current(), palette, density, cx),
+        )
+        .tone(palette.text_faint);
+        vec![
+            div().pb(SECTION_GAP).child(current).into_any_element(),
             div()
-                .flex()
-                .flex_col()
-                .pt(SECTION_TOP_GAP)
-                .child(div().pb(SECTION_GAP).child(section_label(
-                    tr!("overlays_latest_section").to_uppercase(),
-                    palette,
-                    cx,
-                )))
-                .child(div().pb(SECTION_GAP).child(value_card(
-                    self.latest.current(),
-                    palette,
-                    density,
-                    cx,
-                )))
+                .pb(scaled(FIELD_GAP, density))
+                .child(reset)
                 .child(
-                    div().pb(scaled(FIELD_GAP, density)).child(reset).child(
-                        div()
-                            .pt(spacing(Spacing::Xxs, density))
-                            .font_family(cx.body_family())
-                            .text_size(FONT_XXS)
-                            .line_height(NOTICE_LINE_H)
-                            .text_color(if warn {
-                                palette.warning
-                            } else {
-                                palette.text_faint
-                            })
-                            .child(status),
-                    ),
+                    div()
+                        .pt(spacing(Spacing::Xxs, density))
+                        .font_family(cx.body_family())
+                        .text_size(FONT_XXS)
+                        .line_height(NOTICE_LINE_H)
+                        .text_color(if warn {
+                            palette.warning
+                        } else {
+                            palette.text_faint
+                        })
+                        .child(status),
                 )
                 .into_any_element(),
-        )
+        ]
     }
 }
 

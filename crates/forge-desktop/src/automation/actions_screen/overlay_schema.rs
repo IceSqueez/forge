@@ -1,7 +1,7 @@
 use std::collections::HashMap;
 use std::sync::Arc;
 
-use forge_overlay::{ConfigSection, ContentFeed, OverlayKindRegistry};
+use forge_overlay::{ContentFeed, OverlayKindRegistry};
 use forge_registry::{FormField, FormSchemaSource};
 use forge_runtime::CONTENT_SCHEMA_KEY;
 
@@ -51,7 +51,7 @@ impl FormSchemaSource for OverlayContentSchema {
                 descriptor
                     .config_fields()
                     .into_iter()
-                    .filter(|sectioned| sectioned.section == ConfigSection::Content)
+                    .filter(|sectioned| sectioned.delivered)
                     .map(|sectioned| sectioned.field)
                     .collect()
             })

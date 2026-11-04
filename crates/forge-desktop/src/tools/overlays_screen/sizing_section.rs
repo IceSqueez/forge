@@ -1,20 +1,16 @@
 use forge_components::{ActivePresentation, ForgePalette, field_label, scaled, section_label, tr};
 use forge_overlay::config::{
     CARD_MAX_HEIGHT, CARD_MAX_WIDTH, DESIGN_HEIGHT, DESIGN_SIZE_MAX_PX, DESIGN_SIZE_MIN_PX,
-    DESIGN_WIDTH, MARGIN_SIDES,
+    DESIGN_WIDTH, MARGIN_SIDES, POSITION,
 };
-use forge_overlay::{ContentMargins, DesignSize, OverlayConfig};
+use forge_overlay::{ConfigSection, ContentMargins, DesignSize, OverlayConfig};
 use gpui::{AnyElement, Context, Pixels, div, prelude::*, px};
 
-use super::base_sections::{PanelSection, hinted};
+use super::base_sections::{hinted, section_heading};
 use super::property_panel::{FIELD_GAP, OverlayPropertyPanel, SECTION_GAP, SECTION_TOP_GAP};
 use crate::shared::config_form::{ConfigField, InputFlavor, render_config_control};
 
 const PAIR_GAP: Pixels = px(8.0);
-
-pub(super) fn is_source_box_key(key: &str) -> bool {
-    key == DESIGN_WIDTH || key == DESIGN_HEIGHT || MARGIN_SIDES.contains(&key)
-}
 
 pub(super) fn bounded_design_px(typed: &str, current: i64) -> i64 {
     typed
@@ -107,7 +103,7 @@ impl OverlayPropertyPanel {
         }
     }
 
-    pub(super) fn render_source_section(
+    pub(super) fn render_placement_section(
         &self,
         palette: &ForgePalette,
         cx: &mut Context<Self>,
@@ -137,13 +133,15 @@ impl OverlayPropertyPanel {
                 })
         };
 
+        let position =
+            labelled(POSITION).map(|field| div().pb(scaled(FIELD_GAP, density)).child(field));
         let width = labelled(DESIGN_WIDTH);
         let height = labelled(DESIGN_HEIGHT);
         let margins: Vec<_> = MARGIN_SIDES
             .iter()
             .filter_map(|key| labelled(key))
             .collect();
-        if width.is_none() && height.is_none() && margins.is_empty() {
+        if position.is_none() && width.is_none() && height.is_none() && margins.is_empty() {
             return None;
         }
 
@@ -185,10 +183,11 @@ impl OverlayPropertyPanel {
                 .flex_col()
                 .pt(SECTION_TOP_GAP)
                 .child(div().pb(SECTION_GAP).child(section_label(
-                    PanelSection::Source.heading().to_uppercase(),
+                    section_heading(ConfigSection::Placement).to_uppercase(),
                     palette,
                     cx,
                 )))
+                .children(position)
                 .children(size_row)
                 .children(margin_rows)
                 .into_any_element(),

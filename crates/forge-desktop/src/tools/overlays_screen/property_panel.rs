@@ -24,7 +24,7 @@ use gpui::{
 };
 
 use super::base_sections::{
-    BaseEvent, BaseState, FIELD_SECTIONS, PanelSection, base_hint, base_label, hinted,
+    BaseEvent, BaseState, FIELD_SECTIONS, base_hint, base_label, hinted, section_heading,
 };
 use super::color_choice::{ColorChoices, settle_background_choice, stored_color_tint};
 use super::icon_choice::{IconImage, icon_field_row};
@@ -113,7 +113,7 @@ pub(super) struct OverlayPropertyPanel {
     pub(super) defaults: OverlayConfig,
     pub(super) stored: OverlayConfig,
     labels: HashMap<String, String>,
-    sections: HashMap<String, PanelSection>,
+    sections: HashMap<String, ConfigSection>,
     pub(super) fields: Vec<ConfigField>,
     choices: HashMap<String, Vec<ChoiceOption>>,
     icon_images: Vec<IconImage>,
@@ -558,11 +558,11 @@ impl OverlayPropertyPanel {
             .unwrap_or_else(|| key.to_owned())
     }
 
-    fn section_of(&self, key: &str) -> PanelSection {
+    fn section_of(&self, key: &str) -> ConfigSection {
         self.sections
             .get(key)
             .copied()
-            .unwrap_or(PanelSection::Content)
+            .unwrap_or(ConfigSection::Content)
     }
 
     fn notes_for(&self, key: &str) -> Vec<String> {
@@ -638,7 +638,7 @@ impl OverlayPropertyPanel {
 
     fn render_section(
         &self,
-        section: PanelSection,
+        section: ConfigSection,
         palette: &ForgePalette,
         cx: &mut Context<Self>,
     ) -> Option<AnyElement> {
@@ -648,17 +648,25 @@ impl OverlayPropertyPanel {
             .iter()
             .filter(|field| self.section_of(field.key()) == section)
             .collect();
-        if members.is_empty() && section != PanelSection::Display {
+        let extras = match section {
+            ConfigSection::Content => self.render_latest_extras(palette, cx),
+            ConfigSection::Timing => self.render_display_extras(palette, cx),
+            _ => Vec::new(),
+        };
+        if members.is_empty() && extras.is_empty() {
             return None;
         }
 
-        let mut column = div().flex().flex_col().pt(SECTION_TOP_GAP).child(
-            div().pb(SECTION_GAP).child(section_label(
-                section.heading().to_uppercase(),
-                palette,
-                cx,
-            )),
-        );
+        let mut column =
+            div()
+                .flex()
+                .flex_col()
+                .pt(SECTION_TOP_GAP)
+                .child(div().pb(SECTION_GAP).child(section_label(
+                    section_heading(section).to_uppercase(),
+                    palette,
+                    cx,
+                )));
 
         let view = cx.entity();
         let handlers = self.handlers();
@@ -701,11 +709,7 @@ impl OverlayPropertyPanel {
                 ),
             );
         }
-        if section == PanelSection::Display {
-            column = column.children(self.render_display_extras(palette, cx));
-        }
-
-        Some(column.into_any_element())
+        Some(column.children(extras).into_any_element())
     }
 }
 
@@ -741,7 +745,7 @@ pub(super) fn override_notice(
 
 struct FieldIndex {
     labels: HashMap<String, String>,
-    sections: HashMap<String, PanelSection>,
+    sections: HashMap<String, ConfigSection>,
 }
 
 fn index_fields(specs: &[SectionedField]) -> FieldIndex {
@@ -775,13 +779,11 @@ fn index_field(spec: &FormField, section: ConfigSection, out: &mut FieldIndex) {
         | FormField::SubChain { key, label }
         | FormField::CaseList { key, label } => {
             out.labels.insert((*key).to_owned(), (*label).to_owned());
-            out.sections
-                .insert((*key).to_owned(), PanelSection::of(key, section));
+            out.sections.insert((*key).to_owned(), section);
         }
         FormField::Optional { key, label, inner } => {
             out.labels.insert((*key).to_owned(), (*label).to_owned());
-            out.sections
-                .insert((*key).to_owned(), PanelSection::of(key, section));
+            out.sections.insert((*key).to_owned(), section);
             index_field(inner, section, out);
         }
     }
@@ -808,18 +810,15 @@ impl Render for OverlayPropertyPanel {
                 density,
                 cx,
             ))
-            .child(self.render_look_section(&palette, cx))
-            .children(self.render_latest_section(&palette, cx));
+            .child(self.render_look_section(&palette, cx));
 
         for section in FIELD_SECTIONS {
             body = body.children(match section {
-                PanelSection::Source => self.render_source_section(&palette, cx),
+                ConfigSection::Placement => self.render_placement_section(&palette, cx),
                 _ => self.render_section(section, &palette, cx),
             });
         }
-        body = body
-            .children(self.render_section(PanelSection::Display, &palette, cx))
-            .child(self.render_receiver_section(&palette, cx));
+        body = body.child(self.render_receiver_section(&palette, cx));
 
         div()
             .flex_none()

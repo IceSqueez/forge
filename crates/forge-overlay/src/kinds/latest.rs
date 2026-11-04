@@ -104,12 +104,12 @@ impl OverlayKindDescriptor for LatestOverlayKind {
 
     fn look_fields(&self) -> Vec<SectionedField> {
         let mut fields = vec![
-            config::slot_field(SLOT_OPTIONS),
-            config::platform_scope_field(),
             config::label_field(),
             config::headline_field("%user_name%"),
             config::subline_field("%amount_formatted%"),
             config::placeholder_field(),
+            config::slot_field(SLOT_OPTIONS),
+            config::platform_scope_field(),
         ];
         fields.extend(config::shared_style_fields());
         fields

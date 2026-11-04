@@ -1,6 +1,7 @@
 pub const HEADLINE: &str = "headline";
 pub const SUBLINE: &str = "subline";
 pub const ACCENT: &str = "accent";
+pub const MAIN_TEXT_COLOR: &str = "main_text_color";
 pub const TEXT_COLOR: &str = "text_color";
 pub const BORDER_COLOR: &str = "border_color";
 pub const ACCENT_SPLIT_KEYS: [&str; 2] = [TEXT_COLOR, BORDER_COLOR];
@@ -123,6 +124,17 @@ pub const LABEL_SIDE_OPTIONS: &[&str] = &[LABEL_SIDE_LEFT, LABEL_SIDE_CENTER, LA
 
 pub const LABEL_OFFSET_MIN_PX: i64 = -4000;
 pub const LABEL_OFFSET_MAX_PX: i64 = 4000;
+
+pub const DEFAULT_MAIN_TEXT_COLOR: &str = "#ffffff";
+pub const MAIN_TEXT_COLOR_OPTIONS: &[&str] = &[
+    DEFAULT_MAIN_TEXT_COLOR,
+    ACCENT_MAUVE_HEX,
+    ACCENT_SKY_HEX,
+    ACCENT_GREEN_HEX,
+    ACCENT_PEACH_HEX,
+    ACCENT_YELLOW_HEX,
+    ACCENT_RED_HEX,
+];
 
 pub const DEFAULT_BACKGROUND_COLOR: &str = "#14141c";
 pub const BACKGROUND_COLOR_OPTIONS: &[&str] = &[

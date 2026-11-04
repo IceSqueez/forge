@@ -3,7 +3,7 @@ use forge_types::{LATEST_DONATION_SLOT, NOW_PLAYING_SLOT, Variant};
 use crate::catalog::descriptor::OverlayConfig;
 use crate::catalog::source_box::{ContentMargins, DesignSize};
 use crate::config;
-use crate::metrics::{ALERT, ElementSizing, SURFACE_RGB};
+use crate::metrics::{ALERT, BRIGHT_INK_RGB, ElementSizing, SURFACE_RGB};
 
 const PERCENT_SCALE: f32 = 100.0;
 pub const TALLY_SEPARATOR: &str = " / ";
@@ -176,6 +176,7 @@ pub struct PreviewElement {
 #[derive(Debug, Clone, PartialEq)]
 pub struct PreviewComposition {
     pub shape: PreviewShape,
+    pub main_text_color: PreviewAccent,
     pub text_color: PreviewAccent,
     pub border_color: PreviewAccent,
     pub font: PreviewFont,
@@ -200,6 +201,7 @@ pub(crate) fn compose(
 ) -> PreviewComposition {
     PreviewComposition {
         shape,
+        main_text_color: main_text_color_of(config),
         text_color: color_of(config, config::TEXT_COLOR),
         border_color: color_of(config, config::BORDER_COLOR),
         font: font_of(config),
@@ -330,6 +332,11 @@ fn card_of(shape: PreviewShape, config: &OverlayConfig) -> Option<PreviewCard> {
             _ => PreviewTextOverflow::Wrap,
         },
     })
+}
+
+fn main_text_color_of(config: &OverlayConfig) -> PreviewAccent {
+    let stored = config::read_str(config, config::MAIN_TEXT_COLOR);
+    PreviewAccent::Custom(config::hex_color_channels(stored).unwrap_or(BRIGHT_INK_RGB))
 }
 
 fn color_of(config: &OverlayConfig, key: &str) -> PreviewAccent {

@@ -14,7 +14,7 @@ use crate::render::preview::{PreviewComposition, PreviewShape, compose};
 
 pub const KIND_ID: &str = "overlay.frame";
 
-pub const CONFIG_SCHEMA_VERSION: u32 = 5;
+pub const CONFIG_SCHEMA_VERSION: u32 = 6;
 
 const DESIGN_WIDTH_PX: u32 = 1280;
 const DESIGN_HEIGHT_PX: u32 = 720;

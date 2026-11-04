@@ -1,4 +1,5 @@
 :root {
+  --main-text-color: #ffffff;
   --text-color: #fab387;
   --border-color: #fab387;
   --font: sans-serif;
@@ -88,7 +89,7 @@ body[data-slot="now_playing"] .glyph-now_playing {
 }
 
 .headline {
-  color: #fff;
+  color: var(--main-text-color);
   font-size: calc(20px * var(--text-scale));
   font-weight: 700;
 }

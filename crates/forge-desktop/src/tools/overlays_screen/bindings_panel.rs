@@ -11,8 +11,8 @@ use forge_components::{
 };
 use forge_overlay::config::{
     AUTHOR, AUTHOR_COLOR, AVATAR, BADGES, BORDER_COLOR, EVENT, FONT, HEADLINE, ICON, LABEL,
-    MESSAGE, MESSAGE_ID, PLACEHOLDER, PLATFORM, POSITION, SLOT, SUBLINE, TARGET, TEXT_COLOR,
-    TEXT_SIZE, USER_ID, VALUE,
+    MAIN_TEXT_COLOR, MESSAGE, MESSAGE_ID, PLACEHOLDER, PLATFORM, POSITION, SLOT, SUBLINE, TARGET,
+    TEXT_COLOR, TEXT_SIZE, USER_ID, VALUE,
 };
 use forge_overlay::{
     AVATAR_FUNCTION, CONTENT_FUNCTION, READY_FUNCTION, REMOVE_FUNCTION, SET_FUNCTION,
@@ -329,6 +329,7 @@ fn function_summary(name: &str) -> Option<String> {
 
 fn runtime_summary(config_key: &str) -> Option<String> {
     match config_key {
+        MAIN_TEXT_COLOR => Some(tr!("overlays_bindings_runtime_main_text_color")),
         TEXT_COLOR => Some(tr!("overlays_bindings_runtime_text_color")),
         BORDER_COLOR => Some(tr!("overlays_bindings_runtime_border_color")),
         FONT => Some(tr!("overlays_bindings_runtime_font")),

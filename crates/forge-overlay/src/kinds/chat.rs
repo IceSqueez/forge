@@ -19,7 +19,7 @@ use crate::render::row_filter::ChatRowFilter;
 
 pub const KIND_ID: &str = "overlay.chat";
 
-pub const CONFIG_SCHEMA_VERSION: u32 = 6;
+pub const CONFIG_SCHEMA_VERSION: u32 = 7;
 
 const ROW_ENTRANCE_MS: i64 = 300;
 const ROW_TEMPLATE_ID: &str = "row-template";

@@ -3,7 +3,7 @@ use forge_components::{
     glyph_art, icon, radius, spacing, tr,
 };
 use forge_overlay::metrics::{
-    ALERT, BRIGHT_INK_RGB, CHAT, FRAME, GOAL, LATEST, MESSAGE_INK_RGB, SURFACE_RGB, TICKER,
+    ALERT, BRIGHT_INK_RGB, CHAT, FRAME, GOAL, LATEST, SURFACE_RGB, TICKER,
 };
 use forge_overlay::{
     AxisBound, ElementSizing, PreviewCard, PreviewComposition, PreviewElement, PreviewFont,
@@ -150,6 +150,7 @@ pub(super) fn render_composition(
     cx: &App,
 ) -> AnyElement {
     let inks = Inks {
+        main: accent_color(composition.main_text_color),
         text: accent_color(composition.text_color),
         border: accent_color(composition.border_color),
     };
@@ -171,6 +172,7 @@ pub(super) fn render_composition(
 
 #[derive(Clone, Copy)]
 struct Inks {
+    main: Rgba,
     text: Rgba,
     border: Rgba,
 }
@@ -225,7 +227,7 @@ fn badge_banner(
     let mut lines = div().flex_1().min_w(px(0.0)).flex().flex_col();
 
     if let Some(text) = line_text(composition, PreviewLineRole::Headline) {
-        lines = lines.child(banner_headline(text, scale, family.clone(), cut));
+        lines = lines.child(banner_headline(text, scale, inks.main, family.clone(), cut));
     }
     if let Some(text) = line_text(composition, PreviewLineRole::Subline) {
         lines = lines.child(
@@ -238,7 +240,13 @@ fn badge_banner(
         );
     }
     if composition.lines.is_empty() {
-        lines = lines.child(banner_headline(PLACEHOLDER.into(), scale, family, cut));
+        lines = lines.child(banner_headline(
+            PLACEHOLDER.into(),
+            scale,
+            inks.main,
+            family,
+            cut,
+        ));
     }
 
     let message = div()
@@ -303,6 +311,7 @@ fn banner_picture(path: &Arc<Path>, height: u16, scale: Scale) -> impl IntoEleme
 fn banner_headline(
     text: SharedString,
     scale: Scale,
+    ink: Rgba,
     family: SharedString,
     cut: bool,
 ) -> impl IntoElement {
@@ -310,7 +319,7 @@ fn banner_headline(
         .font_family(family)
         .font_weight(FontWeight::BOLD)
         .text_size(scale.text_at(ALERT.headline_size))
-        .text_color(bright_ink())
+        .text_color(ink)
         .when(cut, Styled::truncate)
         .child(text)
 }
@@ -342,7 +351,7 @@ fn bordered_frame(
             div()
                 .font_weight(FontWeight::SEMIBOLD)
                 .text_size(scale.text_at(FRAME.headline_size))
-                .text_color(bright_ink())
+                .text_color(inks.main)
                 .child(text)
         }))
         .children(subline.map(|text| {
@@ -356,7 +365,7 @@ fn bordered_frame(
             label.child(
                 div()
                     .text_size(scale.text_at(FRAME.headline_size))
-                    .text_color(bright_ink())
+                    .text_color(inks.main)
                     .child(PLACEHOLDER),
             )
         });
@@ -445,7 +454,7 @@ fn message_feed(
             div()
                 .min_w(px(0.0))
                 .text_size(scale.text_at(CHAT.message_size))
-                .text_color(page_color(MESSAGE_INK_RGB, OPAQUE))
+                .text_color(inks.main)
                 .child(message),
         );
 
@@ -509,7 +518,7 @@ fn progress_bar(
                 .min_w(px(0.0))
                 .font_weight(FontWeight::BOLD)
                 .text_size(scale.text_at(GOAL.label_size))
-                .text_color(bright_ink())
+                .text_color(inks.main)
                 .child(label),
         )
         .child(track)
@@ -550,7 +559,7 @@ fn strip(
                 .truncate()
                 .font_weight(FontWeight::BOLD)
                 .text_size(scale.text_at(TICKER.headline_size))
-                .text_color(bright_ink())
+                .text_color(inks.main)
                 .child(headline),
         )
         .children(subline.map(|text| {
@@ -612,7 +621,7 @@ fn latest_card(
                 .truncate()
                 .font_weight(FontWeight::BOLD)
                 .text_size(scale.text_at(LATEST.headline_size))
-                .text_color(bright_ink())
+                .text_color(inks.main)
                 .child(headline),
         )
         .children(subline.map(|text| {

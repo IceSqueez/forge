@@ -1,4 +1,5 @@
 :root {
+  --main-text-color: #ffffff;
   --text-color: #f9e2af;
   --border-color: #f9e2af;
   --font: sans-serif;
@@ -53,7 +54,7 @@ body {
 }
 
 .headline {
-  color: #fff;
+  color: var(--main-text-color);
   font-size: calc(19px * var(--text-scale));
   font-weight: 700;
   letter-spacing: 0.02em;

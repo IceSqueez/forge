@@ -2,7 +2,7 @@ use forge_registry::{FormField, effective_config};
 use forge_types::Variant;
 
 use super::accent_split::with_split_accent;
-use super::keys::{BACKGROUND_COLOR, BORDER_COLOR, IMAGE, TEXT_COLOR};
+use super::keys::{BACKGROUND_COLOR, BORDER_COLOR, IMAGE, MAIN_TEXT_COLOR, TEXT_COLOR};
 use crate::catalog::descriptor::{OverlayConfig, OverlayKindDescriptor, SectionedField};
 use crate::error::OverlayError;
 use crate::files::media::names_a_library_image;
@@ -104,7 +104,7 @@ pub(super) fn check_field(field: &FormField, config: &OverlayConfig) -> Result<(
 
 fn is_custom_color(key: &str, value: &str) -> bool {
     match key {
-        TEXT_COLOR | BORDER_COLOR => hex_color_channels(value).is_some(),
+        MAIN_TEXT_COLOR | TEXT_COLOR | BORDER_COLOR => hex_color_channels(value).is_some(),
         BACKGROUND_COLOR => value.is_empty() || hex_color_channels(value).is_some(),
         _ => false,
     }

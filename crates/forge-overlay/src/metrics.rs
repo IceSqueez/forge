@@ -1,8 +1,8 @@
 pub const SURFACE_RGB: [u8; 3] = [20, 20, 28];
 pub const BRIGHT_INK_RGB: [u8; 3] = [255, 255, 255];
-pub const MESSAGE_INK_RGB: [u8; 3] = [238, 238, 238];
 pub const PILL_RADIUS: f32 = 999.0;
 
+pub const MAIN_TEXT_COLOR_PROPERTY: &str = "--main-text-color";
 pub const TEXT_COLOR_PROPERTY: &str = "--text-color";
 pub const BORDER_COLOR_PROPERTY: &str = "--border-color";
 pub const FONT_PROPERTY: &str = "--font";
@@ -288,7 +288,7 @@ impl AlertMetrics {
             scaled_length("border-radius", self.radius),
             scaled_length("height", self.icon_size),
             border_color_fill(),
-            opaque_ink(BRIGHT_INK_RGB),
+            main_text_ink(),
             scaled_length("font-size", self.headline_size),
             scaled_length("font-size", self.subline_size),
             surface(self.surface_alpha),
@@ -306,7 +306,7 @@ impl ChatMetrics {
             scaled_length("font-size", self.author_size),
             scaled_length("font-size", self.message_size),
             opaque_ink(BRIGHT_INK_RGB),
-            opaque_ink(MESSAGE_INK_RGB),
+            main_text_ink(),
             surface(self.surface_alpha),
         ]
     }
@@ -328,7 +328,7 @@ impl FrameMetrics {
             ),
             colored_border("border", self.label_border),
             length("border-radius", self.label_radius),
-            opaque_ink(BRIGHT_INK_RGB),
+            main_text_ink(),
             scaled_length("font-size", self.headline_size),
             scaled_length("font-size", self.subline_size),
             surface(self.surface_alpha),
@@ -348,7 +348,7 @@ impl GoalMetrics {
             length("border-radius", self.track_radius),
             scaled_length("font-size", self.figure_size),
             format!("margin: 0 {};", scaled(self.separator_margin)),
-            opaque_ink(BRIGHT_INK_RGB),
+            main_text_ink(),
             translucent_ink("color", self.separator_alpha),
             translucent_ink("background", self.track_wash_alpha),
             surface(self.surface_alpha),
@@ -370,7 +370,7 @@ impl LatestMetrics {
             scaled_length("font-size", self.headline_size),
             scaled_length("font-size", self.subline_size),
             scaled_length("margin-left", self.subline_margin),
-            opaque_ink(BRIGHT_INK_RGB),
+            main_text_ink(),
             translucent_ink("color", self.subline_alpha),
             surface(self.surface_alpha),
         ]
@@ -387,7 +387,7 @@ impl TickerMetrics {
             scaled_length("width", self.mark_width),
             scaled_length("height", self.mark_height),
             scaled_length("border-radius", self.mark_radius),
-            opaque_ink(BRIGHT_INK_RGB),
+            main_text_ink(),
             scaled_length("font-size", self.headline_size),
             scaled_length("font-size", self.subline_size),
             surface(self.surface_alpha),
@@ -444,6 +444,10 @@ fn colored_border(property: &str, width: f32) -> String {
 
 fn border_color_fill() -> String {
     format!("background-color: var({BORDER_COLOR_PROPERTY});")
+}
+
+fn main_text_ink() -> String {
+    format!("color: var({MAIN_TEXT_COLOR_PROPERTY});")
 }
 
 fn opaque_ink([red, green, blue]: [u8; 3]) -> String {

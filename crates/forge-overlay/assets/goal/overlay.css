@@ -1,4 +1,5 @@
 :root {
+  --main-text-color: #ffffff;
   --text-color: #a6e3a1;
   --border-color: #a6e3a1;
   --font: sans-serif;
@@ -38,7 +39,7 @@ body {
 }
 
 .label {
-  color: #fff;
+  color: var(--main-text-color);
   font-size: calc(14px * var(--text-scale));
   font-weight: 700;
   min-width: 0;

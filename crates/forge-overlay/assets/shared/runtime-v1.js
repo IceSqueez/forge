@@ -15,10 +15,11 @@
  *   forge.avatar(callback)       callback(avatar) per avatar frame
  *
  * config.json sits next to the page. Its config object is what the ready callback
- * receives, and the text_color, border_color, font and position entries are
- * applied here rather than by the page: text_color, border_color and font become
- * the --text-color, --border-color and --font custom properties, position
- * becomes data-position on <body>. Stylesheets read those.
+ * receives, and the main_text_color, text_color, border_color, font and position
+ * entries are applied here rather than by the page: main_text_color, text_color,
+ * border_color and font become the --main-text-color, --text-color,
+ * --border-color and --font custom properties, position becomes data-position
+ * on <body>. Stylesheets read those.
  *
  * The page viewport is the box: the browser source's own width and height. The
  * margin_top, margin_right, margin_bottom and margin_left entries are percents
@@ -196,9 +197,11 @@
     red: "#f38ba8",
   };
   var FALLBACK_ACCENT = ACCENT_HEX.mauve;
+  var FALLBACK_MAIN_TEXT_COLOR = "#ffffff";
   var CUSTOM_ACCENT = /^#[0-9a-f]{6}$/i;
   var FONT_NAME = /^[A-Za-z0-9 _-]+$/;
 
+  var MAIN_TEXT_COLOR_PROPERTY = "--main-text-color";
   var TEXT_COLOR_PROPERTY = "--text-color";
   var BORDER_COLOR_PROPERTY = "--border-color";
   var TEXT_SIZE_PROPERTY = "--text-size";
@@ -323,12 +326,16 @@
 
   function applyAppearance(values) {
     document_.documentElement.style.setProperty(
+      MAIN_TEXT_COLOR_PROPERTY,
+      paletteColor(values.main_text_color, FALLBACK_MAIN_TEXT_COLOR),
+    );
+    document_.documentElement.style.setProperty(
       TEXT_COLOR_PROPERTY,
-      paletteColor(values.text_color),
+      paletteColor(values.text_color, FALLBACK_ACCENT),
     );
     document_.documentElement.style.setProperty(
       BORDER_COLOR_PROPERTY,
-      paletteColor(values.border_color),
+      paletteColor(values.border_color, FALLBACK_ACCENT),
     );
 
     var font = values.font;
@@ -346,10 +353,8 @@
     document_.body.dataset.position = values.position || "";
   }
 
-  function paletteColor(value) {
-    return CUSTOM_ACCENT.test(value)
-      ? value
-      : ACCENT_HEX[value] || FALLBACK_ACCENT;
+  function paletteColor(value, fallback) {
+    return CUSTOM_ACCENT.test(value) ? value : ACCENT_HEX[value] || fallback;
   }
 
   function applySize(property, value, unit) {

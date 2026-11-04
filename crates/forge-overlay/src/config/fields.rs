@@ -35,8 +35,16 @@ pub(crate) fn shared_style_fields() -> Vec<SectionedField> {
         in_section(
             ConfigSection::Text,
             FormField::Swatch {
+                key: MAIN_TEXT_COLOR,
+                label: "Main text color",
+                options: MAIN_TEXT_COLOR_OPTIONS,
+            },
+        ),
+        in_section(
+            ConfigSection::Text,
+            FormField::Swatch {
                 key: TEXT_COLOR,
-                label: "Text color",
+                label: "Secondary text color",
                 options: ACCENT_OPTIONS,
             },
         ),
@@ -647,6 +655,7 @@ pub(crate) fn shared_style_defaults(
     sizing: ElementSizing,
 ) -> OverlayConfig {
     OverlayConfig::from([
+        (MAIN_TEXT_COLOR.to_owned(), text(DEFAULT_MAIN_TEXT_COLOR)),
         (TEXT_COLOR.to_owned(), text(accent)),
         (BORDER_COLOR.to_owned(), text(accent)),
         (FONT.to_owned(), text(font)),

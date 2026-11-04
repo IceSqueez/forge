@@ -1,4 +1,5 @@
 :root {
+  --main-text-color: #ffffff;
   --text-color: #fab387;
   --border-color: #fab387;
   --font: sans-serif;
@@ -61,7 +62,7 @@ body[data-position="top"] .corner {
 }
 
 .headline {
-  color: #fff;
+  color: var(--main-text-color);
   font-size: calc(13px * var(--text-scale));
   font-weight: 600;
 }

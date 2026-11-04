@@ -4,7 +4,7 @@ use forge_components::{
 };
 use forge_overlay::config::{
     ACCENT_OPTIONS, BACKGROUND_COLOR, BACKGROUND_COLOR_OPTIONS, BORDER_COLOR,
-    DEFAULT_BACKGROUND_COLOR, TEXT_COLOR,
+    DEFAULT_BACKGROUND_COLOR, MAIN_TEXT_COLOR, MAIN_TEXT_COLOR_OPTIONS, TEXT_COLOR,
 };
 use forge_overlay::{PreviewAccent, hex_color_channels};
 use forge_storage::OverlayConfig;
@@ -25,7 +25,8 @@ const SWATCH_ID_PREFIX: &str = "overlays-panel";
 const REMOVE_BADGE: Pixels = px(14.0);
 const REMOVE_GLYPH: Pixels = px(10.0);
 const REMOVE_BADGE_OVERHANG: Pixels = px(-5.0);
-pub(super) const COLOR_FIELD_KEYS: [&str; 3] = [TEXT_COLOR, BORDER_COLOR, BACKGROUND_COLOR];
+pub(super) const COLOR_FIELD_KEYS: [&str; 4] =
+    [MAIN_TEXT_COLOR, TEXT_COLOR, BORDER_COLOR, BACKGROUND_COLOR];
 
 struct ColorEntry {
     key: &'static str,
@@ -92,10 +93,10 @@ pub(super) fn stored_color_tint(color: &str) -> Rgba {
 }
 
 fn presets_of(key: &str) -> &'static [&'static str] {
-    if key == BACKGROUND_COLOR {
-        BACKGROUND_COLOR_OPTIONS
-    } else {
-        ACCENT_OPTIONS
+    match key {
+        MAIN_TEXT_COLOR => MAIN_TEXT_COLOR_OPTIONS,
+        BACKGROUND_COLOR => BACKGROUND_COLOR_OPTIONS,
+        _ => ACCENT_OPTIONS,
     }
 }
 

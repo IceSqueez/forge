@@ -1,12 +1,13 @@
 use crate::catalog::descriptor::{ConfigSection, OverlayKindDescriptor};
 use crate::config::{
-    BORDER_COLOR, FONT, MARGIN_BOTTOM, MARGIN_LEFT, MARGIN_RIGHT, MARGIN_TOP, POSITION, TEXT_COLOR,
-    TEXT_SIZE,
+    BORDER_COLOR, FONT, MAIN_TEXT_COLOR, MARGIN_BOTTOM, MARGIN_LEFT, MARGIN_RIGHT, MARGIN_TOP,
+    POSITION, TEXT_COLOR, TEXT_SIZE,
 };
 use crate::files::assets::RUNTIME_ASSET;
 use crate::metrics::{
-    BORDER_COLOR_PROPERTY, FONT_PROPERTY, MARGIN_BOTTOM_PROPERTY, MARGIN_LEFT_PROPERTY,
-    MARGIN_RIGHT_PROPERTY, MARGIN_TOP_PROPERTY, TEXT_COLOR_PROPERTY, TEXT_SIZE_PROPERTY,
+    BORDER_COLOR_PROPERTY, FONT_PROPERTY, MAIN_TEXT_COLOR_PROPERTY, MARGIN_BOTTOM_PROPERTY,
+    MARGIN_LEFT_PROPERTY, MARGIN_RIGHT_PROPERTY, MARGIN_TOP_PROPERTY, TEXT_COLOR_PROPERTY,
+    TEXT_SIZE_PROPERTY,
 };
 
 pub(crate) const PAGE_NAMESPACE: &str = "forge";
@@ -119,6 +120,10 @@ pub const PAGE_CONTRACT: PageContract = PageContract {
         writer: SET_FUNCTION,
     },
     custom_properties: &[
+        RuntimeProperty {
+            property: MAIN_TEXT_COLOR_PROPERTY,
+            config_key: MAIN_TEXT_COLOR,
+        },
         RuntimeProperty {
             property: TEXT_COLOR_PROPERTY,
             config_key: TEXT_COLOR,

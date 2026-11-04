@@ -378,6 +378,21 @@ mod tests {
         }
     }
 
+    #[test]
+    fn the_show_sound_choices_offer_the_overlay_own_sound_first_then_each_clip_as_a_reference() {
+        let clip = stored_clip("Fanfare", std::path::PathBuf::from("/library/fanfare.wav"));
+
+        let offered: Vec<String> = show_sound_choices(std::slice::from_ref(&clip))
+            .map(|option| option.value)
+            .collect();
+
+        assert_eq!(
+            offered,
+            vec![String::new(), clip_reference(&clip.id.to_string())],
+            "a picked show sound must be a clip reference the library resolves"
+        );
+    }
+
     fn media_holding(clip: ClipId, file: std::path::PathBuf) -> MockMediaRepo {
         let blob = MediaBlobId::from_digest(&[7; MEDIA_CONTENT_DIGEST_BYTES]);
         let held = clip_source_referrer(clip);

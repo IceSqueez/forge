@@ -67,7 +67,7 @@ mod tests {
         AUTHOR, AUTHOR_COLOR, AVATAR, BADGES, EVENT, HEADLINE, LABEL, MESSAGE, MESSAGE_ID,
         PLACEHOLDER, PLATFORM, SPEECH, SUBLINE, TARGET, USER_ID, VALUE,
     };
-    use forge_overlay::register_builtin_kinds;
+    use forge_overlay::{SHOW_IMAGE, SHOW_SOUND, register_builtin_kinds};
 
     use super::*;
 
@@ -93,8 +93,11 @@ mod tests {
     #[test]
     fn the_send_form_of_each_look_offers_exactly_the_fields_a_show_carries_in_their_order() {
         let looks = [
-            ("overlay.alert", vec![HEADLINE, SUBLINE, SPEECH]),
-            ("overlay.blank", vec![SPEECH]),
+            (
+                "overlay.alert",
+                vec![HEADLINE, SUBLINE, SPEECH, SHOW_IMAGE, SHOW_SOUND],
+            ),
+            ("overlay.blank", vec![SPEECH, SHOW_SOUND]),
             (
                 "overlay.chat",
                 vec![
@@ -108,15 +111,22 @@ mod tests {
                     EVENT,
                     AVATAR,
                     SPEECH,
+                    SHOW_SOUND,
                 ],
             ),
-            ("overlay.frame", vec![HEADLINE, SUBLINE, SPEECH]),
-            ("overlay.goal", vec![LABEL, VALUE, TARGET, SPEECH]),
+            ("overlay.frame", vec![HEADLINE, SUBLINE, SPEECH, SHOW_SOUND]),
+            (
+                "overlay.goal",
+                vec![LABEL, VALUE, TARGET, SPEECH, SHOW_SOUND],
+            ),
             (
                 "overlay.latest",
-                vec![LABEL, HEADLINE, SUBLINE, PLACEHOLDER],
+                vec![LABEL, HEADLINE, SUBLINE, PLACEHOLDER, SHOW_SOUND],
             ),
-            ("overlay.ticker", vec![HEADLINE, SUBLINE, SPEECH]),
+            (
+                "overlay.ticker",
+                vec![HEADLINE, SUBLINE, SPEECH, SHOW_SOUND],
+            ),
         ];
         let schema = schema().with_identities(
             looks

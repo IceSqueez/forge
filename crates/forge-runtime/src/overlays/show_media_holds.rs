@@ -77,3 +77,91 @@ impl Drop for ShowMediaLease {
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use std::path::Path;
+
+    use forge_overlay::SHOW_MEDIA_DIRECTORY;
+    use forge_overlay::config::IMAGE;
+    use tempfile::TempDir;
+
+    use super::*;
+
+    const OVERLAY: &str = "sub-alert";
+    const BLOB: &str = "sha256-1fe5a351bf0314c8a1840b023fd1e4cab3f0f123468940c241bd7bf20e989ab8";
+
+    fn picture() -> ResolvedMedia {
+        ResolvedMedia::new(IMAGE, BLOB, "png", b"\x89PNG".to_vec()).unwrap()
+    }
+
+    fn overlay_root(home: &TempDir) -> PathBuf {
+        let root = home.path().join("overlays");
+        std::fs::create_dir_all(root.join(OVERLAY)).unwrap();
+        root
+    }
+
+    fn show_media_of(root: &Path) -> PathBuf {
+        root.join(OVERLAY).join(SHOW_MEDIA_DIRECTORY)
+    }
+
+    fn lease(holds: &ShowMediaHolds, root: &Path) -> ShowMediaLease {
+        holds
+            .place(root.to_path_buf(), OVERLAY.to_owned(), &[picture()])
+            .unwrap()
+            .unwrap()
+    }
+
+    #[test]
+    fn show_media_stays_on_disk_until_the_last_show_holding_it_ends() {
+        let home = TempDir::new().unwrap();
+        let root = overlay_root(&home);
+        let holds = ShowMediaHolds::default();
+        let first = lease(&holds, &root);
+        let second = lease(&holds, &root);
+
+        drop(first);
+        assert!(
+            show_media_of(&root).join(picture().file_name()).is_file(),
+            "an ended show took the file a later show still plays"
+        );
+
+        drop(second);
+        assert!(!show_media_of(&root).exists());
+    }
+
+    #[test]
+    fn an_overlay_without_a_folder_takes_no_lease_and_gets_no_folder() {
+        let home = TempDir::new().unwrap();
+        let root = home.path().join("overlays");
+        std::fs::create_dir_all(&root).unwrap();
+
+        let placed = ShowMediaHolds::default()
+            .place(root.clone(), OVERLAY.to_owned(), &[picture()])
+            .unwrap();
+
+        assert!(placed.is_none());
+        assert!(!root.join(OVERLAY).exists());
+    }
+
+    #[test]
+    fn an_applied_show_keeps_its_media_until_the_next_one_replaces_it_or_the_overlay_goes() {
+        let home = TempDir::new().unwrap();
+        let root = overlay_root(&home);
+        let holds = ShowMediaHolds::default();
+        let id = OverlayId::new(OVERLAY);
+
+        holds.keep_applied(&id, Some(lease(&holds, &root)));
+        holds.keep_applied(&id, Some(lease(&holds, &root)));
+        assert!(
+            show_media_of(&root).exists(),
+            "replacing the applied show released the media of the one now on screen"
+        );
+
+        holds.keep_applied(&id, None);
+        assert!(
+            !show_media_of(&root).exists(),
+            "the replaced show still holds its media, so the folder outlives every show"
+        );
+    }
+}

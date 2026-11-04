@@ -64,7 +64,8 @@ pub use integration_state::{
 pub use latest_value::{LatestRecord, LatestValueRepo};
 pub use media::{
     MEDIA_CONTENT_DIGEST_BYTES, MediaBlob, MediaBlobId, MediaFormat, MediaKind, MediaReferrer,
-    MediaReferrerKind, MediaRefusal, MediaRepo, accept_media, sanitize_label, sniff,
+    MediaReferrerKind, MediaRefusal, MediaRepo, accept_media, library_referrer, sanitize_label,
+    sniff,
 };
 pub use overlay::{
     NewOverlay, OVERLAY_TOKEN_PREFIX, OverlayConfig, OverlayDefinition, OverlayId, OverlayRepo,

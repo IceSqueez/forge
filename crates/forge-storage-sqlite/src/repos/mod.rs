@@ -8,6 +8,7 @@ pub(crate) mod globals;
 pub(crate) mod history;
 pub(crate) mod latest_value;
 pub(crate) mod media;
+pub(crate) mod media_orphans;
 pub(crate) mod overlay;
 pub(crate) mod queue;
 pub(crate) mod scheduled_run;

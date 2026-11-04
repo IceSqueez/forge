@@ -13,6 +13,7 @@ use crate::codec::wire_label::parse_label;
 use crate::error::SqliteStorageError;
 use crate::pool::SqlitePools;
 use crate::repos::media::{release_all_references, retain_reference};
+use crate::repos::media_orphans::{MediaFiles, ReleasedBlobs};
 
 fn parse_clip_id(s: &str) -> Result<ClipId, StorageError> {
     parse_label(s).map_err(|e| {
@@ -24,11 +25,12 @@ fn parse_clip_id(s: &str) -> Result<ClipId, StorageError> {
 
 pub struct SqliteSoundboardClipsRepo {
     db: SqlitePools,
+    files: MediaFiles,
 }
 
 impl SqliteSoundboardClipsRepo {
-    pub fn new(db: SqlitePools) -> Self {
-        Self { db }
+    pub(crate) fn new(db: SqlitePools, files: MediaFiles) -> Self {
+        Self { db, files }
     }
 }
 
@@ -98,9 +100,15 @@ impl SoundboardClipsRepo for SqliteSoundboardClipsRepo {
             .await
             .map_err(SqliteStorageError::Sqlx)?;
         upsert_clip(&mut *tx, clip).await?;
-        retain_reference(&mut tx, &clip_source_referrer(clip.id), source).await?;
-        tx.commit().await.map_err(SqliteStorageError::Sqlx)?;
-        Ok(())
+        let mut released = ReleasedBlobs::default();
+        retain_reference(
+            &mut tx,
+            &clip_source_referrer(clip.id),
+            source,
+            &mut released,
+        )
+        .await?;
+        self.files.commit(tx, released).await
     }
 
     async fn delete_with_sources(
@@ -114,10 +122,16 @@ impl SoundboardClipsRepo for SqliteSoundboardClipsRepo {
             .begin_with("BEGIN IMMEDIATE")
             .await
             .map_err(SqliteStorageError::Sqlx)?;
-        release_all_references(&mut *tx, MediaReferrerKind::SoundboardClip, &id.to_string())
-            .await?;
+        let mut released = ReleasedBlobs::default();
+        release_all_references(
+            &mut tx,
+            MediaReferrerKind::SoundboardClip,
+            &id.to_string(),
+            &mut released,
+        )
+        .await?;
         let deleted = delete_clip(&mut *tx, id).await?;
-        tx.commit().await.map_err(SqliteStorageError::Sqlx)?;
+        self.files.commit(tx, released).await?;
         Ok(deleted)
     }
 }

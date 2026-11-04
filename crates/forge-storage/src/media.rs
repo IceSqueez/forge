@@ -59,6 +59,7 @@ const KIND_TOKEN_IMAGE: &str = "image";
 
 const REFERRER_TOKEN_SOUNDBOARD_CLIP: &str = "soundboard_clip";
 const REFERRER_TOKEN_OVERLAY: &str = "overlay";
+const REFERRER_TOKEN_LIBRARY: &str = "library";
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
@@ -421,6 +422,7 @@ pub struct MediaBlob {
 pub enum MediaReferrerKind {
     SoundboardClip,
     Overlay,
+    Library,
 }
 
 impl MediaReferrerKind {
@@ -428,6 +430,7 @@ impl MediaReferrerKind {
         match self {
             Self::SoundboardClip => REFERRER_TOKEN_SOUNDBOARD_CLIP,
             Self::Overlay => REFERRER_TOKEN_OVERLAY,
+            Self::Library => REFERRER_TOKEN_LIBRARY,
         }
     }
 
@@ -435,6 +438,7 @@ impl MediaReferrerKind {
         match token {
             REFERRER_TOKEN_SOUNDBOARD_CLIP => Some(Self::SoundboardClip),
             REFERRER_TOKEN_OVERLAY => Some(Self::Overlay),
+            REFERRER_TOKEN_LIBRARY => Some(Self::Library),
             _ => None,
         }
     }
@@ -461,6 +465,14 @@ impl MediaReferrer {
             slot: slot.into(),
         }
     }
+}
+
+pub fn library_referrer(id: &MediaBlobId) -> MediaReferrer {
+    MediaReferrer::new(
+        MediaReferrerKind::Library,
+        id.as_str(),
+        MediaKind::Image.as_str(),
+    )
 }
 
 #[cfg_attr(feature = "test-mocks", mockall::automock)]

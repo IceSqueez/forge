@@ -6,8 +6,9 @@ use std::time::{Duration, SystemTime};
 
 use async_trait::async_trait;
 use forge_storage::{
-    MEDIA_CONTENT_DIGEST_BYTES, MediaBlob, MediaBlobId, MediaFormat, MediaReferrer,
-    MediaReferrerKind, MediaRepo, StorageError, accept_media, sanitize_label, sniff,
+    MEDIA_CONTENT_DIGEST_BYTES, MediaBlob, MediaBlobId, MediaFormat, MediaKind, MediaReferrer,
+    MediaReferrerKind, MediaRepo, StorageError, accept_media, library_referrer, sanitize_label,
+    sniff,
 };
 use rand::rand_core::Rng as _;
 use sha2::{Digest, Sha256};
@@ -16,6 +17,7 @@ use time::OffsetDateTime;
 use crate::codec::epoch::{from_epoch_ms, to_epoch_ms};
 use crate::error::SqliteStorageError;
 use crate::pool::SqlitePools;
+use crate::repos::media_orphans::{MediaFiles, ReleasedBlobs};
 
 macro_rules! media_blob_columns {
     () => {
@@ -35,7 +37,7 @@ fn content_digest(bytes: &[u8]) -> [u8; MEDIA_CONTENT_DIGEST_BYTES] {
     hasher.finalize().into()
 }
 
-fn blob_path(root: &Path, id: &MediaBlobId, format: MediaFormat) -> PathBuf {
+pub(crate) fn blob_path(root: &Path, id: &MediaBlobId, format: MediaFormat) -> PathBuf {
     root.join(format!(
         "{}{}{}",
         id.as_str(),
@@ -56,11 +58,21 @@ fn incoming_path(root: &Path) -> PathBuf {
 
 fn write_blob(root: &Path, format: MediaFormat, bytes: &[u8]) -> std::io::Result<MediaBlobId> {
     let id = MediaBlobId::from_digest(&content_digest(bytes));
-    let final_path = blob_path(root, &id, format);
+    place_blob(root, &id, format, bytes)?;
+    Ok(id)
+}
+
+fn place_blob(
+    root: &Path,
+    id: &MediaBlobId,
+    format: MediaFormat,
+    bytes: &[u8],
+) -> std::io::Result<()> {
+    let final_path = blob_path(root, id, format);
 
     std::fs::create_dir_all(root)?;
     if final_path.exists() {
-        return Ok(id);
+        return Ok(());
     }
 
     let staging = incoming_path(root);
@@ -78,9 +90,7 @@ fn write_blob(root: &Path, format: MediaFormat, bytes: &[u8]) -> std::io::Result
             return Err(error);
         }
     }
-    forge_durable::sync_dir(root)?;
-
-    Ok(id)
+    forge_durable::sync_dir(root)
 }
 
 fn is_stale_file(entry: &std::fs::DirEntry, now: SystemTime) -> bool {
@@ -183,7 +193,7 @@ fn read_import(source: &Path) -> Result<(String, Vec<u8>), StorageError> {
     Ok((raw_label, bytes))
 }
 
-fn task_failure(error: tokio::task::JoinError) -> StorageError {
+pub(crate) fn task_failure(error: tokio::task::JoinError) -> StorageError {
     StorageError::Io(std::io::Error::other(error))
 }
 
@@ -230,6 +240,7 @@ pub(crate) async fn retain_reference(
     conn: &mut sqlx::SqliteConnection,
     referrer: &MediaReferrer,
     id: &MediaBlobId,
+    released: &mut ReleasedBlobs,
 ) -> Result<(), StorageError> {
     let known: Option<(i64,)> = sqlx::query_as("SELECT 1 FROM media_blobs WHERE id = ?")
         .bind(id.as_str())
@@ -241,6 +252,17 @@ pub(crate) async fn retain_reference(
             key: id.as_str().to_owned(),
         });
     }
+
+    let replaced: Option<(String,)> = sqlx::query_as(
+        "SELECT blob_id FROM media_references
+         WHERE referrer_kind = ? AND referrer_id = ? AND slot = ?",
+    )
+    .bind(referrer.kind.as_str())
+    .bind(&referrer.id)
+    .bind(&referrer.slot)
+    .fetch_optional(&mut *conn)
+    .await
+    .map_err(SqliteStorageError::Sqlx)?;
 
     sqlx::query(
         "INSERT INTO media_references (referrer_kind, referrer_id, slot, blob_id)
@@ -256,51 +278,89 @@ pub(crate) async fn retain_reference(
     .await
     .map_err(SqliteStorageError::Sqlx)?;
 
+    if let Some((previous,)) = replaced.filter(|(previous,)| previous != id.as_str()) {
+        released.note(previous);
+    }
     Ok(())
 }
 
-pub(crate) async fn release_reference<'e>(
-    executor: impl sqlx::SqliteExecutor<'e>,
+pub(crate) async fn release_reference(
+    conn: &mut sqlx::SqliteConnection,
     referrer: &MediaReferrer,
+    released: &mut ReleasedBlobs,
 ) -> Result<bool, StorageError> {
-    let result = sqlx::query(
+    let dropped: Option<(String,)> = sqlx::query_as(
         "DELETE FROM media_references
-         WHERE referrer_kind = ? AND referrer_id = ? AND slot = ?",
+         WHERE referrer_kind = ? AND referrer_id = ? AND slot = ?
+         RETURNING blob_id",
     )
     .bind(referrer.kind.as_str())
     .bind(&referrer.id)
     .bind(&referrer.slot)
-    .execute(executor)
+    .fetch_optional(&mut *conn)
     .await
     .map_err(SqliteStorageError::Sqlx)?;
 
-    Ok(result.rows_affected() > 0)
+    Ok(dropped.map(|(blob_id,)| released.note(blob_id)).is_some())
 }
 
-pub(crate) async fn release_all_references<'e>(
-    executor: impl sqlx::SqliteExecutor<'e>,
+pub(crate) async fn release_all_references(
+    conn: &mut sqlx::SqliteConnection,
     kind: MediaReferrerKind,
     referrer_id: &str,
+    released: &mut ReleasedBlobs,
 ) -> Result<u64, StorageError> {
-    let result =
-        sqlx::query("DELETE FROM media_references WHERE referrer_kind = ? AND referrer_id = ?")
-            .bind(kind.as_str())
-            .bind(referrer_id)
-            .execute(executor)
-            .await
-            .map_err(SqliteStorageError::Sqlx)?;
+    let dropped: Vec<(String,)> = sqlx::query_as(
+        "DELETE FROM media_references WHERE referrer_kind = ? AND referrer_id = ?
+         RETURNING blob_id",
+    )
+    .bind(kind.as_str())
+    .bind(referrer_id)
+    .fetch_all(&mut *conn)
+    .await
+    .map_err(SqliteStorageError::Sqlx)?;
 
-    Ok(result.rows_affected())
+    let count = dropped.len() as u64;
+    for (blob_id,) in dropped {
+        released.note(blob_id);
+    }
+    Ok(count)
+}
+
+async fn hold_in_library(
+    conn: &mut sqlx::SqliteConnection,
+    id: &MediaBlobId,
+) -> Result<(), StorageError> {
+    let referrer = library_referrer(id);
+    sqlx::query(
+        "INSERT INTO media_references (referrer_kind, referrer_id, slot, blob_id)
+         VALUES (?, ?, ?, ?)
+         ON CONFLICT(referrer_kind, referrer_id, slot) DO NOTHING",
+    )
+    .bind(referrer.kind.as_str())
+    .bind(&referrer.id)
+    .bind(&referrer.slot)
+    .bind(id.as_str())
+    .execute(conn)
+    .await
+    .map_err(SqliteStorageError::Sqlx)?;
+    Ok(())
 }
 
 pub struct SqliteMediaRepo {
     db: SqlitePools,
     root: PathBuf,
+    files: MediaFiles,
 }
 
 impl SqliteMediaRepo {
     pub fn new(db: SqlitePools, root: PathBuf) -> Self {
-        Self { db, root }
+        let files = MediaFiles::new(db.clone(), root.clone());
+        Self { db, root, files }
+    }
+
+    pub(crate) fn files(&self) -> MediaFiles {
+        self.files.clone()
     }
 
     pub async fn sweep_stale_incoming(&self) -> Result<usize, StorageError> {
@@ -331,6 +391,15 @@ impl SqliteMediaRepo {
         .map_err(StorageError::Io)
     }
 
+    async fn begin_write(&self) -> Result<sqlx::Transaction<'static, sqlx::Sqlite>, StorageError> {
+        Ok(self
+            .db
+            .writer()
+            .begin_with("BEGIN IMMEDIATE")
+            .await
+            .map_err(SqliteStorageError::Sqlx)?)
+    }
+
     async fn index(
         &self,
         id: &MediaBlobId,
@@ -338,6 +407,7 @@ impl SqliteMediaRepo {
         byte_size: u64,
         label: &str,
     ) -> Result<MediaBlob, StorageError> {
+        let mut tx = self.begin_write().await?;
         sqlx::query(concat!(
             "INSERT INTO media_blobs (",
             media_blob_columns!(),
@@ -350,9 +420,13 @@ impl SqliteMediaRepo {
         .bind(i64::try_from(byte_size).unwrap_or(i64::MAX))
         .bind(label)
         .bind(to_epoch_ms(OffsetDateTime::now_utc()))
-        .execute(self.db.writer())
+        .execute(&mut *tx)
         .await
         .map_err(SqliteStorageError::Sqlx)?;
+        if format.kind() == MediaKind::Image {
+            hold_in_library(&mut tx, id).await?;
+        }
+        tx.commit().await.map_err(SqliteStorageError::Sqlx)?;
 
         self.get(id).await?.ok_or_else(|| StorageError::NotFound {
             key: id.as_str().to_owned(),
@@ -368,11 +442,19 @@ impl MediaRepo for SqliteMediaRepo {
         let format = accepted.format;
         let root = self.root.clone();
 
-        let id = tokio::task::spawn_blocking(move || write_blob(&root, format, &bytes))
+        let (id, bytes) = tokio::task::spawn_blocking(move || {
+            write_blob(&root, format, &bytes).map(|id| (id, bytes))
+        })
+        .await
+        .map_err(task_failure)??;
+
+        let blob = self.index(&id, format, byte_size, &accepted.label).await?;
+
+        let root = self.root.clone();
+        tokio::task::spawn_blocking(move || place_blob(&root, &id, format, &bytes))
             .await
             .map_err(task_failure)??;
-
-        self.index(&id, format, byte_size, &accepted.label).await
+        Ok(blob)
     }
 
     async fn import_file(&self, source: &Path) -> Result<MediaBlob, StorageError> {
@@ -456,51 +538,56 @@ impl MediaRepo for SqliteMediaRepo {
     }
 
     async fn delete(&self, id: &MediaBlobId) -> Result<bool, StorageError> {
-        let holders = self.referrers(id).await?;
-        if !holders.is_empty() {
+        let mut tx = self.begin_write().await?;
+        let (holders,): (i64,) = sqlx::query_as(
+            "SELECT COUNT(*) FROM media_references WHERE blob_id = ? AND referrer_kind <> ?",
+        )
+        .bind(id.as_str())
+        .bind(MediaReferrerKind::Library.as_str())
+        .fetch_one(&mut *tx)
+        .await
+        .map_err(SqliteStorageError::Sqlx)?;
+        if holders > 0 {
             return Err(StorageError::MediaReferenced {
-                referrer_count: u32::try_from(holders.len()).unwrap_or(u32::MAX),
+                referrer_count: u32::try_from(holders).unwrap_or(u32::MAX),
             });
         }
 
-        let Some(blob) = self.get(id).await? else {
-            return Ok(false);
-        };
-
-        let removed = sqlx::query("DELETE FROM media_blobs WHERE id = ?")
+        let mut released = ReleasedBlobs::default();
+        release_all_references(
+            &mut tx,
+            MediaReferrerKind::Library,
+            id.as_str(),
+            &mut released,
+        )
+        .await?;
+        released.note(id.as_str().to_owned());
+        let present: Option<(i64,)> = sqlx::query_as("SELECT 1 FROM media_blobs WHERE id = ?")
             .bind(id.as_str())
-            .execute(self.db.writer())
+            .fetch_optional(&mut *tx)
             .await
             .map_err(SqliteStorageError::Sqlx)?;
-
-        if removed.rows_affected() == 0 {
+        if present.is_none() {
             return Ok(false);
         }
 
-        let path = blob_path(&self.root, id, blob.format);
-        let discarded = tokio::task::spawn_blocking(move || std::fs::remove_file(path))
-            .await
-            .map_err(task_failure)?;
-
-        if let Err(error) = discarded {
-            tracing::warn!(blob = %id, %error, "managed media file left behind after index removal");
-        }
-
+        self.files.commit(tx, released).await?;
         Ok(true)
     }
 
     async fn retain(&self, referrer: &MediaReferrer, id: &MediaBlobId) -> Result<(), StorageError> {
-        let mut conn = self
-            .db
-            .writer()
-            .acquire()
-            .await
-            .map_err(SqliteStorageError::Sqlx)?;
-        retain_reference(&mut conn, referrer, id).await
+        let mut tx = self.begin_write().await?;
+        let mut released = ReleasedBlobs::default();
+        retain_reference(&mut tx, referrer, id, &mut released).await?;
+        self.files.commit(tx, released).await
     }
 
     async fn release(&self, referrer: &MediaReferrer) -> Result<bool, StorageError> {
-        release_reference(self.db.writer(), referrer).await
+        let mut tx = self.begin_write().await?;
+        let mut released = ReleasedBlobs::default();
+        let dropped = release_reference(&mut tx, referrer, &mut released).await?;
+        self.files.commit(tx, released).await?;
+        Ok(dropped)
     }
 
     async fn release_all(
@@ -508,17 +595,22 @@ impl MediaRepo for SqliteMediaRepo {
         kind: MediaReferrerKind,
         referrer_id: &str,
     ) -> Result<u64, StorageError> {
-        release_all_references(self.db.writer(), kind, referrer_id).await
+        let mut tx = self.begin_write().await?;
+        let mut released = ReleasedBlobs::default();
+        let dropped = release_all_references(&mut tx, kind, referrer_id, &mut released).await?;
+        self.files.commit(tx, released).await?;
+        Ok(dropped)
     }
 
     async fn referrers(&self, id: &MediaBlobId) -> Result<Vec<MediaReferrer>, StorageError> {
         let rows: Vec<MediaReferenceRow> = sqlx::query_as(
             "SELECT referrer_kind, referrer_id, slot
              FROM media_references
-             WHERE blob_id = ?
+             WHERE blob_id = ? AND referrer_kind <> ?
              ORDER BY referrer_kind ASC, referrer_id ASC, slot ASC",
         )
         .bind(id.as_str())
+        .bind(MediaReferrerKind::Library.as_str())
         .fetch_all(self.db.reader())
         .await
         .map_err(SqliteStorageError::Sqlx)?;

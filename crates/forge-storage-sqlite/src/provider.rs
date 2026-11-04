@@ -25,6 +25,7 @@ use tokio::task::AbortHandle;
 use crate::error::SqliteStorageError;
 use crate::pool::SqlitePools;
 use crate::pool::connect_pools;
+use crate::repos::media_orphans::{OrphanedBlob, remove_unreferenced_blobs};
 use crate::repos::{
     SqliteActionRepo, SqliteBanLedgerRepo, SqliteChatHistoryRepo, SqliteCredentialsRepo,
     SqliteDonationRepo, SqliteEventLogRepo, SqliteGlobalsRepo, SqliteHistoryRepo,
@@ -42,8 +43,24 @@ use crate::tasks::retention_task::{
 
 const PRUNE_INTERVAL_PRODUCTION: Duration = Duration::from_secs(3600);
 
-fn spawn_stale_incoming_sweep(media: Arc<SqliteMediaRepo>) {
+async fn remove_unreferenced_media(pool: &SqlitePools) -> Vec<OrphanedBlob> {
+    match remove_unreferenced_blobs(pool).await {
+        Ok(orphans) => {
+            if !orphans.is_empty() {
+                tracing::info!(removed = orphans.len(), "unreferenced media removed");
+            }
+            orphans
+        }
+        Err(error) => {
+            tracing::warn!(%error, "unreferenced media sweep failed");
+            Vec::new()
+        }
+    }
+}
+
+fn spawn_media_sweeps(media: Arc<SqliteMediaRepo>, orphans: Vec<OrphanedBlob>) {
     tokio::spawn(async move {
+        media.files().discard(orphans).await;
         match media.sweep_stale_incoming().await {
             Ok(0) => {}
             Ok(removed) => tracing::info!(removed, "stale media staging files removed"),
@@ -126,11 +143,13 @@ impl SqliteBackend {
         if key.minted {
             report_stranded_credentials(&pool, &credentials).await?;
         }
+        let unreferenced_media = remove_unreferenced_media(&pool).await;
         Ok(Self::from_pool_and_credentials(
             pool,
             credentials,
             PRUNE_INTERVAL_PRODUCTION,
             paths.media_dir(),
+            unreferenced_media,
         ))
     }
 
@@ -143,11 +162,13 @@ impl SqliteBackend {
     ) -> Result<Self, SqliteStorageError> {
         let pool = Self::migrate_and_gate(url).await?;
         let credentials = SqliteCredentialsRepo::new_with_key(pool.clone(), key);
+        let unreferenced_media = remove_unreferenced_media(&pool).await;
         Ok(Self::from_pool_and_credentials(
             pool,
             credentials,
             prune_interval.unwrap_or(PRUNE_INTERVAL_PRODUCTION),
             media_root,
+            unreferenced_media,
         ))
     }
 
@@ -177,6 +198,7 @@ impl SqliteBackend {
         credentials: SqliteCredentialsRepo,
         prune_interval: Duration,
         media_root: std::path::PathBuf,
+        unreferenced_media: Vec<OrphanedBlob>,
     ) -> Self {
         let shutdown = Arc::new(Notify::new());
         let retention_window_changed = Arc::new(Notify::new());
@@ -217,7 +239,7 @@ impl SqliteBackend {
         );
 
         let media = Arc::new(SqliteMediaRepo::new(pool.clone(), media_root));
-        spawn_stale_incoming_sweep(Arc::clone(&media));
+        spawn_media_sweeps(Arc::clone(&media), unreferenced_media);
 
         let globals = Arc::new(SqliteGlobalsRepo::new(pool.clone()));
         spawn_read_flush_task(Arc::clone(globals.read_tally()), pool.writer().clone());
@@ -249,7 +271,7 @@ impl SqliteBackend {
             ),
             history,
             event_log,
-            soundboard: Arc::new(SqliteSoundboardClipsRepo::new(pool.clone())),
+            soundboard: Arc::new(SqliteSoundboardClipsRepo::new(pool.clone(), media.files())),
             voice_alias: Arc::new(SqliteVoiceAliasRepo::new(pool.clone())),
             viewer: Arc::new(SqliteViewerRepo::new(pool.clone())),
             tts_filters: Arc::new(SqliteTtsFiltersRepo::new(pool.clone())),
@@ -341,7 +363,8 @@ impl DataProvider for SqliteBackend {
     }
 
     async fn commit_changes(&self, changes: &[StoreChange]) -> Result<(), StorageError> {
-        let write = crate::unit_of_work::commit(self.pool.clone(), changes.to_vec());
+        let write =
+            crate::unit_of_work::commit(self.pool.clone(), self.media.files(), changes.to_vec());
         if changes.iter().any(StoreChange::touches_catalog) {
             self.catalog_revision.after(write).await?;
         } else {

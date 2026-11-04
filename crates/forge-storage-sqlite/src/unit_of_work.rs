@@ -6,6 +6,7 @@ use crate::pool::SqlitePools;
 use crate::repos::action::upsert_action;
 use crate::repos::globals;
 use crate::repos::media::{release_all_references, release_reference, retain_reference};
+use crate::repos::media_orphans::{MediaFiles, ReleasedBlobs};
 use crate::repos::overlay::{delete_overlay, insert_new_overlay, update_overlay};
 use crate::repos::queue::{
     assign_overlay_alert_queue, claim_overlay_alert_queue, delete_queue, upsert_queue,
@@ -19,6 +20,7 @@ use crate::repos::voice_alias::{store_ignore_profile, upsert_alias};
 
 pub(crate) async fn commit(
     pools: SqlitePools,
+    files: MediaFiles,
     changes: Vec<StoreChange>,
 ) -> Result<(), StorageError> {
     let mut tx = pools
@@ -26,11 +28,11 @@ pub(crate) async fn commit(
         .begin_with("BEGIN IMMEDIATE")
         .await
         .map_err(SqliteStorageError::Sqlx)?;
+    let mut released = ReleasedBlobs::default();
     for change in &changes {
-        apply(&mut tx, change).await?;
+        apply(&mut tx, change, &mut released).await?;
     }
-    tx.commit().await.map_err(SqliteStorageError::Sqlx)?;
-    Ok(())
+    files.commit(tx, released).await
 }
 
 async fn execute(
@@ -46,7 +48,11 @@ async fn execute(
     Ok(())
 }
 
-async fn apply(conn: &mut SqliteConnection, change: &StoreChange) -> Result<(), StorageError> {
+async fn apply(
+    conn: &mut SqliteConnection,
+    change: &StoreChange,
+    released: &mut ReleasedBlobs,
+) -> Result<(), StorageError> {
     match change {
         StoreChange::SaveQueue(queue) => upsert_queue(conn, queue).await,
         StoreChange::DeleteQueue(id) => delete_queue(conn, *id).await.map(drop),
@@ -74,10 +80,14 @@ async fn apply(conn: &mut SqliteConnection, change: &StoreChange) -> Result<(), 
         }
         StoreChange::SaveClip(clip) => upsert_clip(conn, clip).await,
         StoreChange::DeleteClip(id) => delete_clip(conn, *id).await.map(drop),
-        StoreChange::RetainMedia { referrer, blob } => retain_reference(conn, referrer, blob).await,
-        StoreChange::ReleaseMedia(referrer) => release_reference(conn, referrer).await.map(drop),
+        StoreChange::RetainMedia { referrer, blob } => {
+            retain_reference(conn, referrer, blob, released).await
+        }
+        StoreChange::ReleaseMedia(referrer) => {
+            release_reference(conn, referrer, released).await.map(drop)
+        }
         StoreChange::ReleaseAllMedia { kind, referrer_id } => {
-            release_all_references(conn, *kind, referrer_id)
+            release_all_references(conn, *kind, referrer_id, released)
                 .await
                 .map(drop)
         }

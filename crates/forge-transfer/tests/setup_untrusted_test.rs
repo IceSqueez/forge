@@ -6,9 +6,13 @@ use std::collections::{BTreeMap, HashMap};
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
-use forge_overlay::{OverlayKindRegistry, register_builtin_kinds};
+use async_trait::async_trait;
+use forge_overlay::{CONTENT_SCHEMA_KEY, OverlayKindRegistry, SHOW_IMAGE, register_builtin_kinds};
 use forge_paths::OVERLAYS_DIR_NAME;
-use forge_registry::{SubActionRegistry, TriggerRegistry};
+use forge_registry::{
+    FormRefinement, RunContext, StepCatalogEntry, SubActionCategory, SubActionRegistry,
+    SubActionRunner, TriggerRegistry,
+};
 use forge_speech_types::{AssignmentStrategy, IgnoreProfile};
 use forge_storage::settings::core_settings;
 use forge_storage::{
@@ -23,17 +27,21 @@ use forge_transfer::{
     ClosureRegistries, ContentEntry, MANIFEST_ENTRY_NAME, MediaDocument, OverlayDocument,
     PACK_DOCUMENTS_VERSION, PackDocuments, QueueDocument, SETUP_DOCUMENTS_VERSION, SetupDocuments,
     SetupExportRequest, SetupImportOutcome, SetupImportRequest, SetupManifest, SkippedSetting,
-    StageRequest, TransferError, TriggerDocument, TtsDocument, VoicesDocument, apply_setup_import,
-    backups_dir, setup_staging_root, stage_full_restore, stage_pack, stage_setup, write_setup,
+    StageRequest, StepDocument, TransferError, TriggerDocument, TtsDocument, VoicesDocument,
+    apply_setup_import, backups_dir, setup_staging_root, stage_full_restore, stage_pack,
+    stage_setup, write_setup,
 };
 use forge_types::{
-    Action, ActionId, ClipId, DEFAULT_QUEUE_ID, ExecutionMode, PermissionRung, Queue, QueueId,
-    TriggerConfig, TriggerInstance, TriggerInstanceId, Variant,
+    Action, ActionId, ArgStack, ClipId, DEFAULT_QUEUE_ID, ExecutionMode, PermissionRung, Queue,
+    QueueId, SubActionConfig, SubActionTelemetry, TriggerConfig, TriggerInstance,
+    TriggerInstanceId, Variant,
 };
 use sqlx::Connection;
 use tempfile::TempDir;
 use time::OffsetDateTime;
 
+const SEND_STEP: &str = "fixture.send";
+const SEND_TARGET_KEY: &str = "overlay";
 const DOCUMENTS_ENTRY: &str = "setup/documents.json";
 const MEDIA_FILE: &str = "setup/media/0";
 const OVERLAY_FILE: &str = "setup/overlays/0/payload.css";
@@ -67,6 +75,48 @@ const OWNER_MACHINE_LOCAL: SettingSpec = SettingSpec::exact(
 );
 
 type Expected = fn(&TransferError) -> bool;
+
+struct SendStep;
+
+impl StepCatalogEntry for SendStep {
+    fn category(&self) -> SubActionCategory {
+        SubActionCategory::Util
+    }
+    fn label(&self) -> &str {
+        SEND_STEP
+    }
+    fn summary(&self) -> &str {
+        SEND_STEP
+    }
+    fn search_text(&self) -> &str {
+        SEND_STEP
+    }
+    fn icon_name(&self) -> &str {
+        SEND_STEP
+    }
+}
+
+#[async_trait]
+impl SubActionRunner for SendStep {
+    fn id(&self) -> &str {
+        SEND_STEP
+    }
+
+    fn config_refinement(&self) -> Option<FormRefinement> {
+        Some(FormRefinement {
+            selector_key: SEND_TARGET_KEY,
+            schema_key: CONTENT_SCHEMA_KEY,
+        })
+    }
+
+    async fn execute(
+        &self,
+        _: &SubActionConfig,
+        _: &RunContext<'_>,
+    ) -> (SubActionTelemetry, Option<ArgStack>) {
+        unreachable!("setup steps are rewritten, never run")
+    }
+}
 type Settings = BTreeMap<String, String>;
 
 struct Store {
@@ -153,7 +203,8 @@ impl Store {
     }
 
     async fn import(&self, bundle: PathBuf) -> Result<SetupImportOutcome, TransferError> {
-        let sub_actions = SubActionRegistry::new();
+        let mut sub_actions = SubActionRegistry::new();
+        sub_actions.register(Box::new(SendStep)).unwrap();
         let triggers = TriggerRegistry::new();
         let mut overlays = OverlayKindRegistry::new();
         register_builtin_kinds(&mut overlays).unwrap();
@@ -166,7 +217,6 @@ impl Store {
                 sub_actions: &sub_actions,
                 triggers: &triggers,
                 overlays: &overlays,
-                schema: None,
             },
             staged: &staged,
             data_dir: self.data_dir().to_path_buf(),
@@ -1352,4 +1402,56 @@ async fn a_setup_written_before_queue_roles_leaves_the_local_holder_in_place() {
         .unwrap();
 
     assert_eq!(store.alert_queue().await, Some(holder));
+}
+
+#[tokio::test]
+async fn a_setup_rewrites_a_send_steps_show_image_to_the_blob_its_media_landed_as() {
+    const SETUP_OVERLAY: &str = "setup-overlay";
+    const PNG: &[u8] = b"\x89PNG\r\n\x1a\n\x00\x00\x00\x0dwave";
+    let store = Store::open().await;
+    let declared = format!("sha256-{}", sha256_hex(b"bytes the setup does not carry"));
+    let landed = format!("sha256-{}", sha256_hex(PNG));
+    let action_id = ActionId::new();
+    let mut action = action_document(action_id, DEFAULT_QUEUE_ID, Vec::new());
+    action.steps = vec![StepDocument {
+        kind_id: SEND_STEP.to_owned(),
+        config: [
+            (SEND_TARGET_KEY, SETUP_OVERLAY.to_owned()),
+            (SHOW_IMAGE, format!("image:{declared}")),
+        ]
+        .into_iter()
+        .map(|(key, value)| (key.to_owned(), Variant::String(value)))
+        .collect(),
+        enabled: true,
+        continue_on_error: false,
+        condition: None,
+        label: None,
+    }];
+    let documents = setup_of(PackDocuments {
+        queues: vec![default_queue_document()],
+        overlays: vec![overlay_named(SETUP_OVERLAY, "Setup overlay")],
+        media: vec![MediaDocument {
+            id: declared,
+            label: "wave.png".to_owned(),
+            format: MediaFormat::Png,
+            file: MEDIA_FILE.to_owned(),
+        }],
+        actions: vec![action],
+        ..empty_documents()
+    });
+    let path = bundle(store.data_dir(), &documents, &[(MEDIA_FILE, PNG)]);
+
+    store.import(path).await.unwrap();
+
+    let stored = store
+        .provider
+        .action_repo()
+        .get(action_id)
+        .await
+        .unwrap()
+        .unwrap();
+    assert_eq!(
+        stored.sub_actions[0].config.get(SHOW_IMAGE),
+        Some(&Variant::String(format!("image:{landed}")))
+    );
 }

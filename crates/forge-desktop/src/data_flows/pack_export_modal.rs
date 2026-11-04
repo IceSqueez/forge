@@ -809,12 +809,9 @@ mod tests {
             return;
         };
         let source = rig.rt.block_on(rig.world.services.load_source()).unwrap();
-        let closure = resolve_pack_closure(
-            &source.inventory,
-            rig.world.services.registries(&source),
-            &roots,
-        )
-        .map_err(crate::shared::repo_failure::RepoFailure::from);
+        let closure =
+            resolve_pack_closure(&source.inventory, rig.world.services.registries(), &roots)
+                .map_err(crate::shared::repo_failure::RepoFailure::from);
         rig.modal
             .update(cx, |modal, cx| modal.resolved(ticket, closure, cx));
     }

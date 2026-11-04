@@ -76,7 +76,7 @@ impl ActionTree {
         .density(density)
         .action(
             icon_button(Icon::CircleCheckFilled, palette)
-                .tooltip(tr!("bulk_enable_all"))
+                .tooltip(tr!("bulk_enable_selected", count = count_arg(self.marked_in_state(false).len())))
                 .disabled(!any_disabled)
                 .on_click(
                     "actions-bulk-enable",
@@ -85,7 +85,7 @@ impl ActionTree {
         )
         .action(
             icon_button(Icon::Circle, palette)
-                .tooltip(tr!("bulk_disable_all"))
+                .tooltip(tr!("bulk_disable_selected", count = count_arg(self.marked_in_state(true).len())))
                 .disabled(!any_enabled)
                 .on_click(
                     "actions-bulk-disable",
@@ -94,7 +94,7 @@ impl ActionTree {
         )
         .action(
             icon_button(Icon::Eraser, palette)
-                .tooltip(tr!("bulk_delete_all"))
+                .tooltip(tr!("bulk_delete_selected", count = count_arg(self.marked.len())))
                 .ink(palette.danger)
                 .on_click(
                     "actions-bulk-delete",
@@ -132,7 +132,7 @@ impl ActionTree {
         )
         .on_confirm(
             "actions-bulk-delete-confirm",
-            tr!("bulk_delete_all"),
+            tr!("bulk_delete_selected", count = count_arg(self.marked.len())),
             cx.listener(|this, _: &ClickEvent, _, cx| this.confirm_bulk_delete(cx)),
         );
 

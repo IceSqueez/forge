@@ -1180,9 +1180,9 @@ triggers_confirm_delete_body = This deletes the trigger instance permanently.
 ## Actions and triggers lists - bulk selection
 
 bulk_selected_count = { $count } selected
-bulk_enable_all = Enable all
-bulk_disable_all = Disable all
-bulk_delete_all = Delete all
+bulk_enable_selected = Enable { $count } selected
+bulk_disable_selected = Disable { $count } selected
+bulk_delete_selected = Delete { $count } selected
 bulk_clear = Clear
 bulk_delete_actions_title = { $count ->
     [one] Delete { $count } action?

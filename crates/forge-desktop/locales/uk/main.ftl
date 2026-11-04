@@ -1208,9 +1208,9 @@ triggers_confirm_delete_body = Це назавжди видалить екзем
 ## Списки дій і тригерів - масовий вибір
 
 bulk_selected_count = Вибрано: { $count }
-bulk_enable_all = Увімкнути всі
-bulk_disable_all = Вимкнути всі
-bulk_delete_all = Видалити всі
+bulk_enable_selected = Увімкнути вибрані: { $count }
+bulk_disable_selected = Вимкнути вибрані: { $count }
+bulk_delete_selected = Видалити вибрані: { $count }
 bulk_clear = Очистити
 bulk_delete_actions_title = { $count ->
     [one] Видалити { $count } дію?

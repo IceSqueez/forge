@@ -193,7 +193,7 @@ impl TriggerList {
         .density(density)
         .action(
             icon_button(Icon::CircleCheckFilled, palette)
-                .tooltip(tr!("bulk_enable_all"))
+                .tooltip(tr!("bulk_enable_selected", count = count_arg(self.marked_where(|row| !row.enabled).len())))
                 .disabled(!any_disabled)
                 .on_click(
                     "triggers-bulk-enable",
@@ -202,7 +202,7 @@ impl TriggerList {
         )
         .action(
             icon_button(Icon::Circle, palette)
-                .tooltip(tr!("bulk_disable_all"))
+                .tooltip(tr!("bulk_disable_selected", count = count_arg(self.marked_where(|row| row.enabled).len())))
                 .disabled(!any_enabled)
                 .on_click(
                     "triggers-bulk-disable",
@@ -211,7 +211,7 @@ impl TriggerList {
         )
         .action(
             icon_button(Icon::Eraser, palette)
-                .tooltip(tr!("bulk_delete_all"))
+                .tooltip(tr!("bulk_delete_selected", count = count_arg(self.marked.len())))
                 .ink(palette.danger)
                 .on_click(
                     "triggers-bulk-delete",
@@ -294,7 +294,7 @@ impl TriggerList {
         if deletable > 0 {
             card = card.on_confirm(
                 "triggers-bulk-delete-confirm",
-                tr!("bulk_delete_all"),
+                tr!("bulk_delete_selected", count = count_arg(deletable)),
                 cx.listener(|this, _: &ClickEvent, _, cx| this.confirm_bulk_delete(cx)),
             );
         }

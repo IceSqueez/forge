@@ -183,4 +183,52 @@ mod tests {
             );
         }
     }
+
+    fn published_chat_line() -> Event {
+        let fixture: serde_json::Value = serde_json::from_str(include_str!(
+            "../../tests/fixtures/published_chat_message.json"
+        ))
+        .unwrap();
+        Event::new(
+            EventSource::YouTube,
+            "youtube.chat.message",
+            fixture["payload"].clone(),
+        )
+    }
+
+    #[test]
+    fn a_polled_line_publishes_the_members_badge_the_profile_image_and_an_empty_name_color() {
+        let stack = ChatMessageDescriptor.build_arg_stack(&published_chat_line());
+
+        assert_eq!(
+            (
+                stack.get("user_badges"),
+                stack.get("user_avatar"),
+                stack.get("user_color"),
+            ),
+            (
+                Some(&Variant::String("MEMBER".to_owned())),
+                Some(&Variant::String("https://yt3.ggpht.com/avatar".to_owned())),
+                Some(&Variant::String(String::new())),
+            )
+        );
+    }
+
+    #[test]
+    fn a_line_without_a_profile_image_publishes_an_empty_avatar() {
+        for avatar in [None, Some(serde_json::Value::Null)] {
+            let mut event = chat_event();
+            if let Some(avatar) = avatar.clone() {
+                event.payload["author_avatar_url"] = avatar;
+            }
+
+            let stack = ChatMessageDescriptor.build_arg_stack(&event);
+
+            assert_eq!(
+                stack.get("user_avatar"),
+                Some(&Variant::String(String::new())),
+                "avatar field {avatar:?}"
+            );
+        }
+    }
 }

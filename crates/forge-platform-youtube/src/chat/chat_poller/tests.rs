@@ -1523,6 +1523,20 @@ fn a_message_whose_author_has_no_channel_id_carries_no_viewer_identity() {
 }
 
 #[test]
+fn a_blank_or_missing_profile_image_publishes_no_avatar() {
+    for (case, edit) in [("blank", json!("")), ("null", json!(null))] {
+        let ev = fixture_line(|raw| raw["authorDetails"]["profileImageUrl"] = edit.clone());
+        assert_eq!(ev.payload["author_avatar_url"], json!(null), "{case}");
+    }
+    let ev = fixture_line(|raw| {
+        raw["authorDetails"]
+            .as_object_mut()
+            .map(|details| details.remove("profileImageUrl"));
+    });
+    assert_eq!(ev.payload["author_avatar_url"], json!(null), "absent");
+}
+
+#[test]
 fn a_text_message_publishes_exactly_the_shared_fixture_payload() {
     let fixture: serde_json::Value = serde_json::from_str(include_str!(
         "../../../tests/fixtures/published_chat_message.json"

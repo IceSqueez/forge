@@ -100,7 +100,10 @@ mod tests {
                         { "type": "text", "text": "!quote hello there " },
                         { "type": "emote", "id": "425618", "name": "LUL" },
                     ],
-                    "badges": [],
+                    "badges": [
+                        { "kind": "moderator" },
+                        { "kind": "subscriber", "months": 3 },
+                    ],
                     "is_event": false,
                     "event_detail": null,
                 },
@@ -113,7 +116,7 @@ mod tests {
     }
 
     #[test]
-    fn the_shared_chat_block_publishes_the_chatter_identity_the_channel_the_line_the_first_message_flag_and_the_emotes()
+    fn the_shared_chat_block_publishes_the_chatter_identity_the_channel_the_line_the_author_look_the_first_message_flag_and_the_emotes()
      {
         let stack = chat_args(serde_json::json!("LoyalFan"));
         let expected = [
@@ -125,7 +128,9 @@ mod tests {
             ("message_id", "m-1"),
             ("chat.message_id", "m-1"),
             ("channel", "streamer"),
+            ("user_badges", "MOD SUB"),
             ("user_color", "#FF0000"),
+            ("user_avatar", ""),
         ];
         for (name, value) in expected {
             assert_eq!(
@@ -149,7 +154,7 @@ mod tests {
     }
 
     #[test]
-    fn the_shared_chat_block_declares_the_canonical_names_then_the_channel_the_color_the_first_message_flag_and_the_emotes()
+    fn the_shared_chat_block_declares_the_canonical_names_then_the_channel_the_author_look_the_first_message_flag_and_the_emotes()
      {
         let declared: Vec<String> = base_chat_variables()
             .schema()
@@ -167,7 +172,9 @@ mod tests {
                 "message_text",
                 "message_id",
                 "channel",
+                "user_badges",
                 "user_color",
+                "user_avatar",
                 "first_message",
                 "message_emotes",
                 "message_emote_ids",
@@ -204,7 +211,9 @@ mod tests {
             "message_id",
             "chat.message_id",
             "channel",
+            "user_badges",
             "user_color",
+            "user_avatar",
         ] {
             assert_eq!(
                 stack.get(name),

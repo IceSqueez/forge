@@ -270,4 +270,59 @@ mod tests {
             );
         }
     }
+
+    fn a_received_pusher_line(identity: serde_json::Value) -> Event {
+        crate::pusher::chat::build_event(
+            "App\\Events\\ChatMessageEvent",
+            json!({
+                "id": "msg-1",
+                "chatroom_id": 12345,
+                "content": "hello stream",
+                "type": "message",
+                "sender": {
+                    "id": 42,
+                    "username": "viewer_slug",
+                    "slug": "viewer_slug",
+                    "identity": identity
+                }
+            }),
+        )
+        .expect("a chat frame builds an event")
+    }
+
+    #[test]
+    fn a_received_line_publishes_the_identity_color_as_both_the_name_color_and_the_legacy_color() {
+        let event = a_received_pusher_line(json!({ "color": "#75FD46", "badges": [] }));
+
+        let stack = ChatDescriptor.build_arg_stack(&event);
+
+        assert_eq!(
+            (stack.get("user_color"), stack.get("color")),
+            (
+                Some(&Variant::String("#75FD46".to_owned())),
+                Some(&Variant::String("#75FD46".to_owned()))
+            )
+        );
+    }
+
+    #[test]
+    fn a_received_line_publishes_the_senders_badges_and_an_empty_avatar() {
+        let event = a_received_pusher_line(json!({
+            "color": "#75FD46",
+            "badges": [
+                { "type": "moderator", "text": "Moderator" },
+                { "type": "subscriber", "text": "Subscriber", "count": 4 },
+            ]
+        }));
+
+        let stack = ChatDescriptor.build_arg_stack(&event);
+
+        assert_eq!(
+            (stack.get("user_badges"), stack.get("user_avatar")),
+            (
+                Some(&Variant::String("MOD SUB".to_owned())),
+                Some(&Variant::String(String::new()))
+            )
+        );
+    }
 }

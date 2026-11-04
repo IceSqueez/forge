@@ -189,6 +189,16 @@ mod tests {
     }
 
     #[test]
+    fn a_matched_command_publishes_the_authors_profile_image() {
+        let stack = ChatCommandDescriptor.build_arg_stack(&published_chat_line("!roll 1d6"));
+
+        assert_eq!(
+            stack.get("user_avatar"),
+            Some(&Variant::String("https://yt3.ggpht.com/avatar".to_owned()))
+        );
+    }
+
+    #[test]
     fn a_phrase_matches_only_at_the_start_and_only_ignores_case_when_told_to() {
         for (phrase, case_sensitive, message, expected) in [
             ("!roll", false, "!Roll 1d6", true),

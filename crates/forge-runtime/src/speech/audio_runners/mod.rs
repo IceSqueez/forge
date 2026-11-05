@@ -35,9 +35,22 @@ pub const VOICE_OPTIONS_PREFIX: &str = "tts.voices";
 pub const ALIAS_OPTIONS_KEY: &str = "tts.alias_keys";
 pub const SPEECH_TEXT_KEY: &str = "text";
 
-const ALIAS_NAME: PickedTextField = PickedTextField {
-    key: "alias_name",
-    label: "Alias name",
+const ALIAS_NAME_KEY: &str = "alias_name";
+const ALIAS_NAME_LABEL: &str = "Alias name";
+
+const ALIAS_NAME: TextField = TextField {
+    key: ALIAS_NAME_KEY,
+    label: ALIAS_NAME_LABEL,
+    editor: TextEditor::Line {
+        placeholder: "e.g. %user% or viewer id",
+    },
+    default: "",
+    required: true,
+};
+
+const KNOWN_ALIAS: PickedTextField = PickedTextField {
+    key: ALIAS_NAME_KEY,
+    label: ALIAS_NAME_LABEL,
     picker: TextPicker::Options {
         options_key: ALIAS_OPTIONS_KEY,
     },
@@ -56,6 +69,7 @@ const VOICE: DependentSelectField = DependentSelectField {
 };
 
 const ALIAS_SPEC: ConfigSpec = ConfigSpec::new(&[&ALIAS_NAME, &ENGINE, &VOICE]);
+const KNOWN_ALIAS_SPEC: ConfigSpec = ConfigSpec::new(&[&KNOWN_ALIAS, &ENGINE, &VOICE]);
 
 const SPEECH_TEXT: TextField = TextField {
     key: SPEECH_TEXT_KEY,

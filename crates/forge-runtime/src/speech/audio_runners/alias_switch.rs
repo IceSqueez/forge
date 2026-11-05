@@ -6,7 +6,7 @@ use forge_registry::{
 };
 use forge_types::{ArgStack, SubActionConfig, SubActionTelemetry};
 
-use super::{ALIAS_SPEC, AliasTarget, read_alias};
+use super::{AliasTarget, KNOWN_ALIAS_SPEC, read_alias};
 use crate::speech::speak_dispatcher::{VoiceAliasWriter, platform_scoped_alias_key};
 
 const ALIAS_SWITCH_KIND_ID: &str = "tts.alias.switch_active";
@@ -46,7 +46,7 @@ impl SubActionRunner for AliasSwitchRunner {
     }
 
     fn config_spec(&self) -> Option<ConfigSpec> {
-        Some(ALIAS_SPEC)
+        Some(KNOWN_ALIAS_SPEC)
     }
 
     async fn execute(

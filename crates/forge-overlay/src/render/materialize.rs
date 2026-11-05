@@ -6,8 +6,8 @@ use crate::catalog::instance::OverlayInstance;
 use crate::catalog::registry::OverlayKindRegistry;
 use crate::error::OverlayError;
 use crate::files::assets::{
-    CONFIG_FILE, MOTION_ASSET, MOTION_SOURCE, RESERVED_DIRECTORY, RUNTIME_ASSET, RUNTIME_SOURCE,
-    SAMPLE_FILE,
+    BADGE_ICON_ASSETS, CONFIG_FILE, MOTION_ASSET, MOTION_SOURCE, RESERVED_DIRECTORY, RUNTIME_ASSET,
+    RUNTIME_SOURCE, SAMPLE_FILE,
 };
 use crate::files::media::{GENERATED_MEDIA_DIRECTORY, MediaIssue, ResolvedMedia};
 use crate::render::document::{config_document, sample_document};
@@ -38,6 +38,9 @@ pub fn ensure_shared_directory(root: &Path) -> Result<PathBuf, OverlayError> {
     create_dir(&shared)?;
     write_atomic(&shared, RUNTIME_ASSET, RUNTIME_SOURCE.as_bytes())?;
     write_atomic(&shared, MOTION_ASSET, MOTION_SOURCE.as_bytes())?;
+    for (name, source) in BADGE_ICON_ASSETS {
+        write_atomic(&shared, name, source.as_bytes())?;
+    }
     Ok(shared)
 }
 

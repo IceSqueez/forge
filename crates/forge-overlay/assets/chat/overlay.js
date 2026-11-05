@@ -16,6 +16,17 @@ var SCOPE_USER = "user";
 var SCOPE_PLATFORM = "platform";
 var SECURE_SCHEME = "https://";
 var EMOTE_CLASS = "emote";
+var BADGE_CLASS = "badge";
+var BADGE_WORD_CLASS = "badge-word";
+var BADGE_ICON_DIRECTORY = "../forge-shared/";
+var BADGE_ROLES = {
+  BROADCASTER: { icon: "badge-broadcaster.svg", title: "Broadcaster" },
+  MOD: { icon: "badge-moderator.svg", title: "Moderator" },
+  VIP: { icon: "badge-vip.svg", title: "VIP" },
+  SUB: { icon: "badge-subscriber.svg", title: "Subscriber" },
+  MEMBER: { icon: "badge-subscriber.svg", title: "Member" },
+};
+var BADGE_WORD_SEPARATOR = /\s+/;
 var PLATFORM_ICON_KEYS = { twitch: "twitch_icon", youtube: "youtube_icon", kick: "kick_icon" };
 var FALLBACK_SURFACE = "#14141c";
 var HEX_COLOR = /^#([0-9a-f]{2})([0-9a-f]{2})([0-9a-f]{2})$/i;
@@ -86,6 +97,66 @@ function emoteImage(part) {
   };
   image.src = part.url;
   return image;
+}
+
+function badgeWord(word) {
+  var label = document.createElement("span");
+  label.className = BADGE_WORD_CLASS;
+  label.textContent = word;
+  return label;
+}
+
+function badgeImage(title, src, fallback) {
+  var image = document.createElement("img");
+  image.className = BADGE_CLASS;
+  image.alt = title;
+  image.title = title;
+  image.onerror = function () {
+    if (fallback) {
+      image.replaceWith(badgeWord(fallback));
+    } else {
+      image.remove();
+    }
+  };
+  image.src = src;
+  return image;
+}
+
+function badgePictures(images) {
+  if (!Array.isArray(images)) {
+    return [];
+  }
+  return images
+    .filter(function (image) {
+      return image && typeof image.title === "string" && isPageImage(image.url);
+    })
+    .map(function (image) {
+      return badgeImage(image.title, image.url, "");
+    });
+}
+
+function roleBadge(word) {
+  if (!Object.prototype.hasOwnProperty.call(BADGE_ROLES, word)) {
+    return badgeWord(word);
+  }
+  var role = BADGE_ROLES[word];
+  return badgeImage(role.title, BADGE_ICON_DIRECTORY + role.icon, word);
+}
+
+function fillBadges(target, values) {
+  var marks = badgePictures(values.badge_images);
+  if (marks.length === 0) {
+    marks = (values.badges || "")
+      .split(BADGE_WORD_SEPARATOR)
+      .filter(function (word) {
+        return word !== "";
+      })
+      .map(roleBadge);
+  }
+  target.textContent = "";
+  marks.forEach(function (mark) {
+    target.appendChild(mark);
+  });
 }
 
 function fillMessage(target, values) {
@@ -194,7 +265,7 @@ forge.ready(function (config) {
     author.textContent = values.author || "";
     author.style.color = values.author_color || "";
 
-    row.querySelector(".badges").textContent = values.badges || "";
+    fillBadges(row.querySelector(".badges"), values);
     fillMessage(row.querySelector('[data-bind="message"]'), values);
 
     var event = (values.event || "").trim();

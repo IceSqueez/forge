@@ -76,6 +76,11 @@ body[data-position="top"] #stage {
 }
 
 .badges {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  align-self: center;
+  gap: calc(3px * var(--text-scale));
   color: var(--text-color);
   font-size: calc(11px * var(--text-scale));
   font-weight: 700;
@@ -85,6 +90,12 @@ body[data-position="top"] #stage {
 
 .badges:empty {
   display: none;
+}
+
+.badge {
+  flex: none;
+  height: calc(18px * var(--text-scale));
+  width: auto;
 }
 
 .event {

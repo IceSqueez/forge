@@ -52,6 +52,7 @@ pub use chain::{
 };
 pub use chat_author_look::{
     USER_AVATAR_VARIABLE, USER_BADGE_IMAGES_VARIABLE, USER_BADGES_VARIABLE, USER_COLOR_VARIABLE,
+    message_badge_images,
 };
 pub use chat_event::{CHAT_EVENT_VARIABLE, ChatEventKind};
 pub use command_phrase::{

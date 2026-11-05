@@ -18,6 +18,25 @@ pub const MOTION_ASSET: &str = "motion-v1.js";
 
 pub const MOTION_SOURCE: &str = include_str!("../../assets/shared/motion-v1.js");
 
+pub(crate) const BADGE_ICON_ASSETS: &[(&str, &str)] = &[
+    (
+        "badge-broadcaster.svg",
+        include_str!("../../assets/shared/badge-broadcaster.svg"),
+    ),
+    (
+        "badge-moderator.svg",
+        include_str!("../../assets/shared/badge-moderator.svg"),
+    ),
+    (
+        "badge-vip.svg",
+        include_str!("../../assets/shared/badge-vip.svg"),
+    ),
+    (
+        "badge-subscriber.svg",
+        include_str!("../../assets/shared/badge-subscriber.svg"),
+    ),
+];
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct PageAssets {
     pub markup: &'static str,

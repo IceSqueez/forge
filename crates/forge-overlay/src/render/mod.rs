@@ -10,6 +10,7 @@ pub(crate) mod page_contract;
 pub(crate) mod page_image;
 pub(crate) mod preview;
 pub(crate) mod row_avatar;
+pub(crate) mod row_badges;
 pub(crate) mod row_emotes;
 pub(crate) mod row_filter;
 pub(crate) mod row_removal;

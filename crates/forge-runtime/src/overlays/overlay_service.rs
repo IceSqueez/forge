@@ -12,9 +12,9 @@ use forge_overlay::{
     OverlayInstance, OverlayKindDescriptor, OverlayKindRegistry, OverlayMedia, RowAvatar,
     RowRemoval, SampleContext, delivered_content, ensure_shared_directory, joined_to_show,
     latest_binding, latest_content, materialize_overlay, read_overlay_source,
-    refresh_config_credential, remove_overlay_directory, sample_content, settle_chat_avatar,
-    settle_message_parts, show_media_key, show_media_overrides, show_media_page_path, show_timing,
-    take_speech, without_show_media, write_overlay_source,
+    refresh_config_credential, remove_overlay_directory, sample_content, settle_badge_images,
+    settle_chat_avatar, settle_message_parts, show_media_key, show_media_overrides,
+    show_media_page_path, show_timing, take_speech, without_show_media, write_overlay_source,
 };
 use forge_registry::CancelSignal;
 use forge_storage::{
@@ -614,6 +614,7 @@ impl OverlayServiceHandle {
         if let Some(slot) = settle_chat_avatar(descriptor, &definition.config, &mut content) {
             self.fill_avatar(slot, &mut content);
         }
+        settle_badge_images(descriptor, &mut content, args);
         let emotes = &self.inner.emotes;
         settle_message_parts(
             descriptor,

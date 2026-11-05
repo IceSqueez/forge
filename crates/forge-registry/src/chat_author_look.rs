@@ -1,5 +1,7 @@
 use forge_events::Event;
-use forge_types::{ChatPayload, DeclaredVariable, UserBadge, VariantKind};
+use forge_types::{
+    ArgStack, BadgeImage, ChatPayload, DeclaredVariable, UserBadge, Variant, VariantKind,
+};
 
 pub const USER_BADGES_VARIABLE: &str = "user_badges";
 pub const USER_BADGE_IMAGES_VARIABLE: &str = "user_badge_images";
@@ -56,6 +58,13 @@ pub(crate) fn chat_badge_images_json(event: &Event) -> String {
         .unwrap_or_else(|| EMPTY_IMAGE_LIST.to_owned())
 }
 
+pub fn message_badge_images(args: &ArgStack) -> Vec<BadgeImage> {
+    args.get(USER_BADGE_IMAGES_VARIABLE)
+        .and_then(Variant::as_str)
+        .and_then(|listed| serde_json::from_str(listed).ok())
+        .unwrap_or_default()
+}
+
 pub(crate) fn chat_name_color(event: &Event) -> String {
     chat_payload(event)
         .and_then(|chat| chat.author_color)
@@ -64,7 +73,7 @@ pub(crate) fn chat_name_color(event: &Event) -> String {
 
 fn badge_label(badge: &UserBadge) -> &'static str {
     match badge {
-        UserBadge::Broadcaster => "OWNER",
+        UserBadge::Broadcaster => "BROADCASTER",
         UserBadge::Moderator => "MOD",
         UserBadge::Vip => "VIP",
         UserBadge::Subscriber { .. } => "SUB",

@@ -300,10 +300,15 @@ impl ActionEditor {
             overlay_schema: Arc::clone(&self.overlay_schema),
             speak: self.deps.speak.clone(),
         };
+        let ticket = self.choices.select_options_gen.next();
         async_bridge::run_async(
             &self.deps.rt_handle,
             sources.fetch(),
-            |this, fetch, cx| this.on_select_options_fetched(fetch, cx),
+            move |this, fetch, cx| {
+                if this.choices.select_options_gen.is_current(ticket) {
+                    this.on_select_options_fetched(fetch, cx);
+                }
+            },
             cx,
         );
     }

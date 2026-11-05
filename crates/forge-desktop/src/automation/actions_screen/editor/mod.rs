@@ -62,6 +62,7 @@ struct StepChoices {
     builtins: BuiltinRegistry,
     integration_options: ChoiceOptions,
     option_choices_gen: async_bridge::Generation,
+    select_options_gen: async_bridge::Generation,
     option_keys: Vec<String>,
     _option_watch: Option<Task<()>>,
 }
@@ -74,6 +75,7 @@ impl StepChoices {
             builtins: BuiltinRegistry::default(),
             integration_options: ChoiceOptions::new(),
             option_choices_gen: async_bridge::Generation::default(),
+            select_options_gen: async_bridge::Generation::default(),
             option_keys: Vec::new(),
             _option_watch: None,
         }

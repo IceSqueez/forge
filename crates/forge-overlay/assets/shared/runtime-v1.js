@@ -186,6 +186,8 @@
   var LOG_PREFIX = "forge overlay:";
   var VISIBILITY_EVENT = "visibilitychange";
   var SOURCE_VISIBLE_EVENT = "obsSourceVisibleChanged";
+  var REPAINT_MS = 1000;
+  var REPAINT_OPACITY = "0.999";
 
   var VERDICT_PLAYED = "played";
   var VERDICT_REFUSED = "refused";
@@ -248,6 +250,7 @@
   var previewSample = null;
   var hidesAfterSpeech = [];
   var sourceHidden = false;
+  var repaintUntil = 0;
 
   var config = null;
   var credential = "";
@@ -1069,10 +1072,40 @@
     });
   }
 
+  function seenChanged() {
+    catchUp();
+    if (!unseen()) {
+      repaintForAWhile();
+    }
+  }
+
   function sourceVisibilityChanged(event) {
     var detail = event && event.detail;
     sourceHidden = Boolean(detail && detail.visible === false);
-    catchUp();
+    seenChanged();
+  }
+
+  function repaintForAWhile() {
+    var repainting = repaintUntil > 0;
+    repaintUntil = window.performance.now() + REPAINT_MS;
+    if (!repainting) {
+      window.requestAnimationFrame(repaintFrame);
+    }
+  }
+
+  function repaintFrame(now) {
+    var box = document_.body.style;
+    if (now >= repaintUntil || unseen()) {
+      box.removeProperty("opacity");
+      repaintUntil = 0;
+      return;
+    }
+    if (box.getPropertyValue("opacity")) {
+      box.removeProperty("opacity");
+    } else {
+      box.setProperty("opacity", REPAINT_OPACITY);
+    }
+    window.requestAnimationFrame(repaintFrame);
   }
 
   /* The page plays the sound, so it reaches the stream through the browser
@@ -1123,7 +1156,7 @@
     avatar: avatar,
   });
 
-  document_.addEventListener(VISIBILITY_EVENT, catchUp);
+  document_.addEventListener(VISIBILITY_EVENT, seenChanged);
   window.addEventListener(SOURCE_VISIBLE_EVENT, sourceVisibilityChanged);
 
   window.addEventListener("resize", function () {

@@ -654,6 +654,38 @@ mod tests {
         }
     }
 
+    fn alias_name_field(reg: &forge_registry::SubActionRegistry, kind_id: &str) -> FormField {
+        reg.get(kind_id)
+            .unwrap_or_else(|| panic!("{kind_id} is not registered"))
+            .config_fields()
+            .into_iter()
+            .find(|f| f.key() == "alias_name")
+            .unwrap_or_else(|| panic!("{kind_id} declares no alias_name field"))
+    }
+
+    #[test]
+    fn set_alias_step_takes_a_typed_viewer_name_not_a_picked_alias_key() {
+        let field = alias_name_field(&speech_registry(), "tts.alias.set");
+
+        assert!(
+            matches!(field, FormField::Text { .. }),
+            "tts.alias.set: alias_name must be free text so %user% survives, got {field:?}"
+        );
+    }
+
+    #[test]
+    fn switch_alias_step_picks_from_the_known_alias_keys() {
+        let field = alias_name_field(&speech_registry(), "tts.alias.switch_active");
+
+        assert!(
+            matches!(
+                field,
+                FormField::DynamicSelect { options_key, .. } if options_key == "tts.alias_keys"
+            ),
+            "tts.alias.switch_active: alias_name must list \"tts.alias_keys\", got {field:?}"
+        );
+    }
+
     #[derive(Default)]
     struct RunScopedEngine {
         queued: Mutex<Option<CancelSignal>>,

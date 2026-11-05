@@ -18,19 +18,26 @@ use forge_host::test_support::every_registry_entry;
 type Config = BTreeMap<String, Variant>;
 
 const EXTERNAL_OPTIONS_KEYS: &[&str] = &[
+    "chat.targets",
     "collections.twitch.rewards",
     "collections.twitch.rewards.manageable",
+    "discord.webhook_names",
     "donations.provider_ids",
     "obs.audio_input_names",
     "obs.audio_inputs",
     "obs.input_names",
+    "obs.profiles",
+    "obs.scene_collections",
     "obs.scene_names",
     "obs.source_names",
+    "obs.transitions",
+    "tts.alias_keys",
     "tts.engine_ids",
     "tts.engine_voices",
     "tts.voices",
     "vtube.expression_files",
     "vtube.hotkey_ids",
+    "vtube.item_files",
     "vtube.model_ids",
 ];
 

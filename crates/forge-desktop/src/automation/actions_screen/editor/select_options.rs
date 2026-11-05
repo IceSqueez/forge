@@ -368,10 +368,12 @@ mod tests {
 
     use super::super::tests::{screen_parts, view_with};
     use super::*;
-    use crate::test_support::{StubActions, error_toasts, pump_until, runtime};
+    use crate::test_support::{
+        StubActions, error_toasts, pump_until, runtime, settle_runtime_work,
+    };
     use forge_storage::MockActionRepo;
     use std::sync::Arc;
-    use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
+    use std::sync::atomic::{AtomicBool, Ordering};
 
     const MISSING: &str = "file missing";
 
@@ -584,7 +586,6 @@ mod tests {
         view: Entity<ActionEditor>,
         _host: Entity<ScreenActionsView>,
         lists_fail: Arc<AtomicBool>,
-        lists: Arc<AtomicUsize>,
         rt: tokio::runtime::Runtime,
     }
 
@@ -593,12 +594,10 @@ mod tests {
         cx.update(|cx| cx.set_global(forge_components::Toasts::new()));
         let rt = runtime();
         let lists_fail = Arc::new(AtomicBool::new(false));
-        let lists = Arc::new(AtomicUsize::new(0));
         let listed = crate::test_support::action_running("Alpha", Vec::new());
-        let (failing, counter) = (Arc::clone(&lists_fail), Arc::clone(&lists));
+        let failing = Arc::clone(&lists_fail);
         let mut repo = MockActionRepo::new();
         repo.expect_list().returning(move || {
-            counter.fetch_add(1, Ordering::SeqCst);
             if failing.load(Ordering::SeqCst) {
                 Err(forge_storage::StorageError::Connection {
                     reason: "database is locked".to_owned(),
@@ -619,13 +618,10 @@ mod tests {
             view: screen_parts(cx, &host).0,
             _host: host,
             lists_fail,
-            lists,
             rt,
         };
-        pump_until(&listing.rt, || {
-            cx.run_until_parked();
-            listing.action_options(cx).is_some()
-        });
+        settle_runtime_work(cx, &listing.rt);
+        assert!(listing.action_options(cx).is_some());
         listing
     }
 
@@ -643,13 +639,10 @@ mod tests {
 
         fn refetch(&self, cx: &mut gpui::TestAppContext, fail: bool) {
             self.lists_fail.store(fail, Ordering::SeqCst);
-            let listed_before = self.lists.load(Ordering::SeqCst);
             self.view
                 .update(cx, |view, cx| view.fetch_select_options(cx));
-            pump_until(&self.rt, || {
-                cx.run_until_parked();
-                self.lists.load(Ordering::SeqCst) > listed_before && self.failed(cx) == fail
-            });
+            settle_runtime_work(cx, &self.rt);
+            assert_eq!(self.failed(cx), fail);
         }
     }
 

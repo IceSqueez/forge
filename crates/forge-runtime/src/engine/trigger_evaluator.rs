@@ -953,6 +953,7 @@ mod tests {
 
     fn chat_payload(author: &str, line: &str, badges: Vec<UserBadge>) -> ChatPayload {
         ChatPayload {
+            badge_images: Vec::new(),
             platform_msg_id: "m-1".to_owned(),
             author: author.to_owned(),
             author_color: None,

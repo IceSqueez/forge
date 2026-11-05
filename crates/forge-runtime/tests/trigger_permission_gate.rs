@@ -142,6 +142,7 @@ fn log_action(id: ActionId, queue_id: QueueId) -> Action {
 
 fn chat_event(user: &str, badges: Vec<UserBadge>) -> Event {
     let chat = ChatPayload {
+        badge_images: Vec::new(),
         platform_msg_id: "m-1".to_owned(),
         author: user.to_owned(),
         author_color: None,

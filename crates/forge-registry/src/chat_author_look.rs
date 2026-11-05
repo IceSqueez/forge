@@ -2,13 +2,19 @@ use forge_events::Event;
 use forge_types::{ChatPayload, DeclaredVariable, UserBadge, VariantKind};
 
 pub const USER_BADGES_VARIABLE: &str = "user_badges";
+pub const USER_BADGE_IMAGES_VARIABLE: &str = "user_badge_images";
 pub const USER_COLOR_VARIABLE: &str = "user_color";
 pub const USER_AVATAR_VARIABLE: &str = "user_avatar";
 
 const BADGE_SEPARATOR: &str = " ";
+const EMPTY_IMAGE_LIST: &str = "[]";
 
 pub(crate) fn user_badges_declaration() -> DeclaredVariable {
     text_declaration(USER_BADGES_VARIABLE)
+}
+
+pub(crate) fn user_badge_images_declaration() -> DeclaredVariable {
+    text_declaration(USER_BADGE_IMAGES_VARIABLE)
 }
 
 pub(crate) fn user_color_declaration() -> DeclaredVariable {
@@ -42,6 +48,12 @@ pub(crate) fn chat_badges_text(event: &Event) -> String {
                 .join(BADGE_SEPARATOR)
         })
         .unwrap_or_default()
+}
+
+pub(crate) fn chat_badge_images_json(event: &Event) -> String {
+    chat_payload(event)
+        .and_then(|chat| serde_json::to_string(&chat.badge_images).ok())
+        .unwrap_or_else(|| EMPTY_IMAGE_LIST.to_owned())
 }
 
 pub(crate) fn chat_name_color(event: &Event) -> String {

@@ -71,6 +71,7 @@ pub(super) fn text_message_event(
     let badges = extract_badges(author_details);
 
     let chat_payload = ChatPayload {
+        badge_images: Vec::new(),
         platform_msg_id: id.clone(),
         author: author.clone(),
         author_color: None,
@@ -127,6 +128,7 @@ pub(super) fn super_chat_event(
         .unwrap_or_default();
 
     let chat_payload = ChatPayload {
+        badge_images: Vec::new(),
         platform_msg_id: id.clone(),
         author: author.clone(),
         author_color: None,
@@ -173,6 +175,7 @@ pub(super) fn super_sticker_event(
     };
 
     let chat_payload = ChatPayload {
+        badge_images: Vec::new(),
         platform_msg_id: id.clone(),
         author: author.clone(),
         author_color: None,
@@ -216,6 +219,7 @@ pub(super) fn new_sponsor_event(
     };
 
     let chat_payload = ChatPayload {
+        badge_images: Vec::new(),
         platform_msg_id: id.clone(),
         author: author.clone(),
         author_color: None,
@@ -274,6 +278,7 @@ pub(super) fn member_milestone_event(
         .unwrap_or_default();
 
     let chat_payload = ChatPayload {
+        badge_images: Vec::new(),
         platform_msg_id: id.clone(),
         author: author.clone(),
         author_color: None,
@@ -336,6 +341,7 @@ pub(super) fn user_banned_event(
     };
 
     let chat_payload = ChatPayload {
+        badge_images: Vec::new(),
         platform_msg_id: id.clone(),
         author: target_display_name.clone().unwrap_or_default(),
         author_color: None,
@@ -378,6 +384,7 @@ pub(super) fn user_banned_event(
 
 pub(super) fn tombstone_event(id: String) -> Option<Event> {
     let chat_payload = ChatPayload {
+        badge_images: Vec::new(),
         platform_msg_id: id.clone(),
         author: String::new(),
         author_color: None,
@@ -431,6 +438,7 @@ pub(super) fn membership_gifting_event(
     let gifter_display_name = extract_author(author_details);
 
     let chat_payload = ChatPayload {
+        badge_images: Vec::new(),
         platform_msg_id: id.clone(),
         author: gifter_display_name.clone(),
         author_color: None,
@@ -474,6 +482,7 @@ pub(super) fn gift_membership_received_event(
     let recipient_display_name = extract_author(author_details);
 
     let chat_payload = ChatPayload {
+        badge_images: Vec::new(),
         platform_msg_id: id.clone(),
         author: recipient_display_name.clone(),
         author_color: None,

@@ -561,6 +561,7 @@ mod tests {
 
     fn chat_event(reply: Option<serde_json::Value>) -> Event {
         let payload = ChatPayload {
+            badge_images: Vec::new(),
             platform_msg_id: "m1".to_string(),
             author: "bob".to_string(),
             author_color: None,

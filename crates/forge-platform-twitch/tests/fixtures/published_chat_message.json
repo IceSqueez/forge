@@ -75,6 +75,7 @@
     "_chat": {
       "author": "Viewer32",
       "author_color": "#00FF7F",
+      "badge_images": [],
       "badges": [
         {
           "kind": "moderator"

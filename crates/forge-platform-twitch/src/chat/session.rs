@@ -1,4 +1,5 @@
 use crate::bot_account::TwitchBotAccount;
+use crate::chat::badge_catalog::BadgeCatalog;
 use crate::chat::subscriber::{SubscribePass, TopicRetries, TopicRetryRun, subscribe_all};
 use crate::chat::topic_catalog::raid_direction;
 use crate::config::{ChatSessionConfig, ChatTiming};
@@ -90,6 +91,7 @@ use crate::vocabulary::events::support::{
 const CONNECT_TIMEOUT: Duration = Duration::from_secs(10);
 const SUCCESSOR_TIMEOUT: Duration = Duration::from_secs(15);
 const CLOSE_TIMEOUT: Duration = Duration::from_secs(2);
+const BADGE_CATALOG_TIMEOUT: Duration = Duration::from_secs(10);
 const PREDECESSOR_DRAIN_LIMIT: usize = 256;
 const HELD_FRAME_LIMIT: usize = 1024;
 const AUTHORIZATION_REVOKED_STATUS: &str = "authorization_revoked";
@@ -105,7 +107,45 @@ type EventSubSocket =
 type SuccessorDial =
     Pin<Box<dyn Future<Output = Result<(EventSubSocket, String), TwitchError>> + Send>>;
 
+type BadgeFetchRun = Pin<Box<dyn Future<Output = Option<BadgeCatalog>> + Send>>;
+
 type SubscriptionPassRun = Pin<Box<dyn Future<Output = PassVerdict> + Send>>;
+
+async fn fetch_badge_catalog(
+    manager: Arc<TwitchCredentialsManager>,
+    gateway: Gateway,
+    client_id: String,
+    broadcaster_id: String,
+) -> Option<BadgeCatalog> {
+    let token = match manager.get_valid_access_token().await {
+        Ok(token) => token,
+        Err(e) => {
+            warn_token_failure!("badge catalog token fetch failed; badge images skipped", &e);
+            return None;
+        }
+    };
+    let helix: Arc<dyn HelixTransport> = Arc::new(HelixHttpTransport::new(
+        gateway,
+        client_id,
+        Arc::new(FixedTokenSource::new(token)),
+    ));
+    match tokio::time::timeout(
+        BADGE_CATALOG_TIMEOUT,
+        BadgeCatalog::fetch(&helix, &broadcaster_id),
+    )
+    .await
+    {
+        Ok(Ok(catalog)) => Some(catalog),
+        Ok(Err(error)) => {
+            warn!(%error, "twitch badge catalog unavailable");
+            None
+        }
+        Err(_) => {
+            warn!("twitch badge catalog fetch timed out");
+            None
+        }
+    }
+}
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum ChatSessionState {
@@ -144,6 +184,7 @@ pub(crate) struct ChatSession {
     shutdown_rx: oneshot::Receiver<()>,
     transition: ConnectionTransition,
     seen_messages: MessageIdWindow,
+    badge_catalog: BadgeCatalog,
     backoff: Backoff,
     keepalive_timeout: Duration,
     retries_rx: Option<oneshot::Receiver<TopicRetries>>,
@@ -196,6 +237,7 @@ impl ChatSession {
             shutdown_rx,
             transition: ConnectionTransition::Unexpected,
             seen_messages: MessageIdWindow::default(),
+            badge_catalog: BadgeCatalog::default(),
             backoff: Backoff::default(),
             keepalive_timeout: crate::config::KEEPALIVE_TIMEOUT,
             retries_rx: None,
@@ -290,6 +332,12 @@ impl ChatSession {
         let mut topic_retries: Option<TopicRetryRun> = None;
         let mut held_frames: Vec<String> = Vec::new();
         let mut keepalive_deadline = Instant::now() + self.keepalive_timeout;
+        let mut badge_fetch: Option<BadgeFetchRun> = Some(Box::pin(fetch_badge_catalog(
+            Arc::clone(&self.config.manager),
+            self.config.helix.clone(),
+            self.config.client_id.clone(),
+            self.config.broadcaster_id.clone(),
+        )));
 
         loop {
             tokio::select! {
@@ -299,6 +347,13 @@ impl ChatSession {
                     }
                     debug!("twitch chat session shut down on request");
                     return SessionOutcome::Shutdown;
+                }
+
+                fetched = await_badge_fetch(&mut badge_fetch) => {
+                    badge_fetch = None;
+                    if let Some(catalog) = fetched {
+                        self.badge_catalog = catalog;
+                    }
                 }
 
                 verdict = await_subscription_pass(&mut subscription_pass) => {

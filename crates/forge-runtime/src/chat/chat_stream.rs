@@ -103,6 +103,7 @@ mod tests {
 
     fn chat_event(source: EventSource, msg_id: &str) -> Event {
         let payload = ChatPayload {
+            badge_images: Vec::new(),
             platform_msg_id: msg_id.to_string(),
             author: "user".to_string(),
             author_color: None,

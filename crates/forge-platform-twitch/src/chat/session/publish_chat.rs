@@ -22,7 +22,8 @@ impl ChatSession {
             "chat message received"
         );
 
-        let chat_payload = payload::build_chat_message_chat_payload(event_data);
+        let mut chat_payload = payload::build_chat_message_chat_payload(event_data);
+        chat_payload.badge_images = self.badge_catalog.images_for(event_data.get("badges"));
         let cheer = event_data
             .get("cheer")
             .and_then(|c| c.get("bits"))

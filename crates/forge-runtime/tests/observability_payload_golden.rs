@@ -161,6 +161,7 @@ fn golden_action(queue_id: QueueId) -> Action {
 
 fn command_event() -> Event {
     let chat = ChatPayload {
+        badge_images: Vec::new(),
         platform_msg_id: "golden-msg".to_owned(),
         author: "viewer".to_owned(),
         author_color: None,

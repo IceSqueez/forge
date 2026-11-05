@@ -14,10 +14,18 @@ pub struct ChatPayload {
     pub author_color: Option<String>,
     pub segments: Vec<ChatSegment>,
     pub badges: Vec<UserBadge>,
+    #[serde(default)]
+    pub badge_images: Vec<BadgeImage>,
     pub is_event: bool,
     pub event_detail: Option<ChatEventDetail>,
     #[serde(default)]
     pub moderation: ModerationMarks,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct BadgeImage {
+    pub title: String,
+    pub url: String,
 }
 
 impl fmt::Debug for ChatPayload {
@@ -28,6 +36,7 @@ impl fmt::Debug for ChatPayload {
             .field("author_color", &self.author_color)
             .field("segments", &self.segments)
             .field("badges", &self.badges)
+            .field("badge_images", &self.badge_images)
             .field("is_event", &self.is_event)
             .field("event_detail", &self.event_detail)
             .field("moderation", &self.moderation)
@@ -436,6 +445,7 @@ mod tests {
 
     fn minimal_payload(msg_id: &str) -> ChatPayload {
         ChatPayload {
+            badge_images: Vec::new(),
             platform_msg_id: msg_id.to_string(),
             author: "user".to_string(),
             author_color: None,
@@ -449,6 +459,7 @@ mod tests {
 
     fn full_payload() -> ChatPayload {
         ChatPayload {
+            badge_images: Vec::new(),
             platform_msg_id: "full-msg".to_string(),
             author: "streamer".to_string(),
             author_color: Some("#FF0000".to_string()),
@@ -655,6 +666,7 @@ mod tests {
 
     fn payload_with_planted_content() -> ChatPayload {
         ChatPayload {
+            badge_images: Vec::new(),
             platform_msg_id: "msg-42".to_string(),
             author: AUTHOR.to_string(),
             author_color: None,

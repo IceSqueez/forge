@@ -238,6 +238,7 @@ mod tests {
 
     fn chat_event(msg_id: &str) -> Event {
         let payload = ChatPayload {
+            badge_images: Vec::new(),
             platform_msg_id: msg_id.to_owned(),
             author: "bob".to_owned(),
             author_color: None,

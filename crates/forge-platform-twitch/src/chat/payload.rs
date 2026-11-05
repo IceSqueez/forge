@@ -121,6 +121,7 @@ pub(crate) fn build_chat_message_chat_payload(event_data: &serde_json::Value) ->
     let segments = map_fragments(event_data.get("message").and_then(|m| m.get("fragments")));
     let badges = map_badges(event_data.get("badges"));
     ChatPayload {
+        badge_images: Vec::new(),
         platform_msg_id,
         author,
         author_color,
@@ -149,6 +150,7 @@ pub(crate) fn build_subscribe_chat_payload(
             .unwrap_or(""),
     );
     ChatPayload {
+        badge_images: Vec::new(),
         platform_msg_id: format!("twitch.support.subscriber:{frame_msg_id}"),
         author,
         author_color: None,
@@ -199,6 +201,7 @@ pub(crate) fn build_resubscribe_chat_payload(
         })
         .unwrap_or_default();
     ChatPayload {
+        badge_images: Vec::new(),
         platform_msg_id: format!("twitch.support.resubscriber:{frame_msg_id}"),
         author,
         author_color: None,
@@ -241,6 +244,7 @@ pub(crate) fn build_gift_sub_chat_payload(
             .unwrap_or(""),
     );
     ChatPayload {
+        badge_images: Vec::new(),
         platform_msg_id: format!("twitch.support.gift_sub:{frame_msg_id}"),
         author,
         author_color: None,
@@ -289,6 +293,7 @@ pub(crate) fn build_cheer_chat_payload(
         })
         .unwrap_or_default();
     ChatPayload {
+        badge_images: Vec::new(),
         platform_msg_id: format!("twitch.support.cheer:{frame_msg_id}"),
         author,
         author_color: None,
@@ -319,6 +324,7 @@ pub(crate) fn build_raid_chat_payload(
         .and_then(|v| v.as_u64())
         .unwrap_or(0);
     ChatPayload {
+        badge_images: Vec::new(),
         platform_msg_id: format!("twitch.channel.raid_received:{frame_msg_id}"),
         author,
         author_color: None,

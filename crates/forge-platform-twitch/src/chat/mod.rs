@@ -1,3 +1,4 @@
+mod badge_catalog;
 mod dedup;
 mod dispatch;
 pub(crate) mod payload;

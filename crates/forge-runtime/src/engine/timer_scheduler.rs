@@ -473,6 +473,7 @@ mod tests {
         ) {
             self.next_message += 1;
             let payload = ChatPayload {
+                badge_images: Vec::new(),
                 platform_msg_id: format!("msg-{}", self.next_message),
                 author: author.to_owned(),
                 author_color: None,

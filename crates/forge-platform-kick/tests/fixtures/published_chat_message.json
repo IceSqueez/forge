@@ -30,6 +30,7 @@
     "_chat": {
       "author": "kick-viewer",
       "author_color": "#E9113C",
+      "badge_images": [],
       "badges": [
         {
           "kind": "subscriber",

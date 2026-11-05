@@ -91,6 +91,7 @@ pub(crate) fn chat_message_chat_payload(raw: &Value) -> ChatPayload {
     let author_color = non_empty(identity.and_then(|i| str_field(i, "color")));
 
     ChatPayload {
+        badge_images: Vec::new(),
         platform_msg_id: str_field(raw, "id").unwrap_or_default(),
         author: display_name.or(username).unwrap_or_default(),
         author_color,

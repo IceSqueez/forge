@@ -85,6 +85,13 @@ pub(super) async fn await_subscription_pass(pass: &mut Option<SubscriptionPassRu
     }
 }
 
+pub(super) async fn await_badge_fetch(fetch: &mut Option<BadgeFetchRun>) -> Option<BadgeCatalog> {
+    match fetch {
+        Some(fetch) => fetch.await,
+        None => std::future::pending().await,
+    }
+}
+
 pub(super) async fn await_topic_retries(retries: &mut Option<TopicRetryRun>) {
     match retries {
         Some(retries) => retries.finished().await,

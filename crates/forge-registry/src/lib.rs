@@ -50,7 +50,9 @@ pub use chain::{
     CancelSignal, ChainExecutor, ChainSignal, ChildChainOutcome, ControlCell, ControlSignal,
     RunningAction, StopMark, TelemetrySink,
 };
-pub use chat_author_look::{USER_AVATAR_VARIABLE, USER_BADGES_VARIABLE, USER_COLOR_VARIABLE};
+pub use chat_author_look::{
+    USER_AVATAR_VARIABLE, USER_BADGE_IMAGES_VARIABLE, USER_BADGES_VARIABLE, USER_COLOR_VARIABLE,
+};
 pub use chat_event::{CHAT_EVENT_VARIABLE, ChatEventKind};
 pub use command_phrase::{
     COMMAND_CASE_SENSITIVE_KEY, COMMAND_PHRASE_KEY, command_name_of, command_phrase_matches,

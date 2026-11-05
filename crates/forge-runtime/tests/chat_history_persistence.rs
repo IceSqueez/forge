@@ -28,6 +28,7 @@ fn bus() -> Arc<EventBus> {
 
 fn chat_event(msg_id: &str) -> Event {
     let payload = ChatPayload {
+        badge_images: Vec::new(),
         platform_msg_id: msg_id.to_string(),
         author: "user".to_string(),
         author_color: None,

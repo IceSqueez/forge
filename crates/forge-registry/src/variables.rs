@@ -6,8 +6,8 @@ use forge_types::{
 };
 
 use crate::chat_author_look::{
-    chat_badges_text, chat_name_color, user_avatar_declaration, user_badges_declaration,
-    user_color_declaration,
+    chat_badge_images_json, chat_badges_text, chat_name_color, user_avatar_declaration,
+    user_badge_images_declaration, user_badges_declaration, user_color_declaration,
 };
 use crate::command_phrase::{
     MatchedCommand, command_args_declaration, command_name_declaration, command_tail_declaration,
@@ -258,6 +258,7 @@ impl TriggerVariables {
         F: Fn(&Event) -> Option<String> + Send + Sync + 'static,
     {
         self.chat_badges()
+            .chat_badge_images()
             .chat_name_color()
             .event_specific(user_avatar_declaration(), move |event| {
                 Variant::String(read_avatar(event).unwrap_or_default())
@@ -267,6 +268,12 @@ impl TriggerVariables {
     fn chat_badges(self) -> Self {
         self.event_specific(user_badges_declaration(), |event| {
             Variant::String(chat_badges_text(event))
+        })
+    }
+
+    fn chat_badge_images(self) -> Self {
+        self.event_specific(user_badge_images_declaration(), |event| {
+            Variant::String(chat_badge_images_json(event))
         })
     }
 

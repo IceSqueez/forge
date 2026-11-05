@@ -13,6 +13,7 @@ const LOOK_NAMES: [&str; 3] = [
 
 fn envelope(badges: Vec<UserBadge>, author_color: Option<&str>) -> Value {
     serde_json::to_value(ChatPayload {
+        badge_images: Vec::new(),
         platform_msg_id: "m-1".to_owned(),
         author: "viewer".to_owned(),
         author_color: author_color.map(str::to_owned),

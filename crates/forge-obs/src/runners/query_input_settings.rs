@@ -3,20 +3,20 @@ use std::sync::Arc;
 use async_trait::async_trait;
 use forge_registry::SubActionConfig;
 use forge_registry::{
-    ConfigSpec, RunContext, StepCatalogEntry, StepTimer, SubActionCategory, SubActionIo,
-    SubActionRunner, TextEditor, TextField, TypedField,
+    ConfigSpec, PickedTextField, RunContext, StepCatalogEntry, StepTimer, SubActionCategory,
+    SubActionIo, SubActionRunner, TextPicker, TypedField,
 };
 use forge_types::{ArgStack, SubActionTelemetry, Variant};
 
 use super::step_failure;
 use crate::ObsSink;
-use crate::vocabulary::{config_keys, sub_action_ids, variables};
+use crate::vocabulary::{config_keys, picker_keys, sub_action_ids, variables};
 
-const SOURCE: TextField = TextField {
+const SOURCE: PickedTextField = PickedTextField {
     key: config_keys::SOURCE,
     label: "Input name",
-    editor: TextEditor::Line {
-        placeholder: "e.g. Webcam",
+    picker: TextPicker::Options {
+        options_key: picker_keys::INPUT_NAMES,
     },
     default: "",
     required: true,

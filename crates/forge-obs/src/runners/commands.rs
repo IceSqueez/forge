@@ -3,15 +3,14 @@ use std::sync::Arc;
 use async_trait::async_trait;
 use forge_registry::{
     ConfigProblem, ConfigSpec, PickedTextField, RunContext, StepCatalogEntry, StepTimer,
-    SubActionCategory, SubActionConfig, SubActionRunner, TextEditor, TextField, TextPicker,
-    TypedField,
+    SubActionCategory, SubActionConfig, SubActionRunner, TextPicker, TypedField,
 };
 use forge_types::{ArgStack, SubActionTelemetry};
 use futures_util::future::BoxFuture;
 
 use super::step_failure;
 use crate::runners::fields::{ACTIVE, SCENE};
-use crate::vocabulary::{config_keys, picker_keys, sub_action_ids};
+use crate::vocabulary::{config_keys, option_lists, picker_keys, sub_action_ids};
 use crate::{ObsError, ObsSink};
 
 type SinkCall = for<'a> fn(&'a dyn ObsSink) -> BoxFuture<'a, Result<(), ObsError>>;
@@ -44,21 +43,21 @@ struct NamedCommand {
     send: NamedSinkCall,
 }
 
-const PROFILE_NAME: TextField = TextField {
+const PROFILE_NAME: PickedTextField = PickedTextField {
     key: config_keys::NAME,
     label: "Profile Name",
-    editor: TextEditor::Line {
-        placeholder: "e.g. Streaming",
+    picker: TextPicker::Options {
+        options_key: option_lists::PROFILE_LIST,
     },
     default: "",
     required: true,
 };
 
-const COLLECTION_NAME: TextField = TextField {
+const COLLECTION_NAME: PickedTextField = PickedTextField {
     key: config_keys::NAME,
     label: "Collection Name",
-    editor: TextEditor::Line {
-        placeholder: "e.g. Main Collection",
+    picker: TextPicker::Options {
+        options_key: option_lists::SCENE_COLLECTION_LIST,
     },
     default: "",
     required: true,
@@ -84,11 +83,11 @@ const MEDIA_SOURCE: PickedTextField = PickedTextField {
     required: true,
 };
 
-const TRANSITION_NAME: TextField = TextField {
+const TRANSITION_NAME: PickedTextField = PickedTextField {
     key: config_keys::TRANSITION,
     label: "Transition Name",
-    editor: TextEditor::Line {
-        placeholder: "e.g. Fade",
+    picker: TextPicker::Options {
+        options_key: option_lists::TRANSITION_LIST,
     },
     default: "",
     required: true,

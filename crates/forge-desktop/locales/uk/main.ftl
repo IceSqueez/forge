@@ -4217,6 +4217,7 @@ field_label_overlay__wait_for_show = Чекати завершення пока�
 field_label_overlay__show_image = Зображення для цього показу
 field_label_overlay__show_sound = Звук для цього показу
 actions_overlay_show_sound_own = Власний звук оверлея
+actions_chat_target_every_platform = Усі підключені платформи
 actions_overlay_show_media_helper = Якщо порожньо, діє налаштування самого оверлея.
 field_label_obs__filter = Назва фільтра
 field_label_obs__enabled = Увімкнено

@@ -11,6 +11,7 @@ pub(crate) mod events;
 mod health;
 mod integration;
 mod mention;
+mod option_source;
 mod quick_actions;
 pub(crate) mod ratelimit;
 pub(crate) mod route;

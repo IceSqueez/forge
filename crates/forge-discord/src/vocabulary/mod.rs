@@ -3,6 +3,7 @@ pub mod event_kinds;
 pub mod fields;
 pub(crate) mod labels;
 pub mod messages;
+pub mod picker_keys;
 pub mod sub_action_ids;
 pub mod variables;
 

@@ -2,8 +2,9 @@ use async_trait::async_trait;
 use forge_events::{ChatSendRequest, EventSource, TypedEvent};
 use forge_platform_core::{SENDER_FIELD, SenderPreference};
 use forge_registry::{
-    ChoiceField, ConfigChoice, ConfigProblem, ConfigSpec, RunContext, StepCatalogEntry, StepTimer,
-    SubActionCategory, SubActionRunner, TextEditor, TextField, TypedField,
+    ChoiceField, ConfigChoice, ConfigProblem, ConfigSpec, PickedTextField, RunContext,
+    StepCatalogEntry, StepTimer, SubActionCategory, SubActionRunner, TextEditor, TextField,
+    TextPicker, TypedField,
 };
 use forge_registry::{StepCardDetail, card_text};
 use forge_types::{
@@ -15,6 +16,7 @@ pub const CHAT_SEND_KIND_ID: &str = "twitch.chat.send_message";
 pub const CHAT_SEND_DEFAULT_TARGET: &str = "twitch";
 pub const CHAT_SEND_MESSAGE_KEY: &str = "message";
 pub const CHAT_SEND_TARGET_KEY: &str = "target";
+pub const CHAT_TARGET_OPTIONS_KEY: &str = "chat.targets";
 
 #[derive(Clone, Copy)]
 struct SendAs(SenderPreference);
@@ -40,11 +42,11 @@ const MESSAGE: TextField = TextField {
     required: true,
 };
 
-const TARGET: TextField = TextField {
+const TARGET: PickedTextField = PickedTextField {
     key: CHAT_SEND_TARGET_KEY,
     label: "Target Platform",
-    editor: TextEditor::Line {
-        placeholder: CHAT_SEND_DEFAULT_TARGET,
+    picker: TextPicker::Options {
+        options_key: CHAT_TARGET_OPTIONS_KEY,
     },
     default: CHAT_SEND_DEFAULT_TARGET,
     required: false,

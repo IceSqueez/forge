@@ -149,28 +149,30 @@ pub use services::dashboard::{DashboardStats, compute_stats};
 pub use services::donations::CatchUpWaker;
 pub use services::script_catalog::LoadedScript;
 pub use speech::audio_runners::{
-    ENGINE_OPTIONS_KEY, SPEAK_KIND_ID, SPEECH_TEXT_KEY, SpeakRunner, VOICE_OPTIONS_PREFIX,
+    ALIAS_OPTIONS_KEY, ENGINE_OPTIONS_KEY, SPEAK_KIND_ID, SPEECH_TEXT_KEY, SpeakRunner,
+    VOICE_OPTIONS_PREFIX,
 };
 pub use sub_action_runners::CoreSubActionDeps;
 pub use sub_action_runners::{
     CANCEL_SCHEDULED_KIND_ID, CHAT_SEND_DEFAULT_TARGET, CHAT_SEND_KIND_ID, CHAT_SEND_MESSAGE_KEY,
-    CHAT_SEND_TARGET_KEY, ChatSendMessageRunner, ClipboardPort, CoreActionCancelRunner,
-    CoreActionRunRunner, CoreActionStateRunner, CoreArgsSetRunner, CoreFileDeleteRunner,
-    CoreFileListRunner, CoreFileReadRunner, CoreFileWriteRunner, CoreLogicBreakLoopRunner,
-    CoreLogicContinueLoopRunner, CoreLogicIfThenElseRunner, CoreLogicLoopRunner,
-    CoreLogicStopRunner, CoreLogicSwitchCaseRunner, CoreLogicWaitRunner, CoreLogicWaitUntilRunner,
-    CoreMathEvaluateRunner, CoreStringConcatRunner, CoreStringFormatRunner, CoreStringLengthRunner,
-    CoreStringLowercaseRunner, CoreStringRegexMatchRunner, CoreStringReplaceRunner,
-    CoreStringSplitRunner, CoreStringSubstringRunner, CoreStringTitlecaseRunner,
-    CoreStringTrimRunner, CoreStringUppercaseRunner, CoreTimeFormatRunner, CoreTimeNowRunner,
-    CoreTimeParseRunner, CoreTriggerStateRunner, CoreUsersGetVarRunner,
-    CoreUsersIncrementVarRunner, CoreUsersSetVarRunner, DesktopNotice, FILE_READ_KIND_ID,
-    FILE_READ_PATH_KEY, FILE_READ_TARGET_VAR_KEY, GLOBAL_AMOUNT_KEY, GLOBAL_DEFAULT_AMOUNT,
-    GLOBAL_INCREMENT_KIND_ID, GLOBAL_NAME_KEY, GLOBAL_SET_KIND_ID, GLOBAL_VALUE_KEY,
-    LOG_DEFAULT_LEVEL, LOG_LEVEL_KEY, LOG_MESSAGE_KEY, LOG_WRITE_KIND_ID, NotifyPort,
-    NotifyUrgency, OsPorts, RANDOM_INT_KIND_ID, RANDOM_INT_MAX_KEY, RANDOM_INT_MIN_KEY,
-    RANDOM_INT_TARGET_VAR_KEY, SCHEDULE_ACTION_KIND_ID, SCRIPT_TARGET_VAR_KEY,
-    ScriptRunInlineRunner, ServerBroadcastRunner, UrlOpenPort, WAIT_KIND_ID, WAIT_MS_KEY,
+    CHAT_SEND_TARGET_KEY, CHAT_TARGET_OPTIONS_KEY, ChatSendMessageRunner, ClipboardPort,
+    CoreActionCancelRunner, CoreActionRunRunner, CoreActionStateRunner, CoreArgsSetRunner,
+    CoreFileDeleteRunner, CoreFileListRunner, CoreFileReadRunner, CoreFileWriteRunner,
+    CoreLogicBreakLoopRunner, CoreLogicContinueLoopRunner, CoreLogicIfThenElseRunner,
+    CoreLogicLoopRunner, CoreLogicStopRunner, CoreLogicSwitchCaseRunner, CoreLogicWaitRunner,
+    CoreLogicWaitUntilRunner, CoreMathEvaluateRunner, CoreStringConcatRunner,
+    CoreStringFormatRunner, CoreStringLengthRunner, CoreStringLowercaseRunner,
+    CoreStringRegexMatchRunner, CoreStringReplaceRunner, CoreStringSplitRunner,
+    CoreStringSubstringRunner, CoreStringTitlecaseRunner, CoreStringTrimRunner,
+    CoreStringUppercaseRunner, CoreTimeFormatRunner, CoreTimeNowRunner, CoreTimeParseRunner,
+    CoreTriggerStateRunner, CoreUsersGetVarRunner, CoreUsersIncrementVarRunner,
+    CoreUsersSetVarRunner, DesktopNotice, FILE_READ_KIND_ID, FILE_READ_PATH_KEY,
+    FILE_READ_TARGET_VAR_KEY, GLOBAL_AMOUNT_KEY, GLOBAL_DEFAULT_AMOUNT, GLOBAL_INCREMENT_KIND_ID,
+    GLOBAL_NAME_KEY, GLOBAL_SET_KIND_ID, GLOBAL_VALUE_KEY, LOG_DEFAULT_LEVEL, LOG_LEVEL_KEY,
+    LOG_MESSAGE_KEY, LOG_WRITE_KIND_ID, NotifyPort, NotifyUrgency, OsPorts, RANDOM_INT_KIND_ID,
+    RANDOM_INT_MAX_KEY, RANDOM_INT_MIN_KEY, RANDOM_INT_TARGET_VAR_KEY, SCHEDULE_ACTION_KIND_ID,
+    SCRIPT_TARGET_VAR_KEY, ScriptRunInlineRunner, ServerBroadcastRunner, UrlOpenPort, WAIT_KIND_ID,
+    WAIT_MS_KEY,
 };
 pub use sub_action_runners::{
     DEFAULT_CHAIN_KEY, ELSE_CHAIN_KEY, LOOP_BODY_KEY, MAX_FOREACH_ITERATIONS,

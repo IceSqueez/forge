@@ -5,8 +5,9 @@ use async_trait::async_trait;
 use forge_events::EventSource;
 use forge_registry::GLOBAL_OPTIONS_KEY;
 use forge_registry::{
-    ConfigProblem, ConfigSpec, ReferenceField, RunContext, StepCatalogEntry, StepTimer,
-    SubActionCategory, SubActionRunner, TextEditor, TextField, ToggleField, TypedField,
+    ConfigProblem, ConfigSpec, PickedTextField, ReferenceField, RunContext, StepCatalogEntry,
+    StepTimer, SubActionCategory, SubActionRunner, TextEditor, TextField, TextPicker, ToggleField,
+    TypedField,
 };
 use forge_storage::GlobalsRepo;
 use forge_types::{
@@ -20,11 +21,11 @@ use crate::services::global_mutation::GlobalMutation;
 pub const GLOBAL_SET_KIND_ID: &str = "core.globals.set";
 pub const GLOBAL_VALUE_KEY: &str = "value";
 
-const NAME: TextField = TextField {
+const NAME: PickedTextField = PickedTextField {
     key: NAME_KEY,
     label: "Variable Name",
-    editor: TextEditor::Line {
-        placeholder: "my_counter",
+    picker: TextPicker::Options {
+        options_key: GLOBAL_OPTIONS_KEY,
     },
     default: "",
     required: true,

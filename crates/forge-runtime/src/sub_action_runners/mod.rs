@@ -85,7 +85,7 @@ mod variant_text;
 
 pub use chat_send_message::{
     CHAT_SEND_DEFAULT_TARGET, CHAT_SEND_KIND_ID, CHAT_SEND_MESSAGE_KEY, CHAT_SEND_TARGET_KEY,
-    ChatSendMessageRunner,
+    CHAT_TARGET_OPTIONS_KEY, ChatSendMessageRunner,
 };
 pub use core_action_cancel::CoreActionCancelRunner;
 pub use core_action_cancel_scheduled::CANCEL_SCHEDULED_KIND_ID;

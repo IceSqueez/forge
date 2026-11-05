@@ -5,6 +5,7 @@ use crate::integrations::donation_services::donation_provider_options;
 use crate::shared::config_form::dependent_options_key;
 use crate::shared::option_choices::ChoiceOption;
 use forge_components::tr;
+use forge_host::integration_catalog::declaration_of;
 use forge_overlay::clip_reference;
 use forge_registry::FormSchemaSource;
 pub(super) use forge_registry::SOUNDBOARD_CLIP_OPTIONS_KEY as CLIP_OPTIONS_KEY;
@@ -13,11 +14,14 @@ use forge_registry::{
     QUEUE_OPTIONS_KEY, SCRIPT_OPTIONS_KEY, TRIGGER_INSTANCE_OPTIONS_KEY,
 };
 use forge_runtime::DONATION_PROVIDER_OPTIONS_KEY;
-use forge_runtime::{ENGINE_OPTIONS_KEY, VOICE_OPTIONS_PREFIX};
+use forge_runtime::{
+    ALIAS_OPTIONS_KEY, CHAT_TARGET_OPTIONS_KEY, ENGINE_OPTIONS_KEY, VOICE_OPTIONS_PREFIX,
+};
 use forge_soundboard::ClipLibrary;
 use forge_speak_queue::SpeakQueueHandle;
-use forge_speech_types::ENGINE_VOICE_OPTIONS_KEY;
+use forge_speech_types::{ENGINE_VOICE_OPTIONS_KEY, VoiceAlias};
 use forge_storage::{GlobalsRepo, OverlayRepo, QueueRepo, ScriptRepo, StoredClip};
+use forge_types::PlatformId;
 use gpui::Context;
 use std::collections::HashMap;
 
@@ -64,6 +68,29 @@ fn show_sound_choices(clips: &[StoredClip]) -> impl Iterator<Item = ChoiceOption
     )
 }
 
+fn chat_target_choices() -> impl Iterator<Item = ChoiceOption> {
+    std::iter::once(ChoiceOption::new(
+        String::new(),
+        tr!("actions_chat_target_every_platform"),
+    ))
+    .chain(PlatformId::ALL.into_iter().map(|platform| {
+        let label = declaration_of(&platform.integration_id())
+            .map_or(platform.as_str(), |declaration| declaration.brand_name);
+        ChoiceOption::new(platform.as_str(), label)
+    }))
+}
+
+fn alias_choices(aliases: &[VoiceAlias]) -> impl Iterator<Item = ChoiceOption> {
+    aliases.iter().map(|alias| {
+        let label = if alias.viewer_name.trim().is_empty() {
+            alias.alias_key.clone()
+        } else {
+            alias.viewer_name.clone()
+        };
+        ChoiceOption::new(alias.alias_key.clone(), label)
+    })
+}
+
 struct SelectOptionSources {
     action_repo: Arc<dyn ActionRepo>,
     queue_repo: Arc<dyn QueueRepo>,
@@ -79,10 +106,16 @@ struct SelectOptionSources {
 impl SelectOptionsFetch {
     fn seeded() -> Self {
         Self {
-            options: HashMap::from([(
-                DONATION_PROVIDER_OPTIONS_KEY.to_owned(),
-                donation_provider_options(),
-            )]),
+            options: HashMap::from([
+                (
+                    DONATION_PROVIDER_OPTIONS_KEY.to_owned(),
+                    donation_provider_options(),
+                ),
+                (
+                    CHAT_TARGET_OPTIONS_KEY.to_owned(),
+                    chat_target_choices().collect(),
+                ),
+            ]),
             failed_keys: Vec::new(),
             overlay_kind_by_identity: HashMap::new(),
             concurrent_queue_ids: HashSet::new(),
@@ -243,6 +276,10 @@ impl SelectOptionSources {
         fetch.options.insert(
             ENGINE_VOICE_OPTIONS_KEY.to_owned(),
             engine_voice_options(&voices),
+        );
+        fetch.put(
+            ALIAS_OPTIONS_KEY,
+            alias_choices(speak.resolver_snapshot().aliases()),
         );
     }
 }

@@ -3,21 +3,21 @@ use std::sync::Arc;
 use async_trait::async_trait;
 use forge_registry::SubActionConfig;
 use forge_registry::{
-    ConfigProblem, ConfigSpec, JsonObjectField, RunContext, StepCatalogEntry, StepTimer,
-    SubActionCategory, SubActionRunner, TextEditor, TextField, ToggleField, TypedField,
+    ConfigProblem, ConfigSpec, JsonObjectField, PickedTextField, RunContext, StepCatalogEntry,
+    StepTimer, SubActionCategory, SubActionRunner, TextPicker, ToggleField, TypedField,
 };
 use forge_types::{ArgStack, SubActionTelemetry};
 use serde_json::{Map, Value};
 
 use super::step_failure;
 use crate::ObsSink;
-use crate::vocabulary::{config_keys, sub_action_ids};
+use crate::vocabulary::{config_keys, picker_keys, sub_action_ids};
 
-const SOURCE: TextField = TextField {
+const SOURCE: PickedTextField = PickedTextField {
     key: config_keys::SOURCE,
     label: "Input Source",
-    editor: TextEditor::Line {
-        placeholder: "e.g. Webcam",
+    picker: TextPicker::Options {
+        options_key: picker_keys::INPUT_NAMES,
     },
     default: "",
     required: true,

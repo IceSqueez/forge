@@ -4114,6 +4114,7 @@ field_label_overlay__wait_for_show = Wait until the show ends
 field_label_overlay__show_image = Image for this show
 field_label_overlay__show_sound = Sound for this show
 actions_overlay_show_sound_own = Overlay's own sound
+actions_chat_target_every_platform = Every connected platform
 actions_overlay_show_media_helper = Left empty, the overlay's own setting is used.
 field_label_obs__filter = Filter Name
 field_label_obs__enabled = Enabled

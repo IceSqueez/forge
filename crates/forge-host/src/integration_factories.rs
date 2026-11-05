@@ -697,7 +697,8 @@ impl IntegrationFactory<BuiltinObject> for DiscordFactory {
 
     async fn start(&self) -> Result<RunningIntegration<BuiltinObject>, IntegrationStartError> {
         let client = Arc::clone(&self.client);
-        Ok(RunningIntegration::idle().with_object(BuiltinObject::of(client.clone())))
+        Ok(RunningIntegration::idle()
+            .with_object(BuiltinObject::of(client.clone()).with_option_source(client)))
     }
 }
 

@@ -1,6 +1,6 @@
-use forge_registry::{TextEditor, TextField};
+use forge_registry::{PickedTextField, TextEditor, TextField, TextPicker};
 
-use crate::vocabulary::config_keys;
+use crate::vocabulary::{config_keys, picker_keys};
 
 pub(super) const fn filled_text(
     key: &'static str,
@@ -34,13 +34,15 @@ pub(super) fn present(text: String) -> Option<String> {
     (!text.trim().is_empty()).then_some(text)
 }
 
-pub(super) const WEBHOOK: TextField = filled_text(
-    config_keys::WEBHOOK_NAME,
-    "Webhook",
-    TextEditor::Line {
-        placeholder: "alerts",
+pub(super) const WEBHOOK: PickedTextField = PickedTextField {
+    key: config_keys::WEBHOOK_NAME,
+    label: "Webhook",
+    picker: TextPicker::Options {
+        options_key: picker_keys::WEBHOOK_NAMES,
     },
-);
+    default: "",
+    required: true,
+};
 
 pub(super) const MESSAGE_ID: TextField = filled_text(
     config_keys::MESSAGE_ID,

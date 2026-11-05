@@ -21,8 +21,8 @@ pub(crate) use speak_with_engine::SpeakWithEngineRunner;
 use std::sync::Arc;
 
 use forge_registry::{
-    ConfigProblem, ConfigSpec, DependentSelectField, DynamicSelectField, RegistryError,
-    SubActionRegistry, TextEditor, TextField, ToggleField, TypedField,
+    ConfigProblem, ConfigSpec, DependentSelectField, DynamicSelectField, PickedTextField,
+    RegistryError, SubActionRegistry, TextEditor, TextField, TextPicker, ToggleField, TypedField,
 };
 use forge_types::{ArgStack, SubActionConfig};
 
@@ -32,13 +32,14 @@ use crate::speech::speak_dispatcher::SpeechPorts;
 const ENGINE_ID_KEY: &str = "engine_id";
 pub const ENGINE_OPTIONS_KEY: &str = "tts.engine_ids";
 pub const VOICE_OPTIONS_PREFIX: &str = "tts.voices";
+pub const ALIAS_OPTIONS_KEY: &str = "tts.alias_keys";
 pub const SPEECH_TEXT_KEY: &str = "text";
 
-const ALIAS_NAME: TextField = TextField {
+const ALIAS_NAME: PickedTextField = PickedTextField {
     key: "alias_name",
     label: "Alias name",
-    editor: TextEditor::Line {
-        placeholder: "e.g. %user% or viewer id",
+    picker: TextPicker::Options {
+        options_key: ALIAS_OPTIONS_KEY,
     },
     default: "",
     required: true,

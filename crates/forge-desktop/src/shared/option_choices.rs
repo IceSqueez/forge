@@ -8,7 +8,10 @@ use forge_platform_core::{
     CollectionRevisions, OptionListId, RevisionWait,
 };
 use forge_registry::{FormField, ReferenceNamespace, ReferenceScope};
-use forge_runtime::{DONATION_PROVIDER_OPTIONS_KEY, ENGINE_OPTIONS_KEY, VOICE_OPTIONS_PREFIX};
+use forge_runtime::{
+    ALIAS_OPTIONS_KEY, CHAT_TARGET_OPTIONS_KEY, DONATION_PROVIDER_OPTIONS_KEY, ENGINE_OPTIONS_KEY,
+    VOICE_OPTIONS_PREFIX,
+};
 use forge_speech_types::ENGINE_VOICE_OPTIONS_KEY;
 use forge_types::IntegrationId;
 use futures_util::future::{self, Either, join, join_all};
@@ -18,11 +21,13 @@ use gpui::{Context, Task};
 const COLLECTION_KEY_PREFIX: &str = "collections";
 const MANAGEABLE_SUFFIX: &str = "manageable";
 
-const APP_FILLED_OPTION_KEYS: [&str; 4] = [
+const APP_FILLED_OPTION_KEYS: [&str; 6] = [
     ENGINE_OPTIONS_KEY,
     VOICE_OPTIONS_PREFIX,
     ENGINE_VOICE_OPTIONS_KEY,
     DONATION_PROVIDER_OPTIONS_KEY,
+    ALIAS_OPTIONS_KEY,
+    CHAT_TARGET_OPTIONS_KEY,
 ];
 
 #[derive(Debug, Clone, PartialEq, Eq)]

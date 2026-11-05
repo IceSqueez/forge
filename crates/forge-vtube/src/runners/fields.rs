@@ -1,10 +1,11 @@
 use forge_registry::{
     ConfigProblem, ConfigReason, IntegerEditor, IntegerField, NumberField, OptionalField,
-    StoredNumber, SubActionConfig, TextEditor, TextField, TypedField, ValueBounds,
+    PickedTextField, StoredNumber, SubActionConfig, TextEditor, TextField, TextPicker, TypedField,
+    ValueBounds,
 };
 use forge_types::ArgStack;
 
-use crate::vocabulary::config_keys;
+use crate::vocabulary::{config_keys, option_lists};
 
 pub(crate) const IMMEDIATE_SECONDS: f64 = 0.0;
 
@@ -75,24 +76,24 @@ pub(crate) const ITEM_INSTANCE_ID: TextField = TextField {
     required: true,
 };
 
-pub(crate) const ITEM_FILE_NAME: TextField = TextField {
+pub(crate) const ITEM_FILE_NAME: PickedTextField = PickedTextField {
     key: config_keys::FILE_NAME,
     label: "Item File Name",
-    editor: TextEditor::Line {
-        placeholder: "my_item.png",
+    picker: TextPicker::Options {
+        options_key: option_lists::ITEM_FILE_LIST,
     },
     default: "",
     required: true,
 };
 
 pub(crate) fn read_non_empty(
-    field: &TextField,
+    field: &impl TypedField<Value = String>,
     config: &SubActionConfig,
     args: &ArgStack,
 ) -> Result<String, ConfigProblem> {
     let value = field.read(config, args)?;
     if value.is_empty() {
-        Err(ConfigProblem::field(field.key, ConfigReason::Required))
+        Err(ConfigProblem::field(field.key(), ConfigReason::Required))
     } else {
         Ok(value)
     }

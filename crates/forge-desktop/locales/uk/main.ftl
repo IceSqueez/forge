@@ -2263,7 +2263,7 @@ kick_description = Чат, підписки, хости - гібрид: офіц
 
 ## Живий чат - заголовок / фільтри
 
-chat_badge_owner = OWNER
+chat_badge_broadcaster = BROADCASTER
 chat_badge_mod = MOD
 chat_badge_vip = VIP
 chat_badge_sub = SUB

@@ -2214,7 +2214,7 @@ kick_description = Chat, subs, hosts - hybrid: official OAuth API for send, comm
 
 ## Live Chat - page header / filters
 
-chat_badge_owner = OWNER
+chat_badge_broadcaster = BROADCASTER
 chat_badge_mod = MOD
 chat_badge_vip = VIP
 chat_badge_sub = SUB

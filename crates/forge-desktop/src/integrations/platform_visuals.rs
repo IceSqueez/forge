@@ -80,7 +80,7 @@ pub(crate) fn badge_color(kind: BadgeKind, palette: &ForgePalette) -> Rgba {
 
 pub(crate) fn badge_label(kind: BadgeKind) -> String {
     match kind {
-        BadgeKind::Broadcaster => tr!("chat_badge_owner"),
+        BadgeKind::Broadcaster => tr!("chat_badge_broadcaster"),
         BadgeKind::Moderator => tr!("chat_badge_mod"),
         BadgeKind::Vip => tr!("chat_badge_vip"),
         BadgeKind::Subscriber => tr!("chat_badge_sub"),

@@ -453,6 +453,8 @@ mod tests {
             ENGINE_VOICE_OPTIONS_KEY,
             VOICE_OPTIONS_PREFIX,
             DONATION_PROVIDER_OPTIONS_KEY,
+            ALIAS_OPTIONS_KEY,
+            CHAT_TARGET_OPTIONS_KEY,
         ]
         .into_iter()
         .map(select)

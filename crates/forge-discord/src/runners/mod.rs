@@ -637,4 +637,113 @@ mod tests {
         }
         assert_eq!(counting.calls(), 0);
     }
+
+    #[derive(Default)]
+    struct WebhookRecordingSink {
+        webhooks: std::sync::Mutex<Vec<String>>,
+    }
+
+    impl WebhookRecordingSink {
+        fn record(&self, webhook: &str) {
+            self.webhooks.lock().unwrap().push(webhook.to_owned());
+        }
+
+        fn webhooks(&self) -> Vec<String> {
+            self.webhooks.lock().unwrap().clone()
+        }
+    }
+
+    #[async_trait]
+    impl DiscordSink for WebhookRecordingSink {
+        async fn post_text(
+            &self,
+            webhook: &str,
+            _: &str,
+            _: MentionPolicy,
+        ) -> Result<String, DiscordError> {
+            self.record(webhook);
+            Ok(String::new())
+        }
+        async fn post_embed(&self, webhook: &str, _: DiscordEmbed) -> Result<String, DiscordError> {
+            self.record(webhook);
+            Ok(String::new())
+        }
+        async fn edit_message(
+            &self,
+            webhook: &str,
+            _: &str,
+            _: Option<&str>,
+            _: Option<DiscordEmbed>,
+            _: MentionPolicy,
+        ) -> Result<(), DiscordError> {
+            self.record(webhook);
+            Ok(())
+        }
+        async fn send_file(
+            &self,
+            webhook: &str,
+            _: Option<&str>,
+            _: &str,
+            _: &[u8],
+            _: MentionPolicy,
+        ) -> Result<String, DiscordError> {
+            self.record(webhook);
+            Ok(String::new())
+        }
+        async fn delete_message(&self, webhook: &str, _: &str) -> Result<(), DiscordError> {
+            self.record(webhook);
+            Ok(())
+        }
+    }
+
+    #[tokio::test]
+    async fn every_step_posts_to_the_picked_or_variable_webhook_name() {
+        use forge_registry::RunContext;
+        use forge_types::EventId;
+
+        let dir = tempfile::tempdir().unwrap();
+        let file = dir.path().join("clip.txt");
+        std::fs::write(&file, b"data").unwrap();
+        let file_path = file.to_str().unwrap();
+        let content = [
+            ("discord.webhook.send_message", vec![("content", "hi")]),
+            ("discord.webhook.send_embed", vec![("embed_title", "Live")]),
+            (
+                "discord.webhook.update_message",
+                vec![("message_id", "42"), ("content", "hi")],
+            ),
+            ("discord.webhook.send_file", vec![("file_path", file_path)]),
+            ("discord.webhook.delete_message", vec![("message_id", "42")]),
+        ];
+        let stack = ArgStack::new().set("hook".to_owned(), text("Stream Alerts"));
+        let publisher = NullPublisher;
+
+        for (stored, posted) in [
+            ("Stream Alerts", "Stream Alerts"),
+            ("%hook%", "Stream Alerts"),
+        ] {
+            for (id, entries) in &content {
+                let recording = Arc::new(WebhookRecordingSink::default());
+                let sink: Arc<dyn DiscordSink> = recording.clone();
+                let runners = all_runners(&sink);
+                let runner = runners.iter().find(|runner| runner.id() == *id).unwrap();
+                let mut config = config_of(entries);
+                config.insert("webhook_name".to_owned(), text(stored));
+                let ctx = RunContext::leaf(&stack, 0, EventId::new(), &publisher);
+
+                let (telemetry, _) = runner.execute(&config, &ctx).await;
+
+                assert_eq!(
+                    telemetry.outcome,
+                    forge_types::SubActionOutcome::Success,
+                    "{id} {stored}"
+                );
+                assert_eq!(
+                    recording.webhooks(),
+                    vec![posted.to_owned()],
+                    "{id} {stored}"
+                );
+            }
+        }
+    }
 }

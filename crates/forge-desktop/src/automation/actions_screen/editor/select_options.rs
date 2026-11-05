@@ -399,6 +399,45 @@ mod tests {
         );
     }
 
+    #[test]
+    fn every_chat_target_choice_names_a_target_the_send_step_accepts() {
+        let mut broadcast = 0;
+        let mut platforms = Vec::new();
+        for choice in chat_target_choices() {
+            match forge_types::resolve_chat_target(&choice.value) {
+                Ok(None) => broadcast += 1,
+                Ok(Some(platform)) => platforms.push(platform),
+                Err(_) => panic!("{:?} is refused by the send step", choice.value),
+            }
+        }
+
+        assert_eq!(broadcast, 1);
+        assert_eq!(platforms, PlatformId::ALL.to_vec());
+    }
+
+    fn alias(key: &str, viewer_name: &str) -> VoiceAlias {
+        VoiceAlias {
+            id: forge_speech_types::AliasId::generate(),
+            alias_key: key.to_owned(),
+            viewer_name: viewer_name.to_owned(),
+            engine_id: forge_speech_types::EngineId("piper".to_owned()),
+            voice_id: forge_speech_types::VoiceId("amy".to_owned()),
+            pitch_semitones: None,
+            rate_multiplier: None,
+            state: forge_speech_types::AliasState::Active,
+        }
+    }
+
+    #[test]
+    fn an_alias_choice_stores_the_alias_key_and_shows_the_viewer_or_the_key_when_unnamed() {
+        let aliases = [alias("youtube:UCx9", "Alice"), alias("twitch:bob", " ")];
+
+        assert_eq!(
+            alias_choices(&aliases).collect::<Vec<_>>(),
+            options(&[("youtube:UCx9", "Alice"), ("twitch:bob", "twitch:bob")])
+        );
+    }
+
     fn stored_clip(name: &str, file_path: std::path::PathBuf) -> StoredClip {
         StoredClip {
             id: ClipId::new(),

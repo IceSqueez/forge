@@ -185,4 +185,25 @@ mod tests {
             );
         }
     }
+
+    #[tokio::test]
+    async fn the_step_sets_the_picked_or_variable_global_name() {
+        for (stored, set) in [("counter", "counter"), ("%which%", "stream_counter")] {
+            let globals = Arc::new(MapGlobals::default());
+            let config = SubActionConfig::from([
+                ("name".to_owned(), Variant::String(stored.to_owned())),
+                ("value".to_owned(), Variant::String("42".to_owned())),
+            ]);
+            let runner = CoreGlobalsSetRunner::new(Arc::clone(&globals) as Arc<dyn GlobalsRepo>);
+            let stack = ArgStack::new().set(
+                "which".to_owned(),
+                Variant::String("stream_counter".to_owned()),
+            );
+            let ctx = RunContext::leaf(&stack, 0, EventId::new(), &NullPublisher);
+
+            runner.execute(&config, &ctx).await;
+
+            assert_eq!(globals.snapshot(set), Some(Variant::Int(42)), "{stored}");
+        }
+    }
 }

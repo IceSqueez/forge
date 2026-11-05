@@ -5,9 +5,8 @@ use async_trait::async_trait;
 use forge_events::EventSource;
 use forge_registry::GLOBAL_OPTIONS_KEY;
 use forge_registry::{
-    ConfigProblem, ConfigSpec, PickedTextField, ReferenceField, RunContext, StepCatalogEntry,
-    StepTimer, SubActionCategory, SubActionRunner, TextEditor, TextField, TextPicker, ToggleField,
-    TypedField,
+    ConfigProblem, ConfigSpec, PickedTextField, RunContext, StepCatalogEntry, StepTimer,
+    SubActionCategory, SubActionRunner, TextEditor, TextField, TextPicker, ToggleField, TypedField,
 };
 use forge_storage::GlobalsRepo;
 use forge_types::{
@@ -100,13 +99,6 @@ impl SubActionRunner for CoreGlobalsSetRunner {
 
     fn config_spec(&self) -> Option<ConfigSpec> {
         Some(CONFIG)
-    }
-
-    fn declared_references(&self) -> Vec<ReferenceField> {
-        vec![ReferenceField {
-            key: NAME_KEY,
-            options_key: GLOBAL_OPTIONS_KEY,
-        }]
     }
 
     async fn execute(

@@ -753,4 +753,190 @@ mod tests {
         let after = listing.view.read_with(cx, |view, _| content_fields(view));
         assert_eq!((before > 0, after), (true, before));
     }
+
+    struct GatedActions {
+        listed: std::sync::Mutex<Vec<Action>>,
+        gate: std::sync::Mutex<Option<tokio::sync::oneshot::Receiver<()>>>,
+    }
+
+    impl GatedActions {
+        fn listing(name: &str) -> Self {
+            Self {
+                listed: std::sync::Mutex::new(vec![crate::test_support::action_running(
+                    name,
+                    Vec::new(),
+                )]),
+                gate: std::sync::Mutex::new(None),
+            }
+        }
+
+        fn hold_next_list_then_fail(&self) -> tokio::sync::oneshot::Sender<()> {
+            let (release, held) = tokio::sync::oneshot::channel();
+            *self.gate.lock().unwrap() = Some(held);
+            release
+        }
+
+        fn list_is_held(&self) -> bool {
+            self.gate.lock().unwrap().is_none()
+        }
+
+        fn relist(&self, name: &str) {
+            *self.listed.lock().unwrap() =
+                vec![crate::test_support::action_running(name, Vec::new())];
+        }
+    }
+
+    #[async_trait::async_trait]
+    impl forge_storage::ActionRepo for GatedActions {
+        async fn list(&self) -> Result<Vec<Action>, forge_storage::StorageError> {
+            let held = self.gate.lock().unwrap().take();
+            if let Some(held) = held {
+                held.await.ok();
+                return Err(forge_storage::StorageError::Connection {
+                    reason: "database is locked".to_owned(),
+                });
+            }
+            Ok(self.listed.lock().unwrap().clone())
+        }
+
+        async fn count(&self) -> Result<usize, forge_storage::StorageError> {
+            StubActions.count().await
+        }
+
+        async fn get(&self, id: ActionId) -> Result<Option<Action>, forge_storage::StorageError> {
+            StubActions.get(id).await
+        }
+
+        async fn ids_named(
+            &self,
+            name: &str,
+        ) -> Result<Vec<ActionId>, forge_storage::StorageError> {
+            StubActions.ids_named(name).await
+        }
+
+        async fn save(&self, action: &Action) -> Result<(), forge_storage::StorageError> {
+            StubActions.save(action).await
+        }
+
+        async fn delete(&self, id: ActionId) -> Result<bool, forge_storage::StorageError> {
+            StubActions.delete(id).await
+        }
+
+        async fn telemetry(
+            &self,
+            id: ActionId,
+        ) -> Result<forge_storage::ActionTelemetry, forge_storage::StorageError> {
+            StubActions.telemetry(id).await
+        }
+
+        async fn record_execution(
+            &self,
+            action_id: ActionId,
+            started_at: OffsetDateTime,
+            duration_ms: u64,
+            status: forge_storage::ExecutionStatus,
+        ) -> Result<(), forge_storage::StorageError> {
+            StubActions
+                .record_execution(action_id, started_at, duration_ms, status)
+                .await
+        }
+
+        async fn record_executions(
+            &self,
+            executions: &[forge_storage::ActionExecution],
+        ) -> Result<(), forge_storage::StorageError> {
+            StubActions.record_executions(executions).await
+        }
+
+        async fn prune_executions_before(
+            &self,
+            cutoff: OffsetDateTime,
+            chunk_rows: u32,
+        ) -> Result<u64, forge_storage::StorageError> {
+            StubActions
+                .prune_executions_before(cutoff, chunk_rows)
+                .await
+        }
+
+        async fn set_enabled(
+            &self,
+            id: ActionId,
+            enabled: bool,
+        ) -> Result<bool, forge_storage::StorageError> {
+            StubActions.set_enabled(id, enabled).await
+        }
+
+        async fn toggle_enabled(
+            &self,
+            id: ActionId,
+        ) -> Result<Option<bool>, forge_storage::StorageError> {
+            StubActions.toggle_enabled(id).await
+        }
+
+        async fn duplicate(
+            &self,
+            source_id: ActionId,
+            new_id: ActionId,
+            new_name: &str,
+        ) -> Result<(), forge_storage::StorageError> {
+            StubActions.duplicate(source_id, new_id, new_name).await
+        }
+
+        async fn archive_reporting_cancelled_runs(
+            &self,
+            id: ActionId,
+        ) -> Result<Option<u64>, forge_storage::StorageError> {
+            StubActions.archive_reporting_cancelled_runs(id).await
+        }
+
+        async fn restore(&self, id: ActionId) -> Result<bool, forge_storage::StorageError> {
+            StubActions.restore(id).await
+        }
+
+        async fn list_archived(&self) -> Result<Vec<Action>, forge_storage::StorageError> {
+            StubActions.list_archived().await
+        }
+    }
+
+    #[gpui::test]
+    fn a_stale_picker_fetch_finishing_after_a_newer_one_changes_nothing(
+        cx: &mut gpui::TestAppContext,
+    ) {
+        crate::app::i18n::install_language(forge_storage::Language::En);
+        cx.update(|cx| cx.set_global(forge_components::Toasts::new()));
+        let rt = runtime();
+        let repo = Arc::new(GatedActions::listing("Alpha"));
+        let host = view_with(
+            cx,
+            &rt,
+            Vec::new(),
+            MockMediaRepo::new(),
+            SubActionRegistry::new(),
+            Arc::clone(&repo) as Arc<dyn forge_storage::ActionRepo>,
+        );
+        let view = screen_parts(cx, &host).0;
+        settle_runtime_work(cx, &rt);
+        let release_stale = repo.hold_next_list_then_fail();
+        view.update(cx, |view, cx| view.fetch_select_options(cx));
+        settle_runtime_work(cx, &rt);
+        assert!(repo.list_is_held());
+        repo.relist("Beta");
+        view.update(cx, |view, cx| view.fetch_select_options(cx));
+        settle_runtime_work(cx, &rt);
+        release_stale.send(()).unwrap();
+        settle_runtime_work(cx, &rt);
+
+        let applied = view.read_with(cx, |view, _| {
+            let labels: Option<Vec<String>> = view
+                .choices
+                .select_options
+                .get(ACTION_OPTIONS_KEY)
+                .map(|listed| listed.iter().map(|option| option.label.clone()).collect());
+            (labels, view.choices.select_options_failed)
+        });
+        assert_eq!(
+            (applied, cx.update(|cx| error_toasts(cx))),
+            ((Some(vec!["Beta".to_owned()]), false), 0)
+        );
+    }
 }

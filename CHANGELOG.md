@@ -1,6 +1,25 @@
 # Changelog
 All notable changes to this project will be documented in this file.
 
+## [0.7.3] - 2026-11-05
+### 🐛 Bug Fixes
+- *(actions)* Substitute variables inside JSON settings before parsing them (closes #140)
+- *(actions)* Keep a variable after a pending JSON escape unresolved so values cannot break out of strings
+- *(overlays)* Show content delivered while the page is hidden as soon as it becomes visible (closes #141)
+- *(overlays)* Hide an overdue show at once when its page becomes visible
+- *(tts)* Keep the viewer name typed in the set voice alias step
+
+### 🚀 Features
+- *(actions)* Pick webhooks and other known resources from lists in steps (closes #142)
+
+### 🧪 Testing
+- *(actions)* Cover JSON-aware variable substitution in settings fields
+- *(overlays)* Compose probe pages from each kind's page assets
+- *(overlays)* Cover content delivered while the page is unseen
+- *(overlays)* Time an overdue hide from before the page becomes visible
+- *(actions)* Cover step pickers for webhooks, chat targets, aliases and globals
+- *(tts)* Keep a typed viewer name in set alias and the alias picker in switch
+
 ## [0.7.2] - 2026-11-04
 ### ⚙️ Miscellaneous Tasks
 - *(deps)* Bump taiki-e/install-action from 2.87.31 to 2.88.1 (#123)
@@ -33,6 +52,7 @@ All notable changes to this project will be documented in this file.
 
 ### 📚 Documentation
 - *(contributing)* Make issue templates plain for users (closes #115)
+- *(release)* Release v0.7.2
 
 ### 🚀 Features
 - *(tts)* Group voices by language and add filters (closes #113)

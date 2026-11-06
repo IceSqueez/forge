@@ -16,13 +16,13 @@ use tokio_stream::wrappers::BroadcastStream;
 use tokio_util::sync::CancellationToken;
 
 use crate::account::credentials_manager::YouTubeCredentialsManager;
-use crate::api::quota_state::{QUOTA_DAILY_LIMIT, SharedQuota, today_pacific, until_next_reset};
+use crate::api::quota_state::{
+    QUOTA_DAILY_LIMIT, QUOTA_RESET_WAKE_MARGIN, SharedQuota, today_pacific, until_next_reset,
+};
 use crate::broadcast::follow_lookup::YouTubeFollowLookup;
 use crate::broadcast::viewer_poll::{YouTubeViewerPoll, YouTubeViewerSource};
 use crate::chat::chat_platform::YouTubePlatform;
 use crate::vocabulary::messages;
-
-const QUOTA_RESET_WAKE_MARGIN: Duration = Duration::from_secs(5);
 
 const LIVE_CHAT_METRIC: HealthMetricId = HealthMetricId::new(messages::HEALTH_LIVE_CHAT);
 const EVENTS_METRIC: HealthMetricId = HealthMetricId::new(messages::HEALTH_EVENTS);

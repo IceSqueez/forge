@@ -170,7 +170,7 @@ impl ChatPlatform for YouTubePlatform {
         let poller_cancel = cancel.clone();
         let poller_cancelled = cancel.clone();
         tokio::spawn(async move {
-            if let Err(err) = poller.run(poller_cancel).await {
+            if let Err(err) = poller.run_supervised(poller_cancel).await {
                 tracing::warn!(
                     error = %crate::api::error_shape::redact_platform_error(&err),
                     "youtube chat poller exited"

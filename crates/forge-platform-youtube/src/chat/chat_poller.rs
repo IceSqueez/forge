@@ -23,6 +23,7 @@ use crate::broadcast::broadcast_lookup::{LookupFailure, fetch_active_broadcast};
 use crate::broadcast::live_chat_id::LiveChatIdHandle;
 use crate::chat::avatar_book::AvatarBook;
 use crate::chat::ban_ledger::{USER_BANNED_EVENT_TYPE, observed_ban};
+use crate::chat::receive_supervisor::{LiveTransports, ReceiveSupervisor, ReceiveTimings};
 use crate::vocabulary::event_kinds;
 use crate::vocabulary::fields::{
     ban as ban_fields, chat as chat_fields, chat_mod as chat_mod_fields, entity,
@@ -32,11 +33,12 @@ use crate::vocabulary::fields::{
 
 mod events;
 mod fetch;
+mod receive;
 mod stream_transcode;
 mod wire;
 
-use self::fetch::*;
-pub(crate) use self::fetch::{ChatMessagesResponse, page_from_body};
+pub(crate) use self::fetch::{ChatMessagesResponse, FetchFailure, fetch_chat_page, page_from_body};
+pub(crate) use self::receive::{ChatSession, PageEffect, PollingReceive, Receive, ReceiveExit};
 pub(crate) use self::stream_transcode::transcode_response;
 use self::wire::*;
 
@@ -153,6 +155,25 @@ impl YouTubeChatPoller {
     }
 
     pub(crate) async fn run(self, cancel: CancellationToken) -> Result<(), PlatformError> {
+        self.run_with(cancel, PollingReceive).await
+    }
+
+    pub(crate) async fn run_supervised(
+        self,
+        cancel: CancellationToken,
+    ) -> Result<(), PlatformError> {
+        let supervisor = ReceiveSupervisor::new(
+            LiveTransports::new(self.api.clone(), self.access_token_source.clone()),
+            ReceiveTimings::DEFAULT,
+        );
+        self.run_with(cancel, supervisor).await
+    }
+
+    pub(crate) async fn run_with(
+        self,
+        cancel: CancellationToken,
+        mut receive: impl Receive,
+    ) -> Result<(), PlatformError> {
         let mut dedup = DedupSet::bounded(DEDUP_WINDOW_SIZE);
         let mut last_seen_title: Option<String> = None;
         let mut last_broadcast_id: Option<String> = None;
@@ -284,126 +305,26 @@ impl YouTubeChatPoller {
                 &cancel,
             );
 
-            let mut next_page_token: Option<String> = None;
             let broadcast_resolved_at = tokio::time::Instant::now();
 
-            let mut broadcast_ended = false;
-            'inner: loop {
-                if cancel.is_cancelled() {
-                    return Ok(());
-                }
-
-                if broadcast_resolved_at.elapsed() >= self.timings.broadcast_cadence {
-                    break 'inner;
-                }
-
-                let fetched_token = tokio::select! {
-                    biased;
-                    () = cancel.cancelled() => return Ok(()),
-                    fetched = (self.access_token_source)() => fetched,
-                };
-                let token = match fetched_token {
-                    Ok(t) => t,
-                    Err(e) => {
-                        health.failed();
-                        tracing::warn!(
-                            "access token fetch failed during chat poll: {}",
-                            crate::api::error_shape::redact_platform_error(&e)
-                        );
-                        tokio::select! {
-                            () = tokio::time::sleep(self.poll_floor().await) => {}
-                            () = cancel.cancelled() => return Ok(()),
-                        }
-                        continue 'inner;
-                    }
-                };
-
-                let fetched = self
-                    .fetch_chat_messages(&token, &live_chat_id, next_page_token.as_deref(), &cancel)
-                    .await;
-                let floor = self.poll_floor().await;
-                let response = match fetched {
-                    Ok(r) => {
-                        health.succeeded();
-                        r
-                    }
-                    Err(FetchFailure::Cancelled) => return Ok(()),
-                    Err(FetchFailure::ChatEnded) => {
-                        health.succeeded();
-                        broadcast_ended = true;
-                        break 'inner;
-                    }
-                    Err(FetchFailure::QuotaExhausted) => {
-                        tracing::warn!(
-                            "quota exhausted before chat poll: {}",
-                            PlatformError::QuotaExhausted
-                        );
-                        tokio::select! {
-                            () = tokio::time::sleep(self.timings.broadcast_cadence) => {}
-                            () = cancel.cancelled() => return Ok(()),
-                        }
-                        break 'inner;
-                    }
-                    Err(FetchFailure::Failed(e)) => {
-                        health.failed();
-                        tracing::warn!(
-                            "chat messages fetch failed: {}",
-                            crate::api::error_shape::redact_platform_error(&e)
-                        );
-                        tokio::select! {
-                            () = tokio::time::sleep(floor) => {}
-                            () = cancel.cancelled() => return Ok(()),
-                        }
-                        continue 'inner;
-                    }
-                };
-
-                let mut chat_ended = false;
-                for item in &response.items {
-                    if item_type(item) == CHAT_ENDED_EVENT_TYPE {
-                        chat_ended = true;
-                        if let Some(event) = self.chat_ended_event(item, &broadcast_id, &mut dedup)
-                        {
-                            is_live = false;
-                            if self.bus_sender.send(event).is_err() {
-                                return Ok(());
-                            }
-                        }
-                        continue;
-                    }
-                    if let Some(avatars) = &self.avatars {
-                        avatars.record(item);
-                    }
-                    if let Some(event) = self.build_event(item, &mut dedup) {
-                        if item_type(item) == USER_BANNED_EVENT_TYPE {
-                            self.record_observed_ban(item).await;
-                        }
-                        if self.bus_sender.send(event).is_err() {
-                            return Ok(());
-                        }
-                    }
-                }
-
-                if chat_ended {
-                    broadcast_ended = true;
-                    break 'inner;
-                }
-
-                next_page_token = response.next_page_token;
-
-                let computed_sleep = sleep_duration(
-                    response.polling_interval_millis,
-                    u64::try_from(floor.as_millis()).unwrap_or(u64::MAX),
-                );
-
-                tokio::select! {
-                    () = tokio::time::sleep(computed_sleep) => {}
-                    () = cancel.cancelled() => return Ok(()),
-                }
-            }
-
-            if broadcast_ended {
-                self.publish_ids(None, None, &cancel);
+            let exit = receive
+                .receive(
+                    &self,
+                    ChatSession {
+                        live_chat_id: &live_chat_id,
+                        broadcast_id: &broadcast_id,
+                        resolved_at: broadcast_resolved_at,
+                        dedup: &mut dedup,
+                        health: &mut health,
+                        is_live: &mut is_live,
+                        cancel: &cancel,
+                    },
+                )
+                .await;
+            match exit {
+                ReceiveExit::Stop => return Ok(()),
+                ReceiveExit::BroadcastEnded => self.publish_ids(None, None, &cancel),
+                ReceiveExit::Resolve => {}
             }
 
             tokio::select! {

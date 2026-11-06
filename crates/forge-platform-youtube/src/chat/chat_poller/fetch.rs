@@ -1,6 +1,6 @@
 use super::*;
 
-pub(super) enum FetchFailure {
+pub(crate) enum FetchFailure {
     Cancelled,
     QuotaExhausted,
     ChatEnded,
@@ -78,31 +78,41 @@ impl YouTubeChatPoller {
         page_token: Option<&str>,
         cancel: &CancellationToken,
     ) -> Result<ChatMessagesResponse, FetchFailure> {
-        let mut request = GatewayRequest::get(MESSAGES_PATH)
-            .label(MESSAGES_PATH)
-            .bearer(Secret::new(token))
-            .query("liveChatId", live_chat_id)
-            .query("part", "snippet,authorDetails")
-            .query("maxResults", CHAT_MESSAGES_PAGE_SIZE)
-            .expect_refusal(ExpectedRefusal::status_with_excerpt(
-                LIVE_CHAT_ENDED_STATUS,
-                LIVE_CHAT_ENDED_REASON,
-            ))
-            .cancel_on(cancel.clone());
-        if let Some(pt) = page_token {
-            request = request.query("pageToken", pt);
-        }
-
-        let body: serde_json::Value = match self.api.send(CHAT_POLL_COST, request).await {
-            Ok(response) => response
-                .json()
-                .map_err(|e| FetchFailure::Failed(malformed(e)))?,
-            Err(error) if error.forbidden_with_reason(LIVE_CHAT_ENDED_REASON) => {
-                return Err(FetchFailure::ChatEnded);
-            }
-            Err(error) => return Err(error.into()),
-        };
-
-        Ok(page_from_body(&body))
+        fetch_chat_page(&self.api, token, live_chat_id, page_token, cancel).await
     }
+}
+
+pub(crate) async fn fetch_chat_page(
+    api: &YouTubeDataApi,
+    token: &str,
+    live_chat_id: &str,
+    page_token: Option<&str>,
+    cancel: &CancellationToken,
+) -> Result<ChatMessagesResponse, FetchFailure> {
+    let mut request = GatewayRequest::get(MESSAGES_PATH)
+        .label(MESSAGES_PATH)
+        .bearer(Secret::new(token))
+        .query("liveChatId", live_chat_id)
+        .query("part", "snippet,authorDetails")
+        .query("maxResults", CHAT_MESSAGES_PAGE_SIZE)
+        .expect_refusal(ExpectedRefusal::status_with_excerpt(
+            LIVE_CHAT_ENDED_STATUS,
+            LIVE_CHAT_ENDED_REASON,
+        ))
+        .cancel_on(cancel.clone());
+    if let Some(pt) = page_token {
+        request = request.query("pageToken", pt);
+    }
+
+    let body: serde_json::Value = match api.send(CHAT_POLL_COST, request).await {
+        Ok(response) => response
+            .json()
+            .map_err(|e| FetchFailure::Failed(malformed(e)))?,
+        Err(error) if error.forbidden_with_reason(LIVE_CHAT_ENDED_REASON) => {
+            return Err(FetchFailure::ChatEnded);
+        }
+        Err(error) => return Err(error.into()),
+    };
+
+    Ok(page_from_body(&body))
 }

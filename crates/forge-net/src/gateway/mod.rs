@@ -2,6 +2,7 @@ mod call_class;
 mod classify;
 mod expected_refusal;
 mod failure;
+mod grpc;
 mod observer;
 mod profile;
 mod request;
@@ -30,6 +31,7 @@ pub use expected_refusal::ExpectedRefusal;
 pub use failure::{
     BodyExcerpt, GatewayFailure, InvalidRequest, RedirectRefusal, TransportFailure, TransportKind,
 };
+pub use grpc::{GrpcItem, GrpcRequest, GrpcStatus, GrpcStream};
 pub use observer::{FailureContext, FailureObserver};
 pub use profile::{EgressKind, GatewayProfile};
 pub use request::{
@@ -67,6 +69,7 @@ pub struct Gateway {
 struct Inner {
     client: reqwest::Client,
     streaming_client: Mutex<Option<reqwest::Client>>,
+    grpc_client: Mutex<Option<reqwest::Client>>,
     base: Option<Url>,
     limiter: Arc<dyn RateLimiter>,
     profile: GatewayProfile,
@@ -109,12 +112,17 @@ impl Gateway {
         profile: GatewayProfile,
         observer: Option<Arc<dyn FailureObserver>>,
     ) -> Result<Self, GatewayBuildError> {
-        let client = build_client(&profile, profile.default_class.connect_budget())
-            .map_err(|failure| GatewayBuildError::ClientUnavailable(failure.cause().to_owned()))?;
+        let client = build_client(
+            &profile,
+            profile.default_class.connect_budget(),
+            WireProtocol::Http1,
+        )
+        .map_err(|failure| GatewayBuildError::ClientUnavailable(failure.cause().to_owned()))?;
         Ok(Self {
             inner: Arc::new(Inner {
                 client,
                 streaming_client: Mutex::new(None),
+                grpc_client: Mutex::new(None),
                 base,
                 limiter,
                 profile,
@@ -345,13 +353,26 @@ impl Gateway {
     }
 
     fn streaming_client(&self) -> Result<reqwest::Client, GatewayFailure> {
-        let mut slot = self.inner.streaming_client.lock_recover();
+        self.lazy_client(&self.inner.streaming_client, WireProtocol::Http1)
+    }
+
+    fn grpc_client(&self) -> Result<reqwest::Client, GatewayFailure> {
+        self.lazy_client(&self.inner.grpc_client, WireProtocol::Http2PriorKnowledge)
+    }
+
+    fn lazy_client(
+        &self,
+        slot: &Mutex<Option<reqwest::Client>>,
+        protocol: WireProtocol,
+    ) -> Result<reqwest::Client, GatewayFailure> {
+        let mut slot = slot.lock_recover();
         if let Some(client) = slot.as_ref() {
             return Ok(client.clone());
         }
         let client = build_client(
             &self.inner.profile,
             self.inner.profile.timings.streaming_connect,
+            protocol,
         )
         .map_err(GatewayFailure::Transport)?;
         *slot = Some(client.clone());
@@ -472,15 +493,25 @@ impl fmt::Debug for Gateway {
     }
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum WireProtocol {
+    Http1,
+    Http2PriorKnowledge,
+}
+
 fn build_client(
     profile: &GatewayProfile,
     connect_budget: Duration,
+    protocol: WireProtocol,
 ) -> Result<reqwest::Client, TransportFailure> {
-    let mut builder = reqwest::Client::builder()
+    let builder = reqwest::Client::builder()
         .redirect(reqwest::redirect::Policy::none())
         .user_agent(USER_AGENT)
-        .connect_timeout(connect_budget)
-        .http1_only();
+        .connect_timeout(connect_budget);
+    let mut builder = match protocol {
+        WireProtocol::Http1 => builder.http1_only(),
+        WireProtocol::Http2PriorKnowledge => builder.http2_prior_knowledge(),
+    };
     if profile.guards_addresses() {
         builder = builder
             .dns_resolver(Arc::new(PublicAddressResolver))

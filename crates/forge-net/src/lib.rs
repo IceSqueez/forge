@@ -28,9 +28,9 @@ pub use dedup::DedupSet;
 pub use gateway::{
     BodyExcerpt, CallClass, Credential, DecodeCategory, ExpectedRefusal, FailureContext,
     FailureObserver, FormBody, Gateway, GatewayBuildError, GatewayFailure, GatewayProfile,
-    GatewayRequest, GatewayResponse, GatewayTimings, InvalidRequest, Method, MultipartBody,
-    RedirectRefusal, RequestBody, RequestEncodeError, ResolvedTarget, ResponseDecodeError,
-    StreamFailure, StreamedResponse, TransportKind,
+    GatewayRequest, GatewayResponse, GatewayTimings, GrpcItem, GrpcRequest, GrpcStatus, GrpcStream,
+    InvalidRequest, Method, MultipartBody, RedirectRefusal, RequestBody, RequestEncodeError,
+    ResolvedTarget, ResponseDecodeError, StreamFailure, StreamedResponse, TransportKind,
 };
 pub use gateway::{EgressKind, TransportFailure};
 pub use header_lookup::HeaderLookup;

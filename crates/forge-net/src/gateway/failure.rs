@@ -29,6 +29,7 @@ pub enum TransportKind {
     Timeout,
     Connect,
     Redirect,
+    Protocol,
     Other,
 }
 
@@ -38,6 +39,7 @@ impl fmt::Display for TransportKind {
             Self::Timeout => "timed out",
             Self::Connect => "could not connect",
             Self::Redirect => "redirect refused",
+            Self::Protocol => "protocol violation",
             Self::Other => "transport error",
         })
     }
@@ -153,6 +155,8 @@ pub enum InvalidRequest {
     InvalidHeader,
     #[error("request content type is invalid")]
     InvalidContentType,
+    #[error("request message does not fit a length-prefixed frame")]
+    MessageTooLarge,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Error)]

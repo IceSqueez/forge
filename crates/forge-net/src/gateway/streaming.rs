@@ -14,7 +14,7 @@ use crate::header_lookup::HeaderLookup;
 pub(crate) const STREAMING_CONNECT_BUDGET: Duration = Duration::from_secs(10);
 pub(crate) const STREAMING_READ_IDLE_BUDGET: Duration = Duration::from_secs(30);
 
-const BODY_IDLE_ELAPSED: &str = "response body stalled past the read-idle time budget";
+pub(super) const BODY_IDLE_ELAPSED: &str = "response body stalled past the read-idle time budget";
 
 #[derive(Debug, Clone, PartialEq, Eq, Error)]
 pub enum StreamFailure<E> {

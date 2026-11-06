@@ -17,7 +17,10 @@ test-support = []
 async-trait = { workspace = true }
 bytes = { workspace = true }
 forge-types = { path = "../forge-types" }
+http = { workspace = true }
+http-body-util = { workspace = true }
 httpdate = { workspace = true }
+percent-encoding = { workspace = true }
 rand = { workspace = true }
 reqwest = { workspace = true, features = ["http2"] }
 tracing = { workspace = true }

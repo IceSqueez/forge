@@ -730,6 +730,16 @@ mod tests {
         )
     }
 
+    impl YouTubePlatform {
+        pub(crate) fn transport_mode_sink(&self) -> TransportModeSink {
+            TransportModeSink::new(self.transport_mode_tx.clone())
+        }
+
+        pub(crate) fn report_link_health(&self, health: PollLinkHealth) {
+            reporter_for(self, &CancellationToken::new())(health);
+        }
+    }
+
     async fn announcements(mut stream: EventSubscription) -> Vec<(String, Option<bool>)> {
         let mut seen = Vec::new();
         while let Ok(event) = stream.recv().await {

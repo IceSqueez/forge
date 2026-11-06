@@ -537,6 +537,7 @@ mod tests {
 
     use super::*;
     use crate::account::credentials::YouTubeCredentials;
+    use crate::api::poll_health::PollLinkHealth;
     use crate::broadcast::active_broadcast_id::ActiveBroadcastIdHandle;
     use crate::broadcast::live_chat_id::LiveChatIdHandle;
     use crate::broadcast::stream_metadata::YouTubeStreamMetadata;
@@ -1109,6 +1110,55 @@ mod tests {
                 ..
             }
         ));
+    }
+
+    async fn next_live_chat_value(health: &mut HealthStream) -> HealthValue {
+        tokio::time::timeout(Duration::from_secs(30), async {
+            loop {
+                let delta = health.next().await.unwrap();
+                if delta.metric == LIVE_CHAT_METRIC {
+                    return delta.new_value;
+                }
+            }
+        })
+        .await
+        .unwrap()
+    }
+
+    #[tokio::test]
+    async fn a_transport_mode_change_emits_the_live_chat_row_with_the_current_state() {
+        let (bundle, platform) = make_bundle(Arc::new(MemoryCredentials::default()));
+        let mut health = BuiltinHealth::stream(bundle.as_ref());
+        platform.report_link_health(PollLinkHealth::Lost);
+        next_live_chat_value(&mut health).await;
+
+        platform
+            .transport_mode_sink()
+            .publish(ChatTransportMode::Polling);
+
+        assert_eq!(
+            next_live_chat_value(&mut health).await,
+            chat_poller_health_value(ConnectionState::Reconnecting, ChatTransportMode::Polling)
+        );
+    }
+
+    #[tokio::test]
+    async fn the_live_chat_metric_shows_the_current_transport() {
+        let (bundle, platform) = make_bundle(Arc::new(MemoryCredentials::default()));
+
+        for mode in [ChatTransportMode::Polling, ChatTransportMode::Streaming] {
+            platform.transport_mode_sink().publish(mode);
+
+            let live_chat = BuiltinHealth::metrics(bundle.as_ref())
+                .into_iter()
+                .find(|metric| metric.id == LIVE_CHAT_METRIC)
+                .unwrap();
+            assert_eq!(
+                live_chat.value,
+                chat_poller_health_value(ConnectionState::Disconnected, mode),
+                "{mode:?}"
+            );
+        }
     }
 
     #[tokio::test]

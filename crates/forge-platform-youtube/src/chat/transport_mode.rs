@@ -22,3 +22,30 @@ impl TransportModeSink {
         });
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use ChatTransportMode::{Polling, Streaming};
+
+    #[test]
+    fn publishing_wakes_receivers_only_when_the_mode_changes() {
+        for (current, published, wakes) in [
+            (Streaming, Streaming, false),
+            (Polling, Polling, false),
+            (Streaming, Polling, true),
+            (Polling, Streaming, true),
+        ] {
+            let (tx, rx) = watch::channel(current);
+            let sink = TransportModeSink::new(tx);
+
+            sink.publish(published);
+
+            assert_eq!(
+                (rx.has_changed().unwrap(), *rx.borrow()),
+                (wakes, published),
+                "{current:?} -> {published:?}"
+            );
+        }
+    }
+}

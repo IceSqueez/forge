@@ -7,6 +7,7 @@ use forge_types::ChatPayload;
 use serde_json::{Value, json};
 use tokio::sync::Notify;
 use tokio::sync::mpsc::UnboundedReceiver;
+use tokio::sync::watch;
 
 use super::*;
 use crate::api::poll_health::{PollHealthTracker, PollLinkHealth};
@@ -65,6 +66,7 @@ struct Script {
     polls: VecDeque<Result<ChatMessagesResponse, StreamOutcome>>,
     refreshes: VecDeque<Result<(), PlatformError>>,
     calls: Vec<(Call, Instant)>,
+    modes: Vec<(Call, ChatTransportMode, bool)>,
 }
 
 #[derive(Clone)]
@@ -74,6 +76,7 @@ struct Scripted {
     until_reset: Duration,
     opened: Arc<Notify>,
     start: Instant,
+    mode_rx: Option<Arc<Mutex<watch::Receiver<ChatTransportMode>>>>,
 }
 
 impl Scripted {
@@ -84,7 +87,24 @@ impl Scripted {
             until_reset: UNTIL_RESET,
             opened: Arc::default(),
             start: Instant::now(),
+            mode_rx: None,
         }
+    }
+
+    fn watching(mut self, modes: watch::Receiver<ChatTransportMode>) -> Self {
+        self.mode_rx = Some(Arc::new(Mutex::new(modes)));
+        self
+    }
+
+    fn mode_log(&self) -> Vec<(Call, ChatTransportMode, bool)> {
+        self.script.lock().unwrap().modes.clone()
+    }
+
+    fn modes(&self) -> Vec<(Call, ChatTransportMode)> {
+        self.mode_log()
+            .into_iter()
+            .map(|(call, mode, _)| (call, mode))
+            .collect()
     }
 
     fn in_long_interval_mode(mut self) -> Self {
@@ -133,11 +153,14 @@ impl Scripted {
     }
 
     fn record(&self, call: Call) {
-        self.script
-            .lock()
-            .unwrap()
-            .calls
-            .push((call, Instant::now()));
+        let mut script = self.script.lock().unwrap();
+        if let Some(mode_rx) = &self.mode_rx {
+            let mut mode_rx = mode_rx.lock().unwrap();
+            let woke = mode_rx.has_changed().unwrap();
+            let mode = *mode_rx.borrow_and_update();
+            script.modes.push((call.clone(), mode, woke));
+        }
+        script.calls.push((call, Instant::now()));
     }
 
     fn calls(&self) -> Vec<Call> {
@@ -322,6 +345,13 @@ fn rig() -> Rig {
 
 fn supervisor(transports: &Scripted) -> ReceiveSupervisor<Scripted> {
     ReceiveSupervisor::new(transports.clone(), ReceiveTimings::DEFAULT)
+}
+
+fn mode_reporting(transports: Scripted) -> (Scripted, ReceiveSupervisor<Scripted>) {
+    let (mode_tx, mode_rx) = watch::channel(ChatTransportMode::Polling);
+    let transports = transports.watching(mode_rx);
+    let supervisor = supervisor(&transports).with_mode_sink(TransportModeSink::new(mode_tx));
+    (transports, supervisor)
 }
 
 impl Rig {
@@ -875,4 +905,86 @@ async fn link_health_follows_success_and_loss_across_stream_and_polling() {
             PollLinkHealth::Healthy
         ]
     );
+}
+
+#[test]
+fn attaching_a_mode_sink_publishes_streaming() {
+    let (mode_tx, mode_rx) = watch::channel(ChatTransportMode::Polling);
+
+    let _supervisor = supervisor(&Scripted::new()).with_mode_sink(TransportModeSink::new(mode_tx));
+
+    assert_eq!(*mode_rx.borrow(), ChatTransportMode::Streaming);
+}
+
+#[tokio::test(start_paused = true)]
+async fn entering_polling_publishes_polling_before_the_first_poll() {
+    use ChatTransportMode::{Polling, Streaming};
+    for (label, script, expected) in [
+        (
+            "protocol not offered",
+            Scripted::new().refuses(StreamOutcome::ProtocolNotOffered),
+            vec![
+                (open(None), Streaming),
+                (poll(None), Polling),
+                (poll(Some("p-1")), Polling),
+            ],
+        ),
+        (
+            "three transport failures",
+            Scripted::new().refuses_times(3, broken),
+            vec![
+                (open(None), Streaming),
+                (open(None), Streaming),
+                (open(None), Streaming),
+                (poll(None), Polling),
+                (poll(Some("p-1")), Polling),
+            ],
+        ),
+    ] {
+        let (transports, mut supervisor) = mode_reporting(script.polls(page("p-1", &[])));
+        let mut rig = rig();
+
+        rig.receive(&mut supervisor).await;
+
+        assert_eq!(transports.modes(), expected, "{label}");
+    }
+}
+
+#[tokio::test(start_paused = true)]
+async fn the_first_streamed_page_after_polling_publishes_streaming() {
+    let (transports, mut supervisor) = mode_reporting(polling_until_the_reprobe().streams(vec![
+        Item::Page(page("s-1", &["m-1"])),
+        Item::End(StreamOutcome::Closed),
+    ]));
+    let mut rig = rig();
+
+    rig.receive(&mut supervisor).await;
+
+    assert_eq!(
+        transports.modes()[7..],
+        [
+            (open(None), ChatTransportMode::Polling),
+            (open(Some("s-1")), ChatTransportMode::Streaming)
+        ]
+    );
+}
+
+#[tokio::test(start_paused = true)]
+async fn a_failed_reprobe_returns_to_polling_without_publishing_streaming() {
+    let (transports, mut supervisor) = mode_reporting(
+        polling_until_the_reprobe()
+            .refuses(broken())
+            .polls(page_every(100_000, "p-7")),
+    );
+    let mut rig = rig();
+
+    rig.receive(&mut supervisor).await;
+
+    let after_fallback: Vec<_> = transports
+        .mode_log()
+        .into_iter()
+        .skip(2)
+        .map(|(_, mode, woke)| (mode, woke))
+        .collect();
+    assert_eq!(after_fallback, [(ChatTransportMode::Polling, false); 8]);
 }

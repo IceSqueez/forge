@@ -36,3 +36,4 @@ pub(crate) mod twitch_bot_section;
 pub(crate) mod unavailable_builtin;
 pub(crate) mod vtube_connect;
 pub(crate) mod vtube_connect_form;
+pub(crate) mod youtube_consent;

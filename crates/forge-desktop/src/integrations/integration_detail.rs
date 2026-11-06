@@ -164,6 +164,7 @@ impl IntegrationDetail {
         cx: &mut Context<Self>,
     ) -> AnyElement {
         let header_card = self.header_card(palette, density, cx);
+        let policy_links = self.policy_links(palette, cx);
         let reconnecting = matches!(
             self.shown.connection,
             ConnectionState::Connecting | ConnectionState::Reconnecting
@@ -203,6 +204,7 @@ impl IntegrationDetail {
             .children(credential_banner)
             .children(state_banner)
             .child(header_card)
+            .children(policy_links)
             .child(health)
             .child(content)
             .children(twitch_bot)

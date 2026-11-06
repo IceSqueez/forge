@@ -1,14 +1,17 @@
 use super::IntegrationDetail;
+use crate::app::async_bridge::{self, ErrorSink};
 use crate::integrations::health_text::connection_label;
+use crate::integrations::integration_catalog::chat_platform_of;
 use crate::integrations::integration_catalog::{identity_of, tint_color};
 use crate::integrations::integration_quick_actions::outline_icon_button;
+use crate::integrations::youtube_consent::{PolicyLink, youtube_consent_line};
 use crate::shared::user_text::user_text_string;
 use forge_components::{
     ActivePresentation, Density, FONT_XS, ForgePalette, Icon, Radius, Spacing, badge,
     platform_hero, radius, scaled, spacing, status_dot, tr,
 };
 use forge_platform_core::{ConnectionState, HeaderAction, HeroBadge, HeroBadgeTone};
-use forge_types::IntegrationId;
+use forge_types::{IntegrationId, PlatformId};
 use gpui::{AnyElement, App, ClickEvent, Context, FontWeight, Pixels, Rgba, div, prelude::*, px};
 
 const BADGE_PAD_X: Pixels = px(2.0);
@@ -184,6 +187,29 @@ impl IntegrationDetail {
             .name_badges(name_badges)
             .right(right)
             .into_any_element()
+    }
+
+    pub(super) fn policy_links(
+        &self,
+        palette: &ForgePalette,
+        cx: &mut Context<Self>,
+    ) -> Option<AnyElement> {
+        if chat_platform_of(self.ports.status.id()) != Some(PlatformId::YouTube) {
+            return None;
+        }
+        let on_open = cx.listener(|this, link: &PolicyLink, _, cx| {
+            async_bridge::open_external(
+                &this.services.rt_handle,
+                link.url(),
+                ErrorSink::Toast,
+                tr!("integration_open_url_failed"),
+                cx,
+            );
+        });
+        Some(
+            youtube_consent_line("integration-youtube-consent", palette, cx, on_open)
+                .into_any_element(),
+        )
     }
 
     fn action_button(

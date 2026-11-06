@@ -2153,6 +2153,11 @@ oauth_btn_retry = Повторити
 oauth_btn_cancel = Скасувати
 oauth_failed_title = Авторизація не вдалася
 oauth_kick_hybrid_title = Гібридний транспорт чату
+youtube_consent_prefix = Підключаючи YouTube, ти погоджуєшся з{ " " }
+youtube_consent_terms_link = Умовами використання YouTube
+youtube_consent_joiner = { " " }і{ " " }
+youtube_consent_privacy_link = Політикою конфіденційності forge
+youtube_consent_suffix = .
 
 ## Потік Twitch device code
 

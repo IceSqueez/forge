@@ -35,6 +35,7 @@ pub use account::oauth_client::{
     GOOGLE_OAUTH_BUDGET_CAPACITY, GOOGLE_OAUTH_BUDGET_WINDOW, GoogleOAuthClient,
     google_oauth_gateway,
 };
+pub use account::policy_links::{FORGE_PRIVACY_POLICY_URL, YOUTUBE_TERMS_OF_SERVICE_URL};
 pub use api::data_api::YouTubeDataApi;
 pub use api::quota_state::SharedQuota;
 pub use assembly::YouTubeAssembly;

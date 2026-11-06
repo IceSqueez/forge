@@ -2108,6 +2108,11 @@ oauth_btn_retry = Retry
 oauth_btn_cancel = Cancel
 oauth_failed_title = Authorization failed
 oauth_kick_hybrid_title = Hybrid chat transport
+youtube_consent_prefix = By connecting YouTube you agree to the{ " " }
+youtube_consent_terms_link = YouTube Terms of Service
+youtube_consent_joiner = { " " }and the{ " " }
+youtube_consent_privacy_link = forge Privacy Policy
+youtube_consent_suffix = .
 
 ## Twitch device code flow
 

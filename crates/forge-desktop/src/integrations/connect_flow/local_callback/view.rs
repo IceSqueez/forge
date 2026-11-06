@@ -1,4 +1,5 @@
 use super::*;
+use crate::integrations::youtube_consent::{PolicyLink, youtube_consent_line};
 
 const ICON_INLINE: gpui::Pixels = px(13.0);
 const ICON_NOTICE: gpui::Pixels = px(16.0);
@@ -77,6 +78,8 @@ impl ConnectFlow {
             self.connect_disclaimer(palette, density, cx)
                 .into_any_element()
         });
+        let consent = matches!(self.platform, PlatformId::YouTube)
+            .then(|| self.youtube_consent(palette, density, cx));
         let progress = matches!(
             self.phase(),
             LocalCallbackFlowPhase::Starting | LocalCallbackFlowPhase::Waiting
@@ -94,11 +97,33 @@ impl ConnectFlow {
             .flex_col()
             .child(self.oauth_explainer(palette, density, cx))
             .children(disclaimer)
+            .children(consent)
             .child(self.oauth_steps_card(accent, palette, density, cx))
             .children(progress)
             .children(done)
             .children(error)
             .child(self.oauth_footer(palette, cx))
+            .into_any_element()
+    }
+
+    fn youtube_consent(
+        &self,
+        palette: &ForgePalette,
+        density: Density,
+        cx: &mut Context<Self>,
+    ) -> AnyElement {
+        let on_open = cx.listener(|this, link: &PolicyLink, _, cx| {
+            this.open_url(link.url().to_owned(), cx);
+        });
+        div()
+            .w_full()
+            .mb(spacing(Spacing::Md, density))
+            .child(youtube_consent_line(
+                "oauth-youtube-consent",
+                palette,
+                cx,
+                on_open,
+            ))
             .into_any_element()
     }
 

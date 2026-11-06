@@ -741,6 +741,49 @@ mod quick_action_bridge {
         );
     }
 
+    struct NoCurrentValues;
+
+    #[async_trait::async_trait]
+    impl forge_platform_core::BuiltinCurrentValues for NoCurrentValues {
+        async fn read_current(
+            &self,
+            _: &[String],
+        ) -> std::collections::BTreeMap<String, forge_platform_core::QuickActionFieldValue>
+        {
+            std::collections::BTreeMap::new()
+        }
+    }
+
+    fn quick_actions_read_current_values(
+        cx: &mut TestAppContext,
+        view: &Entity<IntegrationDetail>,
+    ) -> bool {
+        view.read_with(cx, |detail, _| {
+            detail.ports.quick_action_source().current_values.is_some()
+        })
+    }
+
+    #[gpui::test]
+    fn quick_actions_read_current_values_through_the_object_the_page_adopts(
+        cx: &mut TestAppContext,
+    ) {
+        let rt = runtime();
+        let _enter = rt.enter();
+        let signed_out = ShiftingActions::labelled("signed out").object();
+        let view = open_detail(cx, &rt, signed_out.clone());
+        let mut signed_in = ShiftingActions::labelled("signed in").object();
+        signed_in.current_values = Some(Arc::new(NoCurrentValues));
+
+        view.update(cx, |detail, cx| detail.adopt_builtin(signed_in, cx));
+        let after_sign_in = quick_actions_read_current_values(cx, &view);
+        view.update(cx, |detail, cx| detail.adopt_builtin(signed_out, cx));
+
+        assert_eq!(
+            (after_sign_in, quick_actions_read_current_values(cx, &view)),
+            (true, false)
+        );
+    }
+
     fn viewer_metric(count: u64) -> HealthDelta {
         HealthDelta {
             metric: HealthMetricId::VIEWERS,

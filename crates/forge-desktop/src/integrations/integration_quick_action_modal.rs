@@ -793,6 +793,7 @@ mod tests {
     struct Harness {
         modal: Entity<QuickActionModal>,
         rt: tokio::runtime::Runtime,
+        paused_clock: bool,
     }
 
     impl Harness {
@@ -811,13 +812,85 @@ mod tests {
             let modal = cx.update(|cx| {
                 cx.new(|cx| QuickActionModal::new(option_action(fields), source, handle, cx))
             });
-            let harness = Self { modal, rt };
+            let harness = Self {
+                modal,
+                rt,
+                paused_clock: false,
+            };
+            harness.settle(cx);
+            harness
+        }
+
+        fn reading(
+            cx: &mut TestAppContext,
+            source: Option<Arc<FakeOptionSource>>,
+            reader: Option<Arc<FakeCurrentValues>>,
+            fields: Vec<QuickActionField>,
+        ) -> Self {
+            install_language(Language::Uk);
+            cx.update(|cx| {
+                cx.set_global(Presentation::new(ThemeId::ForgeDefault, Density::Cozy));
+            });
+            let rt = tokio::runtime::Builder::new_current_thread()
+                .enable_all()
+                .start_paused(true)
+                .build()
+                .unwrap();
+            let handle = rt.handle().clone();
+            let source = source.map(|fake| fake as Arc<dyn BuiltinOptionSource>);
+            let reader = reader.map(|fake| fake as Arc<dyn BuiltinCurrentValues>);
+            let modal = cx.update(|cx| {
+                cx.new(|cx| {
+                    QuickActionModal::new(option_action(fields), source, handle, cx)
+                        .with_current_values(reader, cx)
+                })
+            });
+            let harness = Self {
+                modal,
+                rt,
+                paused_clock: true,
+            };
             harness.settle(cx);
             harness
         }
 
         fn settle(&self, cx: &mut TestAppContext) {
-            crate::test_support::settle_runtime_work(cx, &self.rt);
+            if !self.paused_clock {
+                crate::test_support::settle_runtime_work(cx, &self.rt);
+                return;
+            }
+            for _ in 0..PAUSED_SETTLE_ROUNDS {
+                cx.run_until_parked();
+                crate::test_support::pump(&self.rt);
+            }
+            cx.run_until_parked();
+        }
+
+        fn advance_runtime_clock(&self, cx: &mut TestAppContext, duration: Duration) {
+            self.rt.block_on(tokio::time::advance(duration));
+            self.settle(cx);
+        }
+
+        fn awaiting(&self, cx: &mut TestAppContext) -> Vec<bool> {
+            self.modal.read_with(cx, |modal, _| {
+                modal
+                    .controls
+                    .fields
+                    .iter()
+                    .map(|field| field.awaiting_current)
+                    .collect()
+            })
+        }
+
+        fn entry_text(&self, cx: &mut TestAppContext, index: usize) -> String {
+            self.modal.read_with(cx, |modal, cx| {
+                match &modal.controls.fields[index].control {
+                    FieldControl::Text(input) | FieldControl::Int { input, .. } => {
+                        input.read(cx).content().to_owned()
+                    }
+                    _ => panic!("field {index} is not a single-line entry"),
+                }
+            })
         }
 
         fn seen(&self, cx: &mut TestAppContext, index: usize) -> Seen {
@@ -1600,6 +1673,412 @@ mod tests {
         assert_eq!(
             harness.step_config(cx, "scene"),
             Some(Variant::String("Gameplay".to_owned()))
+        );
+    }
+
+    const PAUSED_SETTLE_ROUNDS: usize = 4;
+
+    type ReadValues = BTreeMap<String, QuickActionFieldValue>;
+
+    #[derive(Default)]
+    struct FakeCurrentValues {
+        reads: Mutex<Vec<Vec<String>>>,
+        pending: Mutex<Vec<oneshot::Sender<ReadValues>>>,
+    }
+
+    impl FakeCurrentValues {
+        fn held() -> Arc<Self> {
+            Arc::new(Self::default())
+        }
+
+        fn answer(&self, values: Vec<(&str, QuickActionFieldValue)>) {
+            let sender = self.pending.lock().unwrap().pop().unwrap();
+            sender
+                .send(
+                    values
+                        .into_iter()
+                        .map(|(key, value)| (key.to_owned(), value))
+                        .collect(),
+                )
+                .unwrap();
+        }
+
+        fn reads(&self) -> Vec<Vec<String>> {
+            self.reads.lock().unwrap().clone()
+        }
+    }
+
+    #[async_trait::async_trait]
+    impl BuiltinCurrentValues for FakeCurrentValues {
+        async fn read_current(&self, field_keys: &[String]) -> ReadValues {
+            self.reads.lock().unwrap().push(field_keys.to_vec());
+            let (sender, receiver) = oneshot::channel();
+            self.pending.lock().unwrap().push(sender);
+            receiver.await.unwrap_or_default()
+        }
+    }
+
+    fn reads_current(field: QuickActionField) -> QuickActionField {
+        QuickActionField {
+            reads_current: true,
+            ..field
+        }
+    }
+
+    fn text(value: &str) -> QuickActionFieldValue {
+        QuickActionFieldValue::Text(value.to_owned())
+    }
+
+    fn defaulted_text_field(key: &str, default: &str) -> QuickActionField {
+        QuickActionField {
+            default: Some(text(default)),
+            ..text_field(key)
+        }
+    }
+
+    fn int_field(key: &str, min: i64, max: i64, default: i64) -> QuickActionField {
+        QuickActionField {
+            kind: QuickActionFieldKind::Int { min, max },
+            default: Some(QuickActionFieldValue::Int(default)),
+            ..text_field(key)
+        }
+    }
+
+    fn static_choice_field(key: &str, options: &[&str], default: &str) -> QuickActionField {
+        QuickActionField {
+            kind: QuickActionFieldKind::Choice(QuickActionChoiceSource::Static(
+                options
+                    .iter()
+                    .map(|value| forge_platform_core::QuickActionChoiceOption {
+                        value: (*value).to_owned(),
+                        label: forge_types::VerbatimText::new(*value).into(),
+                    })
+                    .collect(),
+            )),
+            default: Some(text(default)),
+            required: true,
+            ..text_field(key)
+        }
+    }
+
+    #[gpui::test]
+    fn opening_reads_once_with_only_the_keys_of_the_readable_fields(cx: &mut TestAppContext) {
+        let reader = FakeCurrentValues::held();
+        Harness::reading(
+            cx,
+            None,
+            Some(Arc::clone(&reader)),
+            vec![
+                reads_current(text_field("title")),
+                toggle_field("notify"),
+                reads_current(text_field("category")),
+            ],
+        );
+
+        assert_eq!(
+            reader.reads(),
+            vec![vec!["title".to_owned(), "category".to_owned()]]
+        );
+    }
+
+    #[gpui::test]
+    fn a_reader_is_not_asked_when_no_field_reads_its_current_value(cx: &mut TestAppContext) {
+        let reader = FakeCurrentValues::held();
+        let harness = Harness::reading(
+            cx,
+            None,
+            Some(Arc::clone(&reader)),
+            vec![text_field("title"), toggle_field("notify")],
+        );
+
+        assert_eq!(
+            (reader.reads(), harness.can_run(cx)),
+            (Vec::<Vec<String>>::new(), true)
+        );
+    }
+
+    #[gpui::test]
+    fn readable_fields_without_a_reader_never_hold_run_back(cx: &mut TestAppContext) {
+        let harness = Harness::reading(cx, None, None, vec![reads_current(text_field("title"))]);
+
+        assert_eq!(
+            (harness.awaiting(cx), harness.can_run(cx)),
+            (vec![false], true)
+        );
+    }
+
+    #[gpui::test]
+    fn run_stays_disabled_while_the_read_is_pending_and_enables_once_it_lands(
+        cx: &mut TestAppContext,
+    ) {
+        let reader = FakeCurrentValues::held();
+        let harness = Harness::reading(
+            cx,
+            None,
+            Some(Arc::clone(&reader)),
+            vec![reads_current(text_field("title"))],
+        );
+        let while_reading = harness.can_run(cx);
+
+        reader.answer(vec![("title", text("Live now"))]);
+        harness.settle(cx);
+
+        assert_eq!((while_reading, harness.can_run(cx)), (false, true));
+    }
+
+    #[gpui::test]
+    fn an_empty_answer_releases_run_and_keeps_the_static_default(cx: &mut TestAppContext) {
+        let reader = FakeCurrentValues::held();
+        let harness = Harness::reading(
+            cx,
+            None,
+            Some(Arc::clone(&reader)),
+            vec![reads_current(defaulted_text_field("title", "Default"))],
+        );
+
+        reader.answer(Vec::new());
+        harness.settle(cx);
+
+        assert_eq!(
+            (harness.can_run(cx), harness.entry_text(cx, 0)),
+            (true, "Default".to_owned())
+        );
+    }
+
+    #[gpui::test]
+    fn a_read_that_never_answers_holds_run_until_the_deadline_then_releases_it(
+        cx: &mut TestAppContext,
+    ) {
+        let reader = FakeCurrentValues::held();
+        let harness = Harness::reading(
+            cx,
+            None,
+            Some(Arc::clone(&reader)),
+            vec![reads_current(defaulted_text_field("title", "Default"))],
+        );
+        let margin = Duration::from_millis(5);
+
+        harness.advance_runtime_clock(cx, CURRENT_VALUE_READ_DEADLINE - margin);
+        let just_before = harness.can_run(cx);
+        harness.advance_runtime_clock(cx, margin * 2);
+
+        assert_eq!(
+            (just_before, harness.can_run(cx), harness.entry_text(cx, 0)),
+            (false, true, "Default".to_owned())
+        );
+    }
+
+    #[gpui::test]
+    fn untouched_fields_of_every_entry_kind_take_the_read_value(cx: &mut TestAppContext) {
+        let reader = FakeCurrentValues::held();
+        let harness = Harness::reading(
+            cx,
+            None,
+            Some(Arc::clone(&reader)),
+            vec![
+                reads_current(defaulted_text_field("title", "Old title")),
+                reads_current(toggle_field("mature")),
+                reads_current(int_field("delay", 0, 10, 3)),
+            ],
+        );
+
+        reader.answer(vec![
+            ("title", text("Current title")),
+            ("mature", QuickActionFieldValue::Toggle(true)),
+            ("delay", QuickActionFieldValue::Int(7)),
+        ]);
+        harness.settle(cx);
+
+        assert_eq!(
+            (
+                harness.step_config(cx, "title"),
+                harness.step_config(cx, "mature"),
+                harness.step_config(cx, "delay"),
+            ),
+            (
+                Some(Variant::String("Current title".to_owned())),
+                Some(Variant::Bool(true)),
+                Some(Variant::Int(7)),
+            )
+        );
+    }
+
+    #[gpui::test]
+    fn fields_the_user_changed_before_the_answer_keep_the_users_value(cx: &mut TestAppContext) {
+        let reader = FakeCurrentValues::held();
+        let harness = Harness::reading(
+            cx,
+            None,
+            Some(Arc::clone(&reader)),
+            vec![
+                reads_current(text_field("title")),
+                reads_current(toggle_field("mature")),
+                reads_current(static_choice_field(
+                    "privacy",
+                    &["public", "unlisted", "private"],
+                    "public",
+                )),
+            ],
+        );
+        harness.type_text(cx, 0, "Mine");
+        harness.toggle(cx, 1);
+        harness.toggle(cx, 1);
+        harness.pick(cx, 2, "private");
+
+        reader.answer(vec![
+            ("title", text("Theirs")),
+            ("mature", QuickActionFieldValue::Toggle(true)),
+            ("privacy", text("unlisted")),
+        ]);
+        harness.settle(cx);
+
+        assert_eq!(
+            (
+                harness.step_config(cx, "title"),
+                harness.step_config(cx, "mature"),
+                harness.step_config(cx, "privacy"),
+            ),
+            (
+                Some(Variant::String("Mine".to_owned())),
+                Some(Variant::Bool(false)),
+                Some(Variant::String("private".to_owned())),
+            )
+        );
+    }
+
+    #[gpui::test]
+    fn a_read_value_the_field_kind_does_not_accept_is_dropped(cx: &mut TestAppContext) {
+        let reader = FakeCurrentValues::held();
+        let harness = Harness::reading(
+            cx,
+            None,
+            Some(Arc::clone(&reader)),
+            vec![reads_current(int_field("delay", 0, 10, 3))],
+        );
+
+        reader.answer(vec![("delay", QuickActionFieldValue::Int(11))]);
+        harness.settle(cx);
+
+        assert_eq!(
+            (harness.entry_text(cx, 0), harness.can_run(cx)),
+            ("3".to_owned(), true)
+        );
+    }
+
+    #[gpui::test]
+    fn a_static_choice_selects_the_read_value(cx: &mut TestAppContext) {
+        let reader = FakeCurrentValues::held();
+        let harness = Harness::reading(
+            cx,
+            None,
+            Some(Arc::clone(&reader)),
+            vec![reads_current(static_choice_field(
+                "privacy",
+                &["public", "unlisted", "private"],
+                "public",
+            ))],
+        );
+
+        reader.answer(vec![("privacy", text("unlisted"))]);
+        harness.settle(cx);
+
+        assert_eq!(harness.selected(cx, 0), Some("unlisted".to_owned()));
+    }
+
+    #[gpui::test]
+    fn a_list_backed_choice_preselects_the_read_value_once_its_list_loads(cx: &mut TestAppContext) {
+        let lists = FakeOptionSource::new(vec![list("categories")], true);
+        let reader = FakeCurrentValues::held();
+        let harness = Harness::reading(
+            cx,
+            Some(Arc::clone(&lists)),
+            Some(Arc::clone(&reader)),
+            vec![reads_current(option_field(
+                "category",
+                "categories",
+                Some("20"),
+            ))],
+        );
+
+        reader.answer(vec![("category", text("22"))]);
+        harness.settle(cx);
+        lists.release(0, Ok(vec![entry("20"), entry("22"), entry("24")]));
+        harness.settle(cx);
+
+        assert_eq!(harness.selected(cx, 0), Some("22".to_owned()));
+    }
+
+    #[gpui::test]
+    fn a_read_value_re_resolves_the_lists_that_depend_on_its_field(cx: &mut TestAppContext) {
+        let lists = FakeOptionSource::new(vec![list("titles").depending_on("game")], false);
+        let reader = FakeCurrentValues::held();
+        let harness = Harness::reading(
+            cx,
+            Some(Arc::clone(&lists)),
+            Some(Arc::clone(&reader)),
+            vec![
+                reads_current(text_field("game")),
+                option_field("title", "titles", None),
+            ],
+        );
+        lists.take_calls();
+
+        reader.answer(vec![("game", text("Chess"))]);
+        harness.settle(cx);
+
+        assert_eq!(
+            lists.take_calls(),
+            vec![text_call("titles", "game", "Chess")]
+        );
+    }
+
+    #[gpui::test]
+    fn every_awaiting_flag_clears_when_the_answer_lands(cx: &mut TestAppContext) {
+        let reader = FakeCurrentValues::held();
+        let harness = Harness::reading(
+            cx,
+            None,
+            Some(Arc::clone(&reader)),
+            vec![
+                reads_current(text_field("title")),
+                reads_current(text_field("tags")),
+                reads_current(int_field("delay", 0, 10, 3)),
+            ],
+        );
+        let while_reading = harness.awaiting(cx);
+        harness.type_text(cx, 0, "Mine");
+
+        reader.answer(vec![("delay", QuickActionFieldValue::Int(99))]);
+        harness.settle(cx);
+
+        assert_eq!(
+            (while_reading, harness.awaiting(cx)),
+            (vec![true, true, true], vec![false, false, false])
+        );
+    }
+
+    #[gpui::test]
+    fn an_answer_landing_after_the_modal_is_dropped_is_discarded_with_the_modal(
+        cx: &mut TestAppContext,
+    ) {
+        let reader = FakeCurrentValues::held();
+        let Harness { modal, rt, .. } = Harness::reading(
+            cx,
+            None,
+            Some(Arc::clone(&reader)),
+            vec![reads_current(text_field("title"))],
+        );
+        let released = modal.downgrade();
+        drop(modal);
+        cx.run_until_parked();
+        let released_while_reading = released.upgrade().is_none();
+
+        reader.answer(vec![("title", text("Late"))]);
+        crate::test_support::settle_until_tasks_drain_to(cx, &rt, 0);
+
+        assert_eq!(
+            (released_while_reading, released.upgrade().is_none()),
+            (true, true)
         );
     }
 }

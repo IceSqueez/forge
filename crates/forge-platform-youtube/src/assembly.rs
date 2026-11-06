@@ -58,7 +58,7 @@ impl YouTubeAssembly {
             .ok()?;
         let manager = Arc::new(YouTubeCredentialsManager::new(creds, oauth, api.clone()));
         let sign_in = YouTubeSignIn::new(Arc::clone(&manager));
-        let lookup = BroadcastLookup::new(api.clone(), token_source(Arc::clone(&manager)));
+        let lookup = BroadcastLookup::new(api.clone(), token_source(Arc::clone(&manager)).source());
         let live_chat_id = LiveChatIdHandle::new();
         live_chat_id.fall_back_to(lookup.clone());
         let active_broadcast = ActiveBroadcastIdHandle::new();
@@ -89,7 +89,7 @@ impl YouTubeAssembly {
     pub fn register_sub_actions(&self, registry: &mut SubActionRegistry) {
         let send = Arc::new(YouTubeSendChat::new(
             self.api.clone(),
-            token_source(Arc::clone(&self.manager)),
+            token_source(Arc::clone(&self.manager)).source(),
             self.live_chat_id.clone(),
         ));
         let broadcaster_source = {
@@ -101,34 +101,34 @@ impl YouTubeAssembly {
         };
         let moderation = Arc::new(YouTubeModeration::new(
             self.api.clone(),
-            token_source(Arc::clone(&self.manager)),
+            token_source(Arc::clone(&self.manager)).source(),
             broadcaster_source,
             self.live_chat_id.clone(),
             Arc::clone(&self.ban_ledger),
         ));
         let metadata = Arc::new(YouTubeStreamMetadata::new(
             self.api.clone(),
-            token_source(Arc::clone(&self.manager)),
+            token_source(Arc::clone(&self.manager)).source(),
             self.active_broadcast.clone(),
         ));
         let stream_stats = Arc::new(YouTubeStreamStats::new(
             self.api.clone(),
-            token_source(Arc::clone(&self.manager)),
+            token_source(Arc::clone(&self.manager)).source(),
             self.active_broadcast.clone(),
         ));
         let ad_break = Arc::new(YouTubeAdBreak::new(
             self.api.clone(),
-            token_source(Arc::clone(&self.manager)),
+            token_source(Arc::clone(&self.manager)).source(),
             self.active_broadcast.clone(),
         ));
         let thumbnail = Arc::new(YouTubeThumbnail::new(
             self.api.clone(),
-            token_source(Arc::clone(&self.manager)),
+            token_source(Arc::clone(&self.manager)).source(),
             self.active_broadcast.clone(),
         ));
         let channel_lookup = Arc::new(YouTubeChannelLookup::new(
             self.api.clone(),
-            token_source(Arc::clone(&self.manager)),
+            token_source(Arc::clone(&self.manager)).source(),
         ));
         if let Err(e) = register_youtube_sub_actions(
             registry,

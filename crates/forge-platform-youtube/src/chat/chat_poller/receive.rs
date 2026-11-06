@@ -102,7 +102,7 @@ impl YouTubeChatPoller {
             let fetched_token = tokio::select! {
                 biased;
                 () = cancel.cancelled() => return ReceiveExit::Stop,
-                fetched = (self.access_token_source)() => fetched,
+                fetched = self.access_tokens.current() => fetched,
             };
             let token = match fetched_token {
                 Ok(t) => t,

@@ -17,14 +17,13 @@ use crate::api::data_api::YouTubeDataApi;
 use crate::api::poll_health::{PollHealthReporter, PollLinkHealth};
 use crate::broadcast::active_broadcast_id::ActiveBroadcastIdHandle;
 use crate::broadcast::live_chat_id::LiveChatIdHandle;
+use crate::chat::access_tokens::AccessTokens;
 use crate::chat::avatar_book::AvatarBook;
 use crate::chat::chat_poller::YouTubeChatPoller;
 use crate::chat::send_chat::YouTubeSendChat;
 
 use crate::vocabulary::INTEGRATION_ID as PLATFORM_ID;
 pub(crate) const EVENT_CHANNEL_CAPACITY: usize = forge_events::PLATFORM_EVENT_CHANNEL_CAPACITY;
-
-use forge_platform_core::TokenSource;
 
 pub struct YouTubePlatform {
     api: YouTubeDataApi,
@@ -52,7 +51,7 @@ impl YouTubePlatform {
     ) -> Self {
         let sender = YouTubeSendChat::new(
             api.clone(),
-            token_source(Arc::clone(&credentials_manager)),
+            token_source(Arc::clone(&credentials_manager)).source(),
             live_chat_id.clone(),
         );
         let (state_tx, _) = watch::channel(ConnectionState::Disconnected);
@@ -149,13 +148,14 @@ impl ChatPlatform for YouTubePlatform {
         let cancel = CancellationToken::new();
         let poller = YouTubeChatPoller::new(
             self.api.clone(),
-            token_source(Arc::clone(&self.credentials_manager)),
+            token_source(Arc::clone(&self.credentials_manager)).source(),
             tx,
             channel_id.clone(),
             self.live_chat_id.clone(),
             self.active_broadcast_id.clone(),
             Arc::clone(&self.ban_ledger),
         )
+        .with_access_tokens(token_source(Arc::clone(&self.credentials_manager)))
         .with_health_reporter(health_reporter(
             Arc::clone(&self.state),
             self.state_tx.clone(),
@@ -223,11 +223,23 @@ impl ChatPlatform for YouTubePlatform {
     }
 }
 
-pub(crate) fn token_source(manager: Arc<YouTubeCredentialsManager>) -> TokenSource {
-    Arc::new(move || {
-        let manager = Arc::clone(&manager);
-        Box::pin(async move { manager.get_valid_access_token().await })
-    })
+pub(crate) fn token_source(manager: Arc<YouTubeCredentialsManager>) -> AccessTokens {
+    let current_manager = Arc::clone(&manager);
+    AccessTokens::new(
+        Arc::new(move || {
+            let manager = Arc::clone(&current_manager);
+            Box::pin(async move { manager.get_valid_access_token().await })
+        }),
+        Arc::new(move |rejected| {
+            let manager = Arc::clone(&manager);
+            Box::pin(async move {
+                manager
+                    .refresh(&rejected)
+                    .await
+                    .map(|credentials| credentials.access_token.expose().to_owned())
+            })
+        }),
+    )
 }
 
 fn health_reporter(

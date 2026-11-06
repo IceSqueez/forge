@@ -70,6 +70,7 @@ impl ChatStreamTransport {
         let message = encode_request(live_chat_id, page_token);
         let request = GrpcRequest::new(STREAM_LIST_PATH, message, MESSAGE_CAP_BYTES)
             .label(STREAM_LABEL)
+            .without_limiter_wait()
             .bearer(Secret::new(token))
             .expect_refusal(ExpectedRefusal::status_with_excerpt(
                 LIVE_CHAT_ENDED_STATUS,
@@ -136,7 +137,11 @@ impl ChatStream {
         };
         let body = transcode_response(&response);
         let page = page_from_body(&body);
-        if let Some(token) = &page.next_page_token {
+        if let Some(token) = page
+            .next_page_token
+            .as_ref()
+            .filter(|token| !token.is_empty())
+        {
             self.resume_token = Some(token.clone());
         }
         if chat_has_ended(&body, &page) {

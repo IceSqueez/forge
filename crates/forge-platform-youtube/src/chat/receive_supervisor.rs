@@ -8,6 +8,7 @@ use tokio_util::sync::CancellationToken;
 
 use crate::api::data_api::YouTubeDataApi;
 use crate::api::quota_state::{QUOTA_RESET_WAKE_MARGIN, today_pacific, until_next_reset};
+use crate::chat::access_tokens::AccessTokens;
 use crate::chat::chat_poller::{
     ChatMessagesResponse, ChatSession, FetchFailure, PageEffect, Receive, ReceiveExit,
     YouTubeChatPoller, fetch_chat_page,
@@ -72,15 +73,17 @@ pub(crate) trait ChatTransports: Send + Sync {
 pub(crate) struct LiveTransports {
     stream: ChatStreamTransport,
     api: YouTubeDataApi,
-    access_token_source: TokenSource,
+    access_tokens: AccessTokens,
 }
 
 impl LiveTransports {
-    pub(crate) fn new(api: YouTubeDataApi, access_token_source: TokenSource) -> Self {
+    pub(crate) fn new(api: YouTubeDataApi, access_tokens: impl Into<AccessTokens>) -> Self {
+        let access_tokens = access_tokens.into();
+        let stream_tokens: TokenSource = access_tokens.source();
         Self {
-            stream: ChatStreamTransport::new(api.clone(), access_token_source.clone()),
+            stream: ChatStreamTransport::new(api.clone(), stream_tokens),
             api,
-            access_token_source,
+            access_tokens,
         }
     }
 }
@@ -113,7 +116,9 @@ impl ChatTransports for LiveTransports {
         page_token: Option<&str>,
         cancel: &CancellationToken,
     ) -> Result<ChatMessagesResponse, StreamOutcome> {
-        let token = (self.access_token_source)()
+        let token = self
+            .access_tokens
+            .current()
             .await
             .map_err(StreamOutcome::Transport)?;
         fetch_chat_page(&self.api, &token, live_chat_id, page_token, cancel)
@@ -127,7 +132,7 @@ impl ChatTransports for LiveTransports {
     }
 
     async fn refresh_token(&self) -> Result<(), PlatformError> {
-        (self.access_token_source)().await.map(|_| ())
+        self.access_tokens.replace_current().await.map(|_| ())
     }
 
     async fn long_interval_mode(&self) -> bool {
@@ -146,6 +151,7 @@ impl ChatTransports for LiveTransports {
 fn outcome_of(error: PlatformError) -> StreamOutcome {
     match error {
         PlatformError::RateLimited { retry_after } => StreamOutcome::RateLimited { retry_after },
+        PlatformError::QuotaExhausted => StreamOutcome::QuotaExhausted,
         PlatformError::RateLimitExhausted => StreamOutcome::RateLimited {
             retry_after: DEFAULT_RETRY_AFTER,
         },

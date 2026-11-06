@@ -21,6 +21,7 @@ use crate::api::quota_state::{CHAT_POLL_COST, today_pacific};
 use crate::broadcast::active_broadcast_id::ActiveBroadcastIdHandle;
 use crate::broadcast::broadcast_lookup::{LookupFailure, fetch_active_broadcast};
 use crate::broadcast::live_chat_id::LiveChatIdHandle;
+use crate::chat::access_tokens::AccessTokens;
 use crate::chat::avatar_book::AvatarBook;
 use crate::chat::ban_ledger::{USER_BANNED_EVENT_TYPE, observed_ban};
 use crate::chat::receive_supervisor::{LiveTransports, ReceiveSupervisor, ReceiveTimings};
@@ -100,7 +101,7 @@ pub struct ChatPollerStopGuard {
 
 pub struct YouTubeChatPoller {
     api: YouTubeDataApi,
-    access_token_source: TokenSource,
+    access_tokens: AccessTokens,
     bus_sender: UnboundedSender<Event>,
     channel_id: String,
     live_chat_id: LiveChatIdHandle,
@@ -123,7 +124,7 @@ impl YouTubeChatPoller {
     ) -> Self {
         Self {
             api,
-            access_token_source,
+            access_tokens: access_token_source.into(),
             bus_sender,
             channel_id,
             live_chat_id,
@@ -133,6 +134,11 @@ impl YouTubeChatPoller {
             avatars: None,
             timings: ChatPollTimings::DEFAULT,
         }
+    }
+
+    pub(crate) fn with_access_tokens(mut self, access_tokens: AccessTokens) -> Self {
+        self.access_tokens = access_tokens;
+        self
     }
 
     pub fn with_timings(mut self, timings: ChatPollTimings) -> Self {
@@ -163,7 +169,7 @@ impl YouTubeChatPoller {
         cancel: CancellationToken,
     ) -> Result<(), PlatformError> {
         let supervisor = ReceiveSupervisor::new(
-            LiveTransports::new(self.api.clone(), self.access_token_source.clone()),
+            LiveTransports::new(self.api.clone(), self.access_tokens.clone()),
             ReceiveTimings::DEFAULT,
         );
         self.run_with(cancel, supervisor).await
@@ -188,7 +194,7 @@ impl YouTubeChatPoller {
             let fetched_token = tokio::select! {
                 biased;
                 () = cancel.cancelled() => return Ok(()),
-                fetched = (self.access_token_source)() => fetched,
+                fetched = self.access_tokens.current() => fetched,
             };
             let token = match fetched_token {
                 Ok(t) => t,

@@ -2404,3 +2404,40 @@ async fn polled_chat_records_each_authors_profile_image_for_avatar_lookups() {
         (Some(IMAGE.to_owned()), None)
     );
 }
+
+#[test]
+fn a_rest_page_reads_its_polling_interval_from_a_number_or_a_numeric_string() {
+    for (case, body, expected) in [
+        ("number", json!({ "pollingIntervalMillis": 2500 }), 2500),
+        ("string", json!({ "pollingIntervalMillis": "2500" }), 2500),
+        ("missing", json!({}), DEFAULT_POLLING_INTERVAL_MS),
+        (
+            "non-numeric",
+            json!({ "pollingIntervalMillis": "soon" }),
+            DEFAULT_POLLING_INTERVAL_MS,
+        ),
+    ] {
+        assert_eq!(
+            fetch::page_from_body(&body).polling_interval_millis,
+            expected,
+            "{case}"
+        );
+    }
+}
+
+#[test]
+fn a_rest_page_carries_its_items_and_next_page_token() {
+    let page = fetch::page_from_body(&json!({
+        "items": [{ "id": "a" }, { "id": "b" }],
+        "nextPageToken": "page-2"
+    }));
+    assert_eq!(page.items, vec![json!({ "id": "a" }), json!({ "id": "b" })]);
+    assert_eq!(page.next_page_token.as_deref(), Some("page-2"));
+}
+
+#[test]
+fn a_rest_page_without_items_or_token_reads_as_empty() {
+    let page = fetch::page_from_body(&json!({ "pollingIntervalMillis": 2500 }));
+    assert!(page.items.is_empty());
+    assert_eq!(page.next_page_token, None);
+}

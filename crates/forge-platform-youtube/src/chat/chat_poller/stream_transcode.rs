@@ -348,3 +348,6 @@ fn gift_membership_received(details: &LiveChatGiftMembershipReceivedDetails) -> 
     );
     fields
 }
+
+#[cfg(test)]
+mod tests;

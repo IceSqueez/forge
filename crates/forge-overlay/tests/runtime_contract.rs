@@ -309,17 +309,19 @@ fn every_motion_call_the_runtime_makes_is_one_the_motion_engine_publishes() {
 }
 
 #[test]
-fn the_runtime_catches_up_when_the_page_or_its_browser_source_changes_visibility() {
-    for (variable, event, subscription) in [
+fn the_runtime_catches_up_and_repaints_when_the_page_or_its_browser_source_changes_visibility() {
+    for (variable, event, subscription, handler) in [
         (
             "VISIBILITY_EVENT",
             "visibilitychange",
-            "document_.addEventListener(VISIBILITY_EVENT, catchUp);",
+            "document_.addEventListener(VISIBILITY_EVENT, seenChanged);",
+            "seenChanged",
         ),
         (
             "SOURCE_VISIBLE_EVENT",
             "obsSourceVisibleChanged",
             "window.addEventListener(SOURCE_VISIBLE_EVENT, sourceVisibilityChanged);",
+            "sourceVisibilityChanged",
         ),
     ] {
         let declaration = format!("var {variable} = \"{event}\";");
@@ -328,5 +330,14 @@ fn the_runtime_catches_up_when_the_page_or_its_browser_source_changes_visibility
             "the runtime no longer reacts to {event}, so content delivered while nobody could \
              see the page stays frozen mid-entrance or an expired show appears late"
         );
+        assert!(
+            handler == "seenChanged" || function_body(handler).contains("seenChanged();"),
+            "{event} no longer reaches seenChanged, so a static page shown again stays blank"
+        );
     }
+    let seen = function_body("seenChanged");
+    assert!(
+        at(seen, "catchUp();") < at(seen, "repaintForAWhile();"),
+        "a page shown again must catch up on missed content before it starts repainting"
+    );
 }

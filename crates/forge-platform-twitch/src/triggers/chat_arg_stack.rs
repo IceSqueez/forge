@@ -129,6 +129,7 @@ mod tests {
             ("chat.message_id", "m-1"),
             ("channel", "streamer"),
             ("user_badges", "MOD SUB"),
+            ("user_badge_images", "[]"),
             ("user_color", "#FF0000"),
             ("user_avatar", ""),
         ];
@@ -173,6 +174,7 @@ mod tests {
                 "message_id",
                 "channel",
                 "user_badges",
+                "user_badge_images",
                 "user_color",
                 "user_avatar",
                 "first_message",

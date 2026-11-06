@@ -1,8 +1,9 @@
 use forge_events::{Event, EventSource};
 use forge_registry::{
-    TriggerVariables, USER_AVATAR_VARIABLE, USER_BADGES_VARIABLE, USER_COLOR_VARIABLE,
+    TriggerVariables, USER_AVATAR_VARIABLE, USER_BADGE_IMAGES_VARIABLE, USER_BADGES_VARIABLE,
+    USER_COLOR_VARIABLE, message_badge_images,
 };
-use forge_types::{ArgStack, ChatPayload, UserBadge, Variant, VariantKind};
+use forge_types::{ArgStack, BadgeImage, ChatPayload, UserBadge, Variant, VariantKind};
 use serde_json::{Value, json};
 
 const LOOK_NAMES: [&str; 3] = [
@@ -12,8 +13,16 @@ const LOOK_NAMES: [&str; 3] = [
 ];
 
 fn envelope(badges: Vec<UserBadge>, author_color: Option<&str>) -> Value {
+    pictured(badges, author_color, Vec::new())
+}
+
+fn pictured(
+    badges: Vec<UserBadge>,
+    author_color: Option<&str>,
+    badge_images: Vec<BadgeImage>,
+) -> Value {
     serde_json::to_value(ChatPayload {
-        badge_images: Vec::new(),
+        badge_images,
         platform_msg_id: "m-1".to_owned(),
         author: "viewer".to_owned(),
         author_color: author_color.map(str::to_owned),
@@ -68,7 +77,9 @@ fn every_badge_reads_as_its_label_in_the_order_the_platform_sent_it() {
 
     assert_eq!(
         stack.get(USER_BADGES_VARIABLE).cloned(),
-        text("OWNER MOD VIP SUB MEMBER BOT PARTNER PRIME FOUNDER TURBO HYPE BITS BITS-LEADER")
+        text(
+            "BROADCASTER MOD VIP SUB MEMBER BOT PARTNER PRIME FOUNDER TURBO HYPE BITS BITS-LEADER"
+        )
     );
 }
 
@@ -142,6 +153,74 @@ fn the_look_names_are_declared_as_text_for_the_variable_picker() {
 
     assert_eq!(
         declared,
-        LOOK_NAMES.map(|name| (name.to_owned(), VariantKind::String))
+        [
+            USER_BADGES_VARIABLE,
+            USER_BADGE_IMAGES_VARIABLE,
+            USER_COLOR_VARIABLE,
+            USER_AVATAR_VARIABLE,
+        ]
+        .map(|name| (name.to_owned(), VariantKind::String))
     );
+}
+
+fn badge_image(title: &str, url: &str) -> BadgeImage {
+    BadgeImage {
+        title: title.to_owned(),
+        url: url.to_owned(),
+    }
+}
+
+#[test]
+fn the_badge_pictures_travel_from_the_chat_line_to_the_overlay_reader_in_order() {
+    let pictures = vec![
+        badge_image("Broadcaster", "https://static-cdn.jtvnw.net/badges/v1/a/2"),
+        badge_image("Subscriber", "https://static-cdn.jtvnw.net/badges/v1/b/2"),
+    ];
+    let stack = look_of(
+        &chat_line(pictured(
+            vec![UserBadge::Broadcaster, UserBadge::Subscriber { months: 3 }],
+            None,
+            pictures.clone(),
+        )),
+        None,
+    );
+
+    assert_eq!(message_badge_images(&stack), pictures);
+}
+
+#[test]
+fn a_line_without_badge_pictures_reads_as_an_empty_picture_list() {
+    for (case, event) in [
+        (
+            "no pictures",
+            chat_line(envelope(vec![UserBadge::Moderator], None)),
+        ),
+        (
+            "no envelope",
+            Event::new(EventSource::Kick, "kick.chat.message.sent", json!({})),
+        ),
+    ] {
+        let stack = look_of(&event, None);
+        assert_eq!(
+            stack.get(USER_BADGE_IMAGES_VARIABLE).cloned(),
+            text("[]"),
+            "{case}"
+        );
+        assert_eq!(message_badge_images(&stack), Vec::new(), "{case}");
+    }
+}
+
+#[test]
+fn an_unreadable_picture_list_gives_the_overlay_no_pictures() {
+    for listed in ["", "not json", "{\"title\":\"a\"}", "[{\"title\":\"a\"}]"] {
+        let stack = ArgStack::new().set(
+            USER_BADGE_IMAGES_VARIABLE.to_owned(),
+            Variant::String(listed.to_owned()),
+        );
+        assert_eq!(
+            message_badge_images(&stack),
+            Vec::new(),
+            "listed {listed:?}"
+        );
+    }
 }

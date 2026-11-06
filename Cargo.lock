@@ -3134,6 +3134,8 @@ name = "forge-platform-youtube"
 version = "0.7.3"
 dependencies = [
  "async-trait",
+ "base64 0.23.1",
+ "bytes",
  "forge-events",
  "forge-net",
  "forge-platform-core",
@@ -3143,6 +3145,8 @@ dependencies = [
  "forge-test-support",
  "forge-types",
  "futures",
+ "h2",
+ "http",
  "jiff",
  "prost",
  "prost-types",

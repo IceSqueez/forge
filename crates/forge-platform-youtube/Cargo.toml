@@ -30,6 +30,10 @@ time = { workspace = true }
 jiff = { workspace = true }
 
 [dev-dependencies]
+base64 = { workspace = true }
+bytes = { workspace = true }
+h2 = "0.4"
+http = { workspace = true }
 forge-registry = { path = "../forge-registry", features = ["test-support"] }
 forge-test-support = { path = "../forge-test-support" }
 forge-events = { path = "../forge-events", features = ["test-support"] }

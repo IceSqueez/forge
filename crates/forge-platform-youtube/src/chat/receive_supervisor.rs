@@ -466,3 +466,6 @@ impl<T: ChatTransports> Receive for ReceiveSupervisor<T> {
         }
     }
 }
+
+#[cfg(test)]
+mod tests;

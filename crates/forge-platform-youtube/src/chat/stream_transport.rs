@@ -220,3 +220,6 @@ fn classify(failure: GatewayFailure) -> StreamOutcome {
         ),
     }
 }
+
+#[cfg(test)]
+mod tests;

@@ -468,6 +468,82 @@ mod tests {
         p.disconnect().await.unwrap();
     }
 
+    #[tokio::test]
+    async fn connect_receives_chat_over_the_stream_without_polling_for_messages() {
+        use crate::endpoints_test_support::{
+            GrpcStep, GrpcStub, HANG_GUARD, StubReply, StubServer, data_api_streaming, grpc_frame,
+            grpc_head,
+        };
+        use crate::stream_list_proto::live_chat_message_snippet::type_wrapper::Type;
+        use crate::stream_list_proto::{
+            LiveChatMessage, LiveChatMessageAuthorDetails, LiveChatMessageListResponse,
+            LiveChatMessageSnippet,
+        };
+        use prost::Message;
+
+        let rest = StubServer::start().await;
+        rest.reply_always(
+            "/liveBroadcasts",
+            StubReply::ok(&serde_json::json!({
+                "items": [{ "id": "bc-1", "snippet": { "liveChatId": "lc-1", "title": "Live" } }]
+            })),
+        );
+        let page = LiveChatMessageListResponse {
+            next_page_token: Some("s-1".to_owned()),
+            items: vec![LiveChatMessage {
+                id: Some("m-1".to_owned()),
+                snippet: Some(LiveChatMessageSnippet {
+                    r#type: Some(Type::TextMessageEvent as i32),
+                    display_message: Some("hi".to_owned()),
+                    ..Default::default()
+                }),
+                author_details: Some(LiveChatMessageAuthorDetails {
+                    channel_id: Some("UCviewer".to_owned()),
+                    display_name: Some("Viewer".to_owned()),
+                    ..Default::default()
+                }),
+                ..Default::default()
+            }],
+            ..Default::default()
+        };
+        let grpc = GrpcStub::serving(vec![
+            grpc_head(),
+            grpc_frame(&page.encode_to_vec()),
+            GrpcStep::Hold,
+        ])
+        .await;
+        let p = platform_with(
+            MemoryCredentials::holding(
+                crate::account::credentials::YOUTUBE_CREDENTIAL_ID,
+                &stored_credentials(),
+            ),
+            data_api_streaming(
+                &rest.uri(),
+                &grpc.uri(),
+                crate::api::quota_state::SharedQuota::default(),
+                Arc::new(forge_events::test_support::NullPublisher),
+            ),
+        );
+        let mut events = p.events();
+        p.connect().await.unwrap();
+
+        let received = tokio::time::timeout(HANG_GUARD, async {
+            while let Ok(event) = events.recv().await {
+                if event.kind == crate::vocabulary::event_kinds::CHAT_MESSAGE {
+                    return true;
+                }
+            }
+            false
+        })
+        .await;
+        p.disconnect().await.unwrap();
+
+        assert_eq!(
+            (received, rest.request_count("/liveChat/messages")),
+            (Ok(true), 0)
+        );
+    }
+
     fn pending_credentials() -> MemoryCredentials {
         let mut creds: crate::account::credentials::YouTubeCredentials =
             serde_json::from_str(&stored_credentials()).unwrap();

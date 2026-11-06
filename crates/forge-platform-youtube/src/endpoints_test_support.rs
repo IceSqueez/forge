@@ -1,4 +1,4 @@
-use crate::endpoint_surfaces::{YOUTUBE_DATA_API, YOUTUBE_OAUTH, YOUTUBE_UPLOAD_API};
+use crate::endpoint_surfaces::{YOUTUBE_DATA_API, YOUTUBE_GRPC, YOUTUBE_OAUTH, YOUTUBE_UPLOAD_API};
 pub(crate) use forge_events::test_support::CapturingPublisher;
 use std::ffi::OsString;
 use std::sync::{Arc, Mutex};
@@ -15,17 +15,21 @@ use crate::account::oauth_client::{
 use crate::api::data_api::YouTubeDataApi;
 use crate::api::quota_state::{SharedQuota, today_pacific};
 
-const UNREACHABLE_HTTP: &str = "http://127.0.0.1:0";
+pub(crate) const UNREACHABLE_HTTP: &str = "http://127.0.0.1:0";
 const UNREACHABLE_WS: &str = "ws://127.0.0.1:0";
 const WS_SURFACE_MARKER: &str = "_WS_";
 pub(crate) const OAUTH_CLIENT_ID: &str = "test-client-id";
 pub(crate) const OAUTH_CLIENT_SECRET: &str = "test-client-secret-value";
 
 fn endpoints_with(data_api_base: Option<&str>) -> PlatformEndpoints {
-    endpoints_at(data_api_base, None)
+    endpoints_at(data_api_base, None, None)
 }
 
-fn endpoints_at(data_api_base: Option<&str>, oauth_base: Option<&str>) -> PlatformEndpoints {
+fn endpoints_at(
+    data_api_base: Option<&str>,
+    oauth_base: Option<&str>,
+    grpc_base: Option<&str>,
+) -> PlatformEndpoints {
     tracing::subscriber::with_default(tracing::subscriber::NoSubscriber::default(), || {
         PlatformEndpoints::resolve(crate::endpoint_surfaces::ENDPOINT_SURFACES, |variable| {
             crate::endpoint_surfaces::ENDPOINT_SURFACES
@@ -38,6 +42,7 @@ fn endpoints_at(data_api_base: Option<&str>, oauth_base: Option<&str>) -> Platfo
                             data_api_base.unwrap_or(UNREACHABLE_HTTP)
                         }
                         YOUTUBE_OAUTH => oauth_base.unwrap_or(UNREACHABLE_HTTP),
+                        YOUTUBE_GRPC => grpc_base.unwrap_or(UNREACHABLE_HTTP),
                         _ => UNREACHABLE_HTTP,
                     };
                     let base = if variable.contains(WS_SURFACE_MARKER) {
@@ -64,6 +69,20 @@ pub(crate) fn data_api_with(
     YouTubeDataApi::new(&data_api_endpoints(base), quota, bus).unwrap()
 }
 
+pub(crate) fn data_api_streaming(
+    rest_base: &str,
+    grpc_base: &str,
+    quota: SharedQuota,
+    bus: Arc<dyn EventPublisher>,
+) -> YouTubeDataApi {
+    YouTubeDataApi::new(
+        &endpoints_at(Some(rest_base), None, Some(grpc_base)),
+        quota,
+        bus,
+    )
+    .unwrap()
+}
+
 pub(crate) fn data_api_charging(base: &str, quota: SharedQuota) -> YouTubeDataApi {
     data_api_with(
         base,
@@ -84,7 +103,7 @@ pub(crate) fn oauth_client_limited_by(
     base: &str,
     limiter: Arc<dyn RateLimiter>,
 ) -> GoogleOAuthClient {
-    let gateway = google_oauth_gateway(&endpoints_at(None, Some(base)), limiter).unwrap();
+    let gateway = google_oauth_gateway(&endpoints_at(None, Some(base), None), limiter).unwrap();
     GoogleOAuthClient::new(
         gateway,
         OAUTH_CLIENT_ID.to_owned(),
@@ -361,4 +380,251 @@ pub(crate) async fn wait_until(mut reached: impl FnMut() -> bool) -> bool {
     })
     .await
     .is_ok()
+}
+
+const GRPC_CONTENT_TYPE: &str = "application/grpc";
+const GRPC_STATUS: &str = "grpc-status";
+const GRPC_MESSAGE: &str = "grpc-message";
+const GRPC_DETAILS: &str = "grpc-status-details-bin";
+const GRPC_FRAME_PREFIX: usize = 5;
+const UNCOMPRESSED_FRAME: u8 = 0;
+const ERROR_INFO_TYPE_URL: &str = "type.googleapis.com/google.rpc.ErrorInfo";
+const RETRY_INFO_TYPE_URL: &str = "type.googleapis.com/google.rpc.RetryInfo";
+pub(crate) const GRPC_OK: &str = "0";
+
+pub(crate) type GrpcPairs = Vec<(&'static str, String)>;
+
+#[derive(Clone)]
+pub(crate) enum GrpcStep {
+    Head {
+        status: u16,
+        headers: GrpcPairs,
+        end: bool,
+    },
+    Data(Vec<u8>),
+    Trailers(GrpcPairs),
+    Hold,
+}
+
+#[derive(Debug, Clone)]
+pub(crate) struct GrpcSeen {
+    pub(crate) path: String,
+    pub(crate) headers: http::HeaderMap,
+    pub(crate) body: Vec<u8>,
+}
+
+impl GrpcSeen {
+    pub(crate) fn header(&self, name: &str) -> Option<&str> {
+        self.headers.get(name).and_then(|value| value.to_str().ok())
+    }
+
+    pub(crate) fn message(&self) -> &[u8] {
+        self.body.get(GRPC_FRAME_PREFIX..).unwrap_or_default()
+    }
+}
+
+type GrpcScript = Arc<dyn Fn(&GrpcSeen) -> Vec<GrpcStep> + Send + Sync>;
+
+pub(crate) struct GrpcStub {
+    address: std::net::SocketAddr,
+    seen: Arc<Mutex<Vec<GrpcSeen>>>,
+}
+
+impl GrpcStub {
+    pub(crate) async fn serving(steps: Vec<GrpcStep>) -> Self {
+        Self::scripted(move |_| steps.clone()).await
+    }
+
+    pub(crate) async fn scripted(
+        script: impl Fn(&GrpcSeen) -> Vec<GrpcStep> + Send + Sync + 'static,
+    ) -> Self {
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let address = listener.local_addr().unwrap();
+        let seen = Arc::new(Mutex::new(Vec::new()));
+        let script: GrpcScript = Arc::new(script);
+        let recorded = Arc::clone(&seen);
+        tokio::spawn(async move {
+            while let Ok((socket, _)) = listener.accept().await {
+                tokio::spawn(serve_grpc(
+                    socket,
+                    Arc::clone(&script),
+                    Arc::clone(&recorded),
+                ));
+            }
+        });
+        Self { address, seen }
+    }
+
+    pub(crate) fn uri(&self) -> String {
+        format!("http://{}", self.address)
+    }
+
+    pub(crate) fn seen(&self) -> Vec<GrpcSeen> {
+        self.seen.lock().unwrap().clone()
+    }
+
+    pub(crate) fn seen_counter(&self) -> impl Fn() -> usize + Send + Sync + 'static {
+        let seen = Arc::clone(&self.seen);
+        move || seen.lock().unwrap().len()
+    }
+}
+
+async fn serve_grpc(
+    socket: tokio::net::TcpStream,
+    script: GrpcScript,
+    seen: Arc<Mutex<Vec<GrpcSeen>>>,
+) {
+    let Ok(mut connection) = h2::server::handshake(socket).await else {
+        return;
+    };
+    while let Some(Ok((request, respond))) = connection.accept().await {
+        tokio::spawn(answer_grpc(
+            request,
+            respond,
+            Arc::clone(&script),
+            Arc::clone(&seen),
+        ));
+    }
+}
+
+async fn answer_grpc(
+    request: http::Request<h2::RecvStream>,
+    mut respond: h2::server::SendResponse<bytes::Bytes>,
+    script: GrpcScript,
+    seen: Arc<Mutex<Vec<GrpcSeen>>>,
+) {
+    let (head, mut body) = request.into_parts();
+    let mut bytes = Vec::new();
+    while let Some(Ok(chunk)) = body.data().await {
+        body.flow_control().release_capacity(chunk.len()).ok();
+        bytes.extend_from_slice(&chunk);
+    }
+    let recorded = GrpcSeen {
+        path: head.uri.path().to_owned(),
+        headers: head.headers,
+        body: bytes,
+    };
+    let steps = script(&recorded);
+    seen.lock().unwrap().push(recorded);
+    let mut send = None;
+    for step in steps {
+        match step {
+            GrpcStep::Head {
+                status,
+                headers,
+                end,
+            } => {
+                let mut response = http::Response::builder().status(status);
+                for (name, value) in headers {
+                    response = response.header(name, value);
+                }
+                match respond.send_response(response.body(()).unwrap(), end) {
+                    Ok(stream) => send = Some(stream),
+                    Err(_) => return,
+                }
+            }
+            GrpcStep::Data(data) => {
+                let Some(stream) = send.as_mut() else { return };
+                if stream.send_data(bytes::Bytes::from(data), false).is_err() {
+                    return;
+                }
+            }
+            GrpcStep::Trailers(pairs) => {
+                let Some(stream) = send.as_mut() else { return };
+                let mut map = http::HeaderMap::new();
+                for (name, value) in pairs {
+                    map.append(
+                        http::HeaderName::from_static(name),
+                        http::HeaderValue::from_str(&value).unwrap(),
+                    );
+                }
+                if stream.send_trailers(map).is_err() {
+                    return;
+                }
+            }
+            GrpcStep::Hold => std::future::pending::<()>().await,
+        }
+    }
+}
+
+pub(crate) fn grpc_frame(message: &[u8]) -> GrpcStep {
+    let mut framed = vec![UNCOMPRESSED_FRAME];
+    framed.extend_from_slice(&u32::try_from(message.len()).unwrap().to_be_bytes());
+    framed.extend_from_slice(message);
+    GrpcStep::Data(framed)
+}
+
+pub(crate) fn grpc_head() -> GrpcStep {
+    GrpcStep::Head {
+        status: reqwest::StatusCode::OK.as_u16(),
+        headers: vec![("content-type", GRPC_CONTENT_TYPE.to_owned())],
+        end: false,
+    }
+}
+
+pub(crate) fn grpc_ok_trailers() -> GrpcStep {
+    GrpcStep::Trailers(vec![(GRPC_STATUS, GRPC_OK.to_owned())])
+}
+
+pub(crate) fn grpc_trailers_only(pairs: GrpcPairs) -> GrpcStep {
+    let mut headers = vec![("content-type", GRPC_CONTENT_TYPE.to_owned())];
+    headers.extend(pairs);
+    GrpcStep::Head {
+        status: reqwest::StatusCode::OK.as_u16(),
+        headers,
+        end: true,
+    }
+}
+
+pub(crate) fn grpc_status(code: &str) -> GrpcPairs {
+    vec![(GRPC_STATUS, code.to_owned())]
+}
+
+pub(crate) fn grpc_status_with_message(code: &str, message: &str) -> GrpcPairs {
+    let mut pairs = grpc_status(code);
+    pairs.push((GRPC_MESSAGE, message.to_owned()));
+    pairs
+}
+
+fn status_details(code: &str, details: &[prost_types::Any]) -> GrpcPairs {
+    use base64::Engine;
+    let mut status = Vec::new();
+    prost::encoding::int32::encode(1, &code.parse::<i32>().unwrap(), &mut status);
+    for detail in details {
+        prost::encoding::message::encode(3, detail, &mut status);
+    }
+    let mut pairs = grpc_status(code);
+    pairs.push((
+        GRPC_DETAILS,
+        base64::engine::general_purpose::STANDARD_NO_PAD.encode(status),
+    ));
+    pairs
+}
+
+pub(crate) fn grpc_status_with_reason(code: &str, reason: &str) -> GrpcPairs {
+    let mut info = Vec::new();
+    prost::encoding::string::encode(1, &reason.to_owned(), &mut info);
+    status_details(
+        code,
+        &[prost_types::Any {
+            type_url: ERROR_INFO_TYPE_URL.to_owned(),
+            value: info,
+        }],
+    )
+}
+
+pub(crate) fn grpc_status_with_retry(code: &str, retry: std::time::Duration) -> GrpcPairs {
+    let mut info = Vec::new();
+    let delay = prost_types::Duration {
+        seconds: i64::try_from(retry.as_secs()).unwrap(),
+        nanos: 0,
+    };
+    prost::encoding::message::encode(1, &delay, &mut info);
+    status_details(
+        code,
+        &[prost_types::Any {
+            type_url: RETRY_INFO_TYPE_URL.to_owned(),
+            value: info,
+        }],
+    )
 }

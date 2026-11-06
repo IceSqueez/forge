@@ -1,6 +1,49 @@
 # Changelog
 All notable changes to this project will be documented in this file.
 
+## [0.7.4] - 2026-11-06
+### 🐛 Bug Fixes
+- *(actions)* Keep only the newest picker options in the step editor (closes #144)
+- *(chat)* Label the channel owner's badge BROADCASTER in the chat screen
+- *(overlays)* Repaint a static overlay when OBS shows its source again (closes #145)
+- *(youtube)* Keep a sign-in made while the daily quota is used up (closes #149)
+- *(youtube)* Lift the quota limit once the channel identity resolves elsewhere
+- *(youtube)* Scope the chat transcoder dead-code expectation to non-test builds
+- *(youtube)* Refresh a rejected token and honour quota and throttle waits on streamed chat
+- *(youtube)* Update the quota tile as quota is spent and label it as quota (closes #150)
+- *(youtube)* Log chat receive and its transport changes instead of polling (closes #151)
+
+### 🚀 Features
+- *(chat)* Carry Twitch badge images on chat messages for overlays
+- *(overlays)* Show badge images and role icons in the chat overlay (closes #146)
+- *(youtube)* Add the live chat stream message types and its endpoint
+- *(net)* Open server-streaming gRPC calls through the gateway
+- *(youtube)* Read streamed chat pages through the existing chat mapper
+- *(net)* Classify gRPC call outcomes into gateway failures
+- *(youtube)* Receive live chat pages over the streamed chat call
+- *(youtube)* Receive live chat over the stream with polling as the fallback (closes #148)
+- *(youtube)* Show whether live chat is streamed or polled in its health row
+
+### 🛠️ Build
+- *(net)* Enable HTTP/2 in the HTTP client and keep gateway calls on HTTP/1.1
+
+### 🧪 Testing
+- *(actions)* Settle picker refetches before checking the failure toast (closes #143)
+- *(actions)* Drop a stale picker fetch finishing after a newer one
+- *(overlays)* Pin the repaint after a hidden static overlay is shown again
+- *(chat)* Cover badge pictures from the Twitch catalog to the chat overlay
+- *(emulator)* Model the Helix chat badge endpoints in the fake Twitch
+- *(youtube)* Cover sign-in and channel identity resolve under a used-up quota
+- *(net)* Pin the gateway TLS offer to HTTP/1.1 only
+- *(youtube)* Pin streamed chat pages to the REST item shape and mapper
+- *(net)* Name the protocol-not-offered failure in the variant tables
+- *(net)* Cover the streamed gRPC call and its status classification
+- *(youtube)* Cover streamed chat receive, its supervisor and the connect path
+- *(youtube)* Cover the live chat transport mode in the supervisor and health row
+- *(host)* List the YouTube streamed chat endpoint in the surface roster
+- *(emulator)* Point the YouTube streamed chat endpoint at the fake so runs stay offline
+- *(youtube)* Cover quota change notifications and the quota health row
+
 ## [0.7.3] - 2026-11-05
 ### 🐛 Bug Fixes
 - *(actions)* Substitute variables inside JSON settings before parsing them (closes #140)
@@ -8,6 +51,10 @@ All notable changes to this project will be documented in this file.
 - *(overlays)* Show content delivered while the page is hidden as soon as it becomes visible (closes #141)
 - *(overlays)* Hide an overdue show at once when its page becomes visible
 - *(tts)* Keep the viewer name typed in the set voice alias step
+- *(actions)* List the set global name once among pack references
+
+### 📚 Documentation
+- *(release)* Release v0.7.3
 
 ### 🚀 Features
 - *(actions)* Pick webhooks and other known resources from lists in steps (closes #142)
@@ -19,6 +66,7 @@ All notable changes to this project will be documented in this file.
 - *(overlays)* Time an overdue hide from before the page becomes visible
 - *(actions)* Cover step pickers for webhooks, chat targets, aliases and globals
 - *(tts)* Keep a typed viewer name in set alias and the alias picker in switch
+- *(packs)* Classify the new step pickers as integration-owned lists
 
 ## [0.7.2] - 2026-11-04
 ### ⚙️ Miscellaneous Tasks

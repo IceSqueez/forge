@@ -55,11 +55,13 @@ impl YouTubeStreamMetadata {
     }
 
     async fn update(&self, field: Field, value: &str) -> Result<(), PlatformError> {
-        let broadcast_id = self.active_broadcast_id.resolve().await?.ok_or_else(|| {
-            PlatformError::Unsupported {
-                feature: "stream metadata - no active YouTube broadcast".to_owned(),
-            }
-        })?;
+        let broadcast_id = self
+            .active_broadcast_id
+            .resolve_target()
+            .await?
+            .ok_or_else(|| PlatformError::Unsupported {
+                feature: "stream metadata - no active or upcoming YouTube broadcast".to_owned(),
+            })?;
 
         let token = (self.access_token_source)().await?;
         let request = GatewayRequest::get(VIDEOS_PATH)
@@ -80,7 +82,7 @@ impl YouTubeStreamMetadata {
             .and_then(|v| v.as_array())
             .and_then(|arr| arr.first())
             .ok_or_else(|| PlatformError::Unsupported {
-                feature: "stream metadata - active broadcast video not found".to_owned(),
+                feature: "stream metadata - target broadcast video not found".to_owned(),
             })?;
 
         let mut snippet = item

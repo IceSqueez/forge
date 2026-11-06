@@ -1,6 +1,7 @@
 pub(crate) mod active_broadcast_id;
 pub(crate) mod ad_break;
 pub(crate) mod broadcast_lookup;
+pub(crate) mod broadcast_target;
 pub(crate) mod channel_lookup;
 pub(crate) mod follow_lookup;
 pub(crate) mod live_chat_id;

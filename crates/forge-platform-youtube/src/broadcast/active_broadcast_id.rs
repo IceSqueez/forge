@@ -48,6 +48,16 @@ impl ActiveBroadcastIdHandle {
             .await?
             .map(|broadcast| broadcast.broadcast_id))
     }
+
+    pub(crate) async fn resolve_target(&self) -> Result<Option<String>, PlatformError> {
+        if let Some(active) = self.resolve().await? {
+            return Ok(Some(active));
+        }
+        let Some(lookup) = self.fallback.get() else {
+            return Ok(None);
+        };
+        lookup.earliest_upcoming_id().await
+    }
 }
 
 #[cfg(test)]

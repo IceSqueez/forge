@@ -7,9 +7,10 @@ use tokio_util::sync::CancellationToken;
 
 use crate::api::data_api::{DataApiError, YouTubeDataApi, malformed};
 use crate::api::quota_state::BROADCAST_COST;
+use crate::broadcast::broadcast_target::fetch_earliest_upcoming_id;
 use crate::chat::chat_poller::MISSING_SCOPE;
 
-const BROADCASTS_PATH: &str = "/liveBroadcasts";
+pub(crate) const BROADCASTS_PATH: &str = "/liveBroadcasts";
 
 use forge_platform_core::TokenSource;
 
@@ -73,6 +74,16 @@ impl BroadcastLookup {
             api,
             access_token_source,
         }
+    }
+
+    pub(crate) async fn earliest_upcoming_id(&self) -> Result<Option<String>, PlatformError> {
+        let token = (self.access_token_source)().await?;
+        fetch_earliest_upcoming_id(&self.api, &token)
+            .await
+            .map_err(|failure| match failure {
+                LookupFailure::Api(error) => error.into_platform_error(MISSING_SCOPE),
+                LookupFailure::Malformed(error) => error,
+            })
     }
 
     pub(crate) async fn active(&self) -> Result<Option<ActiveBroadcast>, PlatformError> {

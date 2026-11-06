@@ -205,3 +205,216 @@ fn read_duration(bytes: &[u8]) -> Result<Option<Duration>, Malformed> {
     };
     Ok(Duration::from_secs(seconds).checked_add(Duration::from_nanos(u64::from(nanos))))
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use base64::engine::general_purpose::STANDARD;
+
+    fn varint(mut value: u64) -> Vec<u8> {
+        let mut out = Vec::new();
+        loop {
+            let low = u8::try_from(value & u64::from(VARINT_PAYLOAD_MASK)).unwrap();
+            value >>= VARINT_GROUP_BITS;
+            if value == 0 {
+                out.push(low);
+                return out;
+            }
+            out.push(low | VARINT_CONTINUES);
+        }
+    }
+
+    fn bytes_field(number: u64, bytes: &[u8]) -> Vec<u8> {
+        let mut out = varint((number << FIELD_NUMBER_SHIFT) | WIRE_LENGTH_DELIMITED);
+        out.extend(varint(u64::try_from(bytes.len()).unwrap()));
+        out.extend_from_slice(bytes);
+        out
+    }
+
+    fn varint_field(number: u64, value: u64) -> Vec<u8> {
+        let mut out = varint((number << FIELD_NUMBER_SHIFT) | WIRE_VARINT);
+        out.extend(varint(value));
+        out
+    }
+
+    fn any(type_name: &str, value: &[u8]) -> Vec<u8> {
+        let url = format!("type.googleapis.com/{type_name}");
+        let mut out = bytes_field(ANY_TYPE_URL_FIELD, url.as_bytes());
+        out.extend(bytes_field(ANY_VALUE_FIELD, value));
+        out
+    }
+
+    fn error_info(reason: &str) -> Vec<u8> {
+        any(
+            ERROR_INFO_TYPE,
+            &bytes_field(ERROR_INFO_REASON_FIELD, reason.as_bytes()),
+        )
+    }
+
+    fn retry_info(seconds: u64, nanos: u64) -> Vec<u8> {
+        let mut duration = varint_field(DURATION_SECONDS_FIELD, seconds);
+        duration.extend(varint_field(DURATION_NANOS_FIELD, nanos));
+        any(
+            RETRY_INFO_TYPE,
+            &bytes_field(RETRY_INFO_DELAY_FIELD, &duration),
+        )
+    }
+
+    fn status(message: &str, details: &[Vec<u8>]) -> Vec<u8> {
+        let mut out = varint_field(1, 8);
+        out.extend(bytes_field(STATUS_MESSAGE_FIELD, message.as_bytes()));
+        for detail in details {
+            out.extend(bytes_field(STATUS_DETAILS_FIELD, detail));
+        }
+        out
+    }
+
+    fn decoded(status: &[u8]) -> StatusDetails {
+        decode_status_details(STANDARD.encode(status).as_bytes())
+    }
+
+    #[test]
+    fn message_reason_and_retry_delay_are_read_from_a_full_status() {
+        let details = decoded(&status(
+            "slow down",
+            &[error_info("rateLimitExceeded"), retry_info(3, 250_000_000)],
+        ));
+
+        assert_eq!(
+            details,
+            StatusDetails {
+                message: Some("slow down".to_owned()),
+                reason: Some("rateLimitExceeded".to_owned()),
+                retry_delay: Some(Duration::from_millis(3_250)),
+            }
+        );
+    }
+
+    #[test]
+    fn unknown_detail_types_and_fixed_width_fields_are_skipped() {
+        let mut bytes = status("busy", &[any("google.rpc.Help", b"\x0a\x01x")]);
+        bytes.extend(varint((9 << FIELD_NUMBER_SHIFT) | WIRE_FIXED64));
+        bytes.extend([0_u8; FIXED64_BYTES]);
+        bytes.extend(varint((10 << FIELD_NUMBER_SHIFT) | WIRE_FIXED32));
+        bytes.extend([0_u8; FIXED32_BYTES]);
+        bytes.extend(bytes_field(
+            STATUS_DETAILS_FIELD,
+            &error_info("quotaExceeded"),
+        ));
+
+        assert_eq!(decoded(&bytes).reason.as_deref(), Some("quotaExceeded"));
+    }
+
+    fn status_of_raw_len(raw_len: usize) -> Vec<u8> {
+        let details = [error_info("quotaExceeded")];
+        let mut filler = raw_len;
+        loop {
+            let candidate = status(&"m".repeat(filler), &details);
+            if candidate.len() <= raw_len {
+                assert_eq!(candidate.len(), raw_len);
+                return candidate;
+            }
+            filler -= 1;
+        }
+    }
+
+    #[test]
+    fn encoded_details_exactly_at_the_size_cap_are_read() {
+        let encoded = STANDARD.encode(status_of_raw_len(MAX_ENCODED_DETAILS_BYTES / 4 * 3));
+        assert_eq!(encoded.len(), MAX_ENCODED_DETAILS_BYTES);
+
+        let read = decode_status_details(encoded.as_bytes());
+
+        assert_eq!(read.reason.as_deref(), Some("quotaExceeded"));
+    }
+
+    #[test]
+    fn encoded_details_one_base64_group_over_the_size_cap_are_refused() {
+        let encoded = STANDARD.encode(status_of_raw_len(MAX_ENCODED_DETAILS_BYTES / 4 * 3 + 3));
+        assert_eq!(encoded.len(), MAX_ENCODED_DETAILS_BYTES + 4);
+
+        assert_eq!(
+            decode_status_details(encoded.as_bytes()),
+            StatusDetails::default()
+        );
+    }
+
+    #[test]
+    fn every_truncation_of_a_status_yields_no_reason() {
+        let whole = status("cut", &[error_info("quotaExceeded")]);
+        assert_eq!(decoded(&whole).reason.as_deref(), Some("quotaExceeded"));
+
+        for cut in 0..whole.len() {
+            assert_eq!(decoded(&whole[..cut]).reason, None, "cut at {cut}");
+        }
+    }
+
+    #[test]
+    fn malformed_wire_input_decodes_to_empty_details() {
+        let overlong_varint = [VARINT_CONTINUES; MAX_VARINT_BYTES + 1];
+        let mut length_past_end =
+            varint((STATUS_MESSAGE_FIELD << FIELD_NUMBER_SHIFT) | WIRE_LENGTH_DELIMITED);
+        length_past_end.extend(varint(u64::MAX));
+        let mut group_wire_type = status("kept", &[]);
+        group_wire_type.push(0x0b);
+        for (label, encoded) in [
+            ("bad base64", b"%%not-base64%%".to_vec()),
+            (
+                "overlong varint",
+                STANDARD.encode(overlong_varint).into_bytes(),
+            ),
+            (
+                "length past end",
+                STANDARD.encode(&length_past_end).into_bytes(),
+            ),
+            (
+                "group wire type",
+                STANDARD.encode(&group_wire_type).into_bytes(),
+            ),
+        ] {
+            assert_eq!(
+                decode_status_details(&encoded),
+                StatusDetails::default(),
+                "{label}"
+            );
+        }
+    }
+
+    #[test]
+    fn reason_must_be_a_bounded_identifier() {
+        let longest = "a".repeat(MAX_REASON_CHARS);
+        let too_long = "a".repeat(MAX_REASON_CHARS + 1);
+        for (reason, kept) in [
+            ("quota_exceeded.v2-x", true),
+            (longest.as_str(), true),
+            (too_long.as_str(), false),
+            ("", false),
+            ("quota exceeded", false),
+            ("quota\nExceeded", false),
+            ("quotaExceeded\u{00e9}", false),
+        ] {
+            let read = decoded(&status("", &[error_info(reason)])).reason;
+
+            assert_eq!(read.is_some(), kept, "{reason:?}");
+        }
+    }
+
+    #[test]
+    fn retry_delay_out_of_range_is_dropped() {
+        for (seconds, nanos) in [(u64::MAX, 0), (0, u64::from(u32::MAX) + 1)] {
+            let read = decoded(&status("", &[retry_info(seconds, nanos)])).retry_delay;
+
+            assert_eq!(read, None, "{seconds}s {nanos}ns");
+        }
+    }
+
+    #[test]
+    fn first_error_info_reason_wins_over_later_ones() {
+        let read = decoded(&status(
+            "",
+            &[error_info("quotaExceeded"), error_info("rateLimitExceeded")],
+        ));
+
+        assert_eq!(read.reason.as_deref(), Some("quotaExceeded"));
+    }
+}

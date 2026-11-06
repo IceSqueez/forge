@@ -2982,6 +2982,7 @@ dependencies = [
  "forge-net",
  "forge-test-support",
  "forge-types",
+ "h2",
  "http",
  "http-body-util",
  "httpdate",

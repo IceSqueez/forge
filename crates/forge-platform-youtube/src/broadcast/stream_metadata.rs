@@ -130,10 +130,11 @@ mod tests {
     use forge_platform_core::PlatformError;
     use futures::future::BoxFuture;
     use serde_json::{Value, json};
-    use wiremock::matchers::{method, path};
+    use wiremock::matchers::{method, path, query_param};
     use wiremock::{Mock, MockServer, ResponseTemplate};
 
-    use crate::api::quota_state::SharedQuota;
+    use crate::api::quota_state::{BROADCAST_COST, SharedQuota};
+    use crate::broadcast::broadcast_lookup::BroadcastLookup;
     use crate::endpoints_test_support::{data_api_charging, used_today};
 
     fn token_source()
@@ -297,5 +298,174 @@ mod tests {
             "no active broadcast must short-circuit before the GET"
         );
         assert_eq!(used_today(&quota).await, 0);
+    }
+
+    async fn mount_broadcasts(server: &MockServer, status: &str, reply: ResponseTemplate) {
+        Mock::given(method("GET"))
+            .and(path("/liveBroadcasts"))
+            .and(query_param("broadcastStatus", status))
+            .respond_with(reply)
+            .mount(server)
+            .await;
+    }
+
+    fn listing(items: Value) -> ResponseTemplate {
+        ResponseTemplate::new(reqwest::StatusCode::OK).set_body_json(json!({ "items": items }))
+    }
+
+    fn out_of_order_upcoming() -> ResponseTemplate {
+        listing(json!([
+            { "id": "upcoming-late", "snippet": { "scheduledStartTime": "2026-11-20T18:00:00Z" } },
+            { "id": "upcoming-soonest", "snippet": { "scheduledStartTime": "2026-11-08T18:00:00Z" } },
+            { "id": "upcoming-middle", "snippet": { "scheduledStartTime": "2026-11-12T18:00:00Z" } }
+        ]))
+    }
+
+    fn metadata_falling_back_on(server: &MockServer) -> (YouTubeStreamMetadata, SharedQuota) {
+        let quota = SharedQuota::default();
+        let handle = ActiveBroadcastIdHandle::new();
+        handle.fall_back_to(BroadcastLookup::new(
+            data_api_charging(&server.uri(), quota.clone()),
+            token_source(),
+        ));
+        let meta = YouTubeStreamMetadata::new(
+            data_api_charging(&server.uri(), quota.clone()),
+            token_source(),
+            handle,
+        );
+        (meta, quota)
+    }
+
+    async fn video_lookup_ids(server: &MockServer) -> Vec<String> {
+        server
+            .received_requests()
+            .await
+            .unwrap()
+            .iter()
+            .filter(|r| r.method.as_str() == "GET" && r.url.path() == "/videos")
+            .filter_map(|r| {
+                r.url
+                    .query_pairs()
+                    .find(|(key, _)| key == "id")
+                    .map(|(_, id)| id.into_owned())
+            })
+            .collect()
+    }
+
+    async fn write_field(meta: &YouTubeStreamMetadata, field: &str) -> Result<(), PlatformError> {
+        match field {
+            "title" => meta.set_title("v").await,
+            "description" => meta.set_description("v").await,
+            "category" => meta.set_category("24").await,
+            _ => meta.set_privacy("public").await,
+        }
+    }
+
+    #[tokio::test]
+    async fn a_live_broadcast_is_the_write_target_and_upcoming_is_never_listed() {
+        let server = MockServer::start().await;
+        mount_broadcasts(
+            &server,
+            "active",
+            listing(json!([{ "id": "live-1", "snippet": { "liveChatId": "chat-1" } }])),
+        )
+        .await;
+        Mock::given(method("GET"))
+            .and(path("/liveBroadcasts"))
+            .and(query_param("broadcastStatus", "upcoming"))
+            .respond_with(out_of_order_upcoming())
+            .expect(0)
+            .mount(&server)
+            .await;
+        mount_fetch(&server).await;
+        mount_update_ok(&server).await;
+        let (meta, _quota) = metadata_falling_back_on(&server);
+
+        meta.set_title("NEW TITLE").await.unwrap();
+
+        assert_eq!(put_body(&server).await["id"], "live-1");
+        server.verify().await;
+    }
+
+    #[tokio::test]
+    async fn with_nothing_live_every_field_write_lands_on_the_earliest_upcoming_broadcast() {
+        for field in ["title", "description", "category", "privacy"] {
+            let server = MockServer::start().await;
+            mount_broadcasts(&server, "active", listing(json!([]))).await;
+            mount_broadcasts(&server, "upcoming", out_of_order_upcoming()).await;
+            mount_fetch(&server).await;
+            mount_update_ok(&server).await;
+            let (meta, _quota) = metadata_falling_back_on(&server);
+
+            write_field(&meta, field).await.unwrap();
+
+            assert_eq!(
+                video_lookup_ids(&server).await,
+                vec!["upcoming-soonest".to_owned()],
+                "{field}"
+            );
+            assert_eq!(put_body(&server).await["id"], "upcoming-soonest", "{field}");
+        }
+    }
+
+    #[tokio::test]
+    async fn an_upcoming_target_write_charges_both_broadcast_lookups() {
+        let server = MockServer::start().await;
+        mount_broadcasts(&server, "active", listing(json!([]))).await;
+        mount_broadcasts(&server, "upcoming", out_of_order_upcoming()).await;
+        mount_fetch(&server).await;
+        mount_update_ok(&server).await;
+        let (meta, quota) = metadata_falling_back_on(&server);
+
+        meta.set_title("NEW TITLE").await.unwrap();
+
+        assert_eq!(
+            used_today(&quota).await,
+            2 * BROADCAST_COST + FETCH_COST + UPDATE_COST
+        );
+    }
+
+    #[tokio::test]
+    async fn with_nothing_live_or_upcoming_a_write_is_unsupported_and_touches_no_video() {
+        let server = MockServer::start().await;
+        mount_broadcasts(&server, "active", listing(json!([]))).await;
+        mount_broadcasts(
+            &server,
+            "upcoming",
+            listing(json!([{ "id": "unscheduled", "snippet": { "title": "t" } }])),
+        )
+        .await;
+        let (meta, _quota) = metadata_falling_back_on(&server);
+
+        let err = meta.set_title("x").await.unwrap_err();
+
+        assert!(
+            matches!(&err, PlatformError::Unsupported { feature } if feature.contains("no active or upcoming")),
+            "{err:?}"
+        );
+        assert!(video_lookup_ids(&server).await.is_empty());
+    }
+
+    #[tokio::test]
+    async fn a_failed_upcoming_lookup_surfaces_its_error_and_writes_nothing() {
+        const INTERNAL: u16 = reqwest::StatusCode::INTERNAL_SERVER_ERROR.as_u16();
+        let server = MockServer::start().await;
+        mount_broadcasts(&server, "active", listing(json!([]))).await;
+        mount_broadcasts(&server, "upcoming", ResponseTemplate::new(INTERNAL)).await;
+        let (meta, _quota) = metadata_falling_back_on(&server);
+
+        let err = meta.set_title("x").await.unwrap_err();
+
+        assert!(
+            matches!(
+                err,
+                PlatformError::Http {
+                    status: INTERNAL,
+                    ..
+                }
+            ),
+            "{err:?}"
+        );
+        assert!(video_lookup_ids(&server).await.is_empty());
     }
 }

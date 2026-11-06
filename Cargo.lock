@@ -2984,6 +2984,7 @@ dependencies = [
  "httpdate",
  "rand 0.10.3",
  "reqwest",
+ "rustls",
  "serde",
  "serde_json",
  "thiserror 2.0.21",

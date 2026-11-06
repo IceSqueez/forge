@@ -90,3 +90,82 @@ pub(crate) fn youtube_consent_line(
         .text_color(palette.text_muted)
         .child(text)
 }
+
+#[cfg(test)]
+mod tests {
+    use forge_storage::Language;
+
+    use super::*;
+    use crate::app::i18n::message_in;
+
+    fn consent_in(language: Language) -> ConsentText {
+        consent_text(
+            &message_in(language, "youtube_consent_prefix"),
+            &message_in(language, "youtube_consent_terms_link"),
+            &message_in(language, "youtube_consent_joiner"),
+            &message_in(language, "youtube_consent_privacy_link"),
+            &message_in(language, "youtube_consent_suffix"),
+        )
+    }
+
+    #[test]
+    fn consent_sentence_reads_whole_with_single_spaces_around_each_link() {
+        for (language, expected) in [
+            (
+                Language::En,
+                "By connecting YouTube you agree to the YouTube Terms of Service and the forge Privacy Policy.",
+            ),
+            (
+                Language::Uk,
+                "Підключаючи YouTube, ти погоджуєшся з Умовами використання YouTube і Політикою конфіденційності forge.",
+            ),
+        ] {
+            assert_eq!(consent_in(language).text, expected, "{language:?}");
+        }
+    }
+
+    #[test]
+    fn link_ranges_slice_exactly_the_link_labels_in_each_language() {
+        for (language, terms, privacy) in [
+            (
+                Language::En,
+                "YouTube Terms of Service",
+                "forge Privacy Policy",
+            ),
+            (
+                Language::Uk,
+                "Умовами використання YouTube",
+                "Політикою конфіденційності forge",
+            ),
+        ] {
+            let consent = consent_in(language);
+            let [terms_range, privacy_range] = consent.link_ranges.clone();
+            assert_eq!(&consent.text[terms_range], terms, "{language:?}");
+            assert_eq!(&consent.text[privacy_range], privacy, "{language:?}");
+        }
+    }
+
+    #[test]
+    fn clicked_range_index_opens_the_link_shown_at_that_position() {
+        let consent = consent_in(Language::En);
+        for (index, label, url) in [
+            (
+                0,
+                "YouTube Terms of Service",
+                "https://www.youtube.com/t/terms",
+            ),
+            (
+                1,
+                "forge Privacy Policy",
+                "https://icesqueez.com/en/forge/privacy/",
+            ),
+        ] {
+            assert_eq!(
+                &consent.text[consent.link_ranges[index].clone()],
+                label,
+                "{index}"
+            );
+            assert_eq!(PolicyLink::IN_TEXT_ORDER[index].url(), url, "{index}");
+        }
+    }
+}

@@ -194,7 +194,8 @@ fn stream_info_actions(ctx: &Availability) -> Vec<QuickAction> {
         .with_fields(vec![
             QuickActionField::text(config_keys::TITLE, labels::STREAM_TITLE)
                 .with_placeholder(labels::STREAM_TITLE)
-                .required(),
+                .required()
+                .reads_current(),
         ]),
         QuickAction::new(
             labels::SET_CATEGORY_GAME,
@@ -207,7 +208,8 @@ fn stream_info_actions(ctx: &Availability) -> Vec<QuickAction> {
         .with_fields(vec![
             QuickActionField::text(config_keys::CATEGORY_NAME, labels::CATEGORY)
                 .with_placeholder(labels::CATEGORY_EXAMPLE)
-                .required(),
+                .required()
+                .reads_current(),
         ]),
         QuickAction::new(
             labels::UPDATE_TAGS,
@@ -219,7 +221,8 @@ fn stream_info_actions(ctx: &Availability) -> Vec<QuickAction> {
         .enabled_if(ctx.connected)
         .with_fields(vec![
             QuickActionField::text(config_keys::TAGS, labels::TAGS_COMMA_SEP)
-                .with_placeholder(labels::TAGS_EXAMPLE),
+                .with_placeholder(labels::TAGS_EXAMPLE)
+                .reads_current(),
         ]),
         QuickAction::new(
             labels::CREATE_STREAM_MARKER,

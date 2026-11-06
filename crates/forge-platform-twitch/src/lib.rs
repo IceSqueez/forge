@@ -14,6 +14,7 @@ mod control;
 mod creator_goals;
 pub mod credentials;
 mod credentials_manager;
+mod current_values;
 mod custom_rewards;
 #[cfg(test)]
 #[path = "../../forge-platform-core/test_support/emitted_codes.rs"]

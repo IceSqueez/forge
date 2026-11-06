@@ -340,6 +340,7 @@ pub fn twitch_builtin_object(
         .with_control(bundle.clone())
         .with_collections(bundle.clone())
         .with_option_source(bundle.clone())
+        .with_current_values(bundle.clone())
         .with_follow(bundle.clone())
         .with_ban_list(bundle)
 }

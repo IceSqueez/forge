@@ -31,7 +31,7 @@ pub use expected_refusal::ExpectedRefusal;
 pub use failure::{
     BodyExcerpt, GatewayFailure, InvalidRequest, RedirectRefusal, TransportFailure, TransportKind,
 };
-pub use grpc::{GrpcItem, GrpcRequest, GrpcStatus, GrpcStream};
+pub use grpc::{GrpcItem, GrpcRequest, GrpcStream};
 pub use observer::{FailureContext, FailureObserver};
 pub use profile::{EgressKind, GatewayProfile};
 pub use request::{

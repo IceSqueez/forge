@@ -1,3 +1,4 @@
+mod details;
 mod framing;
 mod request;
 mod status;
@@ -6,19 +7,24 @@ mod stream;
 use std::time::Duration;
 
 use reqwest::StatusCode;
+use reqwest::header::CONTENT_TYPE;
 use tokio_util::sync::CancellationToken;
 
 pub use request::GrpcRequest;
-pub use status::GrpcStatus;
 pub use stream::{GrpcItem, GrpcStream};
 
+use super::classify::{ERROR_BODY_READ_CAP, excerpt_of};
 use super::failure::{GatewayFailure, InvalidRequest};
 use super::request::{BodyRepr, GatewayRequest, RequestBody};
 use super::response_body::ResponseBody;
 use super::{Gateway, collect_headers, invalid};
+use crate::body_read::read_capped;
+use status::GRPC_STATUS;
 use stream::StreamParts;
 
 const GRPC_CONTENT_TYPE: &str = "application/grpc";
+const CONTENT_SUBTYPE_MARK: char = '+';
+const PARAMETER_MARK: char = ';';
 
 impl Gateway {
     pub async fn open_grpc_stream(
@@ -78,12 +84,38 @@ impl Gateway {
             .follow(&client, call, first, builder, Some(read_idle))
             .await?;
         let status = response.status();
-        if status != StatusCode::OK {
-            let headers = collect_headers(&response);
-            return Err(self
-                .refusal(call, status, &headers, ResponseBody::new(response))
-                .await);
+        let offers_grpc = response
+            .headers()
+            .get(CONTENT_TYPE)
+            .and_then(|value| value.to_str().ok())
+            .is_some_and(is_grpc_content_type);
+        if offers_grpc && (status == StatusCode::OK || response.headers().contains_key(GRPC_STATUS))
+        {
+            return Ok(response);
         }
-        Ok(response)
+        if status == StatusCode::OK || status == StatusCode::NOT_FOUND {
+            let body = tokio::time::timeout(
+                read_idle,
+                read_capped(ResponseBody::new(response), ERROR_BODY_READ_CAP),
+            )
+            .await
+            .ok()
+            .and_then(Result::ok)
+            .unwrap_or_default();
+            return Err(GatewayFailure::ProtocolNotOffered {
+                excerpt: excerpt_of(&body, &call.secrets()),
+            });
+        }
+        let headers = collect_headers(&response);
+        Err(self
+            .refusal(call, status, &headers, ResponseBody::new(response))
+            .await)
     }
+}
+
+fn is_grpc_content_type(value: &str) -> bool {
+    let value = value.trim().to_ascii_lowercase();
+    value.strip_prefix(GRPC_CONTENT_TYPE).is_some_and(|rest| {
+        rest.is_empty() || rest.starts_with([CONTENT_SUBTYPE_MARK, PARAMETER_MARK])
+    })
 }

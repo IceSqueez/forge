@@ -8,19 +8,31 @@ use crate::address_guard::HostRejection;
 use crate::throttle_hint::ThrottleScope;
 
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
-pub struct BodyExcerpt(String);
+pub struct BodyExcerpt {
+    text: String,
+    reason: Option<String>,
+}
 
 impl BodyExcerpt {
     pub(crate) fn new(text: String) -> Self {
-        Self(text)
+        Self { text, reason: None }
+    }
+
+    pub(crate) fn with_reason(mut self, reason: Option<String>) -> Self {
+        self.reason = reason;
+        self
     }
 
     pub fn as_str(&self) -> &str {
-        &self.0
+        &self.text
     }
 
     pub fn is_empty(&self) -> bool {
-        self.0.is_empty()
+        self.text.is_empty()
+    }
+
+    pub fn reason(&self) -> Option<&str> {
+        self.reason.as_deref()
     }
 }
 
@@ -180,6 +192,8 @@ pub enum GatewayFailure {
     ServerError { status: u16, excerpt: BodyExcerpt },
     #[error("unexpected response status {status}")]
     UnexpectedStatus { status: u16, excerpt: BodyExcerpt },
+    #[error("upstream does not offer the requested protocol")]
+    ProtocolNotOffered { excerpt: BodyExcerpt },
     #[error("local rate-limit budget exhausted")]
     BudgetExhausted { retry_after: Option<Duration> },
     #[error("response body exceeds the {cap}-byte cap")]
@@ -204,7 +218,8 @@ impl GatewayFailure {
             | Self::ClientRejected { status, .. }
             | Self::ServerError { status, .. }
             | Self::UnexpectedStatus { status, .. } => Some(*status),
-            Self::BudgetExhausted { .. }
+            Self::ProtocolNotOffered { .. }
+            | Self::BudgetExhausted { .. }
             | Self::ResponseTooLarge { .. }
             | Self::Transport(_)
             | Self::Cancelled
@@ -221,7 +236,8 @@ impl GatewayFailure {
             | Self::RateLimited { excerpt, .. }
             | Self::ClientRejected { excerpt, .. }
             | Self::ServerError { excerpt, .. }
-            | Self::UnexpectedStatus { excerpt, .. } => Some(excerpt),
+            | Self::UnexpectedStatus { excerpt, .. }
+            | Self::ProtocolNotOffered { excerpt } => Some(excerpt),
             Self::BudgetExhausted { .. }
             | Self::ResponseTooLarge { .. }
             | Self::Transport(_)

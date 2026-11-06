@@ -6,6 +6,7 @@ use tokio_util::sync::CancellationToken;
 
 use super::super::failure::{GatewayFailure, TransportFailure, TransportKind};
 use super::super::observer::FailureContext;
+use super::super::profile::GatewayProfile;
 use super::super::request::GatewayRequest;
 use super::super::streaming::BODY_IDLE_ELAPSED;
 use super::super::{Gateway, send_failure};
@@ -21,7 +22,7 @@ const UNKNOWN_FLAG: &str = "response message carries an unknown frame flag";
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum GrpcItem {
     Message(Vec<u8>),
-    End(Result<GrpcStatus, GatewayFailure>),
+    End(Result<(), GatewayFailure>),
 }
 
 enum State {
@@ -59,7 +60,8 @@ impl GrpcStream {
     pub(super) fn new(parts: StreamParts) -> Self {
         let response: http::Response<reqwest::Body> = parts.response.into();
         let (head, body) = response.into_parts();
-        let state = match status_in(&head.headers, &parts.call.secrets()) {
+        let profile = parts.gateway.inner.profile;
+        let state = match status_in(&head.headers, &parts.call.secrets(), &profile) {
             StatusField::Absent => State::Reading(body),
             StatusField::Malformed => State::Ending(Err(protocol_failure(MALFORMED_STATUS))),
             StatusField::Present(status) => State::Ending(Ok(status)),
@@ -80,10 +82,11 @@ impl GrpcStream {
             State::Done => return None,
             State::Ending(end) => end,
             State::Reading(mut body) => {
+                let profile = self.gateway.inner.profile;
                 let step = tokio::select! {
                     biased;
                     () = self.cancel.cancelled() => Err(GatewayFailure::Cancelled),
-                    step = read_step(&mut self.decoder, &mut body, self.read_idle, &self.call) => step,
+                    step = read_step(&mut self.decoder, &mut body, self.read_idle, &self.call, &profile) => step,
                 };
                 match step {
                     Ok(Step::Message(message)) => {
@@ -95,6 +98,7 @@ impl GrpcStream {
                 }
             }
         };
+        let end = end.and_then(|status| status.into_outcome(&self.gateway.inner.profile));
         if let Err(failure) = &end {
             self.gateway.report(&self.call, self.context, failure);
         }
@@ -116,6 +120,7 @@ async fn read_step(
     body: &mut reqwest::Body,
     read_idle: Duration,
     call: &GatewayRequest,
+    profile: &GatewayProfile,
 ) -> Result<Step, GatewayFailure> {
     loop {
         if let Some(message) = decoder.next_message().map_err(framing_failure)? {
@@ -149,7 +154,7 @@ async fn read_step(
         if decoder.holds_partial_message() {
             return Err(protocol_failure(TRUNCATED_MESSAGE));
         }
-        return match status_in(&trailers, &call.secrets()) {
+        return match status_in(&trailers, &call.secrets(), profile) {
             StatusField::Present(status) => Ok(Step::End(status)),
             StatusField::Absent => Err(protocol_failure(MISSING_STATUS)),
             StatusField::Malformed => Err(protocol_failure(MALFORMED_STATUS)),

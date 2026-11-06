@@ -28,7 +28,7 @@ pub use dedup::DedupSet;
 pub use gateway::{
     BodyExcerpt, CallClass, Credential, DecodeCategory, ExpectedRefusal, FailureContext,
     FailureObserver, FormBody, Gateway, GatewayBuildError, GatewayFailure, GatewayProfile,
-    GatewayRequest, GatewayResponse, GatewayTimings, GrpcItem, GrpcRequest, GrpcStatus, GrpcStream,
+    GatewayRequest, GatewayResponse, GatewayTimings, GrpcItem, GrpcRequest, GrpcStream,
     InvalidRequest, Method, MultipartBody, RedirectRefusal, RequestBody, RequestEncodeError,
     ResolvedTarget, ResponseDecodeError, StreamFailure, StreamedResponse, TransportKind,
 };

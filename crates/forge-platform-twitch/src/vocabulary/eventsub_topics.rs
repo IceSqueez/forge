@@ -66,6 +66,7 @@ macro_rules! eventsub_topics {
             USER_WHISPER_MESSAGE => "user.whisper.message",
             USER_UPDATE => "user.update",
             CHANNEL_GOAL_PROGRESS => "channel.goal.progress",
+            CHANNEL_CHAT_NOTIFICATION => "channel.chat.notification",
         }
     };
 }

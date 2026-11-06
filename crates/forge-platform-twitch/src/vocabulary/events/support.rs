@@ -10,6 +10,8 @@ pub struct ChannelSubscribed {
     pub user: TwitchUser,
     pub tier: String,
     pub is_gift: bool,
+    #[serde(default)]
+    pub is_prime: bool,
 }
 
 impl TypedEvent for ChannelSubscribed {
@@ -24,6 +26,8 @@ pub struct ChannelResubscribed {
     pub streak_months: i64,
     pub message: String,
     pub share_streak: bool,
+    #[serde(default)]
+    pub is_prime: bool,
 }
 
 impl TypedEvent for ChannelResubscribed {

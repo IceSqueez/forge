@@ -91,50 +91,6 @@ impl ChatSession {
         self.config.bus.publish(event);
     }
 
-    pub(in crate::chat) fn publish_subscribe_event(
-        &self,
-        event_data: &serde_json::Value,
-        frame_msg_id: &str,
-    ) {
-        let user = wire_user(event_data, &USER_KEYS);
-
-        debug!(user_id = %user.id, "subscriber event received");
-
-        let chat_payload = payload::build_subscribe_chat_payload(event_data, frame_msg_id);
-        self.publish_with_chat(
-            ChannelSubscribed {
-                user,
-                tier: wire_text(event_data, "tier"),
-                is_gift: wire_flag(event_data, "is_gift"),
-            },
-            chat_payload,
-        );
-    }
-
-    pub(in crate::chat) fn publish_resubscribe_event(
-        &self,
-        event_data: &serde_json::Value,
-        frame_msg_id: &str,
-    ) {
-        let user = wire_user(event_data, &USER_KEYS);
-        let cumulative_months = wire_count(event_data, "cumulative_months");
-
-        debug!(user_id = %user.id, cumulative_months, "resub event received");
-
-        let chat_payload = payload::build_resubscribe_chat_payload(event_data, frame_msg_id);
-        self.publish_with_chat(
-            ChannelResubscribed {
-                user,
-                tier: wire_text(event_data, "tier"),
-                cumulative_months,
-                streak_months: wire_count(event_data, "streak_months"),
-                message: wire_text(wire_child(event_data, "message"), "text"),
-                share_streak: wire_flag(event_data, "share_streak"),
-            },
-            chat_payload,
-        );
-    }
-
     pub(in crate::chat) fn publish_gift_sub_event(
         &self,
         event_data: &serde_json::Value,

@@ -88,6 +88,12 @@ impl SubscriptionTracker {
         self.0.changes.subscribe()
     }
 
+    pub(crate) fn is_active(&self, kind: &str) -> bool {
+        self.read()
+            .iter()
+            .any(|record| record.kind == kind && record.status == SubStatus::Active)
+    }
+
     pub(crate) fn lacks_a_scope(&self) -> bool {
         self.read()
             .iter()

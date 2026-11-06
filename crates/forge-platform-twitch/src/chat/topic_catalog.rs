@@ -457,6 +457,12 @@ pub(super) const TOPICS: &[TopicSpec] = &[
         condition_fn: condition_user,
         route: ChatSession::publish_user_update_event,
     },
+    TopicSpec {
+        kind: topics::CHANNEL_CHAT_NOTIFICATION,
+        version: "1",
+        condition_fn: condition_chat,
+        route: ChatSession::pair_chat_notification,
+    },
 ];
 
 #[cfg(test)]

@@ -10,6 +10,7 @@ use forge_registry::{
 
 use super::payload_read::{self, twitch_actor};
 use crate::vocabulary::fields::support as fields;
+use forge_types::{DeclaredVariable, Variant, VariantKind};
 
 fn variables() -> Option<TriggerVariables> {
     Some(
@@ -23,6 +24,14 @@ fn variables() -> Option<TriggerVariables> {
                 payload_read::number(event, fields::STREAK_MONTHS)
             })
             .sub_tier(|event| payload_read::text(event, fields::TIER))
+            .event_specific(
+                DeclaredVariable {
+                    name: "sub_is_prime".to_owned(),
+                    kind: VariantKind::Bool,
+                    synthesis: None,
+                },
+                |event| Variant::Bool(payload_read::flag(event, fields::IS_PRIME)),
+            )
             .legacy("sub_message", CanonicalVariable::MessageText),
     )
 }

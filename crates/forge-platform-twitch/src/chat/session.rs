@@ -19,13 +19,13 @@ use forge_platform_core::{
 };
 use forge_types::{
     AUTHOR_IS_CONNECTED_BOT_FIELD, ChatModerationAction, ChatModerationPayload, ChatPayload,
-    ChatReply, ChatViewer, OAuthToken, UserRemoval,
+    ChatReply, ChatViewer, OAuthToken, RecoverMutex, UserRemoval,
 };
 use futures_util::{FutureExt, StreamExt};
 use serde::Deserialize;
 use std::future::Future;
 use std::pin::Pin;
-use std::sync::Arc;
+use std::sync::{Arc, Mutex};
 use tokio::sync::{oneshot, watch};
 use tokio::time::{Duration, Instant, sleep_until};
 use tokio_tungstenite::tungstenite::Message;
@@ -36,10 +36,12 @@ mod publish_moderation;
 mod publish_polls;
 mod publish_rewards;
 mod publish_stream;
+mod publish_subs;
 mod socket;
 mod subscription_pass;
 mod wire;
 
+use self::publish_subs::{HeldSub, sleep_until_due};
 use self::socket::*;
 use self::subscription_pass::*;
 use self::wire::*;
@@ -47,6 +49,7 @@ use self::wire::*;
 use super::dedup::MessageIdWindow;
 use super::dispatch;
 use super::payload;
+use super::sub_notice_pairing::SubNoticePairing;
 use crate::creator_goals::{GoalProgressOrigin, goal_progress_event};
 use crate::vocabulary::events::automod::{
     AutomodMessageHeld, AutomodMessageUpdated, AutomodSettingsUpdated, AutomodTermsUpdated,
@@ -188,6 +191,7 @@ pub(crate) struct ChatSession {
     backoff: Backoff,
     keepalive_timeout: Duration,
     retries_rx: Option<oneshot::Receiver<TopicRetries>>,
+    sub_notices: Mutex<SubNoticePairing<HeldSub>>,
 }
 
 impl ChatSession {
@@ -241,6 +245,7 @@ impl ChatSession {
             backoff: Backoff::default(),
             keepalive_timeout: crate::config::KEEPALIVE_TIMEOUT,
             retries_rx: None,
+            sub_notices: Mutex::default(),
         };
         (session, shutdown_tx)
     }
@@ -275,6 +280,7 @@ impl ChatSession {
             self.publish_connection_event();
 
             let outcome = self.run_session(&url).await;
+            self.release_waiting_subs();
 
             match outcome {
                 SessionOutcome::Disconnected => {}
@@ -340,6 +346,7 @@ impl ChatSession {
         )));
 
         loop {
+            let sub_release_at = self.next_sub_release();
             tokio::select! {
                 _ = &mut self.shutdown_rx => {
                     if let Some(socket) = live.take() {
@@ -397,6 +404,10 @@ impl ChatSession {
 
                 () = await_topic_retries(&mut topic_retries) => {
                     topic_retries = None;
+                }
+
+                () = sleep_until_due(sub_release_at) => {
+                    self.release_expired_subs();
                 }
 
                 _ = sleep_until(keepalive_deadline), if live.is_some() => {
@@ -736,6 +747,7 @@ impl Drop for ChatSession {
             Ok(()) => ConnectionTransition::Expected,
             Err(_) => self.transition,
         };
+        self.release_waiting_subs();
         self.state_tx.send_replace(ChatSessionState::Disconnected);
         self.config.bus.publish(connection_state_changed_event(
             vocabulary::PLATFORM_ID,

@@ -4,6 +4,7 @@ mod dispatch;
 pub(crate) mod payload;
 mod send;
 mod session;
+mod sub_notice_pairing;
 mod subscriber;
 mod topic_catalog;
 mod whisper;

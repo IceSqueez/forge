@@ -86,6 +86,7 @@ pub(crate) mod support {
     pub(crate) const USER_DISPLAY_NAME: &str = "display_name";
     pub(crate) const TIER: &str = "tier";
     pub(crate) const IS_GIFT: &str = "is_gift";
+    pub(crate) const IS_PRIME: &str = "is_prime";
     pub(crate) const CUMULATIVE_MONTHS: &str = "cumulative_months";
     pub(crate) const STREAK_MONTHS: &str = "streak_months";
     pub(crate) const MESSAGE: &str = "message";

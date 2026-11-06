@@ -23,6 +23,14 @@ fn variables() -> Option<TriggerVariables> {
                     synthesis: None,
                 },
                 |event| Variant::Bool(payload_read::flag(event, fields::IS_GIFT)),
+            )
+            .event_specific(
+                DeclaredVariable {
+                    name: "sub_is_prime".to_owned(),
+                    kind: VariantKind::Bool,
+                    synthesis: None,
+                },
+                |event| Variant::Bool(payload_read::flag(event, fields::IS_PRIME)),
             ),
     )
 }

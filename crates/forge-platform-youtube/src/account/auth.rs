@@ -567,6 +567,54 @@ mod tests {
         }
     }
 
+    async fn mount_channels_refusal(server: &MockServer, reason: &str) {
+        let status = StatusCode::FORBIDDEN.as_u16();
+        Mock::given(method("GET"))
+            .and(path("/channels"))
+            .respond_with(ResponseTemplate::new(status).set_body_json(
+                json!({ "error": { "code": status, "errors": [{ "reason": reason }] } }),
+            ))
+            .mount(server)
+            .await;
+    }
+
+    #[tokio::test]
+    async fn a_sign_in_whose_channel_lookup_is_refused_for_quota_keeps_the_tokens_with_a_pending_identity()
+     {
+        let server = MockServer::start().await;
+        mount_token(&server, StatusCode::OK, token_success_body()).await;
+        mount_channels_refusal(&server, "quotaExceeded").await;
+        let flow = GoogleAuthFlow::new(oauth_client_at(&server.uri()), data_api_at(&server.uri()));
+
+        let bundle = sign_in(flow).await.unwrap();
+
+        assert_eq!(
+            (
+                bundle.access_token.expose(),
+                bundle.refresh_token.expose(),
+                bundle.channel_id.as_str(),
+                bundle.channel_title.as_str(),
+                bundle.channel_handle
+            ),
+            (ACCESS_TOKEN, "1//test_refresh", "", "", None)
+        );
+    }
+
+    #[tokio::test]
+    async fn a_sign_in_whose_token_lacks_the_channel_scope_still_fails() {
+        let server = MockServer::start().await;
+        mount_token(&server, StatusCode::OK, token_success_body()).await;
+        mount_channels_refusal(&server, "insufficientPermissions").await;
+        let flow = GoogleAuthFlow::new(oauth_client_at(&server.uri()), data_api_at(&server.uri()));
+
+        let err = sign_in(flow).await.unwrap_err();
+
+        assert!(
+            matches!(&err, PlatformError::Auth { reason } if reason == OWN_CHANNEL_MISSING_SCOPE),
+            "got {err:?}"
+        );
+    }
+
     fn channels_refusal(status: StatusCode, reason: &str) -> StubReply {
         StubReply::json(
             status.as_u16(),

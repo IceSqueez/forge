@@ -323,6 +323,45 @@ mod tests {
         );
     }
 
+    #[test]
+    fn until_next_reset_counts_down_to_the_next_pacific_midnight() {
+        let cases = [
+            ((Month::July, 15, 6, 59, 59), 1),
+            ((Month::July, 15, 7, 0, 0), SECONDS_PER_DAY),
+            ((Month::July, 15, 7, 0, 1), SECONDS_PER_DAY - 1),
+            ((Month::July, 15, 19, 0, 0), SECONDS_PER_DAY / 2),
+            ((Month::January, 15, 7, 59, 59), 1),
+            ((Month::January, 15, 8, 0, 0), SECONDS_PER_DAY),
+        ];
+        for ((month, date, hour, minute, second), seconds) in cases {
+            let at = utc(day(2026, month, date), hour, minute, second);
+            assert_eq!(
+                until_next_reset(at),
+                std::time::Duration::from_secs(seconds),
+                "at {at}"
+            );
+        }
+    }
+
+    #[test]
+    fn until_next_reset_spans_the_short_and_the_long_daylight_saving_day() {
+        const HOUR: u64 = 3_600;
+        let cases = [
+            ((Month::March, 8, 8, 0, 0), 23 * HOUR),
+            ((Month::March, 8, 12, 0, 0), 19 * HOUR),
+            ((Month::November, 1, 7, 0, 0), 25 * HOUR),
+            ((Month::November, 1, 10, 0, 0), 22 * HOUR),
+        ];
+        for ((month, date, hour, minute, second), seconds) in cases {
+            let at = utc(day(2026, month, date), hour, minute, second);
+            assert_eq!(
+                until_next_reset(at),
+                std::time::Duration::from_secs(seconds),
+                "at {at}"
+            );
+        }
+    }
+
     #[tokio::test]
     async fn a_cloned_shared_quota_draws_on_the_same_daily_budget() {
         let poller = SharedQuota::new(used_on_day(QUOTA_DAILY_LIMIT - CHAT_POLL_COST));

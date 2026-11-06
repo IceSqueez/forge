@@ -968,6 +968,222 @@ mod tests {
         }
     }
 
+    fn pending() -> YouTubeCredentials {
+        YouTubeCredentials {
+            channel_id: String::new(),
+            channel_title: String::new(),
+            ..fresh()
+        }
+    }
+
+    fn resolved_channel(id: &str, title: &str, handle: &str) -> StubReply {
+        StubReply::ok(&json!({
+            "items": [{ "id": id, "snippet": { "title": title, "customUrl": handle } }]
+        }))
+    }
+
+    fn quota_refusal() -> StubReply {
+        let status = reqwest::StatusCode::FORBIDDEN.as_u16();
+        StubReply::json(
+            status,
+            &json!({ "error": { "code": status, "errors": [{ "reason": "quotaExceeded" }] } }),
+        )
+    }
+
+    fn identity_of(creds: &YouTubeCredentials) -> (String, String, Option<String>) {
+        (
+            creds.channel_id.clone(),
+            creds.channel_title.clone(),
+            creds.channel_handle.clone(),
+        )
+    }
+
+    fn resolved_identity() -> (String, String, Option<String>) {
+        (
+            "UCresolved".to_owned(),
+            "Resolved Channel".to_owned(),
+            Some("@resolved".to_owned()),
+        )
+    }
+
+    #[tokio::test]
+    async fn resolve_identity_persists_the_channel_id_title_and_handle() {
+        let rig = rig(&pending()).await;
+        rig.server.reply_always(
+            CHANNELS_PATH,
+            resolved_channel("UCresolved", "Resolved Channel", "@resolved"),
+        );
+
+        let returned = rig.manager.resolve_identity().await.unwrap();
+
+        assert_eq!(
+            (
+                identity_of(&returned),
+                identity_of(&stored_creds(&rig.repo).unwrap())
+            ),
+            (resolved_identity(), resolved_identity())
+        );
+    }
+
+    #[tokio::test]
+    async fn resolve_identity_keeps_the_stored_tokens() {
+        let rig = rig(&pending()).await;
+        rig.server.reply_always(
+            CHANNELS_PATH,
+            resolved_channel("UCresolved", "Resolved Channel", "@resolved"),
+        );
+
+        rig.manager.resolve_identity().await.unwrap();
+
+        let stored = stored_creds(&rig.repo).unwrap();
+        assert_eq!(
+            (stored.access_token.expose(), stored.refresh_token.expose()),
+            (EXISTING_ACCESS, EXISTING_REFRESH)
+        );
+    }
+
+    #[tokio::test]
+    async fn resolve_identity_of_a_resolved_identity_makes_no_lookup() {
+        let rig = rig(&fresh()).await;
+
+        let returned = rig.manager.resolve_identity().await.unwrap();
+
+        assert_eq!(
+            (
+                returned.channel_id.as_str(),
+                rig.server.request_count(CHANNELS_PATH),
+                used_today(&rig.quota).await
+            ),
+            ("UCtest123", 0, 0)
+        );
+    }
+
+    #[tokio::test]
+    async fn a_resolve_that_finishes_second_keeps_the_identity_the_first_one_stored() {
+        let rig = rig(&pending()).await;
+        let gate = Arc::new(ReplyGate::default());
+        rig.server.reply_times(
+            CHANNELS_PATH,
+            resolved_channel("UCslow", "Slow Channel", "@slow").gated_by(&gate),
+            1,
+        );
+        rig.server.reply_always(
+            CHANNELS_PATH,
+            resolved_channel("UCresolved", "Resolved Channel", "@resolved"),
+        );
+        let slow = tokio::spawn({
+            let manager = Arc::clone(&rig.manager);
+            async move { manager.resolve_identity().await }
+        });
+        gate.arrival().await;
+        rig.manager.resolve_identity().await.unwrap();
+        gate.open();
+
+        let slow_result = slow.await.unwrap().unwrap();
+
+        assert_eq!(
+            (
+                identity_of(&slow_result),
+                identity_of(&stored_creds(&rig.repo).unwrap())
+            ),
+            (resolved_identity(), resolved_identity())
+        );
+    }
+
+    #[tokio::test]
+    async fn a_quota_refused_resolve_returns_quota_exhausted() {
+        let rig = rig(&pending()).await;
+        rig.server.reply_always(CHANNELS_PATH, quota_refusal());
+
+        let outcome = rig.manager.resolve_identity().await;
+
+        assert!(
+            matches!(outcome, Err(PlatformError::QuotaExhausted)),
+            "{:?}",
+            outcome.err()
+        );
+    }
+
+    #[tokio::test]
+    async fn a_quota_refused_resolve_leaves_the_stored_identity_pending() {
+        let rig = rig(&pending()).await;
+        rig.server.reply_always(CHANNELS_PATH, quota_refusal());
+
+        rig.manager.resolve_identity().await.err().unwrap();
+
+        let stored = stored_creds(&rig.repo).unwrap();
+        assert_eq!(
+            (stored.identity_pending(), stored.access_token.expose()),
+            (true, EXISTING_ACCESS)
+        );
+    }
+
+    #[tokio::test]
+    async fn a_resolve_for_an_account_without_a_channel_reports_no_channel_found() {
+        let rig = rig(&pending()).await;
+        rig.server
+            .reply_always(CHANNELS_PATH, StubReply::ok(&json!({ "items": [] })));
+
+        let outcome = rig.manager.resolve_identity().await;
+
+        assert!(
+            matches!(&outcome, Err(PlatformError::Refused { reason }) if reason == crate::account::auth::NO_CHANNEL_FOUND),
+            "{:?}",
+            outcome.err()
+        );
+    }
+
+    #[tokio::test]
+    async fn the_broadcaster_of_a_pending_identity_under_quota_is_the_quota_error() {
+        let rig = rig(&pending()).await;
+        rig.server.reply_always(CHANNELS_PATH, quota_refusal());
+
+        let outcome = rig.manager.broadcaster().await;
+
+        assert!(
+            matches!(outcome, Err(PlatformError::QuotaExhausted)),
+            "{outcome:?}"
+        );
+    }
+
+    #[tokio::test]
+    async fn the_broadcaster_of_a_pending_identity_is_the_resolved_channel() {
+        let rig = rig(&pending()).await;
+        rig.server.reply_always(
+            CHANNELS_PATH,
+            resolved_channel("UCresolved", "Resolved Channel", "@resolved"),
+        );
+
+        let broadcaster = rig.manager.broadcaster().await.unwrap();
+
+        assert_eq!(
+            (
+                broadcaster.channel_id.as_str(),
+                broadcaster.channel_title.as_str()
+            ),
+            ("UCresolved", "Resolved Channel")
+        );
+    }
+
+    #[tokio::test]
+    async fn the_handle_backfill_skips_the_lookup_while_the_identity_is_pending() {
+        let rig = rig(&pending()).await;
+        rig.server.reply_always(
+            CHANNELS_PATH,
+            resolved_channel("UCresolved", "Resolved Channel", "@resolved"),
+        );
+
+        let creds = rig.manager.ensure_channel_handle().await.unwrap();
+
+        assert_eq!(
+            (
+                creds.identity_pending(),
+                rig.server.request_count(CHANNELS_PATH)
+            ),
+            (true, 0)
+        );
+    }
+
     #[tokio::test]
     async fn the_handle_backfill_skips_the_lookup_when_the_handle_is_known() {
         let mut creds = fresh();

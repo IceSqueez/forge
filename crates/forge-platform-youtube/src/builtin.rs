@@ -1248,6 +1248,350 @@ mod tests {
         }
     }
 
+    const CHANNELS_PATH: &str = "/channels";
+    const LIVE_BROADCASTS_PATH: &str = "/liveBroadcasts";
+    const LONGEST_WAIT_FOR_RESET: Duration = Duration::from_secs(26 * 3_600);
+    const LEGACY_SAVED_BUNDLE: &str = r#"{"access_token":"ya29.access-sentinel","refresh_token":"1//refresh-sentinel","client_id":"client.apps.example","channel_id":"UC123","channel_title":"Канал","channel_handle":"@handle","expires_at":[2026,264,14,13,20,123456789,0,0,0]}"#;
+
+    fn pending_credential_json() -> String {
+        serde_json::to_string(&YouTubeCredentials {
+            access_token: OAuthToken::new("access"),
+            refresh_token: OAuthToken::new("refresh"),
+            client_id: "client".to_owned(),
+            channel_id: String::new(),
+            channel_title: String::new(),
+            channel_handle: None,
+            expires_at: OffsetDateTime::now_utc() + time::Duration::days(1),
+        })
+        .unwrap()
+    }
+
+    fn repo_holding(json: &str) -> Arc<MemoryCredentials> {
+        Arc::new(MemoryCredentials::holding(
+            crate::account::credentials::YOUTUBE_CREDENTIAL_ID,
+            json,
+        ))
+    }
+
+    fn stored_json(repo: &MemoryCredentials) -> Option<String> {
+        repo.stored(crate::account::credentials::YOUTUBE_CREDENTIAL_ID)
+    }
+
+    fn resolved_channel_reply() -> crate::endpoints_test_support::StubReply {
+        crate::endpoints_test_support::StubReply::ok(&serde_json::json!({
+            "items": [{ "id": "UCresolved", "snippet": { "title": "Resolved", "customUrl": "@resolved" } }]
+        }))
+    }
+
+    fn quota_refusal_reply() -> crate::endpoints_test_support::StubReply {
+        let status = reqwest::StatusCode::FORBIDDEN.as_u16();
+        crate::endpoints_test_support::StubReply::json(
+            status,
+            &serde_json::json!({ "error": { "code": status, "errors": [{ "reason": "quotaExceeded" }] } }),
+        )
+    }
+
+    struct IdentityRig {
+        server: crate::endpoints_test_support::StubServer,
+        repo: Arc<MemoryCredentials>,
+        quota: SharedQuota,
+        bundle: Arc<YouTubeIntegrationBundle>,
+        platform: Arc<YouTubePlatform>,
+    }
+
+    async fn identity_rig(stored: &str, platform_channel_id: &str) -> IdentityRig {
+        let server = crate::endpoints_test_support::StubServer::start().await;
+        let repo = repo_holding(stored);
+        let quota = SharedQuota::default();
+        let manager = Arc::new(YouTubeCredentialsManager::new(
+            Arc::clone(&repo) as Arc<dyn CredentialsRepo>,
+            crate::endpoints_test_support::oauth_client_at(&server.uri()),
+            crate::endpoints_test_support::data_api_charging(&server.uri(), quota.clone()),
+        ));
+        let platform = Arc::new(YouTubePlatform::new(
+            crate::endpoints_test_support::data_api_charging(&server.uri(), quota.clone()),
+            platform_channel_id.to_owned(),
+            Arc::clone(&manager),
+            LiveChatIdHandle::new(),
+            ActiveBroadcastIdHandle::new(),
+            crate::chat::ban_ledger_test_support::MemoryBanLedger::shared(),
+        ));
+        let bundle = YouTubeIntegrationBundle::new(Arc::clone(&platform), manager);
+        IdentityRig {
+            server,
+            repo,
+            quota,
+            bundle,
+            platform,
+        }
+    }
+
+    async fn pending_rig() -> IdentityRig {
+        identity_rig(&pending_credential_json(), "").await
+    }
+
+    async fn pending_rig_with_quota_used_up() -> IdentityRig {
+        let rig = pending_rig().await;
+        crate::endpoints_test_support::exhaust_quota(&rig.quota).await;
+        rig
+    }
+
+    fn reset_hint_of(metric: &HealthMetric) -> Option<HealthText> {
+        match &metric.value {
+            HealthValue::Ratio { reset_hint, .. } => reset_hint.clone(),
+            _ => None,
+        }
+    }
+
+    fn quota_limited() -> CapabilityFlags {
+        CapabilityFlags {
+            limited: true,
+            label: Some(messages::quota_exhausted().into()),
+        }
+    }
+
+    fn not_limited() -> CapabilityFlags {
+        CapabilityFlags {
+            limited: false,
+            label: None,
+        }
+    }
+
+    #[tokio::test]
+    async fn an_identity_lookup_refused_for_quota_limits_the_bundle_with_the_quota_label() {
+        let rig = pending_rig().await;
+        rig.server
+            .reply_always(CHANNELS_PATH, quota_refusal_reply());
+
+        rig.bundle.refresh_identity().await;
+
+        assert_eq!(
+            BuiltinStatus::capability_flags(rig.bundle.as_ref()),
+            quota_limited()
+        );
+    }
+
+    #[tokio::test]
+    async fn an_identity_lookup_refused_for_quota_switches_the_quota_reset_hint() {
+        let rig = pending_rig().await;
+        rig.server
+            .reply_always(CHANNELS_PATH, quota_refusal_reply());
+
+        rig.bundle.refresh_identity().await;
+
+        assert_eq!(
+            reset_hint_of(&rig.bundle.quota_metric()),
+            Some(message_text(messages::quota_exhausted()))
+        );
+    }
+
+    #[tokio::test]
+    async fn a_successful_identity_resolve_lifts_the_quota_limit() {
+        let rig = pending_rig().await;
+        rig.server
+            .reply_times(CHANNELS_PATH, quota_refusal_reply(), 1);
+        rig.server
+            .reply_always(CHANNELS_PATH, resolved_channel_reply());
+        rig.bundle.refresh_identity().await;
+
+        rig.bundle.refresh_identity().await;
+
+        assert_eq!(
+            (
+                BuiltinStatus::capability_flags(rig.bundle.as_ref()),
+                reset_hint_of(&rig.bundle.quota_metric())
+            ),
+            (
+                not_limited(),
+                Some(message_text(messages::health_quota_resets_daily()))
+            )
+        );
+    }
+
+    #[tokio::test]
+    async fn an_identity_resolved_by_a_moderation_lookup_lifts_the_quota_limit_on_the_next_refresh()
+    {
+        let rig = pending_rig().await;
+        rig.server
+            .reply_times(CHANNELS_PATH, quota_refusal_reply(), 1);
+        rig.server
+            .reply_always(CHANNELS_PATH, resolved_channel_reply());
+        rig.bundle.refresh_identity().await;
+        rig.bundle
+            .credentials_manager()
+            .broadcaster()
+            .await
+            .unwrap();
+
+        rig.bundle.refresh_identity().await;
+
+        assert_eq!(
+            BuiltinStatus::capability_flags(rig.bundle.as_ref()),
+            not_limited()
+        );
+    }
+
+    #[tokio::test]
+    async fn a_pending_identity_shows_no_channel_id_badge() {
+        let rig = pending_rig().await;
+        rig.server
+            .reply_always(CHANNELS_PATH, quota_refusal_reply());
+
+        rig.bundle.refresh_identity().await;
+
+        assert_eq!(
+            BuiltinStatus::name_badges(rig.bundle.as_ref()),
+            Vec::<HeroBadge>::new()
+        );
+    }
+
+    #[tokio::test]
+    async fn a_resolved_identity_shows_the_resolved_channel_id_badge_and_hero_name() {
+        let rig = pending_rig().await;
+        rig.server
+            .reply_always(CHANNELS_PATH, resolved_channel_reply());
+
+        rig.bundle.refresh_identity().await;
+
+        assert_eq!(
+            (
+                BuiltinStatus::name_badges(rig.bundle.as_ref())
+                    .into_iter()
+                    .map(|badge| badge.label)
+                    .collect::<Vec<_>>(),
+                BuiltinStatus::hero_name(rig.bundle.as_ref())
+            ),
+            (
+                vec![messages::channel_id_badge("UCresolved").into()],
+                Some("@resolved".to_owned())
+            )
+        );
+    }
+
+    #[tokio::test]
+    async fn a_legacy_saved_bundle_with_a_channel_id_loads_unchanged_without_a_lookup() {
+        let rig = identity_rig(LEGACY_SAVED_BUNDLE, "UC123").await;
+
+        rig.bundle.refresh_identity().await;
+
+        assert_eq!(
+            (
+                stored_json(&rig.repo).as_deref(),
+                rig.server.request_count(CHANNELS_PATH),
+                BuiltinStatus::hero_name(rig.bundle.as_ref()),
+                BuiltinStatus::capability_flags(rig.bundle.as_ref())
+            ),
+            (
+                Some(LEGACY_SAVED_BUNDLE),
+                0,
+                Some("@handle".to_owned()),
+                not_limited()
+            )
+        );
+    }
+
+    #[tokio::test]
+    async fn repeated_quota_blocked_refreshes_schedule_exactly_one_wake() {
+        let rig = pending_rig_with_quota_used_up().await;
+
+        for _ in 0..3 {
+            rig.bundle.refresh_identity().await;
+        }
+
+        assert_eq!(Arc::strong_count(&rig.bundle), 2);
+    }
+
+    #[tokio::test]
+    async fn a_resolved_bundle_under_quota_never_schedules_a_wake() {
+        let rig = identity_rig(&signed_in_json(), "UCabc123").await;
+        crate::endpoints_test_support::exhaust_quota(&rig.quota).await;
+
+        rig.bundle.refresh_identity().await;
+
+        assert_eq!(Arc::strong_count(&rig.bundle), 1);
+    }
+
+    #[tokio::test]
+    async fn retiring_the_bundle_cancels_the_pending_quota_wake() {
+        let rig = pending_rig_with_quota_used_up().await;
+        rig.bundle.refresh_identity().await;
+        let scheduled = Arc::strong_count(&rig.bundle);
+
+        rig.bundle.shutdown().await;
+
+        forge_test_support::settle_until("the quota wake released the bundle", || {
+            Arc::strong_count(&rig.bundle) == 1
+        })
+        .await;
+        assert_eq!(scheduled, 2);
+    }
+
+    #[tokio::test]
+    async fn the_quota_wake_resolves_the_identity_and_reconnects_after_the_reset() {
+        let rig = pending_rig_with_quota_used_up().await;
+        rig.server
+            .reply_always(CHANNELS_PATH, resolved_channel_reply());
+        rig.server.reply_always(
+            LIVE_BROADCASTS_PATH,
+            crate::endpoints_test_support::StubReply::held(),
+        );
+        rig.bundle.refresh_identity().await;
+        *rig.quota.lock().await = crate::api::quota_state::QuotaState::default();
+
+        tokio::task::yield_now().await;
+        tokio::time::pause();
+        tokio::time::advance(LONGEST_WAIT_FOR_RESET).await;
+        tokio::time::resume();
+        let polled = crate::endpoints_test_support::wait_until(|| {
+            rig.server.request_count(LIVE_BROADCASTS_PATH) == 1
+        })
+        .await;
+
+        assert_eq!(
+            (
+                polled,
+                rig.platform.channel_id(),
+                stored_creds_channel_id(&rig.repo)
+            ),
+            (true, "UCresolved".to_owned(), Some("UCresolved".to_owned()))
+        );
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn a_quota_wake_still_refused_schedules_the_next_one() {
+        let recording = forge_test_support::log_capture::LogRecording::start(tracing::Level::WARN);
+        let rig = pending_rig_with_quota_used_up().await;
+        rig.bundle.refresh_identity().await;
+        let first_wake = crate::api::quota_state::until_next_reset(OffsetDateTime::now_utc())
+            + QUOTA_RESET_WAKE_MARGIN;
+
+        tokio::task::yield_now().await;
+        tokio::time::advance(first_wake + Duration::from_secs(2)).await;
+        forge_test_support::settle_until("the quota wake retried the reconnect", || {
+            recording
+                .lines()
+                .iter()
+                .any(|line| line.message().contains("after quota reset"))
+        })
+        .await;
+
+        assert_eq!(Arc::strong_count(&rig.bundle), 2);
+    }
+
+    fn signed_in_json() -> String {
+        stored_credential_json(
+            "Live",
+            None,
+            OffsetDateTime::now_utc() + time::Duration::days(1),
+        )
+    }
+
+    fn stored_creds_channel_id(repo: &MemoryCredentials) -> Option<String> {
+        stored_json(repo)
+            .and_then(|json| serde_json::from_str::<YouTubeCredentials>(&json).ok())
+            .map(|creds| creds.channel_id)
+    }
+
     #[tokio::test]
     async fn api_calls_metric_keeps_the_last_reading_while_the_quota_is_busy() {
         let quota = SharedQuota::default();

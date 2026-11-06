@@ -456,6 +456,90 @@ mod tests {
         p.disconnect().await.unwrap();
     }
 
+    fn pending_credentials() -> MemoryCredentials {
+        let mut creds: crate::account::credentials::YouTubeCredentials =
+            serde_json::from_str(&stored_credentials()).unwrap();
+        creds.channel_id = String::new();
+        creds.channel_title = String::new();
+        MemoryCredentials::holding(
+            crate::account::credentials::YOUTUBE_CREDENTIAL_ID,
+            &serde_json::to_string(&creds).unwrap(),
+        )
+    }
+
+    fn pending_platform(server: &crate::endpoints_test_support::StubServer) -> YouTubePlatform {
+        let manager = Arc::new(YouTubeCredentialsManager::new(
+            Arc::new(pending_credentials()),
+            crate::endpoints_test_support::oauth_client_at(&server.uri()),
+            crate::endpoints_test_support::data_api_at(&server.uri()),
+        ));
+        YouTubePlatform::new(
+            crate::endpoints_test_support::data_api_at(&server.uri()),
+            String::new(),
+            manager,
+            LiveChatIdHandle::new(),
+            ActiveBroadcastIdHandle::new(),
+            crate::chat::ban_ledger_test_support::MemoryBanLedger::shared(),
+        )
+    }
+
+    #[tokio::test]
+    async fn connect_resolves_a_pending_identity_before_the_poller_starts() {
+        let server = crate::endpoints_test_support::StubServer::start().await;
+        server.reply_always(
+            "/channels",
+            crate::endpoints_test_support::StubReply::ok(&serde_json::json!({
+                "items": [{ "id": "UCresolved", "snippet": { "title": "Resolved" } }]
+            })),
+        );
+        server.reply_always(
+            "/liveBroadcasts",
+            crate::endpoints_test_support::StubReply::held(),
+        );
+        let p = pending_platform(&server);
+
+        p.connect().await.unwrap();
+        let polled = crate::endpoints_test_support::wait_until(|| {
+            server.request_count("/liveBroadcasts") == 1
+        })
+        .await;
+
+        assert_eq!(
+            (
+                p.channel_id(),
+                polled,
+                server.answered_paths().first().cloned()
+            ),
+            ("UCresolved".to_owned(), true, Some("/channels".to_owned()))
+        );
+    }
+
+    #[tokio::test]
+    async fn connect_with_a_pending_identity_under_quota_errors_and_starts_no_poller() {
+        let server = crate::endpoints_test_support::StubServer::start().await;
+        let status = reqwest::StatusCode::FORBIDDEN.as_u16();
+        server.reply_always(
+            "/channels",
+            crate::endpoints_test_support::StubReply::json(
+                status,
+                &serde_json::json!({ "error": { "code": status, "errors": [{ "reason": "quotaExceeded" }] } }),
+            ),
+        );
+        let p = pending_platform(&server);
+
+        let outcome = p.connect().await;
+
+        assert_eq!(
+            (
+                matches!(outcome, Err(PlatformError::QuotaExhausted)),
+                p.cancel.lock().unwrap().is_none(),
+                p.connection_state(),
+                p.channel_handle().is_pending()
+            ),
+            (true, true, ConnectionState::Disconnected, true)
+        );
+    }
+
     #[tokio::test]
     async fn reconnecting_a_running_poller_does_not_announce_the_retired_poller_exit() {
         let p = platform();

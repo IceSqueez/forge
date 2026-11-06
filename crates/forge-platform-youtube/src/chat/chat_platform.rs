@@ -21,6 +21,7 @@ use crate::chat::access_tokens::AccessTokens;
 use crate::chat::avatar_book::AvatarBook;
 use crate::chat::chat_poller::YouTubeChatPoller;
 use crate::chat::send_chat::YouTubeSendChat;
+use crate::chat::transport_mode::{ChatTransportMode, TransportModeSink};
 
 use crate::vocabulary::INTEGRATION_ID as PLATFORM_ID;
 pub(crate) const EVENT_CHANNEL_CAPACITY: usize = forge_events::PLATFORM_EVENT_CHANNEL_CAPACITY;
@@ -37,6 +38,7 @@ pub struct YouTubePlatform {
     avatars: AvatarBook,
     state: Arc<Mutex<ConnectionState>>,
     state_tx: watch::Sender<ConnectionState>,
+    transport_mode_tx: watch::Sender<ChatTransportMode>,
     cancel: Mutex<Option<CancellationToken>>,
 }
 
@@ -55,6 +57,7 @@ impl YouTubePlatform {
             live_chat_id.clone(),
         );
         let (state_tx, _) = watch::channel(ConnectionState::Disconnected);
+        let (transport_mode_tx, _) = watch::channel(ChatTransportMode::Streaming);
         Self {
             api,
             channel: channel_id.into(),
@@ -67,6 +70,7 @@ impl YouTubePlatform {
             avatars: AvatarBook::default(),
             state: Arc::new(Mutex::new(ConnectionState::Disconnected)),
             state_tx,
+            transport_mode_tx,
             cancel: Mutex::new(None),
         }
     }
@@ -98,6 +102,10 @@ impl YouTubePlatform {
 
     pub(crate) fn state_receiver(&self) -> watch::Receiver<ConnectionState> {
         self.state_tx.subscribe()
+    }
+
+    pub(crate) fn transport_mode_receiver(&self) -> watch::Receiver<ChatTransportMode> {
+        self.transport_mode_tx.subscribe()
     }
 }
 
@@ -162,6 +170,7 @@ impl ChatPlatform for YouTubePlatform {
             Arc::clone(&self.events),
             cancel.clone(),
         ))
+        .with_transport_mode(TransportModeSink::new(self.transport_mode_tx.clone()))
         .with_avatar_book(self.avatars.clone());
 
         let exit_state = Arc::clone(&self.state);

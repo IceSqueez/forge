@@ -25,6 +25,7 @@ use crate::chat::access_tokens::AccessTokens;
 use crate::chat::avatar_book::AvatarBook;
 use crate::chat::ban_ledger::{USER_BANNED_EVENT_TYPE, observed_ban};
 use crate::chat::receive_supervisor::{LiveTransports, ReceiveSupervisor, ReceiveTimings};
+use crate::chat::transport_mode::TransportModeSink;
 use crate::vocabulary::event_kinds;
 use crate::vocabulary::fields::{
     ban as ban_fields, chat as chat_fields, chat_mod as chat_mod_fields, entity,
@@ -108,6 +109,7 @@ pub struct YouTubeChatPoller {
     active_broadcast_id: ActiveBroadcastIdHandle,
     ban_ledger: Arc<dyn BanLedgerRepo>,
     health_reporter: Option<PollHealthReporter>,
+    transport_mode: Option<TransportModeSink>,
     avatars: Option<AvatarBook>,
     timings: ChatPollTimings,
 }
@@ -131,6 +133,7 @@ impl YouTubeChatPoller {
             active_broadcast_id,
             ban_ledger,
             health_reporter: None,
+            transport_mode: None,
             avatars: None,
             timings: ChatPollTimings::DEFAULT,
         }
@@ -151,6 +154,11 @@ impl YouTubeChatPoller {
         self
     }
 
+    pub(crate) fn with_transport_mode(mut self, sink: TransportModeSink) -> Self {
+        self.transport_mode = Some(sink);
+        self
+    }
+
     pub(crate) fn with_avatar_book(mut self, avatars: AvatarBook) -> Self {
         self.avatars = Some(avatars);
         self
@@ -168,10 +176,13 @@ impl YouTubeChatPoller {
         self,
         cancel: CancellationToken,
     ) -> Result<(), PlatformError> {
-        let supervisor = ReceiveSupervisor::new(
+        let mut supervisor = ReceiveSupervisor::new(
             LiveTransports::new(self.api.clone(), self.access_tokens.clone()),
             ReceiveTimings::DEFAULT,
         );
+        if let Some(sink) = self.transport_mode.clone() {
+            supervisor = supervisor.with_mode_sink(sink);
+        }
         self.run_with(cancel, supervisor).await
     }
 

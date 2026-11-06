@@ -1,4 +1,4 @@
-use forge_types::{IntegrationId, MessageRef, RecoverRwLock, UserText, VerbatimText};
+use forge_types::{IntegrationId, MessageRef, RecoverRwLock, UserText};
 use std::sync::atomic::{AtomicBool, AtomicU32, Ordering};
 use std::sync::{Arc, RwLock, Weak};
 use std::time::{Duration, SystemTime};
@@ -22,6 +22,7 @@ use crate::api::quota_state::{
 use crate::broadcast::follow_lookup::YouTubeFollowLookup;
 use crate::broadcast::viewer_poll::{YouTubeViewerPoll, YouTubeViewerSource};
 use crate::chat::chat_platform::YouTubePlatform;
+use crate::chat::transport_mode::ChatTransportMode;
 use crate::vocabulary::messages;
 
 const LIVE_CHAT_METRIC: HealthMetricId = HealthMetricId::new(messages::HEALTH_LIVE_CHAT);
@@ -44,6 +45,7 @@ pub struct YouTubeIntegrationBundle {
     viewer_report_tx: watch::Sender<ViewerReport>,
     viewer_report_rx: watch::Receiver<ViewerReport>,
     state_rx: watch::Receiver<ConnectionState>,
+    transport_mode_rx: watch::Receiver<ChatTransportMode>,
     retired: CancellationToken,
 }
 
@@ -56,6 +58,7 @@ impl YouTubeIntegrationBundle {
         let (viewer_report_tx, _) = watch::channel(ViewerReport::Absent);
         let viewer_report_rx = viewer_report_tx.subscribe();
         let state_rx = platform.state_receiver();
+        let transport_mode_rx = platform.transport_mode_receiver();
 
         let token_source = Self::token_source(&credentials_manager);
         let quota = platform.api().quota().clone();
@@ -82,6 +85,7 @@ impl YouTubeIntegrationBundle {
             viewer_report_tx,
             viewer_report_rx,
             state_rx,
+            transport_mode_rx,
             retired,
         })
     }
@@ -98,6 +102,7 @@ impl YouTubeIntegrationBundle {
         Self::spawn_viewer_poll(bundle);
         Self::spawn_health_bridge(bundle);
         Self::spawn_viewer_health_bridge(bundle);
+        Self::spawn_transport_health_bridge(bundle);
         Self::spawn_identity_refresh(bundle);
         Self::spawn_token_expiry_bridge(bundle);
     }
@@ -149,7 +154,10 @@ impl YouTubeIntegrationBundle {
 
                 let chat_delta = HealthDelta {
                     metric: LIVE_CHAT_METRIC,
-                    new_value: chat_poller_health_value(current),
+                    new_value: chat_poller_health_value(
+                        current,
+                        *bundle.transport_mode_rx.borrow(),
+                    ),
                 };
                 #[expect(
                     clippy::let_underscore_must_use,
@@ -171,6 +179,32 @@ impl YouTubeIntegrationBundle {
                     Self::spawn_identity_refresh(&bundle);
                 }
                 previous = current;
+            }
+        });
+    }
+
+    fn spawn_transport_health_bridge(bundle: &Arc<Self>) {
+        let bundle = Arc::clone(bundle);
+        let mut mode_rx = bundle.transport_mode_rx.clone();
+        tokio::spawn(async move {
+            loop {
+                tokio::select! {
+                    biased;
+                    () = bundle.retired.cancelled() => break,
+                    changed = mode_rx.changed() => if changed.is_err() { break },
+                }
+                let delta = HealthDelta {
+                    metric: LIVE_CHAT_METRIC,
+                    new_value: chat_poller_health_value(
+                        bundle.current_state(),
+                        *mode_rx.borrow_and_update(),
+                    ),
+                };
+                #[expect(
+                    clippy::let_underscore_must_use,
+                    reason = "having no subscribers is a normal state"
+                )]
+                let _ = bundle.health_tx.send(delta);
             }
         });
     }
@@ -337,19 +371,19 @@ impl YouTubeIntegrationBundle {
     }
 }
 
-const LIVE_CHAT_ENDPOINT: &str = "liveChatMessages.list";
-
 fn message_text(message: MessageRef) -> HealthText {
     HealthText::Text(message.into())
 }
 
-fn chat_poller_health_value(state: ConnectionState) -> HealthValue {
+fn chat_poller_health_value(state: ConnectionState, mode: ChatTransportMode) -> HealthValue {
+    let transport = match mode {
+        ChatTransportMode::Streaming => messages::health_chat_transport_streaming(),
+        ChatTransportMode::Polling => messages::health_chat_transport_polling(),
+    };
     HealthValue::Status {
         label: HealthText::Connection(state),
         active: state.is_connected(),
-        detail: Some(HealthText::Text(
-            VerbatimText::new(LIVE_CHAT_ENDPOINT).into(),
-        )),
+        detail: Some(message_text(transport)),
     }
 }
 
@@ -457,7 +491,7 @@ impl BuiltinHealth for YouTubeIntegrationBundle {
         [
             HealthMetric {
                 id: LIVE_CHAT_METRIC,
-                value: chat_poller_health_value(state),
+                value: chat_poller_health_value(state, *self.transport_mode_rx.borrow()),
             },
             HealthMetric {
                 id: EVENTS_METRIC,
@@ -663,24 +697,33 @@ mod tests {
     }
 
     #[test]
-    fn chat_poller_health_value_maps_each_connection_state() {
+    fn chat_poller_health_value_maps_each_connection_state_and_transport() {
         for (state, active) in [
             (ConnectionState::Connected, true),
             (ConnectionState::Connecting, false),
             (ConnectionState::Reconnecting, false),
             (ConnectionState::Disconnected, false),
         ] {
-            assert_eq!(
-                chat_poller_health_value(state),
-                HealthValue::Status {
-                    label: HealthText::Connection(state),
-                    active,
-                    detail: Some(HealthText::Text(
-                        VerbatimText::new(LIVE_CHAT_ENDPOINT).into()
-                    )),
-                },
-                "unexpected health value for {state:?}"
-            );
+            for (mode, transport) in [
+                (
+                    ChatTransportMode::Streaming,
+                    messages::health_chat_transport_streaming(),
+                ),
+                (
+                    ChatTransportMode::Polling,
+                    messages::health_chat_transport_polling(),
+                ),
+            ] {
+                assert_eq!(
+                    chat_poller_health_value(state, mode),
+                    HealthValue::Status {
+                        label: HealthText::Connection(state),
+                        active,
+                        detail: Some(message_text(transport)),
+                    },
+                    "unexpected health value for {state:?} {mode:?}"
+                );
+            }
         }
     }
 

@@ -14,6 +14,7 @@ use crate::chat::chat_poller::{
     YouTubeChatPoller, fetch_chat_page,
 };
 use crate::chat::stream_transport::{ChatStream, ChatStreamTransport, StreamEvent, StreamOutcome};
+use crate::chat::transport_mode::{ChatTransportMode, TransportModeSink};
 
 const RECONNECT_PAUSE_SECS: u64 = 5;
 const STREAM_REPROBE_INTERVAL_SECS: u64 = 600;
@@ -183,6 +184,7 @@ pub(crate) struct ReceiveSupervisor<T: ChatTransports> {
     token_refreshed: bool,
     resume_token: Option<String>,
     bound_chat_id: Option<String>,
+    mode_sink: Option<TransportModeSink>,
 }
 
 impl<T: ChatTransports> ReceiveSupervisor<T> {
@@ -197,6 +199,19 @@ impl<T: ChatTransports> ReceiveSupervisor<T> {
             token_refreshed: false,
             resume_token: None,
             bound_chat_id: None,
+            mode_sink: None,
+        }
+    }
+
+    pub(crate) fn with_mode_sink(mut self, sink: TransportModeSink) -> Self {
+        sink.publish(ChatTransportMode::Streaming);
+        self.mode_sink = Some(sink);
+        self
+    }
+
+    fn publish_mode(&self, mode: ChatTransportMode) {
+        if let Some(sink) = &self.mode_sink {
+            sink.publish(mode);
         }
     }
 
@@ -223,6 +238,7 @@ impl<T: ChatTransports> ReceiveSupervisor<T> {
         self.mode = Mode::Polling {
             probe_at: Instant::now() + self.timings.reprobe_interval,
         };
+        self.publish_mode(ChatTransportMode::Polling);
         self.stream_failures = 0;
         self.resume_token = None;
     }
@@ -285,6 +301,7 @@ impl<T: ChatTransports> ReceiveSupervisor<T> {
             match event {
                 Some(StreamEvent::Page(page)) => {
                     self.note_success(session);
+                    self.publish_mode(ChatTransportMode::Streaming);
                     match poller.handle_page(&page, session).await {
                         PageEffect::BusClosed => return Step::Exit(ReceiveExit::Stop),
                         PageEffect::ChatEnded => return Step::Exit(ReceiveExit::BroadcastEnded),

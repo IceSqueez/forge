@@ -21,6 +21,10 @@ pub const HEALTH_QUOTA_RESETS_DAILY: MessageCode =
     MessageCode::from_static(INTEGRATION_ID, "health_quota_resets_daily");
 pub const HEALTH_SHARED_CHAT_FEED: MessageCode =
     MessageCode::from_static(INTEGRATION_ID, "health_shared_chat_feed");
+pub const HEALTH_CHAT_TRANSPORT_STREAMING: MessageCode =
+    MessageCode::from_static(INTEGRATION_ID, "health_chat_transport_streaming");
+pub const HEALTH_CHAT_TRANSPORT_POLLING: MessageCode =
+    MessageCode::from_static(INTEGRATION_ID, "health_chat_transport_polling");
 pub const HEALTH_VIEWERS_LIVE: MessageCode =
     MessageCode::from_static(INTEGRATION_ID, "health_viewers_live");
 
@@ -55,6 +59,8 @@ pub const YOUTUBE_MESSAGES: MessageCatalog = MessageCatalog {
         HEALTH_QUOTA_RESETS_DAILY,
         HEALTH_SHARED_CHAT_FEED,
         HEALTH_VIEWERS_LIVE,
+        HEALTH_CHAT_TRANSPORT_STREAMING,
+        HEALTH_CHAT_TRANSPORT_POLLING,
         STORED_SIGN_IN_UNREADABLE,
         RATE_LIMITED,
         RATE_BUDGET_EXHAUSTED,
@@ -126,6 +132,14 @@ pub(crate) fn health_quota_resets_daily() -> MessageRef {
 
 pub(crate) fn health_shared_chat_feed() -> MessageRef {
     MessageRef::new(HEALTH_SHARED_CHAT_FEED)
+}
+
+pub(crate) fn health_chat_transport_streaming() -> MessageRef {
+    MessageRef::new(HEALTH_CHAT_TRANSPORT_STREAMING)
+}
+
+pub(crate) fn health_chat_transport_polling() -> MessageRef {
+    MessageRef::new(HEALTH_CHAT_TRANSPORT_POLLING)
 }
 
 pub(crate) fn health_viewers_live() -> MessageRef {
@@ -213,6 +227,8 @@ mod tests {
             health_quota_resets_daily(),
             health_shared_chat_feed(),
             health_viewers_live(),
+            health_chat_transport_streaming(),
+            health_chat_transport_polling(),
             MessageRef::new(STORED_SIGN_IN_UNREADABLE),
             rate_limited(Duration::from_secs(7)),
             rate_budget_exhausted(),

@@ -230,12 +230,7 @@ impl YouTubeIntegrationBundle {
             .get_or_insert_with(|| SystemTime::from(stored.expires_at));
         let stored = if stored.identity_pending() {
             match self.credentials_manager.resolve_identity().await {
-                Ok(resolved) => {
-                    self.identity_blocked_on_quota
-                        .store(false, Ordering::Relaxed);
-                    self.platform.channel_handle().adopt(&resolved.channel_id);
-                    resolved
-                }
+                Ok(resolved) => resolved,
                 Err(PlatformError::QuotaExhausted) => {
                     self.identity_blocked_on_quota
                         .store(true, Ordering::Relaxed);
@@ -250,6 +245,11 @@ impl YouTubeIntegrationBundle {
         } else {
             stored
         };
+        self.identity_blocked_on_quota
+            .store(false, Ordering::Relaxed);
+        if self.platform.channel_handle().is_pending() {
+            self.platform.channel_handle().adopt(&stored.channel_id);
+        }
         let stored = if stored.channel_handle.is_some() {
             stored
         } else {

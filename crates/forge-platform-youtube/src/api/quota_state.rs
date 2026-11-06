@@ -401,4 +401,53 @@ mod tests {
             "a spend through one clone must exhaust the other; got {result:?}"
         );
     }
+
+    #[tokio::test]
+    async fn an_accepted_charge_notifies_change_subscribers() {
+        let quota = SharedQuota::new(used_on_day(0));
+        let changes = quota.subscribe_changes();
+
+        quota.charge(CHAT_POLL_COST, DAY).await.unwrap();
+
+        assert!(changes.has_changed().unwrap());
+    }
+
+    #[tokio::test]
+    async fn a_refund_notifies_change_subscribers() {
+        let quota = SharedQuota::new(used_on_day(BROADCAST_COST));
+        let changes = quota.subscribe_changes();
+
+        quota.refund(CHAT_POLL_COST, DAY).await;
+
+        assert!(changes.has_changed().unwrap());
+    }
+
+    #[tokio::test]
+    async fn a_charge_rejected_as_quota_exhausted_does_not_notify_change_subscribers() {
+        let quota = SharedQuota::new(used_on_day(QUOTA_DAILY_LIMIT));
+        let changes = quota.subscribe_changes();
+
+        let result = quota.charge(BROADCAST_COST, DAY).await;
+
+        assert_eq!(
+            (
+                matches!(result, Err(PlatformError::QuotaExhausted)),
+                changes.has_changed().unwrap()
+            ),
+            (true, false)
+        );
+    }
+
+    #[tokio::test]
+    async fn several_charges_before_a_read_leave_a_single_pending_change() {
+        let quota = SharedQuota::new(used_on_day(0));
+        let mut changes = quota.subscribe_changes();
+        for _ in 0..3 {
+            quota.charge(CHAT_POLL_COST, DAY).await.unwrap();
+        }
+
+        changes.changed().await.unwrap();
+
+        assert!(!changes.has_changed().unwrap());
+    }
 }

@@ -1032,6 +1032,61 @@ mod tests {
         );
     }
 
+    async fn next_api_quota_usage(health: &mut HealthStream) -> (u64, u64) {
+        tokio::time::timeout(forge_test_support::HANG_GUARD, async {
+            loop {
+                let delta = health.next().await.unwrap();
+                if delta.metric == API_CALLS_METRIC {
+                    let HealthValue::Ratio { used, total, .. } = delta.new_value else {
+                        panic!("api quota row is not a ratio: {:?}", delta.new_value);
+                    };
+                    return (used, total);
+                }
+            }
+        })
+        .await
+        .unwrap()
+    }
+
+    async fn bundle_with_quota_spent(
+        spent: u32,
+    ) -> (Arc<YouTubeIntegrationBundle>, Arc<YouTubePlatform>) {
+        let quota = SharedQuota::default();
+        quota.charge(spent, today_pacific()).await.unwrap();
+        make_bundle_with_quota(Arc::new(MemoryCredentials::default()), quota)
+    }
+
+    #[tokio::test]
+    async fn a_quota_charge_emits_the_api_quota_row_with_the_new_usage() {
+        let (bundle, platform) = bundle_with_quota_spent(100).await;
+        let mut health = BuiltinHealth::stream(bundle.as_ref());
+
+        platform
+            .api()
+            .quota()
+            .charge(5, today_pacific())
+            .await
+            .unwrap();
+
+        assert_eq!(
+            next_api_quota_usage(&mut health).await,
+            (105, u64::from(QUOTA_DAILY_LIMIT))
+        );
+    }
+
+    #[tokio::test]
+    async fn a_quota_refund_emits_the_api_quota_row_with_the_reduced_usage() {
+        let (bundle, platform) = bundle_with_quota_spent(100).await;
+        let mut health = BuiltinHealth::stream(bundle.as_ref());
+
+        platform.api().quota().refund(40, today_pacific()).await;
+
+        assert_eq!(
+            next_api_quota_usage(&mut health).await,
+            (60, u64::from(QUOTA_DAILY_LIMIT))
+        );
+    }
+
     #[tokio::test]
     async fn header_actions_offer_refresh_token_and_disconnect_only() {
         let (bundle, _platform) = make_bundle(Arc::new(MemoryCredentials::default()));

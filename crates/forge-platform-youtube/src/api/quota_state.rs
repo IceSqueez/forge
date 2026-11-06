@@ -13,6 +13,7 @@ const PACIFIC_STANDARD_HOURS: i8 = -8;
 const SECONDS_PER_DAY: u64 = 86_400;
 pub(crate) const BROADCAST_COST: u32 = 1;
 pub(crate) const CHAT_POLL_COST: u32 = 5;
+pub(crate) const STREAM_OPEN_COST: u32 = 5;
 
 pub(crate) struct QuotaState {
     pub used_today: u32,

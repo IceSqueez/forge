@@ -1,14 +1,15 @@
-use crate::endpoint_surfaces::{YOUTUBE_DATA_API, YOUTUBE_UPLOAD_API};
+use crate::endpoint_surfaces::{YOUTUBE_DATA_API, YOUTUBE_GRPC, YOUTUBE_UPLOAD_API};
 use std::sync::Arc;
 use std::time::Duration;
 
 use forge_events::{EventPublisher, EventSource, RequestFailed, TypedEvent};
 use forge_net::{
     CallClass, DEFAULT_RETRY_AFTER, FailureContext, FailureObserver, Gateway, GatewayBuildError,
-    GatewayFailure, GatewayProfile, GatewayRequest, GatewayResponse, RateLimiter, RequestBody,
-    ThrottleHintFamily, TokenBucketRateLimiter,
+    GatewayFailure, GatewayProfile, GatewayRequest, GatewayResponse, GrpcRequest, GrpcStream,
+    RateLimiter, RequestBody, ThrottleHintFamily, TokenBucketRateLimiter,
 };
 use forge_platform_core::{PlatformEndpoints, PlatformError};
+use tokio_util::sync::CancellationToken;
 
 use crate::api::quota_state::{SharedQuota, today_pacific};
 
@@ -37,6 +38,7 @@ const YOUTUBE_UPLOAD_PROFILE: GatewayProfile = GatewayProfile::platform_api(
 pub struct YouTubeDataApi {
     data: Gateway,
     upload: Gateway,
+    grpc: Gateway,
     quota: SharedQuota,
 }
 
@@ -59,13 +61,20 @@ impl YouTubeDataApi {
         )?;
         let upload = Gateway::new(
             endpoints.base_url(YOUTUBE_UPLOAD_API),
-            limiter,
+            Arc::clone(&limiter),
             YOUTUBE_UPLOAD_PROFILE,
+            Some(Arc::clone(&observer)),
+        )?;
+        let grpc = Gateway::new(
+            endpoints.base_url(YOUTUBE_GRPC),
+            limiter,
+            YOUTUBE_DATA_API_PROFILE,
             Some(observer),
         )?;
         Ok(Self {
             data,
             upload,
+            grpc,
             quota,
         })
     }
@@ -88,6 +97,27 @@ impl YouTubeDataApi {
         request: GatewayRequest,
     ) -> Result<GatewayResponse, DataApiError> {
         self.charged_send(&self.upload, cost, request).await
+    }
+
+    pub(crate) async fn open_stream(
+        &self,
+        cost: u32,
+        request: GrpcRequest,
+        cancel: CancellationToken,
+    ) -> Result<GrpcStream, DataApiError> {
+        let day = today_pacific();
+        self.quota
+            .lock()
+            .await
+            .charge(cost, day)
+            .map_err(|_| DataApiError::QuotaExhausted)?;
+        let outcome = self.grpc.open_grpc_stream(request, cancel).await;
+        if let Err(failure) = &outcome
+            && never_reached_upstream(failure)
+        {
+            self.quota.lock().await.refund(cost, day);
+        }
+        outcome.map_err(DataApiError::Gateway)
     }
 
     async fn charged_send(

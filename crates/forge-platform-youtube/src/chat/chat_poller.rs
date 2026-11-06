@@ -36,9 +36,7 @@ mod stream_transcode;
 mod wire;
 
 use self::fetch::*;
-#[expect(unused_imports, reason = "consumed by the stream transport")]
 pub(crate) use self::fetch::{ChatMessagesResponse, page_from_body};
-#[expect(unused_imports, reason = "consumed by the stream transport")]
 pub(crate) use self::stream_transcode::transcode_response;
 use self::wire::*;
 

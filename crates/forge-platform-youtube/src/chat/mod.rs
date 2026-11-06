@@ -7,3 +7,5 @@ pub(crate) mod chat_platform;
 pub(crate) mod chat_poller;
 pub(crate) mod moderation;
 pub(crate) mod send_chat;
+#[expect(dead_code, reason = "driven by the receive supervisor")]
+pub(crate) mod stream_transport;

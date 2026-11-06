@@ -95,7 +95,7 @@ mod endpoint_tests {
 
     use super::endpoint_surfaces;
 
-    const PRODUCTION: [(&str, &str); 16] = [
+    const PRODUCTION: [(&str, &str); 17] = [
         ("FORGE_TWITCH_API_BASE_URL", "https://api.twitch.tv"),
         (
             "FORGE_TWITCH_EVENTSUB_WS_URL",
@@ -117,6 +117,10 @@ mod endpoint_tests {
         (
             "FORGE_YOUTUBE_OAUTH_BASE_URL",
             "https://oauth2.googleapis.com",
+        ),
+        (
+            "FORGE_YOUTUBE_GRPC_BASE_URL",
+            "https://youtube.googleapis.com",
         ),
         (
             "FORGE_DONATELLO_API_BASE_URL",

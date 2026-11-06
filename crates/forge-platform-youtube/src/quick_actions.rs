@@ -223,3 +223,43 @@ impl QuickActions for YouTubeIntegrationBundle {
             .collect()
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn exactly_the_broadcast_metadata_fields_read_their_current_value() {
+        let readable: Vec<(String, Vec<String>)> = catalog()
+            .iter()
+            .map(|action| {
+                (
+                    action.subaction_template.kind_id.clone(),
+                    action.current_value_keys(),
+                )
+            })
+            .filter(|(_, keys)| !keys.is_empty())
+            .collect();
+
+        assert_eq!(
+            readable,
+            [
+                (sub_action_ids::STREAM_UPDATE_TITLE, config_keys::TITLE),
+                (
+                    sub_action_ids::STREAM_UPDATE_DESCRIPTION,
+                    config_keys::DESCRIPTION
+                ),
+                (
+                    sub_action_ids::STREAM_UPDATE_CATEGORY,
+                    config_keys::CATEGORY_ID
+                ),
+                (
+                    sub_action_ids::STREAM_UPDATE_PRIVACY,
+                    config_keys::PRIVACY_STATUS
+                ),
+            ]
+            .map(|(kind, key)| (kind.to_owned(), vec![key.to_owned()]))
+            .to_vec()
+        );
+    }
+}

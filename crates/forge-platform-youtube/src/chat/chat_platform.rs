@@ -193,11 +193,11 @@ impl ChatPlatform for YouTubePlatform {
                 ConnectionState::Disconnected,
                 ConnectionTransition::Unexpected,
             );
-            tracing::info!("youtube chat polling stopped");
+            tracing::info!("youtube chat receive stopped");
         });
 
         *self.cancel.lock_recover() = Some(cancel);
-        tracing::info!(channel_id = %channel_id, "youtube chat polling started");
+        tracing::info!(channel_id = %channel_id, "youtube chat receive started");
         Ok(())
     }
 

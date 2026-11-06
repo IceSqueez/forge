@@ -18,6 +18,16 @@ impl TransportModeSink {
         self.0.send_if_modified(|current| {
             let changed = *current != mode;
             *current = mode;
+            if changed {
+                match mode {
+                    ChatTransportMode::Streaming => {
+                        tracing::info!("youtube chat transport: streamed");
+                    }
+                    ChatTransportMode::Polling => {
+                        tracing::info!("youtube chat transport: polling fallback");
+                    }
+                }
+            }
             changed
         });
     }

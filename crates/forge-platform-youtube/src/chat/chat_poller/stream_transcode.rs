@@ -1,4 +1,7 @@
-#![expect(dead_code, reason = "consumed by the stream transport")]
+#![cfg_attr(
+    not(test),
+    expect(dead_code, reason = "consumed by the stream transport")
+)]
 
 use serde_json::{Map, Value};
 

@@ -10,7 +10,7 @@ use forge_storage::{CredentialId, CredentialsRepo};
 use time::{Duration, OffsetDateTime};
 use tokio::sync::watch;
 
-use crate::account::auth::{YouTubeAuthBundle, fetch_own_channel};
+use crate::account::auth::{NO_CHANNEL_FOUND, YouTubeAuthBundle, fetch_own_channel};
 use crate::account::credentials::{
     DEFAULT_ACCESS_TOKEN_LIFETIME_SECS, YOUTUBE_CREDENTIAL_ID, YouTubeBroadcaster,
     YouTubeCredentials,
@@ -74,6 +74,11 @@ impl YouTubeCredentialsManager {
 
     pub async fn broadcaster(&self) -> Result<YouTubeBroadcaster, PlatformError> {
         let creds = self.store().require().await?;
+        let creds = if creds.identity_pending() {
+            self.resolve_identity().await?
+        } else {
+            creds
+        };
         Ok(YouTubeBroadcaster {
             channel_id: creds.channel_id,
             channel_title: creds.channel_title,
@@ -122,9 +127,35 @@ impl YouTubeCredentialsManager {
         self.refresh.replace_rejected(failed_access_token).await
     }
 
+    pub async fn resolve_identity(&self) -> Result<YouTubeCredentials, PlatformError> {
+        let creds = self.store().require().await?;
+        if !creds.identity_pending() {
+            return Ok(creds);
+        }
+
+        let token = self.get_valid_access_token().await?;
+        let channel =
+            fetch_own_channel(&self.api, &token)
+                .await?
+                .ok_or_else(|| PlatformError::Refused {
+                    reason: NO_CHANNEL_FOUND.to_owned(),
+                })?;
+
+        let _guard = self.refresh.exclusive().await;
+        let mut latest = self.store().require().await?;
+        if !latest.identity_pending() {
+            return Ok(latest);
+        }
+        latest.channel_id = channel.id;
+        latest.channel_title = channel.snippet.title;
+        latest.channel_handle = channel.snippet.custom_url;
+        self.store().persist(&latest).await?;
+        Ok(latest)
+    }
+
     pub async fn ensure_channel_handle(&self) -> Result<YouTubeCredentials, PlatformError> {
         let creds = self.store().require().await?;
-        if creds.channel_handle.is_some() {
+        if creds.channel_handle.is_some() || creds.identity_pending() {
             return Ok(creds);
         }
 
@@ -804,11 +835,8 @@ mod tests {
             crate::broadcast::active_broadcast_id::ActiveBroadcastIdHandle::new(),
             crate::chat::ban_ledger_test_support::MemoryBanLedger::shared(),
         ));
-        let bundle = crate::builtin::YouTubeIntegrationBundle::new(
-            "UCtest123".to_owned(),
-            platform,
-            Arc::clone(&rig.manager),
-        );
+        let bundle =
+            crate::builtin::YouTubeIntegrationBundle::new(platform, Arc::clone(&rig.manager));
         crate::builtin::YouTubeIntegrationBundle::start_background_tasks(&bundle);
         let mut revisions = bundle.status_revisions().unwrap();
 

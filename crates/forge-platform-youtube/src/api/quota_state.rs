@@ -10,6 +10,7 @@ const QUOTA_HIGH_WATER: u32 = 9_000;
 pub(crate) const QUOTA_DAILY_LIMIT: u32 = 10_000;
 const QUOTA_RESET_ZONE: &str = "America/Los_Angeles";
 const PACIFIC_STANDARD_HOURS: i8 = -8;
+const SECONDS_PER_DAY: u64 = 86_400;
 pub(crate) const BROADCAST_COST: u32 = 1;
 pub(crate) const CHAT_POLL_COST: u32 = 5;
 
@@ -89,6 +90,24 @@ impl SharedQuota {
 
 pub(crate) fn today_pacific() -> time::Date {
     pacific_date(OffsetDateTime::now_utc())
+}
+
+pub(crate) fn until_next_reset(now: OffsetDateTime) -> std::time::Duration {
+    let zone = TimeZone::get(QUOTA_RESET_ZONE)
+        .unwrap_or_else(|_| TimeZone::fixed(Offset::constant(PACIFIC_STANDARD_HOURS)));
+    let now_seconds = now.unix_timestamp();
+    let next_midnight = Timestamp::from_second(now_seconds)
+        .ok()
+        .map(|instant| instant.to_zoned(zone))
+        .and_then(|local| local.tomorrow().ok())
+        .and_then(|next_day| next_day.start_of_day().ok())
+        .map(|midnight| midnight.timestamp().as_second());
+    match next_midnight {
+        Some(reset) => {
+            std::time::Duration::from_secs(u64::try_from(reset - now_seconds).unwrap_or(0))
+        }
+        None => std::time::Duration::from_secs(SECONDS_PER_DAY),
+    }
 }
 
 pub(crate) fn pacific_date(at: OffsetDateTime) -> time::Date {

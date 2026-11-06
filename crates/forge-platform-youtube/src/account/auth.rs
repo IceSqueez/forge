@@ -20,7 +20,7 @@ pub const GOOGLE_AUTHORIZE_ENDPOINT: &str = "https://accounts.google.com/o/oauth
 const YOUTUBE_CHANNELS_PATH: &str = "/channels";
 const OWN_CHANNEL_COST: u32 = 1;
 const OWN_CHANNEL_MISSING_SCOPE: &str = "channel identity scope missing";
-const NO_CHANNEL_FOUND: &str = "no channel found";
+pub(crate) const NO_CHANNEL_FOUND: &str = "no channel found";
 
 pub(crate) const YOUTUBE_BROADCASTER_SCOPES: &[&str] =
     &["https://www.googleapis.com/auth/youtube.force-ssl"];
@@ -162,18 +162,28 @@ impl GoogleAuthFlow {
             ))
             .ok_or_else(|| malformed("token lifetime out of range"))?;
 
-        let channel = fetch_own_channel(&self.api, grant.access_token.expose())
-            .await?
-            .ok_or_else(|| PlatformError::Refused {
-                reason: NO_CHANNEL_FOUND.to_owned(),
-            })?;
+        let (channel_id, channel_title, channel_handle) =
+            match fetch_own_channel(&self.api, grant.access_token.expose()).await {
+                Ok(Some(channel)) => (
+                    channel.id,
+                    channel.snippet.title,
+                    channel.snippet.custom_url,
+                ),
+                Ok(None) => {
+                    return Err(PlatformError::Refused {
+                        reason: NO_CHANNEL_FOUND.to_owned(),
+                    });
+                }
+                Err(PlatformError::QuotaExhausted) => (String::new(), String::new(), None),
+                Err(other) => return Err(other),
+            };
 
         Ok(YouTubeAuthBundle {
             access_token: grant.access_token,
             refresh_token,
-            channel_id: channel.id,
-            channel_title: channel.snippet.title,
-            channel_handle: channel.snippet.custom_url,
+            channel_id,
+            channel_title,
+            channel_handle,
             client_id: self.oauth.client_id().to_owned(),
             expires_at,
         })

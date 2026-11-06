@@ -9,6 +9,7 @@ use crate::builtin::YouTubeIntegrationBundle;
 #[async_trait]
 impl BuiltinControl for YouTubeIntegrationBundle {
     async fn reconnect(&self) -> ControlOutcome {
+        self.settle_pending_identity().await;
         reconnect_credentialed(self).await
     }
 
@@ -41,6 +42,7 @@ impl CredentialedChatBundle for YouTubeIntegrationBundle {
             return Ok(false);
         };
         manager.refresh(stored.access_token.expose()).await?;
+        self.settle_pending_identity().await;
         Ok(true)
     }
 }

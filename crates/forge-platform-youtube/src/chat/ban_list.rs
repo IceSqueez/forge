@@ -39,7 +39,7 @@ impl BanListSource for YouTubeIntegrationBundle {
             .ban_ledger()
             .list_active(
                 PlatformId::YouTube,
-                broadcaster_channel_id,
+                &broadcaster_channel_id,
                 OffsetDateTime::now_utc(),
                 BAN_LEDGER_LIST_CAP,
             )
@@ -99,8 +99,7 @@ mod tests {
             ActiveBroadcastIdHandle::new(),
             ledger,
         ));
-        let bundle =
-            YouTubeIntegrationBundle::new(broadcaster_channel_id.to_owned(), platform, manager);
+        let bundle = YouTubeIntegrationBundle::new(platform, manager);
         YouTubeIntegrationBundle::start_background_tasks(&bundle);
         bundle
     }

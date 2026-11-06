@@ -159,11 +159,8 @@ impl YouTubeAssembly {
             )
             .with_avatar_book(self.avatars.clone()),
         );
-        let bundle = YouTubeIntegrationBundle::new(
-            stored.channel_id,
-            Arc::clone(&platform),
-            Arc::clone(&self.manager),
-        );
+        let bundle =
+            YouTubeIntegrationBundle::new(Arc::clone(&platform), Arc::clone(&self.manager));
         YouTubeIntegrationBundle::start_background_tasks(&bundle);
         Ok(Some(YouTubeSession { platform, bundle }))
     }

@@ -6,6 +6,7 @@ use serde::Deserialize;
 use time::OffsetDateTime;
 use time::format_description::well_known::Rfc3339;
 
+use crate::account::channel_id_handle::ChannelIdHandle;
 use crate::api::data_api::{DataApiError, YouTubeDataApi};
 use crate::builtin::YouTubeIntegrationBundle;
 
@@ -40,24 +41,25 @@ struct SubscriptionSnippet {
 pub(crate) struct YouTubeFollowLookup {
     api: YouTubeDataApi,
     access_token_source: TokenSource,
-    broadcaster_channel_id: String,
+    broadcaster_channel: ChannelIdHandle,
 }
 
 impl YouTubeFollowLookup {
     pub(crate) fn new(
         api: YouTubeDataApi,
         access_token_source: TokenSource,
-        broadcaster_channel_id: String,
+        broadcaster_channel: impl Into<ChannelIdHandle>,
     ) -> Self {
         Self {
             api,
             access_token_source,
-            broadcaster_channel_id,
+            broadcaster_channel: broadcaster_channel.into(),
         }
     }
 
     pub(crate) async fn status_of(&self, viewer_channel_id: &str) -> FollowStatus {
-        let broadcaster_channel_id = self.broadcaster_channel_id.as_str();
+        let broadcaster_channel_id = self.broadcaster_channel.get();
+        let broadcaster_channel_id = broadcaster_channel_id.as_str();
         if broadcaster_channel_id.is_empty() || viewer_channel_id.is_empty() {
             return FollowStatus::Unavailable;
         }

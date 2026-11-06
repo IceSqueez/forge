@@ -19,6 +19,12 @@ pub struct YouTubeCredentials {
     pub expires_at: OffsetDateTime,
 }
 
+impl YouTubeCredentials {
+    pub fn identity_pending(&self) -> bool {
+        self.channel_id.is_empty()
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct YouTubeBroadcaster {
     pub channel_id: String,

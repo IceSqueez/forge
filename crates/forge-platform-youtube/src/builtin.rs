@@ -1,25 +1,28 @@
 use forge_types::{IntegrationId, MessageRef, RecoverRwLock, UserText, VerbatimText};
-use std::sync::atomic::{AtomicU32, Ordering};
-use std::sync::{Arc, RwLock};
+use std::sync::atomic::{AtomicBool, AtomicU32, Ordering};
+use std::sync::{Arc, RwLock, Weak};
 use std::time::{Duration, SystemTime};
 
-use forge_platform_core::TokenSource;
 use forge_platform_core::{
-    BuiltinContent, BuiltinHealth, BuiltinStatus, CapabilityFlags, ChatPlatform, ConnectionState,
-    DetailSection, HeaderAction, HealthDelta, HealthMetric, HealthMetricId, HealthStream,
-    HealthText, HealthValue, HeroBadge, HeroBadgeTone, LiveViewerSource, ViewerReport,
+    BuiltinContent, BuiltinControl, BuiltinHealth, BuiltinStatus, CapabilityFlags, ChatPlatform,
+    ConnectionState, DetailSection, HeaderAction, HealthDelta, HealthMetric, HealthMetricId,
+    HealthStream, HealthText, HealthValue, HeroBadge, HeroBadgeTone, LiveViewerSource,
+    ViewerReport,
 };
+use forge_platform_core::{PlatformError, TokenSource};
 use tokio::sync::{broadcast, watch};
 use tokio_stream::StreamExt;
 use tokio_stream::wrappers::BroadcastStream;
 use tokio_util::sync::CancellationToken;
 
 use crate::account::credentials_manager::YouTubeCredentialsManager;
-use crate::api::quota_state::{QUOTA_DAILY_LIMIT, SharedQuota, today_pacific};
+use crate::api::quota_state::{QUOTA_DAILY_LIMIT, SharedQuota, today_pacific, until_next_reset};
 use crate::broadcast::follow_lookup::YouTubeFollowLookup;
 use crate::broadcast::viewer_poll::{YouTubeViewerPoll, YouTubeViewerSource};
 use crate::chat::chat_platform::YouTubePlatform;
 use crate::vocabulary::messages;
+
+const QUOTA_RESET_WAKE_MARGIN: Duration = Duration::from_secs(5);
 
 const LIVE_CHAT_METRIC: HealthMetricId = HealthMetricId::new(messages::HEALTH_LIVE_CHAT);
 const EVENTS_METRIC: HealthMetricId = HealthMetricId::new(messages::HEALTH_EVENTS);
@@ -27,8 +30,10 @@ const API_CALLS_METRIC: HealthMetricId = HealthMetricId::new(messages::HEALTH_AP
 
 pub struct YouTubeIntegrationBundle {
     id: IntegrationId,
-    channel_id: String,
     hero_name: RwLock<Option<String>>,
+    identity_blocked_on_quota: AtomicBool,
+    quota_wake_scheduled: AtomicBool,
+    this: Weak<Self>,
     last_quota_used: AtomicU32,
     token_expires_at: RwLock<Option<SystemTime>>,
     health_tx: broadcast::Sender<HealthDelta>,
@@ -44,7 +49,6 @@ pub struct YouTubeIntegrationBundle {
 
 impl YouTubeIntegrationBundle {
     pub fn new(
-        channel_id: String,
         platform: Arc<YouTubePlatform>,
         credentials_manager: Arc<YouTubeCredentialsManager>,
     ) -> Arc<Self> {
@@ -58,14 +62,16 @@ impl YouTubeIntegrationBundle {
         let follow_lookup = YouTubeFollowLookup::new(
             platform.api().clone(),
             token_source.clone(),
-            channel_id.clone(),
+            platform.channel_handle().clone(),
         );
         let retired = CancellationToken::new();
 
-        Arc::new(Self {
+        Arc::new_cyclic(|this| Self {
             id: crate::YOUTUBE_INTEGRATION.id,
-            channel_id,
             hero_name: RwLock::new(None),
+            identity_blocked_on_quota: AtomicBool::new(false),
+            quota_wake_scheduled: AtomicBool::new(false),
+            this: this.clone(),
             last_quota_used: AtomicU32::new(0),
             token_expires_at: RwLock::new(None),
             health_tx,
@@ -219,6 +225,31 @@ impl YouTubeIntegrationBundle {
         let Ok(Some(stored)) = self.credentials_manager.load().await else {
             return;
         };
+        self.token_expires_at
+            .write_recover()
+            .get_or_insert_with(|| SystemTime::from(stored.expires_at));
+        let stored = if stored.identity_pending() {
+            match self.credentials_manager.resolve_identity().await {
+                Ok(resolved) => {
+                    self.identity_blocked_on_quota
+                        .store(false, Ordering::Relaxed);
+                    self.platform.channel_handle().adopt(&resolved.channel_id);
+                    resolved
+                }
+                Err(PlatformError::QuotaExhausted) => {
+                    self.identity_blocked_on_quota
+                        .store(true, Ordering::Relaxed);
+                    self.schedule_wake_at_quota_reset();
+                    return;
+                }
+                Err(error) => {
+                    tracing::warn!(%error, "youtube channel identity lookup failed");
+                    return;
+                }
+            }
+        } else {
+            stored
+        };
         let stored = if stored.channel_handle.is_some() {
             stored
         } else {
@@ -231,9 +262,33 @@ impl YouTubeIntegrationBundle {
             handle_hero_name(stored.channel_handle.as_deref())
                 .unwrap_or_else(|| stored.channel_title.clone()),
         );
-        self.token_expires_at
-            .write_recover()
-            .get_or_insert_with(|| SystemTime::from(stored.expires_at));
+    }
+
+    fn schedule_wake_at_quota_reset(&self) {
+        let Some(bundle) = self.this.upgrade() else {
+            return;
+        };
+        if bundle.quota_wake_scheduled.swap(true, Ordering::AcqRel) {
+            return;
+        }
+        let delay = until_next_reset(time::OffsetDateTime::now_utc()) + QUOTA_RESET_WAKE_MARGIN;
+        tokio::spawn(async move {
+            tokio::select! {
+                biased;
+                () = bundle.retired.cancelled() => return,
+                () = tokio::time::sleep(delay) => {}
+            }
+            bundle.quota_wake_scheduled.store(false, Ordering::Release);
+            if let Err(error) = BuiltinControl::reconnect(bundle.as_ref()).await {
+                tracing::warn!(?error, "youtube reconnect after quota reset failed");
+            }
+        });
+    }
+
+    pub(crate) async fn settle_pending_identity(&self) {
+        if self.platform.channel_handle().is_pending() {
+            self.refresh_identity().await;
+        }
     }
 
     pub(crate) fn credentials_manager(&self) -> &Arc<YouTubeCredentialsManager> {
@@ -248,19 +303,32 @@ impl YouTubeIntegrationBundle {
         &self.follow_lookup
     }
 
-    fn quota_metric(&self) -> HealthMetric {
-        let used = match self.quota.try_lock() {
+    fn quota_used_today(&self) -> u32 {
+        match self.quota.try_lock() {
             Ok(guard) => {
                 let used = guard.used_on(today_pacific());
                 self.last_quota_used.store(used, Ordering::Relaxed);
                 used
             }
             Err(_) => self.last_quota_used.load(Ordering::Relaxed),
+        }
+    }
+
+    fn quota_used_up(&self, used: u32) -> bool {
+        used >= QUOTA_DAILY_LIMIT || self.identity_blocked_on_quota.load(Ordering::Relaxed)
+    }
+
+    fn quota_metric(&self) -> HealthMetric {
+        let used = self.quota_used_today();
+        let reset_hint = if self.quota_used_up(used) {
+            messages::quota_exhausted()
+        } else {
+            messages::health_quota_resets_daily()
         };
         let value = HealthValue::Ratio {
             used: u64::from(used),
             total: u64::from(QUOTA_DAILY_LIMIT),
-            reset_hint: Some(message_text(messages::health_quota_resets_daily())),
+            reset_hint: Some(message_text(reset_hint)),
         };
         HealthMetric {
             id: API_CALLS_METRIC,
@@ -339,6 +407,12 @@ impl BuiltinStatus for YouTubeIntegrationBundle {
     }
 
     fn capability_flags(&self) -> CapabilityFlags {
+        if self.quota_used_up(self.quota_used_today()) {
+            return CapabilityFlags {
+                limited: true,
+                label: Some(messages::quota_exhausted().into()),
+            };
+        }
         CapabilityFlags {
             limited: false,
             label: None,
@@ -358,8 +432,11 @@ impl BuiltinStatus for YouTubeIntegrationBundle {
     }
 
     fn name_badges(&self) -> Vec<HeroBadge> {
+        if self.platform.channel_handle().is_pending() {
+            return Vec::new();
+        }
         vec![HeroBadge {
-            label: messages::channel_id_badge(&self.channel_id.to_string()).into(),
+            label: messages::channel_id_badge(&self.platform.channel_id()).into(),
             tone: HeroBadgeTone::Neutral,
             is_identifier: true,
         }]
@@ -466,8 +543,7 @@ mod tests {
             ActiveBroadcastIdHandle::new(),
             crate::chat::ban_ledger_test_support::MemoryBanLedger::shared(),
         ));
-        let bundle =
-            YouTubeIntegrationBundle::new("UCabc123".to_owned(), Arc::clone(&platform), manager);
+        let bundle = YouTubeIntegrationBundle::new(Arc::clone(&platform), manager);
         YouTubeIntegrationBundle::start_background_tasks(&bundle);
         (bundle, platform)
     }

@@ -11,6 +11,7 @@ use forge_storage::BanLedgerRepo;
 use tokio::sync::{mpsc, watch};
 use tokio_util::sync::CancellationToken;
 
+use crate::account::channel_id_handle::ChannelIdHandle;
 use crate::account::credentials_manager::YouTubeCredentialsManager;
 use crate::api::data_api::YouTubeDataApi;
 use crate::api::poll_health::{PollHealthReporter, PollLinkHealth};
@@ -27,7 +28,7 @@ use forge_platform_core::TokenSource;
 
 pub struct YouTubePlatform {
     api: YouTubeDataApi,
-    channel_id: String,
+    channel: ChannelIdHandle,
     events: Arc<EventChannel>,
     credentials_manager: Arc<YouTubeCredentialsManager>,
     sender: YouTubeSendChat,
@@ -57,7 +58,7 @@ impl YouTubePlatform {
         let (state_tx, _) = watch::channel(ConnectionState::Disconnected);
         Self {
             api,
-            channel_id,
+            channel: channel_id.into(),
             events: Arc::new(EventChannel::new(EVENT_CHANNEL_CAPACITY)),
             credentials_manager,
             sender,
@@ -75,8 +76,12 @@ impl YouTubePlatform {
         self.active_broadcast_id.clone()
     }
 
-    pub(crate) fn channel_id(&self) -> &str {
-        &self.channel_id
+    pub(crate) fn channel_id(&self) -> String {
+        self.channel.get()
+    }
+
+    pub(crate) fn channel_handle(&self) -> &ChannelIdHandle {
+        &self.channel
     }
 
     pub(crate) fn ban_ledger(&self) -> &Arc<dyn BanLedgerRepo> {
@@ -104,10 +109,20 @@ impl ChatPlatform for YouTubePlatform {
     }
 
     async fn connect(&self) -> Result<(), PlatformError> {
-        self.credentials_manager
+        let stored = self
+            .credentials_manager
             .load()
             .await?
             .ok_or_else(|| reauth_required(PLATFORM_ID))?;
+        let stored = if stored.identity_pending() {
+            self.credentials_manager.resolve_identity().await?
+        } else {
+            stored
+        };
+        if self.channel.is_pending() {
+            self.channel.adopt(&stored.channel_id);
+        }
+        let channel_id = self.channel.get();
 
         let previous = self.cancel.lock_recover().take();
         if let Some(previous) = previous {
@@ -136,7 +151,7 @@ impl ChatPlatform for YouTubePlatform {
             self.api.clone(),
             token_source(Arc::clone(&self.credentials_manager)),
             tx,
-            self.channel_id.clone(),
+            channel_id.clone(),
             self.live_chat_id.clone(),
             self.active_broadcast_id.clone(),
             Arc::clone(&self.ban_ledger),
@@ -173,7 +188,7 @@ impl ChatPlatform for YouTubePlatform {
         });
 
         *self.cancel.lock_recover() = Some(cancel);
-        tracing::info!(channel_id = %self.channel_id, "youtube chat polling started");
+        tracing::info!(channel_id = %channel_id, "youtube chat polling started");
         Ok(())
     }
 

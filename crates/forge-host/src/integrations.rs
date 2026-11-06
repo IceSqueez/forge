@@ -1015,4 +1015,43 @@ mod tests {
             assert_eq!(event.payload["index"], index);
         }
     }
+
+    struct AnsweringTitle;
+
+    #[async_trait::async_trait]
+    impl BuiltinCurrentValues for AnsweringTitle {
+        async fn read_current(
+            &self,
+            _field_keys: &[String],
+        ) -> std::collections::BTreeMap<String, forge_platform_core::QuickActionFieldValue>
+        {
+            std::collections::BTreeMap::from([(
+                "title".to_owned(),
+                forge_platform_core::QuickActionFieldValue::Text("Live now".to_owned()),
+            )])
+        }
+    }
+
+    #[tokio::test]
+    async fn an_object_reads_current_values_only_through_the_reader_it_was_given() {
+        let (_listener, port) = listening_but_silent_port().await;
+        let object = installable_object(port).await;
+        let unset = object.current_values.is_none();
+
+        let reader = object
+            .with_current_values(Arc::new(AnsweringTitle))
+            .current_values
+            .expect("the reader fills the slot");
+        let answer = reader.read_current(&["title".to_owned()]).await;
+
+        assert_eq!(
+            (unset, answer.get("title")),
+            (
+                true,
+                Some(&forge_platform_core::QuickActionFieldValue::Text(
+                    "Live now".to_owned()
+                ))
+            )
+        );
+    }
 }

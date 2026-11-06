@@ -951,7 +951,7 @@ mod tests {
                 placeholder: None,
                 hint: None,
                 required: false,
-                reads_current: false,
+                reads_current: true,
             }],
             collection: Some(crate::collections::CollectionId::new("rewards")),
         };
@@ -1338,5 +1338,32 @@ mod tests {
         );
         assert!(action.first_mismatched_field(&supplied).is_none());
         assert!(unset.first_mismatched_field(&BTreeMap::new()).is_none());
+    }
+
+    #[test]
+    fn a_field_stored_without_the_read_marker_loads_as_not_reading_its_current_value() {
+        let stored = serde_json::json!({
+            "key": "title",
+            "label": { "verbatim": "Title" },
+            "kind": "text",
+        });
+
+        let field: QuickActionField = serde_json::from_value(stored).unwrap();
+
+        assert!(!field.reads_current);
+    }
+
+    #[test]
+    fn current_value_keys_lists_only_the_marked_fields_in_field_order() {
+        let action = qa_with(
+            qa_template(BTreeMap::new()),
+            vec![
+                qa_field("zeta", QuickActionFieldKind::Text, None).reads_current(),
+                qa_field("alpha", QuickActionFieldKind::Text, None),
+                qa_field("mid", QuickActionFieldKind::Text, None).reads_current(),
+            ],
+        );
+
+        assert_eq!(action.current_value_keys(), vec!["zeta", "mid"]);
     }
 }

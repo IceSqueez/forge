@@ -59,6 +59,8 @@ pub(crate) struct QuickField {
     pub(crate) required: bool,
     pub(crate) max_chars: Option<usize>,
     pub(crate) error: Option<String>,
+    pub(crate) touched: bool,
+    pub(crate) awaiting_current: bool,
     pub(crate) control: FieldControl,
 }
 
@@ -146,6 +148,7 @@ impl QuickFieldControls {
     pub(crate) fn entry_changed(&mut self, index: usize, cx: &mut App) {
         if let Some(field) = self.fields.get_mut(index) {
             field.error = None;
+            field.touched = true;
         }
         self.revalidate(index, cx);
     }
@@ -172,6 +175,7 @@ impl QuickFieldControls {
         {
             *value = !*value;
             field.error = None;
+            field.touched = true;
             return true;
         }
         false
@@ -226,6 +230,7 @@ impl QuickFieldControls {
             changed = choice.selected.as_ref() != Some(id);
             choice.selected = Some(id.clone());
             field.error = None;
+            field.touched = true;
         }
         self.open_choice = None;
         changed
@@ -283,6 +288,23 @@ impl QuickFieldControls {
             FieldControl::Choice(choice) => {
                 self.render_choice(index, choice, ids, handlers, palette, cx)
             }
+        };
+        let control = if field.awaiting_current && !field.choice_loading() {
+            div()
+                .w_full()
+                .flex()
+                .items_center()
+                .gap(scaled(CHOICE_GAP, density))
+                .child(div().flex_1().min_w_0().child(control))
+                .child(spinner(
+                    (ids.spinner, index),
+                    Icon::Refresh,
+                    FONT_XS,
+                    palette.text_muted,
+                ))
+                .into_any_element()
+        } else {
+            control
         };
         field_column(
             palette,
@@ -380,6 +402,21 @@ impl QuickFieldControls {
     }
 }
 
+impl ChoiceControl {
+    fn prefer(&mut self, id: SharedString) {
+        if let Some(binding) = self.option_list.as_mut() {
+            binding.default = Some(id.clone());
+        }
+        let listed = match &self.state {
+            ChoiceState::Ready(items) => items.iter().any(|item| item.id == id),
+            ChoiceState::Loading | ChoiceState::Failed(_) => false,
+        };
+        if listed {
+            self.selected = Some(id);
+        }
+    }
+}
+
 impl QuickField {
     pub(crate) fn option_list(&self) -> Option<&OptionListBinding> {
         match &self.control {
@@ -393,6 +430,41 @@ impl QuickField {
             FieldControl::Choice(choice) => choice.selected.as_ref(),
             _ => None,
         }
+    }
+
+    fn choice_loading(&self) -> bool {
+        matches!(
+            &self.control,
+            FieldControl::Choice(ChoiceControl {
+                state: ChoiceState::Loading,
+                ..
+            })
+        )
+    }
+
+    pub(crate) fn prefill(&mut self, value: &QuickActionFieldValue, cx: &mut App) -> bool {
+        let before = self.current_value(cx);
+        match (&mut self.control, value) {
+            (FieldControl::Text(input), QuickActionFieldValue::Text(text)) => {
+                input.update(cx, |input, cx| input.set_content(text.clone(), cx));
+            }
+            (FieldControl::Multiline(area), QuickActionFieldValue::Text(text)) => {
+                area.update(cx, |area, cx| area.set_content(text.clone(), cx));
+            }
+            (FieldControl::Toggle(current), QuickActionFieldValue::Toggle(value)) => {
+                *current = *value;
+            }
+            (FieldControl::Int { input, .. }, QuickActionFieldValue::Int(number)) => {
+                input.update(cx, |input, cx| input.set_content(number.to_string(), cx));
+            }
+            (FieldControl::Choice(choice), QuickActionFieldValue::Text(text))
+                if !text.is_empty() =>
+            {
+                choice.prefer(text.clone().into());
+            }
+            _ => return false,
+        }
+        self.current_value(cx) != before
     }
 
     pub(crate) fn entry_invalid(&self, cx: &App) -> bool {
@@ -459,6 +531,8 @@ fn build_field<V: 'static>(
         required: spec.required,
         max_chars,
         error: None,
+        touched: false,
+        awaiting_current: false,
         control: build_control(index, spec, initial, lists, on_event, subs, cx),
     }
 }

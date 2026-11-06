@@ -10,8 +10,8 @@ use forge_components::{
     secondary_button, tr,
 };
 use forge_platform_core::{
-    BuiltinOptionSource, CollectionOutcome, OptionEntry, QuickAction, QuickActionFieldValue,
-    RevisionWait,
+    BuiltinCurrentValues, BuiltinOptionSource, CollectionOutcome, OptionEntry, QuickAction,
+    QuickActionFieldValue, RevisionWait,
 };
 use forge_types::SubActionStep;
 use gpui::{
@@ -30,6 +30,7 @@ use crate::shared::option_list_text::{option_failure_message, option_hint_text};
 use crate::shared::user_text::user_text_string;
 
 const TEXT_DEPENDENCY_DEBOUNCE: Duration = Duration::from_millis(400);
+const CURRENT_VALUE_READ_DEADLINE: Duration = Duration::from_secs(4);
 const MODAL_W: Pixels = px(440.0);
 const CHOICE_GAP: Pixels = px(8.0);
 const BODY_GAP: Pixels = px(12.0);
@@ -63,6 +64,7 @@ pub(crate) struct QuickActionModal {
     text_resolve: Generation,
     pending_text_changes: Vec<usize>,
     _revision_watch: Option<Task<()>>,
+    _current_read: Option<Task<()>>,
 }
 
 impl EventEmitter<QuickActionModalEvent> for QuickActionModal {}
@@ -133,9 +135,83 @@ impl QuickActionModal {
             text_resolve: Generation::default(),
             pending_text_changes: Vec::new(),
             _revision_watch: revision_watch,
+            _current_read: None,
         };
         modal.resolve_option_lists(ResolveMode::Load, cx);
         modal
+    }
+
+    pub(crate) fn with_current_values(
+        mut self,
+        source: Option<Arc<dyn BuiltinCurrentValues>>,
+        cx: &mut Context<Self>,
+    ) -> Self {
+        self.read_current_values(source, cx);
+        self
+    }
+
+    fn read_current_values(
+        &mut self,
+        source: Option<Arc<dyn BuiltinCurrentValues>>,
+        cx: &mut Context<Self>,
+    ) {
+        let keys = self.action.current_value_keys();
+        let Some(source) = source.filter(|_| !keys.is_empty()) else {
+            return;
+        };
+        for field in &mut self.controls.fields {
+            field.awaiting_current = keys.contains(&field.key);
+        }
+        cx.notify();
+        let reply = async_bridge::on_runtime(&self.rt_handle, async move {
+            tokio::time::timeout(CURRENT_VALUE_READ_DEADLINE, source.read_current(&keys))
+                .await
+                .unwrap_or_default()
+        });
+        self._current_read = Some(cx.spawn(async move |this, cx| {
+            let values = reply.await.unwrap_or_default();
+            #[expect(
+                clippy::let_underscore_must_use,
+                reason = "the view may close before the result arrives"
+            )]
+            let _ = this.update(cx, |this, cx| this.apply_current_values(&values, cx));
+        }));
+    }
+
+    fn apply_current_values(
+        &mut self,
+        values: &BTreeMap<String, QuickActionFieldValue>,
+        cx: &mut Context<Self>,
+    ) {
+        let mut filled = Vec::new();
+        for (index, (spec, field)) in self
+            .action
+            .fields
+            .iter()
+            .zip(self.controls.fields.iter_mut())
+            .enumerate()
+        {
+            let awaited = std::mem::take(&mut field.awaiting_current);
+            if !awaited || field.touched {
+                continue;
+            }
+            let Some(value) = values
+                .get(&spec.key)
+                .filter(|value| spec.kind.accepts(value))
+            else {
+                continue;
+            };
+            if field.prefill(value, cx) {
+                filled.push(index);
+            }
+        }
+        for &index in &filled {
+            self.controls.revalidate(index, cx);
+        }
+        cx.notify();
+        for index in filled {
+            self.resolve_dependents(index, cx);
+        }
     }
 
     fn resolve_option_lists(&mut self, mode: ResolveMode, cx: &mut Context<Self>) {
@@ -382,17 +458,17 @@ impl QuickActionModal {
     }
 
     fn can_run(&self, cx: &Context<Self>) -> bool {
-        self.controls
-            .fields
-            .iter()
-            .all(|field| match &field.control {
-                FieldControl::Choice(choice) => {
-                    matches!(choice.state, ChoiceState::Ready(_))
-                        && choice.selected.is_some()
-                        && !self.awaits_debounced_resolve(choice)
+        self.controls.fields.iter().all(|field| {
+            !field.awaiting_current
+                && match &field.control {
+                    FieldControl::Choice(choice) => {
+                        matches!(choice.state, ChoiceState::Ready(_))
+                            && choice.selected.is_some()
+                            && !self.awaits_debounced_resolve(choice)
+                    }
+                    _ => !field.entry_invalid(cx),
                 }
-                _ => !field.entry_invalid(cx),
-            })
+        })
     }
 
     fn current_values(&self, cx: &Context<Self>) -> BTreeMap<String, QuickActionFieldValue> {

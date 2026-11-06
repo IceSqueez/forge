@@ -8,8 +8,8 @@ use forge_components::{
     tooltip_builder, tr, with_alpha,
 };
 use forge_platform_core::{
-    BuiltinCollections, BuiltinOptionSource, QuickAction, QuickActionAccent, QuickActionGroup,
-    QuickActionLiveness, QuickActions,
+    BuiltinCollections, BuiltinCurrentValues, BuiltinOptionSource, QuickAction, QuickActionAccent,
+    QuickActionGroup, QuickActionLiveness, QuickActions,
 };
 use forge_registry::TriggerRegistry;
 use forge_runtime::ActionEngineHandle;
@@ -83,6 +83,7 @@ pub(crate) struct QuickActionSource {
     pub(crate) quick: Arc<dyn QuickActions>,
     pub(crate) collections: Option<Arc<dyn BuiltinCollections>>,
     pub(crate) option_source: Option<Arc<dyn BuiltinOptionSource>>,
+    pub(crate) current_values: Option<Arc<dyn BuiltinCurrentValues>>,
 }
 
 pub(crate) enum QuickActionsPanelEvent {

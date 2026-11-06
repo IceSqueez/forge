@@ -9,9 +9,9 @@ use forge_host::integration_sign_out::IntegrationSignOut;
 use forge_host::integrations::BuiltinObject;
 use forge_host::integrations::ObsInstallSeed;
 use forge_platform_core::{
-    BuiltinCollections, BuiltinContent, BuiltinControl, BuiltinHealth, BuiltinOptionSource,
-    BuiltinStatus, CapabilityFlags, ConnectionState, CredentialState, DetailSection, HeaderAction,
-    HealthMetric, QuickActions,
+    BuiltinCollections, BuiltinContent, BuiltinControl, BuiltinCurrentValues, BuiltinHealth,
+    BuiltinOptionSource, BuiltinStatus, CapabilityFlags, ConnectionState, CredentialState,
+    DetailSection, HeaderAction, HealthMetric, QuickActions,
 };
 use forge_registry::TriggerRegistry;
 use forge_runtime::{ActionEngineHandle, IntegrationSlot};
@@ -47,6 +47,7 @@ pub(super) struct BuiltinPorts {
     pub(super) control: Option<Arc<dyn BuiltinControl>>,
     pub(super) collections: Option<Arc<dyn BuiltinCollections>>,
     pub(super) option_source: Option<Arc<dyn BuiltinOptionSource>>,
+    pub(super) current_values: Option<Arc<dyn BuiltinCurrentValues>>,
 }
 
 impl BuiltinPorts {
@@ -59,7 +60,7 @@ impl BuiltinPorts {
             control,
             collections,
             option_source,
-            current_values: _,
+            current_values,
             follow: _,
             ban_list: _,
         } = object;
@@ -71,6 +72,7 @@ impl BuiltinPorts {
             control,
             collections,
             option_source,
+            current_values,
         }
     }
 }
@@ -82,6 +84,7 @@ impl BuiltinPorts {
             quick: Arc::clone(&self.quick),
             collections: self.collections.clone(),
             option_source: self.option_source.clone(),
+            current_values: self.current_values.clone(),
         }
     }
 }

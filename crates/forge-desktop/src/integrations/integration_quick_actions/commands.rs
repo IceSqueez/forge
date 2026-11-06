@@ -107,8 +107,12 @@ impl QuickActionsPanel {
         }
         let action = action.clone();
         let option_source = self.source.option_source.clone();
+        let current_values = self.source.current_values.clone();
         let rt_handle = self.services.rt_handle.clone();
-        let modal = cx.new(|cx| QuickActionModal::new(action, option_source, rt_handle, cx));
+        let modal = cx.new(|cx| {
+            QuickActionModal::new(action, option_source, rt_handle, cx)
+                .with_current_values(current_values, cx)
+        });
         focus_inside_modal(window, cx, |window, cx| {
             modal.update(cx, |m, cx| m.focus(window, cx))
         });

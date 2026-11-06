@@ -977,4 +977,35 @@ mod tests {
             );
         }
     }
+
+    #[test]
+    fn exactly_the_stream_info_fields_read_their_current_value() {
+        let bundle = make_bundle_with_tier(ChatSessionState::Connected, BroadcasterTier::Affiliate);
+
+        let readable: Vec<(String, Vec<String>)> = bundle
+            .actions()
+            .iter()
+            .map(|action| {
+                (
+                    action.subaction_template.kind_id.clone(),
+                    action.current_value_keys(),
+                )
+            })
+            .filter(|(_, keys)| !keys.is_empty())
+            .collect();
+
+        assert_eq!(
+            readable,
+            [
+                (sub_action_ids::CHANNEL_UPDATE_TITLE, config_keys::TITLE),
+                (
+                    sub_action_ids::CHANNEL_UPDATE_CATEGORY,
+                    config_keys::CATEGORY_NAME
+                ),
+                (sub_action_ids::CHANNEL_UPDATE_TAGS, config_keys::TAGS),
+            ]
+            .map(|(kind, key)| (kind.to_owned(), vec![key.to_owned()]))
+            .to_vec()
+        );
+    }
 }

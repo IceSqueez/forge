@@ -257,3 +257,24 @@ impl QuickActions for KickIntegrationBundle {
             .collect()
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn the_title_and_category_fields_read_their_current_value_and_tags_do_not() {
+        let readable: Vec<String> = catalog()
+            .iter()
+            .flat_map(QuickAction::current_value_keys)
+            .collect();
+
+        assert_eq!(
+            readable,
+            vec![
+                config_keys::TITLE.to_owned(),
+                config_keys::CATEGORY_ID.to_owned()
+            ]
+        );
+    }
+}

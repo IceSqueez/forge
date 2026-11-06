@@ -4,10 +4,10 @@ use std::sync::{Arc, RwLock, Weak};
 use std::time::{Duration, SystemTime};
 
 use forge_platform_core::{
-    BuiltinContent, BuiltinControl, BuiltinHealth, BuiltinStatus, CapabilityFlags, ChatPlatform,
-    ConnectionState, DetailSection, HeaderAction, HealthDelta, HealthMetric, HealthMetricId,
-    HealthStream, HealthText, HealthValue, HeroBadge, HeroBadgeTone, LiveViewerSource,
-    ViewerReport,
+    BuiltinContent, BuiltinControl, BuiltinCurrentValues, BuiltinHealth, BuiltinStatus,
+    CapabilityFlags, ChatPlatform, ConnectionState, DetailSection, HeaderAction, HealthDelta,
+    HealthMetric, HealthMetricId, HealthStream, HealthText, HealthValue, HeroBadge, HeroBadgeTone,
+    LiveViewerSource, ViewerReport,
 };
 use forge_platform_core::{PlatformError, TokenSource};
 use tokio::sync::{broadcast, watch};
@@ -542,6 +542,22 @@ impl BuiltinContent for YouTubeIntegrationBundle {
 
     fn content_revisions(&self) -> Option<forge_platform_core::CollectionRevisions> {
         None
+    }
+}
+
+#[async_trait::async_trait]
+impl BuiltinCurrentValues for YouTubeIntegrationBundle {
+    async fn read_current(
+        &self,
+        field_keys: &[String],
+    ) -> std::collections::BTreeMap<String, forge_platform_core::QuickActionFieldValue> {
+        crate::broadcast::current_stream_values::read_stream_values(
+            self.platform.api(),
+            &Self::token_source(&self.credentials_manager),
+            &self.platform.active_broadcast_id(),
+            field_keys,
+        )
+        .await
     }
 }
 

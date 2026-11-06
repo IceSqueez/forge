@@ -349,6 +349,7 @@ pub fn youtube_builtin_object(
 ) -> BuiltinObject {
     BuiltinObject::of(bundle.clone())
         .with_control(bundle.clone())
+        .with_current_values(bundle.clone())
         .with_follow(bundle.clone())
         .with_ban_list(bundle)
 }

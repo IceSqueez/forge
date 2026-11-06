@@ -3,6 +3,7 @@ pub(crate) mod ad_break;
 pub(crate) mod broadcast_lookup;
 pub(crate) mod broadcast_target;
 pub(crate) mod channel_lookup;
+pub(crate) mod current_stream_values;
 pub(crate) mod follow_lookup;
 pub(crate) mod live_chat_id;
 pub(crate) mod stream_metadata;

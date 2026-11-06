@@ -5,10 +5,10 @@ use forge_types::Secret;
 use crate::api::data_api::{YouTubeDataApi, json_body, malformed};
 use crate::broadcast::active_broadcast_id::ActiveBroadcastIdHandle;
 
-const FETCH_COST: u32 = 1;
+pub(crate) const FETCH_COST: u32 = 1;
 const UPDATE_COST: u32 = 50;
-const VIDEOS_PATH: &str = "/videos";
-const MISSING_SCOPE: &str = "stream metadata scope missing";
+pub(crate) const VIDEOS_PATH: &str = "/videos";
+pub(crate) const MISSING_SCOPE: &str = "stream metadata scope missing";
 
 use forge_platform_core::TokenSource;
 

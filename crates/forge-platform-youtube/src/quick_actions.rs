@@ -67,6 +67,7 @@ fn catalog() -> Vec<QuickAction> {
             vec![
                 QuickActionField::text(config_keys::TITLE, labels::TITLE)
                     .with_placeholder(labels::NEW_STREAM_TITLE)
+                    .reads_current()
                     .required(),
             ],
         ),
@@ -79,6 +80,7 @@ fn catalog() -> Vec<QuickAction> {
             vec![
                 QuickActionField::multiline(config_keys::DESCRIPTION, labels::DESCRIPTION)
                     .with_placeholder(labels::STREAM_DESCRIPTION)
+                    .reads_current()
                     .required(),
             ],
         ),
@@ -92,6 +94,7 @@ fn catalog() -> Vec<QuickAction> {
                 QuickActionField::text(config_keys::CATEGORY_ID, labels::CATEGORY_ID)
                     .with_default_text(GAMING_CATEGORY_ID)
                     .with_placeholder(labels::CATEGORY_ID_EXAMPLES)
+                    .reads_current()
                     .required(),
             ],
         ),
@@ -101,7 +104,7 @@ fn catalog() -> Vec<QuickAction> {
             QuickActionAccent::Warning,
             Group::Broadcast,
             sub_action_ids::STREAM_UPDATE_PRIVACY,
-            vec![privacy_field().required()],
+            vec![privacy_field().reads_current().required()],
         ),
         quick_action(
             labels::SET_THUMBNAIL,

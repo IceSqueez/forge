@@ -24,7 +24,7 @@ pub(crate) async fn read_stream_values(
             .map(|(key, value)| (key, QuickActionFieldValue::Text(value)))
             .collect(),
         Err(error) => {
-            tracing::warn!(%error, "youtube current stream values unavailable");
+            tracing::debug!(%error, "youtube current stream values unavailable");
             BTreeMap::new()
         }
     }

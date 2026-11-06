@@ -65,7 +65,7 @@ impl BuiltinCurrentValues for TwitchIntegrationBundle {
         match self.helix().execute(request).await {
             Ok(response) => values_from_response(&response, field_keys),
             Err(error) => {
-                tracing::warn!(%error, "channel info unreadable; quick action fields not prefilled");
+                tracing::debug!(%error, "channel info unreadable; quick action fields not prefilled");
                 BTreeMap::new()
             }
         }

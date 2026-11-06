@@ -28,14 +28,14 @@ impl KickCurrentValues {
         let token = match self.credentials_manager.get_valid_access_token().await {
             Ok(token) => token,
             Err(error) => {
-                tracing::warn!(%error, "kick token unavailable for current values");
+                tracing::debug!(%error, "kick token unavailable for current values");
                 return None;
             }
         };
         match self.channel.get_channel(&token).await {
             Ok(snapshot) => Some(snapshot),
             Err(error) => {
-                tracing::warn!(%error, "kick channel read failed for current values");
+                tracing::debug!(%error, "kick channel read failed for current values");
                 None
             }
         }

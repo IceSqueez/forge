@@ -19,10 +19,37 @@ impl From<DataApiError> for FetchFailure {
     }
 }
 
-pub(super) struct ChatMessagesResponse {
-    pub(super) items: Vec<serde_json::Value>,
-    pub(super) next_page_token: Option<String>,
-    pub(super) polling_interval_millis: u64,
+pub(crate) struct ChatMessagesResponse {
+    pub(crate) items: Vec<serde_json::Value>,
+    pub(crate) next_page_token: Option<String>,
+    pub(crate) polling_interval_millis: u64,
+}
+
+pub(crate) fn page_from_body(body: &serde_json::Value) -> ChatMessagesResponse {
+    let items = body
+        .get("items")
+        .and_then(|v| v.as_array())
+        .cloned()
+        .unwrap_or_default();
+
+    let next_page_token = body
+        .get("nextPageToken")
+        .and_then(|v| v.as_str())
+        .map(ToOwned::to_owned);
+
+    let polling_interval_millis = body
+        .get("pollingIntervalMillis")
+        .and_then(|v| {
+            v.as_u64()
+                .or_else(|| v.as_str().and_then(|s| s.parse().ok()))
+        })
+        .unwrap_or(DEFAULT_POLLING_INTERVAL_MS);
+
+    ChatMessagesResponse {
+        items,
+        next_page_token,
+        polling_interval_millis,
+    }
 }
 
 impl YouTubeChatPoller {
@@ -76,29 +103,6 @@ impl YouTubeChatPoller {
             Err(error) => return Err(error.into()),
         };
 
-        let items = body
-            .get("items")
-            .and_then(|v| v.as_array())
-            .cloned()
-            .unwrap_or_default();
-
-        let next_page_token = body
-            .get("nextPageToken")
-            .and_then(|v| v.as_str())
-            .map(ToOwned::to_owned);
-
-        let polling_interval_millis = body
-            .get("pollingIntervalMillis")
-            .and_then(|v| {
-                v.as_u64()
-                    .or_else(|| v.as_str().and_then(|s| s.parse().ok()))
-            })
-            .unwrap_or(DEFAULT_POLLING_INTERVAL_MS);
-
-        Ok(ChatMessagesResponse {
-            items,
-            next_page_token,
-            polling_interval_millis,
-        })
+        Ok(page_from_body(&body))
     }
 }

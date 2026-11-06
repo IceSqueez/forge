@@ -615,6 +615,7 @@ mod tests {
                 control: None,
                 collections: None,
                 option_source: None,
+                current_values: None,
                 follow: None,
                 ban_list: None,
             }

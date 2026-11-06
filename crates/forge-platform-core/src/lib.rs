@@ -8,6 +8,7 @@ mod connection_announcer;
 mod credential_errors;
 mod credential_state;
 mod credentialed_control;
+mod current_values;
 mod donation;
 mod donation_poll;
 mod donation_setup;
@@ -57,6 +58,7 @@ pub use credential_state::{CredentialState, CredentialStateTracker};
 pub use credentialed_control::{
     CredentialedChatBundle, disconnect_credentialed, reconnect_credentialed, refresh_credentialed,
 };
+pub use current_values::BuiltinCurrentValues;
 pub use donation::{DonationProvider, DonationStream};
 pub use donation_poll::{
     CycleError, DonationPoll, POLL_ERROR_BACKOFF_BASE, POLL_ERROR_BACKOFF_CAP, PollError,

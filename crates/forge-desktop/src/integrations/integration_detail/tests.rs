@@ -277,6 +277,7 @@ mod quick_action_bridge {
                 control: None,
                 collections: None,
                 option_source: None,
+                current_values: None,
                 follow: None,
                 ban_list: None,
             }
@@ -1755,6 +1756,7 @@ mod detail_lifetime {
             control: None,
             collections: None,
             option_source: None,
+            current_values: None,
             follow: None,
             ban_list: None,
         };

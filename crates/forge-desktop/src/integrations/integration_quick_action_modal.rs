@@ -829,6 +829,7 @@ mod tests {
             placeholder: None,
             hint: None,
             required: false,
+            reads_current: false,
         }
     }
 
@@ -883,6 +884,7 @@ mod tests {
             placeholder: None,
             hint: None,
             required: true,
+            reads_current: false,
         }
     }
 

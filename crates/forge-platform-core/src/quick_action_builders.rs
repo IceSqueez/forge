@@ -19,6 +19,7 @@ impl QuickActionField {
             placeholder: None,
             hint: None,
             required: false,
+            reads_current: false,
         }
     }
 

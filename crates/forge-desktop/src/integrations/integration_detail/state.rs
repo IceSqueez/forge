@@ -59,6 +59,7 @@ impl BuiltinPorts {
             control,
             collections,
             option_source,
+            current_values: _,
             follow: _,
             ban_list: _,
         } = object;

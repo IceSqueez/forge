@@ -5,8 +5,8 @@ use std::time::Duration;
 
 use forge_events::{Delivery, EventPublisher, EventSubscription};
 use forge_platform_core::{
-    BanListSource, BuiltinCollections, BuiltinContent, BuiltinControl, BuiltinHealth,
-    BuiltinOptionSource, BuiltinStatus, ChatPlatform, ControlOutcome, FollowLookup,
+    BanListSource, BuiltinCollections, BuiltinContent, BuiltinControl, BuiltinCurrentValues,
+    BuiltinHealth, BuiltinOptionSource, BuiltinStatus, ChatPlatform, ControlOutcome, FollowLookup,
     PlatformEndpoints, QuickActions,
 };
 use forge_registry::{SubActionRegistry, TriggerRegistry};
@@ -38,6 +38,7 @@ pub struct BuiltinObject {
     pub control: Option<Arc<dyn BuiltinControl>>,
     pub collections: Option<Arc<dyn BuiltinCollections>>,
     pub option_source: Option<Arc<dyn BuiltinOptionSource>>,
+    pub current_values: Option<Arc<dyn BuiltinCurrentValues>>,
     pub follow: Option<Arc<dyn FollowLookup>>,
     pub ban_list: Option<Arc<dyn BanListSource>>,
 }
@@ -55,6 +56,7 @@ impl BuiltinObject {
             control: None,
             collections: None,
             option_source: None,
+            current_values: None,
             follow: None,
             ban_list: None,
         }
@@ -72,6 +74,11 @@ impl BuiltinObject {
 
     pub fn with_option_source(mut self, option_source: Arc<dyn BuiltinOptionSource>) -> Self {
         self.option_source = Some(option_source);
+        self
+    }
+
+    pub fn with_current_values(mut self, current_values: Arc<dyn BuiltinCurrentValues>) -> Self {
+        self.current_values = Some(current_values);
         self
     }
 

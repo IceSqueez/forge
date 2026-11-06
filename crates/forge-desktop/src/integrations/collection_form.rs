@@ -194,6 +194,7 @@ mod tests {
             placeholder: None,
             hint: None,
             required,
+            reads_current: false,
         }
     }
 

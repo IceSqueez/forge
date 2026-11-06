@@ -143,6 +143,7 @@ pub(crate) fn unavailable_builtin(id: &IntegrationId) -> BuiltinObject {
         control: None,
         collections: None,
         option_source: None,
+        current_values: None,
         follow: None,
         ban_list: None,
     }

@@ -454,12 +454,21 @@ pub struct QuickActionField {
     pub hint: Option<UserText>,
     #[serde(default)]
     pub required: bool,
+    #[serde(default)]
+    pub reads_current: bool,
 }
 
 impl QuickActionField {
     pub fn required(self) -> Self {
         Self {
             required: true,
+            ..self
+        }
+    }
+
+    pub fn reads_current(self) -> Self {
+        Self {
+            reads_current: true,
             ..self
         }
     }
@@ -507,6 +516,14 @@ pub struct QuickAction {
 impl QuickAction {
     pub fn is_runnable(&self) -> bool {
         self.enabled && self.liveness != QuickActionLiveness::Absent
+    }
+
+    pub fn current_value_keys(&self) -> Vec<String> {
+        self.fields
+            .iter()
+            .filter(|field| field.reads_current)
+            .map(|field| field.key.clone())
+            .collect()
     }
 
     pub fn first_mismatched_field(
@@ -934,6 +951,7 @@ mod tests {
                 placeholder: None,
                 hint: None,
                 required: false,
+                reads_current: false,
             }],
             collection: Some(crate::collections::CollectionId::new("rewards")),
         };
@@ -990,6 +1008,7 @@ mod tests {
             placeholder: None,
             hint: None,
             required: false,
+            reads_current: false,
         }
     }
 

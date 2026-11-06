@@ -19,7 +19,7 @@ bytes = { workspace = true }
 forge-types = { path = "../forge-types" }
 httpdate = { workspace = true }
 rand = { workspace = true }
-reqwest = { workspace = true }
+reqwest = { workspace = true, features = ["http2"] }
 tracing = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }

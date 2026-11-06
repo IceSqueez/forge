@@ -479,7 +479,8 @@ fn build_client(
     let mut builder = reqwest::Client::builder()
         .redirect(reqwest::redirect::Policy::none())
         .user_agent(USER_AGENT)
-        .connect_timeout(connect_budget);
+        .connect_timeout(connect_budget)
+        .http1_only();
     if profile.guards_addresses() {
         builder = builder
             .dns_resolver(Arc::new(PublicAddressResolver))

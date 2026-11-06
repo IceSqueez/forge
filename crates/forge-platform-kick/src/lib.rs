@@ -4,6 +4,7 @@ mod ban_ledger;
 mod ban_list;
 mod builtin;
 pub(crate) mod control;
+mod current_values;
 #[cfg(test)]
 #[path = "../../forge-platform-core/test_support/emitted_codes.rs"]
 mod emitted_codes;
@@ -37,6 +38,7 @@ pub use auth::{
     client_credentials,
 };
 pub use builtin::{KickIntegrationBundle, register_kick_triggers};
+pub use current_values::KickCurrentValues;
 pub use gateway::{
     KICK_API_BUDGET_CAPACITY, KICK_API_BUDGET_WINDOW, KICK_CHANNEL_INFO_BUDGET_CAPACITY,
     KICK_CHANNEL_INFO_BUDGET_WINDOW, kick_api_gateway, kick_channel_info_gateway,

@@ -53,7 +53,8 @@ fn catalog() -> Vec<QuickAction> {
             vec![
                 QuickActionField::text(config_keys::TITLE, labels::STREAM_TITLE_FIELD)
                     .with_placeholder(labels::STREAM_TITLE)
-                    .required(),
+                    .required()
+                    .reads_current(),
             ],
         ),
         quick_action(
@@ -65,7 +66,8 @@ fn catalog() -> Vec<QuickAction> {
             vec![
                 QuickActionField::text(config_keys::CATEGORY_ID, labels::CATEGORY_ID)
                     .with_hint(labels::CATEGORY_ID_HINT)
-                    .required(),
+                    .required()
+                    .reads_current(),
             ],
         ),
         quick_action(

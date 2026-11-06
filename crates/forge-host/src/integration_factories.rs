@@ -472,7 +472,12 @@ impl IntegrationFactory<BuiltinObject> for KickFactory {
             &viewer_source,
         );
 
-        let object = kick_builtin_object(Arc::clone(&bundle));
+        let object = kick_builtin_object(Arc::clone(&bundle)).with_current_values(Arc::new(
+            forge_platform_kick::KickCurrentValues::new(
+                Arc::clone(&self.channel),
+                Arc::clone(&self.manager),
+            ),
+        ));
         let teardown = platform_teardown(tasks, relay, async move {
             poller.stop();
             bundle.shutdown().await;

@@ -11,6 +11,7 @@ use tokio::sync::mpsc;
 
 use super::*;
 
+mod prime_pairing;
 mod typed_payloads;
 
 fn make_session(bus: &Arc<EventChannel>) -> ChatSession {

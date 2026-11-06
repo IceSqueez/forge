@@ -241,7 +241,7 @@ fn payload_cases() -> Vec<PayloadCase> {
                 VIEWER.wire("user"),
                 json!({"tier": "1000", "is_gift": true}),
             ]),
-            json!({"user": VIEWER.nested(), "tier": "1000", "is_gift": true}),
+            json!({"user": VIEWER.nested(), "tier": "1000", "is_gift": true, "is_prime": false}),
             decoded::<ChannelSubscribed>,
         ),
         case(
@@ -264,6 +264,7 @@ fn payload_cases() -> Vec<PayloadCase> {
                 "streak_months": 3,
                 "message": "seven months",
                 "share_streak": true,
+                "is_prime": false,
             }),
             decoded::<ChannelResubscribed>,
         ),
@@ -1226,10 +1227,46 @@ fn every_published_payload_decodes_through_its_typed_event_back_to_the_same_wire
     }
 }
 
+fn pairing_only_cases() -> Vec<(&'static str, Value)> {
+    vec![(
+        "channel.chat.notification",
+        wire(&[
+            OWN_CHANNEL.wire("broadcaster_user"),
+            VIEWER.wire("chatter_user"),
+            json!({
+                "notice_type": "sub",
+                "sub": {"sub_tier": "1000", "is_prime": true, "duration_months": 1},
+                "source_broadcaster_user_id": null,
+            }),
+        ]),
+    )]
+}
+
+#[test]
+fn a_pairing_only_topic_publishes_nothing_on_its_own() {
+    for (topic, wire) in pairing_only_cases() {
+        let bus = Arc::new(EventChannel::new(EVENT_CHANNEL_CAPACITY));
+        let session = make_session(&bus);
+        let mut sub = bus.subscribe();
+        let route = dispatch::route_for(topic).unwrap_or_else(|| panic!("no route for {topic}"));
+
+        route(&session, &wire, "frame-msg-1");
+
+        assert!(
+            sub.try_recv().unwrap().is_none(),
+            "{topic} published an event"
+        );
+    }
+}
+
 #[test]
 fn the_payload_table_pins_every_subscribed_topic() {
     let subscribed: BTreeSet<&str> = TOPICS.iter().map(|topic| topic.kind).collect();
-    let pinned: BTreeSet<&str> = payload_cases().iter().map(|case| case.topic).collect();
+    let pinned: BTreeSet<&str> = payload_cases()
+        .iter()
+        .map(|case| case.topic)
+        .chain(pairing_only_cases().iter().map(|(topic, _)| *topic))
+        .collect();
 
     assert_eq!(
         subscribed.difference(&pinned).collect::<Vec<_>>(),

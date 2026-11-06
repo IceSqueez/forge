@@ -100,4 +100,25 @@ mod tests {
         }
         assert_eq!(stack.get("sub_is_gift"), Some(&Variant::Bool(false)));
     }
+
+    #[test]
+    fn a_new_subscriber_exposes_whether_the_sub_was_prime() {
+        for (stored, exposed) in [(Some(true), true), (Some(false), false), (None, false)] {
+            let mut payload = serde_json::json!({
+                "user": { "id": "111", "login": "newbie", "display_name": "Newbie" },
+                "tier": "1000",
+                "is_gift": false
+            });
+            if let Some(is_prime) = stored {
+                payload["is_prime"] = serde_json::json!(is_prime);
+            }
+            let event = Event::new(EventSource::Twitch, SPEC.kind, payload);
+
+            assert_eq!(
+                SPEC.build_arg_stack(&event).get("sub_is_prime"),
+                Some(&Variant::Bool(exposed)),
+                "stored is_prime {stored:?}"
+            );
+        }
+    }
 }

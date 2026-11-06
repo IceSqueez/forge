@@ -111,4 +111,28 @@ mod tests {
         assert_eq!(stack.get("sub_cumulative_months"), Some(&Variant::Int(12)));
         assert_eq!(stack.get("sub_streak_months"), Some(&Variant::Int(6)));
     }
+
+    #[test]
+    fn a_resubscriber_exposes_whether_the_resub_was_prime() {
+        for (stored, exposed) in [(Some(true), true), (Some(false), false), (None, false)] {
+            let mut payload = serde_json::json!({
+                "user": { "id": "222", "login": "loyalfan", "display_name": "LoyalFan" },
+                "tier": "1000",
+                "cumulative_months": 12,
+                "streak_months": 6,
+                "message": "Love this channel!",
+                "share_streak": true
+            });
+            if let Some(is_prime) = stored {
+                payload["is_prime"] = serde_json::json!(is_prime);
+            }
+            let event = Event::new(EventSource::Twitch, SPEC.kind, payload);
+
+            assert_eq!(
+                SPEC.build_arg_stack(&event).get("sub_is_prime"),
+                Some(&Variant::Bool(exposed)),
+                "stored is_prime {stored:?}"
+            );
+        }
+    }
 }

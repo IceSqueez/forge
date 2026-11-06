@@ -482,5 +482,13 @@
     },
     "type": "user.update",
     "version": "1"
+  },
+  {
+    "condition": {
+      "broadcaster_user_id": "BROADCASTER",
+      "user_id": "SELF"
+    },
+    "type": "channel.chat.notification",
+    "version": "1"
   }
 ]

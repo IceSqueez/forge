@@ -1,6 +1,13 @@
 # Changelog
 All notable changes to this project will be documented in this file.
 
+## [0.7.5] - 2026-11-06
+### 🚀 Features
+- *(youtube)* Show YouTube Terms of Service and privacy policy links (closes #152)
+
+### 🧪 Testing
+- *(youtube)* Cover consent link ranges, order and policy URLs
+
 ## [0.7.4] - 2026-11-06
 ### 🐛 Bug Fixes
 - *(actions)* Keep only the newest picker options in the step editor (closes #144)
@@ -12,6 +19,9 @@ All notable changes to this project will be documented in this file.
 - *(youtube)* Refresh a rejected token and honour quota and throttle waits on streamed chat
 - *(youtube)* Update the quota tile as quota is spent and label it as quota (closes #150)
 - *(youtube)* Log chat receive and its transport changes instead of polling (closes #151)
+
+### 📚 Documentation
+- *(release)* Release v0.7.4
 
 ### 🚀 Features
 - *(chat)* Carry Twitch badge images on chat messages for overlays

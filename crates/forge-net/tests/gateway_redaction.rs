@@ -62,6 +62,7 @@ fn variant(failure: &GatewayFailure) -> &'static str {
         GatewayFailure::ClientRejected { .. } => "ClientRejected",
         GatewayFailure::ServerError { .. } => "ServerError",
         GatewayFailure::UnexpectedStatus { .. } => "UnexpectedStatus",
+        GatewayFailure::ProtocolNotOffered { .. } => "ProtocolNotOffered",
         GatewayFailure::BudgetExhausted { .. } => "BudgetExhausted",
         GatewayFailure::ResponseTooLarge { .. } => "ResponseTooLarge",
         GatewayFailure::Transport(_) => "Transport",

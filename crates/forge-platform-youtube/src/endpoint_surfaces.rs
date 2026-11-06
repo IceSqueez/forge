@@ -12,6 +12,14 @@ pub const YOUTUBE_OAUTH: EndpointSurface = EndpointSurface::http(
     "FORGE_YOUTUBE_OAUTH_BASE_URL",
     "https://oauth2.googleapis.com",
 );
+pub const YOUTUBE_GRPC: EndpointSurface = EndpointSurface::http(
+    "FORGE_YOUTUBE_GRPC_BASE_URL",
+    "https://youtube.googleapis.com",
+);
 
-pub const ENDPOINT_SURFACES: &[EndpointSurface] =
-    &[YOUTUBE_DATA_API, YOUTUBE_UPLOAD_API, YOUTUBE_OAUTH];
+pub const ENDPOINT_SURFACES: &[EndpointSurface] = &[
+    YOUTUBE_DATA_API,
+    YOUTUBE_UPLOAD_API,
+    YOUTUBE_OAUTH,
+    YOUTUBE_GRPC,
+];

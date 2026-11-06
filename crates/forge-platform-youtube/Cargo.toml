@@ -17,6 +17,8 @@ forge-registry = { path = "../forge-registry" }
 forge-net = { path = "../forge-net" }
 forge-platform-core = { path = "../forge-platform-core" }
 forge-storage = { path = "../forge-storage" }
+prost = { workspace = true }
+prost-types = { workspace = true }
 tokio = { workspace = true }
 tokio-util = { workspace = true }
 tokio-stream = { workspace = true }

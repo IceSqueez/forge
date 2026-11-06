@@ -13,6 +13,13 @@ pub mod endpoint_surfaces;
 mod endpoints_test_support;
 mod integration;
 mod quick_actions;
+#[expect(
+    dead_code,
+    unreachable_pub,
+    unnameable_types,
+    clippy::enum_variant_names
+)]
+mod stream_list_proto;
 mod sub_actions;
 mod triggers;
 mod viewer_step;

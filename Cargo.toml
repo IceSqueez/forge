@@ -66,6 +66,8 @@ futures-util = { version = "0.3" }
 serde = { version = "1.0", features = ["derive", "rc"] }
 serde_json = { version = "1.0" }
 percent-encoding = { version = "2.3" }
+prost = { version = "0.14", default-features = false, features = ["derive"] }
+prost-types = { version = "0.14", default-features = false }
 
 thiserror = { version = "2.0" }
 

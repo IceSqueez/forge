@@ -17,6 +17,7 @@ use super::state::{Inner, Shared, SubscriptionOutcome, SubscriptionRequest};
 
 const CUSTOM_REWARDS: &str = "/helix/channel_points/custom_rewards";
 const DEFAULT_FOLLOWERS_PAGE: usize = 20;
+const BADGE_IMAGE_BASE: &str = "https://static-cdn.jtvnw.net/badges/v1";
 const GOAL_CREATED_AT: &str = "2026-10-01T12:00:00Z";
 const MISSING_BROADCASTER_ID: &str = "Missing required parameter broadcaster_id";
 const FOREIGN_BROADCASTER_ID: &str =
@@ -45,6 +46,8 @@ enum Route {
     BannedUsers,
     Unban,
     ShieldModeStatus,
+    GlobalBadges,
+    ChannelBadges,
 }
 
 impl Route {
@@ -66,6 +69,8 @@ impl Route {
             (&Method::GET, "/helix/moderation/banned") => Self::BannedUsers,
             (&Method::DELETE, "/helix/moderation/bans") => Self::Unban,
             (&Method::GET, "/helix/moderation/shield_mode") => Self::ShieldModeStatus,
+            (&Method::GET, "/helix/chat/badges/global") => Self::GlobalBadges,
+            (&Method::GET, "/helix/chat/badges") => Self::ChannelBadges,
             _ => return None,
         };
         Some(route)
@@ -215,6 +220,8 @@ fn serve_plain(
         Route::SendChatMessage => send_chat_message(body),
         Route::SendWhisper => send_whisper(config, query, body),
         Route::ShieldModeStatus => shield_mode_status(config, query),
+        Route::GlobalBadges => (StatusCode::OK, json!({ "data": global_badge_sets() })),
+        Route::ChannelBadges => channel_badges(query),
         Route::ListRewards
         | Route::CreateReward
         | Route::UpdateReward
@@ -309,6 +316,42 @@ fn users(inner: &Inner, config: &FakeTwitchConfig, query: &[(String, String)]) -
                     .any(|wanted| wanted.eq_ignore_ascii_case(login))
         })
         .collect()
+}
+
+fn badge_set(set_id: &str, version: &str, title: &str) -> Value {
+    let image = format!("{BADGE_IMAGE_BASE}/{set_id}-{version}");
+    json!({
+        "set_id": set_id,
+        "versions": [{
+            "id": version,
+            "title": title,
+            "description": title,
+            "image_url_1x": format!("{image}/1"),
+            "image_url_2x": format!("{image}/2"),
+            "image_url_4x": format!("{image}/3"),
+            "click_action": null,
+            "click_url": null,
+        }],
+    })
+}
+
+fn global_badge_sets() -> Vec<Value> {
+    vec![
+        badge_set("broadcaster", "1", "Broadcaster"),
+        badge_set("moderator", "1", "Moderator"),
+        badge_set("vip", "1", "VIP"),
+        badge_set("subscriber", "0", "Subscriber"),
+    ]
+}
+
+fn channel_badges(query: &[(String, String)]) -> (StatusCode, Value) {
+    let named = query
+        .iter()
+        .any(|(name, value)| name == "broadcaster_id" && !value.is_empty());
+    if !named {
+        return error_body(StatusCode::BAD_REQUEST, MISSING_BROADCASTER_ID);
+    }
+    (StatusCode::OK, json!({ "data": [] }))
 }
 
 fn goals(config: &FakeTwitchConfig, query: &[(String, String)]) -> (StatusCode, Value) {

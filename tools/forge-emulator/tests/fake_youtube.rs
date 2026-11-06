@@ -244,11 +244,10 @@ async fn overrides_cover_every_youtube_surface_and_pass_forges_own_validation() 
         .collect();
     assert_eq!(
         overridden,
-        BTreeSet::from([
-            forge_platform_youtube::endpoint_surfaces::YOUTUBE_DATA_API.env_var(),
-            forge_platform_youtube::endpoint_surfaces::YOUTUBE_UPLOAD_API.env_var(),
-            forge_platform_youtube::endpoint_surfaces::YOUTUBE_OAUTH.env_var(),
-        ])
+        forge_platform_youtube::endpoint_surfaces::ENDPOINT_SURFACES
+            .iter()
+            .map(|surface| surface.env_var())
+            .collect::<BTreeSet<_>>()
     );
 }
 

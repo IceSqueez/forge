@@ -334,6 +334,8 @@ publishes Kick events with the source `kick`; chat commands are `event_triggers`
 loopback HTTP server for the Data API (`/youtube/v3`), the upload API (`/upload/youtube/v3`) and
 the Google token endpoint (`/oauth2/token`). The run points forge at it through
 `FORGE_YOUTUBE_API_BASE_URL`, `FORGE_YOUTUBE_UPLOAD_BASE_URL` and `FORGE_YOUTUBE_OAUTH_BASE_URL`.
+`FORGE_YOUTUBE_GRPC_BASE_URL` also points at it; the streamed chat call is not modelled, so forge
+falls back to chat polling against the fake.
 Browser login is not modelled: the credentials are seeded, never obtained.
 
 forge wires YouTube only when it was **built** with non-empty `FORGE_YOUTUBE_CLIENT_ID` and

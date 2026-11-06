@@ -81,7 +81,7 @@ impl FakeYouTube {
             .map(|(_, url)| url)
     }
 
-    pub fn endpoint_overrides(&self) -> [(&'static str, String); 3] {
+    pub fn endpoint_overrides(&self) -> [(&'static str, String); 4] {
         [
             (
                 forge_platform_youtube::endpoint_surfaces::YOUTUBE_DATA_API.env_var(),
@@ -94,6 +94,10 @@ impl FakeYouTube {
             (
                 forge_platform_youtube::endpoint_surfaces::YOUTUBE_OAUTH.env_var(),
                 format!("{}{OAUTH_PREFIX}", self.http_base),
+            ),
+            (
+                forge_platform_youtube::endpoint_surfaces::YOUTUBE_GRPC.env_var(),
+                self.http_base.clone(),
             ),
         ]
     }

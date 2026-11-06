@@ -103,6 +103,7 @@ impl YouTubeIntegrationBundle {
         Self::spawn_health_bridge(bundle);
         Self::spawn_viewer_health_bridge(bundle);
         Self::spawn_transport_health_bridge(bundle);
+        Self::spawn_quota_health_bridge(bundle);
         Self::spawn_identity_refresh(bundle);
         Self::spawn_token_expiry_bridge(bundle);
     }
@@ -199,6 +200,29 @@ impl YouTubeIntegrationBundle {
                         bundle.current_state(),
                         *mode_rx.borrow_and_update(),
                     ),
+                };
+                #[expect(
+                    clippy::let_underscore_must_use,
+                    reason = "having no subscribers is a normal state"
+                )]
+                let _ = bundle.health_tx.send(delta);
+            }
+        });
+    }
+
+    fn spawn_quota_health_bridge(bundle: &Arc<Self>) {
+        let bundle = Arc::clone(bundle);
+        let mut spent_rx = bundle.quota.subscribe_changes();
+        tokio::spawn(async move {
+            loop {
+                tokio::select! {
+                    biased;
+                    () = bundle.retired.cancelled() => break,
+                    changed = spent_rx.changed() => if changed.is_err() { break },
+                }
+                let delta = HealthDelta {
+                    metric: API_CALLS_METRIC,
+                    new_value: bundle.quota_metric().value,
                 };
                 #[expect(
                     clippy::let_underscore_must_use,

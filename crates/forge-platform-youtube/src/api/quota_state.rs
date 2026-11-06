@@ -4,7 +4,7 @@ use forge_platform_core::PlatformError;
 use jiff::Timestamp;
 use jiff::tz::{Offset, TimeZone};
 use time::{OffsetDateTime, UtcOffset};
-use tokio::sync::{Mutex, MutexGuard, TryLockError};
+use tokio::sync::{Mutex, MutexGuard, TryLockError, watch};
 
 const QUOTA_HIGH_WATER: u32 = 9_000;
 pub(crate) const QUOTA_DAILY_LIMIT: u32 = 10_000;
@@ -68,7 +68,10 @@ impl QuotaState {
 }
 
 #[derive(Clone)]
-pub struct SharedQuota(Arc<Mutex<QuotaState>>);
+pub struct SharedQuota {
+    state: Arc<Mutex<QuotaState>>,
+    spent: Arc<watch::Sender<()>>,
+}
 
 impl Default for SharedQuota {
     fn default() -> Self {
@@ -78,15 +81,36 @@ impl Default for SharedQuota {
 
 impl SharedQuota {
     pub(crate) fn new(state: QuotaState) -> Self {
-        Self(Arc::new(Mutex::new(state)))
+        let (spent, _) = watch::channel(());
+        Self {
+            state: Arc::new(Mutex::new(state)),
+            spent: Arc::new(spent),
+        }
     }
 
     pub(crate) async fn lock(&self) -> MutexGuard<'_, QuotaState> {
-        self.0.lock().await
+        self.state.lock().await
     }
 
     pub(crate) fn try_lock(&self) -> Result<MutexGuard<'_, QuotaState>, TryLockError> {
-        self.0.try_lock()
+        self.state.try_lock()
+    }
+
+    pub(crate) async fn charge(&self, cost: u32, today: time::Date) -> Result<(), PlatformError> {
+        let outcome = self.state.lock().await.charge(cost, today);
+        if outcome.is_ok() {
+            self.spent.send_replace(());
+        }
+        outcome
+    }
+
+    pub(crate) async fn refund(&self, cost: u32, charged_on: time::Date) {
+        self.state.lock().await.refund(cost, charged_on);
+        self.spent.send_replace(());
+    }
+
+    pub(crate) fn subscribe_changes(&self) -> watch::Receiver<()> {
+        self.spent.subscribe()
     }
 }
 

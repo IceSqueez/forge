@@ -107,15 +107,14 @@ impl YouTubeDataApi {
     ) -> Result<GrpcStream, DataApiError> {
         let day = today_pacific();
         self.quota
-            .lock()
-            .await
             .charge(cost, day)
+            .await
             .map_err(|_| DataApiError::QuotaExhausted)?;
         let outcome = self.grpc.open_grpc_stream(request, cancel).await;
         if let Err(failure) = &outcome
             && never_reached_upstream(failure)
         {
-            self.quota.lock().await.refund(cost, day);
+            self.quota.refund(cost, day).await;
         }
         outcome.map_err(DataApiError::Gateway)
     }
@@ -128,15 +127,14 @@ impl YouTubeDataApi {
     ) -> Result<GatewayResponse, DataApiError> {
         let day = today_pacific();
         self.quota
-            .lock()
-            .await
             .charge(cost, day)
+            .await
             .map_err(|_| DataApiError::QuotaExhausted)?;
         let outcome = gateway.send(request).await;
         if let Err(failure) = &outcome
             && never_reached_upstream(failure)
         {
-            self.quota.lock().await.refund(cost, day);
+            self.quota.refund(cost, day).await;
         }
         outcome.map_err(DataApiError::Gateway)
     }

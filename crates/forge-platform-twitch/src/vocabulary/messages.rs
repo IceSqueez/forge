@@ -84,8 +84,6 @@ pub const HEALTH_VIEWERS_LIVE: MessageCode =
     MessageCode::from_static(PLATFORM_ID, "health_viewers_live");
 pub const HEALTH_VIEWERS_OFFLINE: MessageCode =
     MessageCode::from_static(PLATFORM_ID, "health_viewers_offline");
-pub const HEALTH_RESETS_IN: MessageCode = MessageCode::from_static(PLATFORM_ID, "health_resets_in");
-pub const HEALTH_NO_USAGE: MessageCode = MessageCode::from_static(PLATFORM_ID, "health_no_usage");
 
 const RATE_LIMITED: MessageCode = MessageCode::from_static(PLATFORM_ID, "rate_limited");
 const REAUTH_REQUIRED: MessageCode = MessageCode::from_static(PLATFORM_ID, "reauth_required");
@@ -212,8 +210,6 @@ pub const TWITCH_MESSAGES: MessageCatalog = MessageCatalog {
         HEALTH_EVENTSUB_SUBS,
         HEALTH_VIEWERS_LIVE,
         HEALTH_VIEWERS_OFFLINE,
-        HEALTH_RESETS_IN,
-        HEALTH_NO_USAGE,
         RATE_LIMITED,
         REAUTH_REQUIRED,
         CREDENTIALS_UNAVAILABLE,
@@ -386,7 +382,6 @@ const CODE_ARG: &str = "code";
 const CATEGORY_ARG: &str = "category";
 const LOGIN_ARG: &str = "login";
 const COUNT_ARG: &str = "count";
-const SECONDS_ARG: &str = "seconds";
 
 fn detailed(code: MessageCode, detail: &str) -> MessageRef {
     MessageRef::new(code).with_detail(UpstreamDetail::from_redacted(detail))
@@ -458,14 +453,6 @@ pub(crate) fn health_viewers_live() -> MessageRef {
 
 pub(crate) fn health_viewers_offline() -> MessageRef {
     MessageRef::new(HEALTH_VIEWERS_OFFLINE)
-}
-
-pub(crate) fn health_resets_in(seconds: u64) -> MessageRef {
-    MessageRef::new(HEALTH_RESETS_IN).with_arg(SECONDS_ARG, seconds)
-}
-
-pub(crate) fn health_no_usage() -> MessageRef {
-    MessageRef::new(HEALTH_NO_USAGE)
 }
 
 pub(crate) fn rate_limited() -> MessageRef {
@@ -819,8 +806,6 @@ mod tests {
             health_eventsub_subs(3),
             health_viewers_live(),
             health_viewers_offline(),
-            health_resets_in(9),
-            health_no_usage(),
             MessageRef::new(CONDITION_ANY_SHARED_CHAT_MESSAGE),
             MessageRef::new(CONDITION_ANY_PROFILE_CHANGE),
             MessageRef::new(CONDITION_ANY_REWARD),

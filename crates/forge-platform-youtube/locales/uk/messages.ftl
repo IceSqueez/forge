@@ -1,8 +1,7 @@
 msg-youtube-stored_sign_in_unreadable = Не вдалося прочитати збережений вхід до YouTube
 msg-youtube-health_live_chat = Живий чат
 msg-youtube-health_events = Події
-msg-youtube-health_api_calls = Квота API
-msg-youtube-health_quota_resets_daily = скидається щодня за тихоокеанським часом
+msg-youtube-health_api_calls = Квоти витрачено за сесію
 msg-youtube-health_shared_chat_feed = спільна стрічка чату
 msg-youtube-health_chat_transport_streaming = потік
 msg-youtube-health_chat_transport_polling = резервне опитування

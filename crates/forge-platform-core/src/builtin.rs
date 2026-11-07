@@ -86,6 +86,9 @@ pub enum HealthValue {
         total: u64,
         reset_hint: Option<HealthText>,
     },
+    Count {
+        value: u64,
+    },
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]

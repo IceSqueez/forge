@@ -377,20 +377,11 @@ impl YouTubeIntegrationBundle {
     }
 
     fn quota_metric(&self) -> HealthMetric {
-        let used = self.quota_used_today();
-        let reset_hint = if self.quota_used_up(used) {
-            messages::quota_exhausted()
-        } else {
-            messages::health_quota_resets_daily()
-        };
-        let value = HealthValue::Ratio {
-            used: u64::from(used),
-            total: u64::from(QUOTA_DAILY_LIMIT),
-            reset_hint: Some(message_text(reset_hint)),
-        };
         HealthMetric {
             id: API_CALLS_METRIC,
-            value,
+            value: HealthValue::Count {
+                value: self.quota.spent_this_session(),
+            },
         }
     }
 }

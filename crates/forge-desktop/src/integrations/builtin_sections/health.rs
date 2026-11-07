@@ -176,5 +176,8 @@ pub(super) fn health_value_col(
                 ratio_el.into_any_element()
             }
         }
+        HealthValue::Count { value } => {
+            body(value.to_string(), FONT_SM, palette.text_primary, cx).into_any_element()
+        }
     }
 }

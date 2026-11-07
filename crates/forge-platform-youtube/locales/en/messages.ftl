@@ -1,8 +1,7 @@
 msg-youtube-stored_sign_in_unreadable = The saved YouTube sign-in could not be read
 msg-youtube-health_live_chat = Live Chat
 msg-youtube-health_events = Events
-msg-youtube-health_api_calls = API quota
-msg-youtube-health_quota_resets_daily = resets daily, Pacific time
+msg-youtube-health_api_calls = Quota used this session
 msg-youtube-health_shared_chat_feed = shared chat feed
 msg-youtube-health_viewers_live = live
 msg-youtube-health_chat_transport_streaming = streamed

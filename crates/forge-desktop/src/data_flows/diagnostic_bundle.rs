@@ -99,6 +99,7 @@ fn health_shape(value: &HealthValue) -> String {
         HealthValue::Text { .. } => "text".to_owned(),
         HealthValue::Pair { .. } => "pair".to_owned(),
         HealthValue::Ratio { used, total, .. } => format!("ratio({used}/{total})"),
+        HealthValue::Count { value } => format!("count({value})"),
     }
 }
 

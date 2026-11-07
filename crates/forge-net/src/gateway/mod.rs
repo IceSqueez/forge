@@ -16,6 +16,7 @@ mod user_directed;
 
 use forge_types::RecoverMutex;
 use std::fmt;
+use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, SystemTime};
 
@@ -74,6 +75,7 @@ struct Inner {
     limiter: Arc<dyn RateLimiter>,
     profile: GatewayProfile,
     observer: Option<Arc<dyn FailureObserver>>,
+    dispatched_calls: AtomicU64,
 }
 
 struct Hop {
@@ -127,6 +129,7 @@ impl Gateway {
                 limiter,
                 profile,
                 observer,
+                dispatched_calls: AtomicU64::new(0),
             }),
         })
     }
@@ -137,6 +140,10 @@ impl Gateway {
 
     pub fn limiter_usage(&self) -> RateLimitUsage {
         self.inner.limiter.usage()
+    }
+
+    pub fn dispatched_calls(&self) -> u64 {
+        self.inner.dispatched_calls.load(Ordering::Relaxed)
     }
 
     pub fn resolve_path(&self, path: &str) -> Result<ResolvedTarget, GatewayFailure> {
@@ -195,6 +202,7 @@ impl Gateway {
         let first = self.first_hop(request)?;
         let first_builder = self.build_hop(client, request, &first)?;
         self.acquire_budget(request).await?;
+        self.inner.dispatched_calls.fetch_add(1, Ordering::Relaxed);
         let budget = request
             .total_budget
             .unwrap_or(self.inner.profile.timings.total_budget(class));

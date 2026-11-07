@@ -17,8 +17,6 @@ pub const HEALTH_EVENTS: MessageCode = MessageCode::from_static(INTEGRATION_ID, 
 pub const HEALTH_API_CALLS: MessageCode =
     MessageCode::from_static(INTEGRATION_ID, "health_api_calls");
 
-pub const HEALTH_QUOTA_RESETS_DAILY: MessageCode =
-    MessageCode::from_static(INTEGRATION_ID, "health_quota_resets_daily");
 pub const HEALTH_SHARED_CHAT_FEED: MessageCode =
     MessageCode::from_static(INTEGRATION_ID, "health_shared_chat_feed");
 pub const HEALTH_CHAT_TRANSPORT_STREAMING: MessageCode =
@@ -56,7 +54,6 @@ pub const YOUTUBE_MESSAGES: MessageCatalog = MessageCatalog {
         HEALTH_LIVE_CHAT,
         HEALTH_EVENTS,
         HEALTH_API_CALLS,
-        HEALTH_QUOTA_RESETS_DAILY,
         HEALTH_SHARED_CHAT_FEED,
         HEALTH_VIEWERS_LIVE,
         HEALTH_CHAT_TRANSPORT_STREAMING,
@@ -124,10 +121,6 @@ const FIELD_ARG: &str = "field";
 
 fn detailed(code: MessageCode, detail: &str) -> MessageRef {
     MessageRef::new(code).with_detail(UpstreamDetail::from_redacted(detail))
-}
-
-pub(crate) fn health_quota_resets_daily() -> MessageRef {
-    MessageRef::new(HEALTH_QUOTA_RESETS_DAILY)
 }
 
 pub(crate) fn health_shared_chat_feed() -> MessageRef {

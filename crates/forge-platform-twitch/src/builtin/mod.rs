@@ -666,19 +666,8 @@ impl TwitchIntegrationBundle {
     }
 
     fn api_calls_health_value(&self) -> HealthValue {
-        let usage = self.helix.limiter_usage();
-        match (usage.used, usage.capacity) {
-            (Some(used), Some(capacity)) => HealthValue::Ratio {
-                used: u64::from(used),
-                total: u64::from(capacity),
-                reset_hint: usage
-                    .resets_in
-                    .map(|d| message_text(messages::health_resets_in(d.as_secs()))),
-            },
-            _ => HealthValue::Text {
-                primary: message_text(messages::health_no_usage()),
-                secondary: None,
-            },
+        HealthValue::Count {
+            value: self.helix.dispatched_calls(),
         }
     }
 }

@@ -9,8 +9,6 @@ msg-twitch-health_eventsub_subs = { $count ->
 }
 msg-twitch-health_viewers_live = live
 msg-twitch-health_viewers_offline = offline
-msg-twitch-health_resets_in = resets in { $seconds } s
-msg-twitch-health_no_usage = no data yet
 msg-twitch-rate_limited = Twitch rate limit reached, try again shortly
 msg-twitch-reauth_required = Twitch sign-in expired, sign in again
 msg-twitch-credentials_unavailable = Twitch credentials could not be read

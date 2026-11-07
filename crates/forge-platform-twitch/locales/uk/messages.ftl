@@ -11,8 +11,6 @@ msg-twitch-health_eventsub_subs = { $count ->
 }
 msg-twitch-health_viewers_live = в ефірі
 msg-twitch-health_viewers_offline = офлайн
-msg-twitch-health_resets_in = скидається за { $seconds } с
-msg-twitch-health_no_usage = ще немає даних
 msg-twitch-rate_limited = Ліміт запитів Twitch вичерпано, спробуйте трохи згодом
 msg-twitch-reauth_required = Вхід у Twitch застарів, увійдіть знову
 msg-twitch-credentials_unavailable = Не вдалося прочитати облікові дані Twitch

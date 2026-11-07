@@ -1,4 +1,5 @@
 use std::sync::Arc;
+use std::sync::atomic::{AtomicU64, Ordering};
 
 use forge_platform_core::PlatformError;
 use jiff::Timestamp;
@@ -71,6 +72,7 @@ impl QuotaState {
 pub struct SharedQuota {
     state: Arc<Mutex<QuotaState>>,
     spent: Arc<watch::Sender<()>>,
+    spent_this_session: Arc<AtomicU64>,
 }
 
 impl Default for SharedQuota {
@@ -85,6 +87,7 @@ impl SharedQuota {
         Self {
             state: Arc::new(Mutex::new(state)),
             spent: Arc::new(spent),
+            spent_this_session: Arc::new(AtomicU64::new(0)),
         }
     }
 
@@ -99,6 +102,8 @@ impl SharedQuota {
     pub(crate) async fn charge(&self, cost: u32, today: time::Date) -> Result<(), PlatformError> {
         let outcome = self.state.lock().await.charge(cost, today);
         if outcome.is_ok() {
+            self.spent_this_session
+                .fetch_add(u64::from(cost), Ordering::Relaxed);
             self.spent.send_replace(());
         }
         outcome
@@ -106,7 +111,21 @@ impl SharedQuota {
 
     pub(crate) async fn refund(&self, cost: u32, charged_on: time::Date) {
         self.state.lock().await.refund(cost, charged_on);
+        let refunded = u64::from(cost);
+        #[expect(
+            clippy::let_underscore_must_use,
+            reason = "the update closure never declines, so the result is always Ok"
+        )]
+        let _ = self
+            .spent_this_session
+            .try_update(Ordering::Relaxed, Ordering::Relaxed, |spent| {
+                Some(spent.saturating_sub(refunded))
+            });
         self.spent.send_replace(());
+    }
+
+    pub(crate) fn spent_this_session(&self) -> u64 {
+        self.spent_this_session.load(Ordering::Relaxed)
     }
 
     pub(crate) fn subscribe_changes(&self) -> watch::Receiver<()> {

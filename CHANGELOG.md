@@ -1,7 +1,38 @@
 # Changelog
 All notable changes to this project will be documented in this file.
 
+## [0.7.6] - 2026-11-07
+### ⚠️ BREAKING CHANGES
+- **youtube**: YouTube sign-in and chat stop working in v0.7.5 and older; update to v0.7.6 or newer
+
+### 🐛 Bug Fixes
+- *(integrations)* Log unreadable current values at debug level
+
+### 🚀 Features
+- *(youtube)* Update the earliest upcoming broadcast when none is live
+- *(integrations)* Let quick action fields read their current value
+- *(youtube)* Read the broadcast's current title, description, category and privacy
+- *(twitch)* Read the channel's current title, category and tags
+- *(kick)* Read the channel's current title and category
+- *(integrations)* Prefill quick action forms with current values (closes #154)
+- *(twitch)* Tell Prime subscriptions apart in subscription triggers (closes #156)
+
+### 🛠️ Build
+- *(youtube)* [**breaking**] Rotate the YouTube client secret (closes #155)
+
+### 🧪 Testing
+- *(youtube)* Cover the active-else-earliest-upcoming broadcast target
+- *(integrations)* Cover quick action current-value markers and host slot
+- *(youtube)* Cover reading the broadcast's current stream values
+- *(twitch)* Cover reading the channel's current title, category and tags
+- *(kick)* Cover reading the channel's current title and category
+- *(integrations)* Cover quick action prefill from current values
+- *(twitch)* Cover pairing subscriptions with their Prime chat notice
+
 ## [0.7.5] - 2026-11-06
+### 📚 Documentation
+- *(release)* Release v0.7.5
+
 ### 🚀 Features
 - *(youtube)* Show YouTube Terms of Service and privacy policy links (closes #152)
 

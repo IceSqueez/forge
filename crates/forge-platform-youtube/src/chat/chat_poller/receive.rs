@@ -28,7 +28,7 @@ pub(crate) enum ReceiveExit {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum PageEffect {
-    Continue,
+    Continue { delivered_fresh: bool },
     ChatEnded,
     BusClosed,
 }
@@ -64,6 +64,7 @@ impl YouTubeChatPoller {
         session: &mut ChatSession<'_>,
     ) -> PageEffect {
         let mut chat_ended = false;
+        let mut delivered_fresh = false;
         for item in &response.items {
             if item_type(item) == CHAT_ENDED_EVENT_TYPE {
                 chat_ended = true;
@@ -81,6 +82,7 @@ impl YouTubeChatPoller {
                 avatars.record(item);
             }
             if let Some(event) = self.build_event(item, session.dedup) {
+                delivered_fresh = true;
                 if item_type(item) == USER_BANNED_EVENT_TYPE {
                     self.record_observed_ban(item).await;
                 }
@@ -92,7 +94,7 @@ impl YouTubeChatPoller {
         if chat_ended {
             PageEffect::ChatEnded
         } else {
-            PageEffect::Continue
+            PageEffect::Continue { delivered_fresh }
         }
     }
 
@@ -176,7 +178,7 @@ impl YouTubeChatPoller {
             match self.handle_page(&response, session).await {
                 PageEffect::BusClosed => return ReceiveExit::Stop,
                 PageEffect::ChatEnded => return ReceiveExit::BroadcastEnded,
-                PageEffect::Continue => {}
+                PageEffect::Continue { .. } => {}
             }
 
             next_page_token = response.next_page_token;

@@ -17,6 +17,8 @@ use crate::chat::stream_transport::{ChatStream, ChatStreamTransport, StreamEvent
 use crate::chat::transport_mode::{ChatTransportMode, TransportModeSink};
 
 const RECONNECT_PAUSE_SECS: u64 = 5;
+const QUIET_CHAT_AFTER_SECS: u64 = 120;
+const QUIET_RECONNECT_PAUSE_SECS: u64 = 20;
 const STREAM_REPROBE_INTERVAL_SECS: u64 = 600;
 const STREAM_FAILURES_BEFORE_FALLBACK: u32 = 3;
 const RATE_LIMITED_REPEATS_BEFORE_QUOTA_PATH: u32 = 5;
@@ -25,12 +27,16 @@ const UNAUTHORIZED_REASON: &str = "chat read rejected the access token";
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub(crate) struct ReceiveTimings {
     pub(crate) reconnect_pause: Duration,
+    pub(crate) quiet_chat_after: Duration,
+    pub(crate) quiet_reconnect_pause: Duration,
     pub(crate) reprobe_interval: Duration,
 }
 
 impl ReceiveTimings {
     pub(crate) const DEFAULT: Self = Self {
         reconnect_pause: Duration::from_secs(RECONNECT_PAUSE_SECS),
+        quiet_chat_after: Duration::from_secs(QUIET_CHAT_AFTER_SECS),
+        quiet_reconnect_pause: Duration::from_secs(QUIET_RECONNECT_PAUSE_SECS),
         reprobe_interval: Duration::from_secs(STREAM_REPROBE_INTERVAL_SECS),
     };
 }
@@ -184,6 +190,7 @@ pub(crate) struct ReceiveSupervisor<T: ChatTransports> {
     token_refreshed: bool,
     resume_token: Option<String>,
     bound_chat_id: Option<String>,
+    last_chat_item_at: Instant,
     mode_sink: Option<TransportModeSink>,
 }
 
@@ -199,6 +206,7 @@ impl<T: ChatTransports> ReceiveSupervisor<T> {
             token_refreshed: false,
             resume_token: None,
             bound_chat_id: None,
+            last_chat_item_at: Instant::now(),
             mode_sink: None,
         }
     }
@@ -223,6 +231,7 @@ impl<T: ChatTransports> ReceiveSupervisor<T> {
         self.mode = Mode::Streaming;
         self.stream_failures = 0;
         self.resume_token = None;
+        self.last_chat_item_at = Instant::now();
     }
 
     fn note_success(&mut self, session: &mut ChatSession<'_>) {
@@ -249,14 +258,20 @@ impl<T: ChatTransports> ReceiveSupervisor<T> {
         self.resume_token = None;
     }
 
-    async fn reconnect_pause(&self, poller: &YouTubeChatPoller) -> Duration {
-        if self.transports.long_interval_mode().await {
-            poller
-                .timings()
-                .long_interval
-                .max(self.timings.reconnect_pause)
+    fn activity_reconnect_pause(&self) -> Duration {
+        if self.last_chat_item_at.elapsed() >= self.timings.quiet_chat_after {
+            self.timings.quiet_reconnect_pause
         } else {
             self.timings.reconnect_pause
+        }
+    }
+
+    async fn reconnect_pause(&self, poller: &YouTubeChatPoller) -> Duration {
+        let activity_pause = self.activity_reconnect_pause();
+        if self.transports.long_interval_mode().await {
+            poller.timings().long_interval.max(activity_pause)
+        } else {
+            activity_pause
         }
     }
 
@@ -300,7 +315,11 @@ impl<T: ChatTransports> ReceiveSupervisor<T> {
                     match poller.handle_page(&page, session).await {
                         PageEffect::BusClosed => return Step::Exit(ReceiveExit::Stop),
                         PageEffect::ChatEnded => return Step::Exit(ReceiveExit::BroadcastEnded),
-                        PageEffect::Continue => {}
+                        PageEffect::Continue { delivered_fresh } => {
+                            if delivered_fresh {
+                                self.last_chat_item_at = Instant::now();
+                            }
+                        }
                     }
                     self.resume_token = stream.resume_token();
                 }
@@ -340,7 +359,7 @@ impl<T: ChatTransports> ReceiveSupervisor<T> {
         match poller.handle_page(&page, session).await {
             PageEffect::BusClosed => return Step::Exit(ReceiveExit::Stop),
             PageEffect::ChatEnded => return Step::Exit(ReceiveExit::BroadcastEnded),
-            PageEffect::Continue => {}
+            PageEffect::Continue { .. } => {}
         }
         let wait =
             Duration::from_millis(page.polling_interval_millis).max(self.poll_floor(poller).await);

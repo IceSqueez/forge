@@ -49,7 +49,6 @@ pub use broadcast::stream_metadata::YouTubeStreamMetadata;
 pub use broadcast::stream_stats::YouTubeStreamDetails;
 pub use broadcast::stream_stats::YouTubeStreamStats;
 pub use broadcast::thumbnail::YouTubeThumbnail;
-pub use broadcast::viewer_poll::YouTubeViewerPoll;
 pub use builtin::YouTubeIntegrationBundle;
 pub use chat::chat_platform::YouTubePlatform;
 pub use chat::chat_poller::ChatPollTimings;

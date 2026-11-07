@@ -3,11 +3,20 @@ use super::*;
 pub(crate) struct ChatSession<'a> {
     pub(crate) live_chat_id: &'a str,
     pub(crate) broadcast_id: &'a str,
-    pub(crate) resolved_at: tokio::time::Instant,
+    pub(crate) checked_chat: &'a tokio::sync::watch::Receiver<CheckedChat>,
     pub(crate) dedup: &'a mut DedupSet,
     pub(crate) health: &'a mut PollHealthTracker,
     pub(crate) is_live: &'a mut bool,
     pub(crate) cancel: &'a CancellationToken,
+}
+
+impl ChatSession<'_> {
+    pub(crate) fn broadcast_moved_on(&self) -> bool {
+        !matches!(
+            &*self.checked_chat.borrow(),
+            CheckedChat::Open { live_chat_id } if live_chat_id == self.live_chat_id
+        )
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -95,7 +104,7 @@ impl YouTubeChatPoller {
                 return ReceiveExit::Stop;
             }
 
-            if session.resolved_at.elapsed() >= self.timings.broadcast_cadence {
+            if session.broadcast_moved_on() {
                 return ReceiveExit::Resolve;
             }
 

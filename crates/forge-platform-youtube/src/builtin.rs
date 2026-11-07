@@ -20,7 +20,7 @@ use crate::api::quota_state::{
     QUOTA_DAILY_LIMIT, QUOTA_RESET_WAKE_MARGIN, SharedQuota, today_pacific, until_next_reset,
 };
 use crate::broadcast::follow_lookup::YouTubeFollowLookup;
-use crate::broadcast::viewer_poll::{YouTubeViewerPoll, YouTubeViewerSource};
+use crate::broadcast::viewer_source::YouTubeViewerSource;
 use crate::chat::chat_platform::YouTubePlatform;
 use crate::chat::transport_mode::ChatTransportMode;
 use crate::vocabulary::messages;
@@ -42,7 +42,6 @@ pub struct YouTubeIntegrationBundle {
     credentials_manager: Arc<YouTubeCredentialsManager>,
     quota: SharedQuota,
     follow_lookup: YouTubeFollowLookup,
-    viewer_report_tx: watch::Sender<ViewerReport>,
     viewer_report_rx: watch::Receiver<ViewerReport>,
     state_rx: watch::Receiver<ConnectionState>,
     transport_mode_rx: watch::Receiver<ChatTransportMode>,
@@ -55,8 +54,7 @@ impl YouTubeIntegrationBundle {
         credentials_manager: Arc<YouTubeCredentialsManager>,
     ) -> Arc<Self> {
         let (health_tx, _) = broadcast::channel(forge_platform_core::HEALTH_CHANNEL_CAPACITY);
-        let (viewer_report_tx, _) = watch::channel(ViewerReport::Absent);
-        let viewer_report_rx = viewer_report_tx.subscribe();
+        let viewer_report_rx = platform.viewer_report_receiver();
         let state_rx = platform.state_receiver();
         let transport_mode_rx = platform.transport_mode_receiver();
 
@@ -82,7 +80,6 @@ impl YouTubeIntegrationBundle {
             credentials_manager,
             quota,
             follow_lookup,
-            viewer_report_tx,
             viewer_report_rx,
             state_rx,
             transport_mode_rx,
@@ -99,7 +96,6 @@ impl YouTubeIntegrationBundle {
     }
 
     pub fn start_background_tasks(bundle: &Arc<Self>) {
-        Self::spawn_viewer_poll(bundle);
         Self::spawn_health_bridge(bundle);
         Self::spawn_viewer_health_bridge(bundle);
         Self::spawn_transport_health_bridge(bundle);
@@ -108,25 +104,8 @@ impl YouTubeIntegrationBundle {
         Self::spawn_token_expiry_bridge(bundle);
     }
 
-    fn spawn_viewer_poll(bundle: &Arc<Self>) {
-        let viewer_poll = YouTubeViewerPoll::new(
-            bundle.platform.api().clone(),
-            Self::token_source(&bundle.credentials_manager),
-            bundle.platform.active_broadcast_id(),
-            bundle.viewer_report_tx.clone(),
-        );
-        let retired = bundle.retired.clone();
-        tokio::spawn(async move {
-            tokio::select! {
-                biased;
-                () = retired.cancelled() => {}
-                () = viewer_poll.run() => {}
-            }
-        });
-    }
-
     pub fn viewer_source(&self) -> Box<dyn LiveViewerSource> {
-        Box::new(YouTubeViewerSource::new(self.viewer_report_tx.subscribe()))
+        Box::new(YouTubeViewerSource::new(self.viewer_report_rx.clone()))
     }
 
     pub async fn shutdown(&self) {
@@ -235,7 +214,7 @@ impl YouTubeIntegrationBundle {
 
     fn spawn_viewer_health_bridge(bundle: &Arc<Self>) {
         let bundle = Arc::clone(bundle);
-        let mut reports_rx = bundle.viewer_report_tx.subscribe();
+        let mut reports_rx = bundle.viewer_report_rx.clone();
         tokio::spawn(async move {
             loop {
                 tokio::select! {

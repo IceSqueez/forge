@@ -287,15 +287,10 @@ impl<T: ChatTransports> ReceiveSupervisor<T> {
             Ok(stream) => stream,
             Err(outcome) => return self.route(outcome, poller, session).await,
         };
-        let deadline = session.resolved_at + poller.timings().broadcast_cadence;
         loop {
             let event = tokio::select! {
                 biased;
                 () = cancel.cancelled() => return Step::Exit(ReceiveExit::Stop),
-                () = tokio::time::sleep_until(deadline) => {
-                    self.resume_token = stream.resume_token();
-                    return Step::Exit(ReceiveExit::Resolve);
-                }
                 event = stream.next() => event,
             };
             match event {
@@ -466,7 +461,7 @@ impl<T: ChatTransports> Receive for ReceiveSupervisor<T> {
             if session.cancel.is_cancelled() {
                 return ReceiveExit::Stop;
             }
-            if session.resolved_at.elapsed() >= poller.timings().broadcast_cadence {
+            if session.broadcast_moved_on() {
                 return ReceiveExit::Resolve;
             }
             let step = match self.mode {

@@ -3,8 +3,8 @@ use std::time::Duration;
 
 use forge_events::{Event, EventSource};
 use forge_net::{DedupSet, ExpectedRefusal, GatewayRequest};
-use forge_platform_core::PlatformError;
 use forge_platform_core::TokenSource;
+use forge_platform_core::{PlatformError, ViewerReport};
 use forge_storage::BanLedgerRepo;
 use forge_types::Secret;
 use forge_types::{
@@ -16,9 +16,12 @@ use tokio::sync::mpsc::UnboundedSender;
 use tokio_util::sync::{CancellationToken, DropGuard};
 
 use crate::api::data_api::{DataApiError, YouTubeDataApi, malformed};
-use crate::api::poll_health::{PollHealthReporter, PollHealthTracker};
+use crate::api::poll_health::{
+    CONSECUTIVE_POLL_FAILURES_FOR_LOSS, PollHealthReporter, PollHealthTracker,
+};
 use crate::api::quota_state::{CHAT_POLL_COST, today_pacific};
 use crate::broadcast::active_broadcast_id::ActiveBroadcastIdHandle;
+use crate::broadcast::broadcast_check::{CheckFailure, CheckedChat, check_broadcast};
 use crate::broadcast::broadcast_lookup::{LookupFailure, fetch_active_broadcast};
 use crate::broadcast::live_chat_id::LiveChatIdHandle;
 use crate::chat::access_tokens::AccessTokens;
@@ -33,12 +36,14 @@ use crate::vocabulary::fields::{
     support as support_fields,
 };
 
+mod broadcast_watch;
 mod events;
 mod fetch;
 mod receive;
 mod stream_transcode;
 mod wire;
 
+use self::broadcast_watch::BroadcastWatch;
 pub(crate) use self::fetch::{ChatMessagesResponse, FetchFailure, fetch_chat_page, page_from_body};
 pub(crate) use self::receive::{ChatSession, PageEffect, PollingReceive, Receive, ReceiveExit};
 pub(crate) use self::stream_transcode::transcode_response;
@@ -100,6 +105,11 @@ pub struct ChatPollerStopGuard {
     _cancels_on_drop: DropGuard,
 }
 
+struct KnownBroadcast {
+    broadcast_id: String,
+    live_chat_id: String,
+}
+
 pub struct YouTubeChatPoller {
     api: YouTubeDataApi,
     access_tokens: AccessTokens,
@@ -110,6 +120,7 @@ pub struct YouTubeChatPoller {
     ban_ledger: Arc<dyn BanLedgerRepo>,
     health_reporter: Option<PollHealthReporter>,
     transport_mode: Option<TransportModeSink>,
+    viewer_reports: Option<tokio::sync::watch::Sender<ViewerReport>>,
     avatars: Option<AvatarBook>,
     timings: ChatPollTimings,
 }
@@ -134,6 +145,7 @@ impl YouTubeChatPoller {
             ban_ledger,
             health_reporter: None,
             transport_mode: None,
+            viewer_reports: None,
             avatars: None,
             timings: ChatPollTimings::DEFAULT,
         }
@@ -156,6 +168,14 @@ impl YouTubeChatPoller {
 
     pub(crate) fn with_transport_mode(mut self, sink: TransportModeSink) -> Self {
         self.transport_mode = Some(sink);
+        self
+    }
+
+    pub(crate) fn with_viewer_reports(
+        mut self,
+        reports: tokio::sync::watch::Sender<ViewerReport>,
+    ) -> Self {
+        self.viewer_reports = Some(reports);
         self
     }
 
@@ -191,9 +211,20 @@ impl YouTubeChatPoller {
         cancel: CancellationToken,
         mut receive: impl Receive,
     ) -> Result<(), PlatformError> {
+        let outcome = self.run_sessions(&cancel, &mut receive).await;
+        self.report_viewers(ViewerReport::Absent);
+        outcome
+    }
+
+    async fn run_sessions(
+        &self,
+        cancel: &CancellationToken,
+        receive: &mut impl Receive,
+    ) -> Result<(), PlatformError> {
         let mut dedup = DedupSet::bounded(DEDUP_WINDOW_SIZE);
-        let mut last_seen_title: Option<String> = None;
+        let mut watch = BroadcastWatch::new();
         let mut last_broadcast_id: Option<String> = None;
+        let mut known: Option<KnownBroadcast> = None;
         let mut is_live = false;
         let mut health = PollHealthTracker::new(self.health_reporter.clone());
 
@@ -202,151 +233,164 @@ impl YouTubeChatPoller {
                 return Ok(());
             }
 
-            let fetched_token = tokio::select! {
-                biased;
-                () = cancel.cancelled() => return Ok(()),
-                fetched = self.access_tokens.current() => fetched,
-            };
-            let token = match fetched_token {
-                Ok(t) => t,
-                Err(e) => {
-                    health.failed();
-                    tracing::warn!(
-                        "access token source failed during broadcast resolution: {}",
-                        crate::api::error_shape::redact_platform_error(&e)
-                    );
-                    tokio::select! {
-                        () = tokio::time::sleep(self.timings.broadcast_cadence) => {}
+            let current = match known.take() {
+                Some(current) => current,
+                None => {
+                    let fetched_token = tokio::select! {
+                        biased;
                         () = cancel.cancelled() => return Ok(()),
-                    }
-                    continue 'outer;
-                }
-            };
+                        fetched = self.access_tokens.current() => fetched,
+                    };
+                    let token = match fetched_token {
+                        Ok(t) => t,
+                        Err(e) => {
+                            health.failed();
+                            tracing::warn!(
+                                "access token source failed during broadcast resolution: {}",
+                                crate::api::error_shape::redact_platform_error(&e)
+                            );
+                            tokio::select! {
+                                () = tokio::time::sleep(self.timings.broadcast_cadence) => {}
+                                () = cancel.cancelled() => return Ok(()),
+                            }
+                            continue 'outer;
+                        }
+                    };
 
-            let (live_chat_id, broadcast_id, current_title) = match self
-                .fetch_live_chat_id(&token, &cancel)
-                .await
-            {
-                Ok(Some(ids)) => {
-                    health.succeeded();
-                    ids
-                }
-                Ok(None) | Err(FetchFailure::ChatEnded) => {
-                    health.succeeded();
-                    self.publish_ids(None, None, &cancel);
-                    last_seen_title = None;
-                    if is_live {
-                        is_live = false;
+                    let (live_chat_id, broadcast_id, current_title) = match self
+                        .fetch_live_chat_id(&token, cancel)
+                        .await
+                    {
+                        Ok(Some(ids)) => {
+                            health.succeeded();
+                            ids
+                        }
+                        Ok(None) | Err(FetchFailure::ChatEnded) => {
+                            health.succeeded();
+                            self.publish_ids(None, None, cancel);
+                            self.report_viewers(ViewerReport::Absent);
+                            watch.last_seen_title = None;
+                            if is_live {
+                                is_live = false;
+                                let event = Event::new(
+                                    EventSource::YouTube,
+                                    event_kinds::STREAM_OFFLINE,
+                                    serde_json::json!({
+                                        (stream_fields::BROADCAST_ID): last_broadcast_id.clone().unwrap_or_default(),
+                                    }),
+                                );
+                                if self.bus_sender.send(event).is_err() {
+                                    return Ok(());
+                                }
+                            }
+                            tokio::select! {
+                                () = tokio::time::sleep(self.timings.broadcast_cadence) => {}
+                                () = cancel.cancelled() => return Ok(()),
+                            }
+                            continue 'outer;
+                        }
+                        Err(FetchFailure::Cancelled) => return Ok(()),
+                        Err(FetchFailure::QuotaExhausted) => {
+                            tracing::warn!(
+                                "quota exhausted before broadcast resolution: {}",
+                                PlatformError::QuotaExhausted
+                            );
+                            tokio::select! {
+                                () = tokio::time::sleep(self.timings.broadcast_cadence) => {}
+                                () = cancel.cancelled() => return Ok(()),
+                            }
+                            continue 'outer;
+                        }
+                        Err(FetchFailure::Failed(e)) => {
+                            health.failed();
+                            tracing::warn!(
+                                "broadcast resolution failed: {}",
+                                crate::api::error_shape::redact_platform_error(&e)
+                            );
+                            tokio::select! {
+                                () = tokio::time::sleep(self.timings.broadcast_cadence) => {}
+                                () = cancel.cancelled() => return Ok(()),
+                            }
+                            continue 'outer;
+                        }
+                    };
+
+                    if !is_live {
+                        is_live = true;
                         let event = Event::new(
                             EventSource::YouTube,
-                            event_kinds::STREAM_OFFLINE,
+                            event_kinds::STREAM_ONLINE,
                             serde_json::json!({
-                                (stream_fields::BROADCAST_ID): last_broadcast_id.clone().unwrap_or_default(),
+                                (stream_fields::BROADCAST_TITLE): current_title,
+                                (stream_fields::BROADCAST_ID): broadcast_id,
                             }),
                         );
                         if self.bus_sender.send(event).is_err() {
                             return Ok(());
                         }
                     }
-                    tokio::select! {
-                        () = tokio::time::sleep(self.timings.broadcast_cadence) => {}
-                        () = cancel.cancelled() => return Ok(()),
+                    last_broadcast_id = Some(broadcast_id.clone());
+                    if !self.title_changed(&mut watch, current_title) {
+                        return Ok(());
                     }
-                    continue 'outer;
-                }
-                Err(FetchFailure::Cancelled) => return Ok(()),
-                Err(FetchFailure::QuotaExhausted) => {
-                    tracing::warn!(
-                        "quota exhausted before broadcast resolution: {}",
-                        PlatformError::QuotaExhausted
-                    );
-                    tokio::select! {
-                        () = tokio::time::sleep(self.timings.broadcast_cadence) => {}
-                        () = cancel.cancelled() => return Ok(()),
+                    watch.next_check = tokio::time::Instant::now() + self.timings.broadcast_cadence;
+                    KnownBroadcast {
+                        broadcast_id,
+                        live_chat_id,
                     }
-                    continue 'outer;
-                }
-                Err(FetchFailure::Failed(e)) => {
-                    health.failed();
-                    tracing::warn!(
-                        "broadcast resolution failed: {}",
-                        crate::api::error_shape::redact_platform_error(&e)
-                    );
-                    tokio::select! {
-                        () = tokio::time::sleep(self.timings.broadcast_cadence) => {}
-                        () = cancel.cancelled() => return Ok(()),
-                    }
-                    continue 'outer;
                 }
             };
 
-            if !is_live {
-                is_live = true;
-                let event = Event::new(
-                    EventSource::YouTube,
-                    event_kinds::STREAM_ONLINE,
-                    serde_json::json!({
-                        (stream_fields::BROADCAST_TITLE): current_title,
-                        (stream_fields::BROADCAST_ID): broadcast_id,
-                    }),
-                );
-                if self.bus_sender.send(event).is_err() {
-                    return Ok(());
-                }
-            }
-            last_broadcast_id = Some(broadcast_id.clone());
-
-            if let Some(prev) = last_seen_title.as_deref()
-                && prev != current_title
-                && self
-                    .bus_sender
-                    .send(Event::new(
-                        EventSource::YouTube,
-                        event_kinds::STREAM_TITLE_CHANGED,
-                        serde_json::json!({
-                            (stream_fields::TITLE): {
-                                (stream_fields::OLD): prev,
-                                (stream_fields::NEW): current_title,
-                            },
-                        }),
-                    ))
-                    .is_err()
-            {
-                return Ok(());
-            }
-            last_seen_title = Some(current_title);
-
             self.publish_ids(
-                Some(live_chat_id.clone()),
-                Some(broadcast_id.clone()),
-                &cancel,
+                Some(current.live_chat_id.clone()),
+                Some(current.broadcast_id.clone()),
+                cancel,
             );
 
-            let broadcast_resolved_at = tokio::time::Instant::now();
+            let session_started_at = tokio::time::Instant::now();
+            let (checked_tx, checked_rx) = tokio::sync::watch::channel(CheckedChat::Open {
+                live_chat_id: current.live_chat_id.clone(),
+            });
 
-            let exit = receive
-                .receive(
-                    &self,
+            let exit = tokio::select! {
+                exit = receive.receive(
+                    self,
                     ChatSession {
-                        live_chat_id: &live_chat_id,
-                        broadcast_id: &broadcast_id,
-                        resolved_at: broadcast_resolved_at,
+                        live_chat_id: &current.live_chat_id,
+                        broadcast_id: &current.broadcast_id,
+                        checked_chat: &checked_rx,
                         dedup: &mut dedup,
                         health: &mut health,
                         is_live: &mut is_live,
-                        cancel: &cancel,
+                        cancel,
                     },
-                )
-                .await;
-            match exit {
-                ReceiveExit::Stop => return Ok(()),
-                ReceiveExit::BroadcastEnded => self.publish_ids(None, None, &cancel),
-                ReceiveExit::Resolve => {}
+                ) => exit,
+                () = self.watch_broadcast(
+                    &mut watch,
+                    &current.broadcast_id,
+                    &checked_tx,
+                    cancel,
+                ) => ReceiveExit::Stop,
+            };
+            let checked = checked_rx.borrow().clone();
+            match (exit, checked) {
+                (ReceiveExit::Stop, _) => return Ok(()),
+                (ReceiveExit::Resolve, CheckedChat::Open { live_chat_id }) => {
+                    known = Some(KnownBroadcast {
+                        broadcast_id: current.broadcast_id,
+                        live_chat_id,
+                    });
+                    continue 'outer;
+                }
+                (ReceiveExit::Resolve | ReceiveExit::BroadcastEnded, _) => {
+                    self.publish_ids(None, None, cancel);
+                    self.report_viewers(ViewerReport::Absent);
+                }
             }
 
             tokio::select! {
                 () = tokio::time::sleep_until(
-                    broadcast_resolved_at + self.timings.broadcast_cadence
+                    session_started_at + self.timings.broadcast_cadence
                 ) => {}
                 () = cancel.cancelled() => return Ok(()),
             }

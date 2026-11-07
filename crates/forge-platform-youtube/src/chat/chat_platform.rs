@@ -4,7 +4,7 @@ use std::sync::{Arc, Mutex};
 use async_trait::async_trait;
 use forge_events::{Event, EventChannel, EventPublisher, EventSubscription};
 use forge_platform_core::{
-    ChatPlatform, ConnectionState, ConnectionTransition, PlatformError,
+    ChatPlatform, ConnectionState, ConnectionTransition, PlatformError, ViewerReport,
     connection_state_changed_event, reauth_required,
 };
 use forge_storage::BanLedgerRepo;
@@ -39,6 +39,7 @@ pub struct YouTubePlatform {
     state: Arc<Mutex<ConnectionState>>,
     state_tx: watch::Sender<ConnectionState>,
     transport_mode_tx: watch::Sender<ChatTransportMode>,
+    viewer_report_tx: watch::Sender<ViewerReport>,
     cancel: Mutex<Option<CancellationToken>>,
 }
 
@@ -58,6 +59,7 @@ impl YouTubePlatform {
         );
         let (state_tx, _) = watch::channel(ConnectionState::Disconnected);
         let (transport_mode_tx, _) = watch::channel(ChatTransportMode::Streaming);
+        let (viewer_report_tx, _) = watch::channel(ViewerReport::Absent);
         Self {
             api,
             channel: channel_id.into(),
@@ -71,6 +73,7 @@ impl YouTubePlatform {
             state: Arc::new(Mutex::new(ConnectionState::Disconnected)),
             state_tx,
             transport_mode_tx,
+            viewer_report_tx,
             cancel: Mutex::new(None),
         }
     }
@@ -106,6 +109,10 @@ impl YouTubePlatform {
 
     pub(crate) fn transport_mode_receiver(&self) -> watch::Receiver<ChatTransportMode> {
         self.transport_mode_tx.subscribe()
+    }
+
+    pub(crate) fn viewer_report_receiver(&self) -> watch::Receiver<ViewerReport> {
+        self.viewer_report_tx.subscribe()
     }
 }
 
@@ -171,6 +178,7 @@ impl ChatPlatform for YouTubePlatform {
             cancel.clone(),
         ))
         .with_transport_mode(TransportModeSink::new(self.transport_mode_tx.clone()))
+        .with_viewer_reports(self.viewer_report_tx.clone())
         .with_avatar_book(self.avatars.clone());
 
         let exit_state = Arc::clone(&self.state);

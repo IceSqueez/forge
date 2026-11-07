@@ -24,6 +24,7 @@ use crate::broadcast::active_broadcast_id::ActiveBroadcastIdHandle;
 use crate::broadcast::broadcast_check::{CheckFailure, CheckedChat, check_broadcast};
 use crate::broadcast::broadcast_lookup::{LookupFailure, fetch_active_broadcast};
 use crate::broadcast::live_chat_id::LiveChatIdHandle;
+use crate::broadcast::lookup_wake::{BroadcastLookupWake, LookupWakeListener};
 use crate::chat::access_tokens::AccessTokens;
 use crate::chat::avatar_book::AvatarBook;
 use crate::chat::ban_ledger::{USER_BANNED_EVENT_TYPE, observed_ban};
@@ -39,12 +40,14 @@ use crate::vocabulary::fields::{
 mod broadcast_watch;
 mod events;
 mod fetch;
+mod offline_wait;
 mod receive;
 mod stream_transcode;
 mod wire;
 
 use self::broadcast_watch::BroadcastWatch;
 pub(crate) use self::fetch::{ChatMessagesResponse, FetchFailure, fetch_chat_page, page_from_body};
+use self::offline_wait::OfflineWait;
 pub(crate) use self::receive::{ChatSession, PageEffect, PollingReceive, Receive, ReceiveExit};
 pub(crate) use self::stream_transcode::transcode_response;
 use self::wire::*;
@@ -52,6 +55,8 @@ use self::wire::*;
 const POLL_FLOOR_MS: u64 = 3_000;
 const LONG_INTERVAL_MS: u64 = 60_000;
 const BROADCAST_CADENCE_SECS: u64 = 60;
+const OFFLINE_CADENCE_SECS: u64 = 300;
+const WAKE_FOLLOW_UP_INTERVAL_SECS: u64 = 20;
 const DEDUP_WINDOW_SIZE: usize = 500;
 const CHAT_ENDED_EVENT_TYPE: &str = "chatEndedEvent";
 const LIVE_CHAT_ENDED_REASON: &str = "liveChatEnded";
@@ -66,6 +71,8 @@ pub struct ChatPollTimings {
     pub poll_floor: Duration,
     pub long_interval: Duration,
     pub broadcast_cadence: Duration,
+    pub offline_cadence: Duration,
+    pub wake_follow_up_interval: Duration,
 }
 
 impl ChatPollTimings {
@@ -73,6 +80,8 @@ impl ChatPollTimings {
         poll_floor: Duration::from_millis(POLL_FLOOR_MS),
         long_interval: Duration::from_millis(LONG_INTERVAL_MS),
         broadcast_cadence: Duration::from_secs(BROADCAST_CADENCE_SECS),
+        offline_cadence: Duration::from_secs(OFFLINE_CADENCE_SECS),
+        wake_follow_up_interval: Duration::from_secs(WAKE_FOLLOW_UP_INTERVAL_SECS),
     };
 }
 
@@ -122,6 +131,7 @@ pub struct YouTubeChatPoller {
     transport_mode: Option<TransportModeSink>,
     viewer_reports: Option<tokio::sync::watch::Sender<ViewerReport>>,
     avatars: Option<AvatarBook>,
+    lookup_wake: BroadcastLookupWake,
     timings: ChatPollTimings,
 }
 
@@ -147,6 +157,7 @@ impl YouTubeChatPoller {
             transport_mode: None,
             viewer_reports: None,
             avatars: None,
+            lookup_wake: BroadcastLookupWake::new(),
             timings: ChatPollTimings::DEFAULT,
         }
     }
@@ -184,6 +195,11 @@ impl YouTubeChatPoller {
         self
     }
 
+    pub fn with_lookup_wake(mut self, wake: BroadcastLookupWake) -> Self {
+        self.lookup_wake = wake;
+        self
+    }
+
     pub async fn run_until_stopped(self, stop: ChatPollerStop) -> Result<(), PlatformError> {
         self.run(stop.0).await
     }
@@ -211,7 +227,8 @@ impl YouTubeChatPoller {
         cancel: CancellationToken,
         mut receive: impl Receive,
     ) -> Result<(), PlatformError> {
-        let outcome = self.run_sessions(&cancel, &mut receive).await;
+        let mut wake = self.lookup_wake.listen();
+        let outcome = self.run_sessions(&cancel, &mut receive, &mut wake).await;
         self.report_viewers(ViewerReport::Absent);
         outcome
     }
@@ -220,7 +237,9 @@ impl YouTubeChatPoller {
         &self,
         cancel: &CancellationToken,
         receive: &mut impl Receive,
+        wake: &mut LookupWakeListener,
     ) -> Result<(), PlatformError> {
+        let mut offline = OfflineWait::default();
         let mut dedup = DedupSet::bounded(DEDUP_WINDOW_SIZE);
         let mut watch = BroadcastWatch::new();
         let mut last_broadcast_id: Option<String> = None;
@@ -283,9 +302,12 @@ impl YouTubeChatPoller {
                                     return Ok(());
                                 }
                             }
-                            tokio::select! {
-                                () = tokio::time::sleep(self.timings.broadcast_cadence) => {}
-                                () = cancel.cancelled() => return Ok(()),
+                            if self
+                                .wait_offline(&mut offline, wake, cancel)
+                                .await
+                                .is_break()
+                            {
+                                return Ok(());
                             }
                             continue 'outer;
                         }
@@ -315,6 +337,7 @@ impl YouTubeChatPoller {
                         }
                     };
 
+                    offline.settle();
                     if !is_live {
                         is_live = true;
                         let event = Event::new(
@@ -383,6 +406,7 @@ impl YouTubeChatPoller {
                     continue 'outer;
                 }
                 (ReceiveExit::Resolve | ReceiveExit::BroadcastEnded, _) => {
+                    wake.discard_pending();
                     self.publish_ids(None, None, cancel);
                     self.report_viewers(ViewerReport::Absent);
                 }

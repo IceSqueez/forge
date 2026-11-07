@@ -28,6 +28,7 @@ use crate::integrations::{
     BuiltinObject, BuiltinRegistry, EventRelay, ObsInstallSeed, VTubeInstallSeed, creds_of,
     kick_builtin_object, publisher, spawn_connect, twitch_builtin_object, youtube_builtin_object,
 };
+use crate::obs_stream_wake::spawn_obs_stream_wake;
 use crate::platform_identities::OAuthClientIdentity;
 use forge_hotkey::HotkeyReconciler;
 use forge_hotkey::bound_hotkey_combos;
@@ -260,6 +261,10 @@ impl IntegrationFactory<BuiltinObject> for YouTubeFactory {
             "youtube",
         );
         let mut tasks = TaskGroup::default();
+        tasks.track(spawn_obs_stream_wake(
+            &self.bus,
+            self.assembly.lookup_wake(),
+        ));
         tasks.track(spawn_connect(Arc::clone(&chat_platform), "youtube"));
         tasks.absorb(spawn_chat_send_router(
             Arc::clone(&self.bus),

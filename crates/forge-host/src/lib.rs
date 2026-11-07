@@ -13,6 +13,7 @@ pub mod integration_factories;
 pub mod integration_sign_out;
 mod integration_start_errors;
 pub mod integrations;
+mod obs_stream_wake;
 pub mod os_adapters;
 mod overlay_boot;
 pub mod overlay_removal;

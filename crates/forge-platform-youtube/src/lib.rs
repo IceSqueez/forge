@@ -45,6 +45,7 @@ pub use broadcast::ad_break::YouTubeAdBreak;
 pub use broadcast::channel_lookup::YouTubeChannelLookup;
 pub use broadcast::channel_lookup::YouTubeChannelProfile;
 pub use broadcast::live_chat_id::LiveChatIdHandle;
+pub use broadcast::lookup_wake::BroadcastLookupWake;
 pub use broadcast::stream_metadata::YouTubeStreamMetadata;
 pub use broadcast::stream_stats::YouTubeStreamDetails;
 pub use broadcast::stream_stats::YouTubeStreamStats;

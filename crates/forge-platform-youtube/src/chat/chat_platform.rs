@@ -17,6 +17,7 @@ use crate::api::data_api::YouTubeDataApi;
 use crate::api::poll_health::{PollHealthReporter, PollLinkHealth};
 use crate::broadcast::active_broadcast_id::ActiveBroadcastIdHandle;
 use crate::broadcast::live_chat_id::LiveChatIdHandle;
+use crate::broadcast::lookup_wake::BroadcastLookupWake;
 use crate::chat::access_tokens::AccessTokens;
 use crate::chat::avatar_book::AvatarBook;
 use crate::chat::chat_poller::YouTubeChatPoller;
@@ -36,6 +37,7 @@ pub struct YouTubePlatform {
     active_broadcast_id: ActiveBroadcastIdHandle,
     ban_ledger: Arc<dyn BanLedgerRepo>,
     avatars: AvatarBook,
+    lookup_wake: BroadcastLookupWake,
     state: Arc<Mutex<ConnectionState>>,
     state_tx: watch::Sender<ConnectionState>,
     transport_mode_tx: watch::Sender<ChatTransportMode>,
@@ -70,6 +72,7 @@ impl YouTubePlatform {
             active_broadcast_id,
             ban_ledger,
             avatars: AvatarBook::default(),
+            lookup_wake: BroadcastLookupWake::new(),
             state: Arc::new(Mutex::new(ConnectionState::Disconnected)),
             state_tx,
             transport_mode_tx,
@@ -96,6 +99,11 @@ impl YouTubePlatform {
 
     pub(crate) fn with_avatar_book(mut self, avatars: AvatarBook) -> Self {
         self.avatars = avatars;
+        self
+    }
+
+    pub(crate) fn with_lookup_wake(mut self, wake: BroadcastLookupWake) -> Self {
+        self.lookup_wake = wake;
         self
     }
 
@@ -179,7 +187,8 @@ impl ChatPlatform for YouTubePlatform {
         ))
         .with_transport_mode(TransportModeSink::new(self.transport_mode_tx.clone()))
         .with_viewer_reports(self.viewer_report_tx.clone())
-        .with_avatar_book(self.avatars.clone());
+        .with_avatar_book(self.avatars.clone())
+        .with_lookup_wake(self.lookup_wake.clone());
 
         let exit_state = Arc::clone(&self.state);
         let exit_state_tx = self.state_tx.clone();

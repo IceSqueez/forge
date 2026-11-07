@@ -16,10 +16,10 @@ use crate::broadcast::broadcast_lookup::BroadcastLookup;
 use crate::chat::avatar_book::AvatarBook;
 use crate::chat::chat_platform::token_source;
 use crate::{
-    ActiveBroadcastIdHandle, GoogleOAuthClient, LiveChatIdHandle, SharedQuota, YouTubeAdBreak,
-    YouTubeChannelLookup, YouTubeCredentialsManager, YouTubeDataApi, YouTubeIntegrationBundle,
-    YouTubeModeration, YouTubePlatform, YouTubeSendChat, YouTubeStreamMetadata, YouTubeStreamStats,
-    YouTubeThumbnail, register_youtube_sub_actions,
+    ActiveBroadcastIdHandle, BroadcastLookupWake, GoogleOAuthClient, LiveChatIdHandle, SharedQuota,
+    YouTubeAdBreak, YouTubeChannelLookup, YouTubeCredentialsManager, YouTubeDataApi,
+    YouTubeIntegrationBundle, YouTubeModeration, YouTubePlatform, YouTubeSendChat,
+    YouTubeStreamMetadata, YouTubeStreamStats, YouTubeThumbnail, register_youtube_sub_actions,
 };
 
 pub struct YouTubeAssembly {
@@ -30,6 +30,7 @@ pub struct YouTubeAssembly {
     ban_ledger: Arc<dyn BanLedgerRepo>,
     sign_in: YouTubeSignIn,
     avatars: AvatarBook,
+    lookup_wake: BroadcastLookupWake,
 }
 
 pub struct YouTubeSession {
@@ -71,11 +72,16 @@ impl YouTubeAssembly {
             ban_ledger,
             sign_in,
             avatars: AvatarBook::default(),
+            lookup_wake: BroadcastLookupWake::new(),
         })
     }
 
     pub fn viewer_avatars(&self) -> Arc<dyn ViewerAvatarSource> {
         Arc::new(self.avatars.clone())
+    }
+
+    pub fn lookup_wake(&self) -> BroadcastLookupWake {
+        self.lookup_wake.clone()
     }
 
     pub fn sign_in(&self) -> YouTubeSignIn {
@@ -157,7 +163,8 @@ impl YouTubeAssembly {
                 self.active_broadcast.clone(),
                 Arc::clone(&self.ban_ledger),
             )
-            .with_avatar_book(self.avatars.clone()),
+            .with_avatar_book(self.avatars.clone())
+            .with_lookup_wake(self.lookup_wake.clone()),
         );
         let bundle =
             YouTubeIntegrationBundle::new(Arc::clone(&platform), Arc::clone(&self.manager));

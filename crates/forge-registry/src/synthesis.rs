@@ -18,7 +18,14 @@ const DISPLAY_NAME_POOL: &[&str] = &[
     "PixelPal",
     "CoolViewer",
 ];
-const ACTOR_ID_POOL: &[&str] = &["37402112", "51938264", "60114873", "72840591", "84025617"];
+const ACTOR_ID_POOL: &[&str] = &[
+    "sample-user-1",
+    "sample-user-2",
+    "sample-user-3",
+    "sample-user-4",
+    "sample-user-5",
+];
+const SAMPLE_LOGIN_MARK: char = '~';
 const MESSAGE_POOL: &[&str] = &[
     "hey, great stream!",
     "this is a test message",
@@ -172,10 +179,13 @@ fn actor_value(role: ActorRole, slot: ActorSlot, sample: &SynthesisSample) -> St
 }
 
 fn login_of(display_name: &str) -> String {
-    display_name
-        .chars()
-        .filter(|c| c.is_ascii_alphanumeric() || *c == '_')
-        .map(|c| c.to_ascii_lowercase())
+    std::iter::once(SAMPLE_LOGIN_MARK)
+        .chain(
+            display_name
+                .chars()
+                .filter(|c| c.is_ascii_alphanumeric() || *c == '_')
+                .map(|c| c.to_ascii_lowercase()),
+        )
         .collect()
 }
 

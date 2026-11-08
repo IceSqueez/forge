@@ -10,11 +10,11 @@ use forge_components::{
 use forge_overlay::config::{
     BACKGROUND_COLOR, BACKGROUND_OPACITY, BORDER_COLOR, CARD_MAX_HEIGHT, CARD_MAX_WIDTH,
     CARD_MIN_HEIGHT, CARD_MIN_WIDTH, COMMAND_PREFIX, DESIGN_HEIGHT, DESIGN_WIDTH, DURATION,
-    HIDDEN_ACCOUNTS, HIDE_COMMANDS, HIDE_ROWS, HIDE_ROWS_AFTER_SECS, IMAGE, IMAGE_HEIGHT,
+    HEADLINE, HIDDEN_ACCOUNTS, HIDE_COMMANDS, HIDE_ROWS, HIDE_ROWS_AFTER_SECS, IMAGE, IMAGE_HEIGHT,
     IMAGE_POSITION, KICK_ICON, LABEL_OFFSET_X, LABEL_OFFSET_Y, LABEL_SIDE, MAIN_TEXT_COLOR,
     MARGIN_BOTTOM, MARGIN_LEFT, MARGIN_RIGHT, MARGIN_TOP, ROW_LIMIT, ROW_WIDTH, SHOW_AVATARS,
-    SOUND, SPEECH, SPEECH_VOICE, TEXT_COLOR, TEXT_OVERFLOW, THIRD_PARTY_EMOTES, TWITCH_ICON,
-    YOUTUBE_ICON,
+    SOUND, SPEECH, SPEECH_VOICE, SUBLINE, TEXT_COLOR, TEXT_OVERFLOW, THIRD_PARTY_EMOTES,
+    TWITCH_ICON, YOUTUBE_ICON,
 };
 use forge_overlay::{ConfigSection, DeliveryDisposition, OverlayConfig};
 use forge_runtime::{OverlayDelivery, OverlayDispatch, ShowEnd, ShowTicket};
@@ -230,6 +230,20 @@ impl BaseState {
         self.look.slot_bound
     }
 
+    pub(super) fn default_text_hint(&self, key: &str) -> Option<String> {
+        if self.slot_bound() {
+            return None;
+        }
+        let kept_on_screen = self.look.disposition.retains_last_content();
+        match (key, kept_on_screen) {
+            (HEADLINE, false) => Some(tr!("overlays_content_headline_hint")),
+            (HEADLINE, true) => Some(tr!("overlays_content_headline_kept_hint")),
+            (SUBLINE, false) => Some(tr!("overlays_content_subline_hint")),
+            (SUBLINE, true) => Some(tr!("overlays_content_subline_kept_hint")),
+            _ => None,
+        }
+    }
+
     fn in_flight(&self) -> bool {
         matches!(self.fire, ShowFire::Sending | ShowFire::Playing(_))
     }
@@ -238,6 +252,7 @@ impl BaseState {
 impl OverlayPropertyPanel {
     pub(super) fn adopt_base(&mut self, launch: BaseLaunch, cx: &mut Context<Self>) {
         self.base = BaseState::new(launch);
+        self.mark_default_text_placeholders(cx);
         self.watch_queue(cx);
         cx.notify();
     }
@@ -256,6 +271,21 @@ impl OverlayPropertyPanel {
         }
         self.base.hides_itself = flagged;
         cx.notify();
+    }
+
+    fn mark_default_text_placeholders(&self, cx: &mut Context<Self>) {
+        if self.base.slot_bound() {
+            return;
+        }
+        for field in &self.fields {
+            if let ConfigField::Input { key, input, .. } = field
+                && [HEADLINE, SUBLINE].contains(&key.as_str())
+            {
+                input.update(cx, |input, cx| {
+                    input.set_placeholder(tr!("overlays_content_default_placeholder"), cx);
+                });
+            }
+        }
     }
 
     pub(super) fn look_kind(&self) -> &str {

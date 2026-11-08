@@ -693,7 +693,10 @@ impl OverlayPropertyPanel {
                     .into_any_element(),
                 None => control,
             };
-            let body = match base_hint(field.key()).or_else(|| motion_hint(field.key())) {
+            let hint = base_hint(field.key())
+                .or_else(|| motion_hint(field.key()))
+                .or_else(|| self.base.default_text_hint(field.key()));
+            let body = match hint {
                 Some(hint) => hinted(body, hint, palette, density, cx),
                 None => body,
             };

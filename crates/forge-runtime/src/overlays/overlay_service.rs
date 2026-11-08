@@ -57,7 +57,7 @@ const SPEECH_FAILURE_VOICE_KEY: &str = "voice";
 
 const OVERLAY_ID_KEY: &str = "overlayId";
 
-const LATEST_PREVIEW_HOLD: Duration = Duration::from_secs(DEFAULT_DISPLAY_SECS.unsigned_abs());
+const PREVIEW_HOLD: Duration = Duration::from_secs(DEFAULT_DISPLAY_SECS.unsigned_abs());
 
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
 pub struct OverlayReceivers {
@@ -839,7 +839,9 @@ impl OverlayServiceHandle {
             json!({ OVERLAY_ID_KEY: definition.id.as_str() }),
         ));
 
-        if latest_binding(descriptor, &definition.config).is_some() {
+        if latest_binding(descriptor, &definition.config).is_some()
+            || disposition.retains_last_content()
+        {
             let delivery = {
                 let _lane = self.inner.lanes.enter(&definition.id).await;
                 self.send(&definition.id, &content, None).await
@@ -858,9 +860,9 @@ impl OverlayServiceHandle {
     fn restore_after_preview(&self, id: OverlayId) {
         let handle = self.clone();
         self.inner.tasks.spawn_until_stopped(async move {
-            tokio::time::sleep(LATEST_PREVIEW_HOLD).await;
+            tokio::time::sleep(PREVIEW_HOLD).await;
             if let Err(error) = handle.replay_retained(&id, None).await {
-                tracing::warn!(overlay = %id, %error, "latest value did not return after a preview");
+                tracing::warn!(overlay = %id, %error, "shown content did not return after a preview");
             }
         });
     }

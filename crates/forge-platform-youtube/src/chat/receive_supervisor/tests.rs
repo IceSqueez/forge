@@ -12,6 +12,7 @@ use tokio::sync::watch;
 use super::*;
 use crate::api::poll_health::{PollHealthTracker, PollLinkHealth};
 use crate::broadcast::active_broadcast_id::ActiveBroadcastIdHandle;
+use crate::broadcast::broadcast_check::CheckedChat;
 use crate::broadcast::live_chat_id::LiveChatIdHandle;
 use crate::chat::ban_ledger_test_support::MemoryBanLedger;
 use crate::chat::chat_poller::ChatPollTimings;
@@ -24,11 +25,9 @@ const CHAT: &str = "lc-1";
 const OTHER_CHAT: &str = "lc-2";
 const BROADCAST: &str = "bc-1";
 const PAGE_INTERVAL_MS: u64 = 5_000;
-const LONG_CADENCE: ChatPollTimings = ChatPollTimings {
-    broadcast_cadence: Duration::from_secs(4 * 3600),
-    ..ChatPollTimings::DEFAULT
-};
 const RECONNECT: Duration = Duration::from_secs(5);
+const QUIET_AFTER: Duration = Duration::from_secs(120);
+const QUIET_RECONNECT: Duration = Duration::from_secs(20);
 const REPROBE: Duration = Duration::from_secs(600);
 const POLL_FLOOR: Duration = Duration::from_secs(3);
 const LONG_INTERVAL: Duration = Duration::from_secs(60);
@@ -58,6 +57,9 @@ fn poll(token: Option<&str>) -> Call {
 enum Item {
     Page(ChatMessagesResponse),
     End(StreamOutcome),
+    Quiet(Duration),
+    Hold,
+    HoldUntil(Arc<Notify>),
 }
 
 #[derive(Default)]
@@ -192,15 +194,20 @@ struct ScriptedStream {
 
 impl PageStream for ScriptedStream {
     async fn next(&mut self) -> Option<StreamEvent> {
-        match self.items.pop_front() {
-            Some(Item::Page(page)) => {
-                if let Some(token) = page.next_page_token.clone().filter(|t| !t.is_empty()) {
-                    self.resume = Some(token);
+        loop {
+            match self.items.pop_front() {
+                Some(Item::Page(page)) => {
+                    if let Some(token) = page.next_page_token.clone().filter(|t| !t.is_empty()) {
+                        self.resume = Some(token);
+                    }
+                    return Some(StreamEvent::Page(page));
                 }
-                Some(StreamEvent::Page(page))
+                Some(Item::End(outcome)) => return Some(StreamEvent::Ended(outcome)),
+                Some(Item::Quiet(span)) => tokio::time::sleep(span).await,
+                Some(Item::Hold) => std::future::pending::<()>().await,
+                Some(Item::HoldUntil(release)) => release.notified().await,
+                None => return Some(StreamEvent::Ended(StreamOutcome::Cancelled)),
             }
-            Some(Item::End(outcome)) => Some(StreamEvent::Ended(outcome)),
-            None => std::future::pending().await,
         }
     }
 
@@ -221,7 +228,7 @@ impl ChatTransports for Scripted {
         self.record(open(page_token));
         self.opened.notify_one();
         let next = self.script.lock().unwrap().opens.pop_front();
-        next.unwrap_or_else(|| Ok(Vec::new()))
+        next.unwrap_or(Err(StreamOutcome::Cancelled))
             .map(|items| ScriptedStream {
                 items: items.into(),
                 resume: page_token.map(ToOwned::to_owned),
@@ -304,6 +311,8 @@ fn throttled(retry_after: Duration) -> StreamOutcome {
 
 struct Rig {
     poller: YouTubeChatPoller,
+    checked: Arc<watch::Sender<CheckedChat>>,
+    checked_rx: watch::Receiver<CheckedChat>,
     bus: UnboundedReceiver<Event>,
     dedup: DedupSet,
     health: PollHealthTracker,
@@ -312,7 +321,7 @@ struct Rig {
     cancel: CancellationToken,
 }
 
-fn rig_with(timings: ChatPollTimings) -> Rig {
+fn rig() -> Rig {
     let (tx, bus) = tokio::sync::mpsc::unbounded_channel();
     let reports = Arc::new(Mutex::new(Vec::new()));
     let sink = Arc::clone(&reports);
@@ -325,9 +334,14 @@ fn rig_with(timings: ChatPollTimings) -> Rig {
         ActiveBroadcastIdHandle::new(),
         MemoryBanLedger::shared(),
     )
-    .with_timings(timings);
+    .with_timings(ChatPollTimings::DEFAULT);
+    let (checked, checked_rx) = watch::channel(CheckedChat::Open {
+        live_chat_id: CHAT.to_owned(),
+    });
     Rig {
         poller,
+        checked: Arc::new(checked),
+        checked_rx,
         bus,
         dedup: DedupSet::bounded(500),
         health: PollHealthTracker::new(Some(Arc::new(move |health| {
@@ -337,10 +351,6 @@ fn rig_with(timings: ChatPollTimings) -> Rig {
         is_live: true,
         cancel: CancellationToken::new(),
     }
-}
-
-fn rig() -> Rig {
-    rig_with(LONG_CADENCE)
 }
 
 fn supervisor(transports: &Scripted) -> ReceiveSupervisor<Scripted> {
@@ -367,10 +377,21 @@ impl Rig {
         supervisor: &mut ReceiveSupervisor<T>,
         live_chat_id: &str,
     ) -> ReceiveExit {
+        self.checked.send_replace(CheckedChat::Open {
+            live_chat_id: live_chat_id.to_owned(),
+        });
+        self.receive_as_checked(supervisor, live_chat_id).await
+    }
+
+    async fn receive_as_checked<T: ChatTransports>(
+        &mut self,
+        supervisor: &mut ReceiveSupervisor<T>,
+        live_chat_id: &str,
+    ) -> ReceiveExit {
         let session = ChatSession {
             live_chat_id,
             broadcast_id: BROADCAST,
-            resolved_at: Instant::now(),
+            checked_chat: &self.checked_rx,
             dedup: &mut self.dedup,
             health: &mut self.health,
             is_live: &mut self.is_live,
@@ -814,7 +835,7 @@ async fn messages_seen_on_the_stream_are_not_republished_after_the_hand_over_to_
 
 #[tokio::test(start_paused = true)]
 async fn cancelling_a_held_stream_stops_at_once() {
-    let transports = Scripted::new();
+    let transports = Scripted::new().streams(vec![Item::Hold]);
     let mut rig = rig();
     let cancel = rig.cancel.clone();
     let opened = Arc::clone(&transports.opened);
@@ -855,30 +876,132 @@ async fn cancelling_during_the_quota_wait_stops_at_once() {
 }
 
 #[tokio::test(start_paused = true)]
-async fn the_cadence_deadline_cuts_a_held_stream_and_the_next_receive_resumes_from_its_token() {
-    let transports = Scripted::new().streams(vec![Item::Page(page("s-1", &["m-1"]))]);
-    let mut rig = rig_with(ChatPollTimings::DEFAULT);
+async fn a_broadcast_check_that_moves_on_waits_for_the_open_stream_to_end_then_resolves() {
+    const HELD_FOR: Duration = Duration::from_secs(60);
+    let release = Arc::new(Notify::new());
+    let transports = Scripted::new().streams(vec![
+        Item::Page(page("s-1", &["m-1"])),
+        Item::HoldUntil(Arc::clone(&release)),
+        Item::End(StreamOutcome::Closed),
+    ]);
+    let mut rig = rig();
+    let checked = Arc::clone(&rig.checked);
+    let opened = Arc::clone(&transports.opened);
     let mut supervisor = supervisor(&transports);
     let started = Instant::now();
 
-    let exit = rig.receive(&mut supervisor).await;
-    let cut_at = started.elapsed();
-    rig.receive(&mut supervisor).await;
+    let (exit, ()) = tokio::join!(rig.receive(&mut supervisor), async {
+        opened.notified().await;
+        checked.send_replace(CheckedChat::Ended);
+        tokio::time::sleep(HELD_FOR).await;
+        release.notify_one();
+    });
 
     assert_eq!(
-        (exit, cut_at, transports.calls()),
-        (
-            ReceiveExit::Resolve,
-            ChatPollTimings::DEFAULT.broadcast_cadence,
-            vec![open(None), open(Some("s-1"))]
-        )
+        (exit, started.elapsed(), transports.calls()),
+        (ReceiveExit::Resolve, HELD_FOR + RECONNECT, vec![open(None)])
     );
+}
+
+#[tokio::test(start_paused = true)]
+async fn a_receive_for_a_chat_the_check_no_longer_names_resolves_without_opening() {
+    for (label, checked) in [
+        ("ended", CheckedChat::Ended),
+        (
+            "new chat",
+            CheckedChat::Open {
+                live_chat_id: OTHER_CHAT.to_owned(),
+            },
+        ),
+    ] {
+        let transports = Scripted::new().streams(vec![Item::Hold]);
+        let mut rig = rig();
+        rig.checked.send_replace(checked);
+
+        let exit = rig
+            .receive_as_checked(&mut supervisor(&transports), CHAT)
+            .await;
+
+        assert_eq!(
+            (exit, transports.calls()),
+            (ReceiveExit::Resolve, Vec::new()),
+            "{label}"
+        );
+    }
+}
+
+#[tokio::test(start_paused = true)]
+async fn the_reconnect_pause_widens_once_chat_has_been_quiet_and_narrows_on_the_next_fresh_item() {
+    let quiet_then_closed = |token: &str, ids: &[&str], quiet: Duration| {
+        vec![
+            Item::Page(page(token, ids)),
+            Item::Quiet(quiet),
+            Item::End(StreamOutcome::Closed),
+        ]
+    };
+    for (label, long_interval, first, second, expected_gaps) in [
+        (
+            "one second short of quiet",
+            false,
+            quiet_then_closed("s-1", &["m-1"], QUIET_AFTER - Duration::from_secs(1)),
+            None,
+            vec![QUIET_AFTER - Duration::from_secs(1) + RECONNECT],
+        ),
+        (
+            "quiet with no item ever",
+            false,
+            quiet_then_closed("s-1", &[], QUIET_AFTER),
+            None,
+            vec![QUIET_AFTER + QUIET_RECONNECT],
+        ),
+        (
+            "quiet since the last item",
+            false,
+            quiet_then_closed("s-1", &["m-1"], QUIET_AFTER),
+            None,
+            vec![QUIET_AFTER + QUIET_RECONNECT],
+        ),
+        (
+            "a fresh item after the quiet spell",
+            false,
+            quiet_then_closed("s-1", &["m-1"], QUIET_AFTER),
+            Some(quiet_then_closed("s-2", &["m-2"], Duration::ZERO)),
+            vec![QUIET_AFTER + QUIET_RECONNECT, RECONNECT],
+        ),
+        (
+            "only a repeated item after the quiet spell",
+            false,
+            quiet_then_closed("s-1", &["m-1"], QUIET_AFTER),
+            Some(quiet_then_closed("s-2", &["m-1"], Duration::ZERO)),
+            vec![QUIET_AFTER + QUIET_RECONNECT, QUIET_RECONNECT],
+        ),
+        (
+            "quiet in long-interval mode",
+            true,
+            quiet_then_closed("s-1", &["m-1"], QUIET_AFTER),
+            None,
+            vec![QUIET_AFTER + LONG_INTERVAL],
+        ),
+    ] {
+        let mut transports = Scripted::new().streams(first);
+        if let Some(second) = second {
+            transports = transports.streams(second);
+        }
+        if long_interval {
+            transports = transports.in_long_interval_mode();
+        }
+        let mut rig = rig();
+
+        rig.receive(&mut supervisor(&transports)).await;
+
+        assert_eq!(transports.gaps(), expected_gaps, "{label}");
+    }
 }
 
 #[tokio::test(start_paused = true)]
 async fn a_new_live_chat_opens_without_the_previous_resume_token() {
     let transports = Scripted::new().streams(vec![Item::Page(page("s-1", &["m-1"]))]);
-    let mut rig = rig_with(ChatPollTimings::DEFAULT);
+    let mut rig = rig();
     let mut supervisor = supervisor(&transports);
 
     rig.receive_on(&mut supervisor, CHAT).await;

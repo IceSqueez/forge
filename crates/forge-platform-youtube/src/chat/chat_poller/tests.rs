@@ -4,6 +4,7 @@ use futures::future::BoxFuture;
 
 use super::*;
 use crate::api::quota_state::BROADCAST_COST;
+use crate::endpoints_test_support::ReplyGate;
 use crate::endpoints_test_support::{
     CapturingPublisher, StubReply, StubServer, data_api_with, used_today, wait_until,
 };
@@ -15,6 +16,8 @@ use crate::broadcast::live_chat_id::LiveChatIdHandle;
 use serde_json::json;
 use wiremock::matchers::{method, path, query_param};
 use wiremock::{Mock, MockServer, ResponseTemplate};
+
+mod offline_pacing;
 
 fn token_source() -> Arc<dyn Fn() -> BoxFuture<'static, Result<String, PlatformError>> + Send + Sync>
 {
@@ -151,8 +154,11 @@ const FAST: ChatPollTimings = ChatPollTimings {
     poll_floor: Duration::from_millis(1),
     long_interval: Duration::from_millis(1),
     broadcast_cadence: Duration::from_millis(25),
+    offline_cadence: Duration::from_millis(25),
+    wake_follow_up_interval: Duration::from_millis(25),
 };
 const BROADCASTS: &str = "/liveBroadcasts";
+const VIDEOS: &str = "/videos";
 const CHAT_MESSAGES: &str = "/liveChat/messages";
 
 fn resolution_probe(server: &StubServer) -> (TokenSource, Arc<std::sync::atomic::AtomicUsize>) {
@@ -1050,13 +1056,6 @@ fn broadcast_response_titled(live_chat_id: &str, title: &str) -> serde_json::Val
     })
 }
 
-fn quota_for_two_resolutions() -> SharedQuota {
-    SharedQuota::new(QuotaState {
-        used_today: QUOTA_DAILY_LIMIT_FOR_TEST - 2 * BROADCAST_COST,
-        last_reset_date: today_pacific(),
-    })
-}
-
 const QUOTA_DAILY_LIMIT_FOR_TEST: u32 = 10_000;
 
 fn reply_sequenced_broadcasts(
@@ -1069,82 +1068,93 @@ fn reply_sequenced_broadcasts(
     server.reply_always(BROADCASTS, StubReply::ok(second));
 }
 
-async fn run_until_resolution_and_drain_titles(
+fn checked_video(live_chat_id: &str, title: &str, viewers: &str) -> serde_json::Value {
+    json!({
+        "items": [{
+            "id": "broadcast-1",
+            "snippet": { "title": title },
+            "liveStreamingDetails": {
+                "activeLiveChatId": live_chat_id,
+                "concurrentViewers": viewers
+            }
+        }]
+    })
+}
+
+fn ended_video() -> serde_json::Value {
+    json!({
+        "items": [{
+            "id": "broadcast-1",
+            "liveStreamingDetails": { "actualEndTime": "2026-11-07T12:00:00Z" }
+        }]
+    })
+}
+
+fn empty_chat_page() -> StubReply {
+    StubReply::ok(&chat_response(json!([]), 0))
+}
+
+fn one_chat_page_only() -> StubReply {
+    const BEYOND_THE_TEST: u64 = 600_000;
+    StubReply::ok(&chat_response(json!([]), BEYOND_THE_TEST))
+}
+
+async fn events_once_requests_reach(
     poller: YouTubeChatPoller,
-    resolved: &std::sync::atomic::AtomicUsize,
     mut rx: tokio::sync::mpsc::UnboundedReceiver<Event>,
-    resolutions: usize,
+    server: &StubServer,
+    path: &str,
+    requests: usize,
 ) -> Vec<Event> {
-    run_through_resolutions(poller, resolved, resolutions).await;
+    let cancel = CancellationToken::new();
+    let join = tokio::spawn(poller.run(cancel.clone()));
+    let reached = wait_until(|| server.request_count(path) >= requests).await;
+    cancel.cancel();
+    join.await.unwrap().unwrap();
+    assert!(
+        reached,
+        "{path} answered {} of {requests} requests",
+        server.request_count(path)
+    );
+    std::iter::from_fn(|| rx.try_recv().ok()).collect()
+}
 
-    let mut events = Vec::new();
-    while let Ok(e) = rx.try_recv() {
-        if e.kind == "youtube.stream.title_changed" {
-            events.push(e);
-        }
-    }
+fn titles_changed(events: &[Event]) -> Vec<(String, String)> {
     events
+        .iter()
+        .filter(|e| e.kind == "youtube.stream.title_changed")
+        .map(|e| {
+            (
+                e.payload["title"]["old"].as_str().unwrap().to_owned(),
+                e.payload["title"]["new"].as_str().unwrap().to_owned(),
+            )
+        })
+        .collect()
 }
 
 #[tokio::test]
-async fn first_broadcast_resolution_records_title_without_emitting_event() {
-    let server = StubServer::start().await;
-    reply_sequenced_broadcasts(
-        &server,
-        &broadcast_response_titled("lc-1", "Steady Title"),
-        &broadcast_response_titled("lc-2", "Steady Title"),
-    );
+async fn a_broadcast_check_emits_title_changed_only_when_the_title_differs() {
+    for (label, checked_title, expected) in [
+        ("same title", "Test Stream", Vec::new()),
+        (
+            "new title",
+            "New Title",
+            vec![("Test Stream".to_owned(), "New Title".to_owned())],
+        ),
+    ] {
+        let server = StubServer::start().await;
+        server.reply_always(BROADCASTS, StubReply::ok(&broadcast_response("lc-1")));
+        server.reply_always(CHAT_MESSAGES, one_chat_page_only());
+        server.reply_always(
+            VIDEOS,
+            StubReply::ok(&checked_video("lc-1", checked_title, "5")),
+        );
+        let (poller, _resolved, rx) = stub_poller_with_quota(&server, make_quota());
 
-    let (poller, resolved, rx) = stub_poller_with_quota(&server, quota_for_two_resolutions());
-    let events = run_until_resolution_and_drain_titles(poller, &resolved, rx, 2).await;
+        let events = events_once_requests_reach(poller, rx, &server, VIDEOS, 2).await;
 
-    assert!(
-        events.is_empty(),
-        "first resolution must only record; unchanged title must not fire, got {} event(s)",
-        events.len()
-    );
-}
-
-#[tokio::test]
-async fn changed_title_on_second_resolution_emits_one_title_changed_event() {
-    let server = StubServer::start().await;
-    reply_sequenced_broadcasts(
-        &server,
-        &broadcast_response_titled("lc-1", "Old Title"),
-        &broadcast_response_titled("lc-2", "New Title"),
-    );
-
-    let (poller, resolved, rx) = stub_poller_with_quota(&server, quota_for_two_resolutions());
-    let events = run_until_resolution_and_drain_titles(poller, &resolved, rx, 2).await;
-
-    assert_eq!(
-        events.len(),
-        1,
-        "a single title change must fire exactly one event"
-    );
-    let payload = &events[0].payload;
-    assert_eq!(events[0].source, EventSource::YouTube);
-    assert_eq!(payload["title"]["old"].as_str().unwrap(), "Old Title");
-    assert_eq!(payload["title"]["new"].as_str().unwrap(), "New Title");
-}
-
-#[tokio::test]
-async fn unchanged_title_across_two_resolutions_emits_no_event() {
-    let server = StubServer::start().await;
-    reply_sequenced_broadcasts(
-        &server,
-        &broadcast_response_titled("lc-1", "Same Title"),
-        &broadcast_response_titled("lc-2", "Same Title"),
-    );
-
-    let (poller, resolved, rx) = stub_poller_with_quota(&server, quota_for_two_resolutions());
-    let events = run_until_resolution_and_drain_titles(poller, &resolved, rx, 2).await;
-
-    assert!(
-        events.is_empty(),
-        "identical titles must not fire, got {} event(s)",
-        events.len()
-    );
+        assert_eq!(titles_changed(&events), expected, "{label}");
+    }
 }
 
 #[tokio::test]
@@ -1160,21 +1170,13 @@ async fn title_diff_across_intervening_offline_clear_does_not_fire() {
         BROADCASTS,
         StubReply::ok(&broadcast_response_titled("lc-2", "Title B")),
     );
+    server.reply_always(CHAT_MESSAGES, empty_chat_page());
+    server.reply_always(VIDEOS, StubReply::ok(&ended_video()));
+    let (poller, _resolved, rx) = stub_poller_with_quota(&server, make_quota());
 
-    let quota = SharedQuota::new(QuotaState {
-        used_today: QUOTA_DAILY_LIMIT_FOR_TEST - 3 * BROADCAST_COST,
-        last_reset_date: today_pacific(),
-    });
+    let events = events_once_requests_reach(poller, rx, &server, BROADCASTS, 4).await;
 
-    let (poller, resolved, rx) = stub_poller_with_quota(&server, quota);
-    let events = run_until_resolution_and_drain_titles(poller, &resolved, rx, 3).await;
-
-    assert!(
-        events.is_empty(),
-        "an offline clear between two live titles must reset last-seen; \
-             go-live with a new title must not fire, got {} event(s)",
-        events.len()
-    );
+    assert_eq!(titles_changed(&events), Vec::new());
 }
 
 fn chat_ended_item(id: &str) -> serde_json::Value {
@@ -1234,8 +1236,10 @@ async fn going_offline_emits_single_offline_with_last_broadcast_id() {
         &broadcast_response("lc-live"),
         &empty_broadcast_response(),
     );
+    server.reply_always(CHAT_MESSAGES, empty_chat_page());
+    server.reply_always(VIDEOS, StubReply::ok(&ended_video()));
 
-    let (poller, resolved, rx) = stub_poller_with_quota(&server, quota_for_two_resolutions());
+    let (poller, resolved, rx) = stub_poller_with_quota(&server, make_quota());
     let events = drain_events_over_broadcast_cycles(poller, rx, &resolved, 2).await;
 
     let offline: Vec<&Event> = events
@@ -1393,24 +1397,45 @@ async fn ended_chat_is_not_repolled_and_next_discovery_waits_for_the_cadence() {
 }
 
 #[tokio::test]
-async fn same_live_session_resolved_twice_emits_single_online() {
+async fn a_check_naming_a_new_chat_moves_receive_there_without_another_lookup_or_online() {
     let server = StubServer::start().await;
-    reply_sequenced_broadcasts(
-        &server,
-        &broadcast_response("lc-1"),
-        &broadcast_response("lc-2"),
+    server.reply_always(BROADCASTS, StubReply::ok(&broadcast_response("lc-1")));
+    server.reply_always(CHAT_MESSAGES, empty_chat_page());
+    server.reply_always(
+        VIDEOS,
+        StubReply::ok(&checked_video("lc-2", "Test Stream", "5")),
     );
+    let live = LiveChatIdHandle::new();
+    let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel();
+    let poller = YouTubeChatPoller::new(
+        crate::endpoints_test_support::data_api_at(&server.uri()),
+        token_source(),
+        tx,
+        "UCtest".to_owned(),
+        live.clone(),
+        ActiveBroadcastIdHandle::new(),
+        crate::chat::ban_ledger_test_support::MemoryBanLedger::shared(),
+    )
+    .with_timings(FAST);
+    let cancel = CancellationToken::new();
+    let join = tokio::spawn(poller.run(cancel.clone()));
 
-    let (poller, resolved, rx) = stub_poller_with_quota(&server, quota_for_two_resolutions());
-    let events = drain_events_over_broadcast_cycles(poller, rx, &resolved, 2).await;
+    let moved = wait_until(|| live.get().as_deref() == Some("lc-2")).await;
+    let moved_and_checked_again = wait_until(|| server.request_count(VIDEOS) >= 2).await;
+    cancel.cancel();
+    join.await.unwrap().unwrap();
 
-    let online = events
-        .iter()
+    let online = std::iter::from_fn(|| rx.try_recv().ok())
         .filter(|e| e.kind == "youtube.stream.online")
         .count();
     assert_eq!(
-        online, 1,
-        "an uninterrupted live session must emit online once, got {events:?}"
+        (
+            moved,
+            moved_and_checked_again,
+            server.request_count(BROADCASTS),
+            online
+        ),
+        (true, true, 1, 1)
     );
 }
 
@@ -2000,18 +2025,13 @@ async fn live_chat_ended_counts_as_a_successful_poll() {
     );
 }
 
-async fn ids_once_broadcast_lookup_reaches(
-    lookups: usize,
-    after_first: StubReply,
+async fn ids_once_broadcast_checks_reach(
+    checks: usize,
+    check_reply: StubReply,
 ) -> (Option<String>, Option<String>) {
     let server = StubServer::start().await;
-    reply_then(
-        &server,
-        BROADCASTS,
-        live_broadcast(),
-        LIVE_LOOKUP_CALLS,
-        after_first,
-    );
+    server.reply_always(BROADCASTS, live_broadcast());
+    server.reply_always(VIDEOS, check_reply);
     server.reply_always(
         CHAT_MESSAGES,
         StubReply::ok(&json!({ "pollingIntervalMillis": 0, "items": [] })),
@@ -2032,17 +2052,17 @@ async fn ids_once_broadcast_lookup_reaches(
     let cancel = CancellationToken::new();
     let join = tokio::spawn(poller.run(cancel.clone()));
 
-    let reached = wait_until(|| server.request_count(BROADCASTS) >= lookups).await;
+    let reached = wait_until(|| server.request_count(VIDEOS) >= checks).await;
     let ids = (live.get(), broadcast.get());
     cancel.cancel();
     join.await.unwrap().unwrap();
-    assert!(reached, "the poller never re-resolved the broadcast");
+    assert!(reached, "the poller never checked the broadcast");
     ids
 }
 
 #[tokio::test]
-async fn ids_stay_published_while_the_broadcast_is_re_resolved() {
-    let ids = ids_once_broadcast_lookup_reaches(LIVE_LOOKUP_CALLS + 1, StubReply::held()).await;
+async fn ids_stay_published_while_a_broadcast_check_is_in_flight() {
+    let ids = ids_once_broadcast_checks_reach(1, StubReply::held()).await;
     assert_eq!(
         ids,
         (Some("lc-live".to_owned()), Some("broadcast-1".to_owned()))
@@ -2050,8 +2070,8 @@ async fn ids_stay_published_while_the_broadcast_is_re_resolved() {
 }
 
 #[tokio::test]
-async fn ids_stay_published_through_a_transient_broadcast_lookup_failure() {
-    let ids = ids_once_broadcast_lookup_reaches(LIVE_LOOKUP_CALLS + 2, server_error()).await;
+async fn ids_stay_published_through_a_failed_broadcast_check() {
+    let ids = ids_once_broadcast_checks_reach(2, server_error()).await;
     assert_eq!(
         ids,
         (Some("lc-live".to_owned()), Some("broadcast-1".to_owned()))
@@ -2121,6 +2141,7 @@ async fn first_chat_poll_after_a_pacific_rollover_waits_only_the_short_floor() {
         poll_floor: Duration::from_millis(1),
         long_interval: crate::endpoints_test_support::HANG_GUARD * 2,
         broadcast_cadence: crate::endpoints_test_support::HANG_GUARD * 2,
+        ..FAST
     });
     let cancel = CancellationToken::new();
     let join = tokio::spawn(poller.run(cancel.clone()));
@@ -2160,6 +2181,7 @@ fn cancelling_a_poll_mid_fetch_returns_quietly_without_charging_or_reporting_hea
                     _events,
                     ..
                 } = probed_poller(&server, TokenOutcome::Issued, quota);
+                let poller = poller.with_timings(ONE_LONG_ROUND);
                 let cancel = CancellationToken::new();
                 let join = tokio::spawn(poller.run(cancel.clone()));
                 forge_test_support::settle_until("the held request reached the server", || {
@@ -2440,4 +2462,272 @@ fn a_rest_page_without_items_or_token_reads_as_empty() {
     let page = fetch::page_from_body(&json!({ "pollingIntervalMillis": 2500 }));
     assert!(page.items.is_empty());
     assert_eq!(page.next_page_token, None);
+}
+
+fn live_poller_reporting_viewers(
+    server: &StubServer,
+    timings: ChatPollTimings,
+) -> (YouTubePollerRun, tokio::sync::watch::Receiver<ViewerReport>) {
+    let (reports_tx, reports_rx) = tokio::sync::watch::channel(ViewerReport::Absent);
+    let (tx, events) = tokio::sync::mpsc::unbounded_channel();
+    let poller = YouTubeChatPoller::new(
+        crate::endpoints_test_support::data_api_at(&server.uri()),
+        token_source(),
+        tx,
+        "UCtest".to_owned(),
+        LiveChatIdHandle::new(),
+        ActiveBroadcastIdHandle::new(),
+        crate::chat::ban_ledger_test_support::MemoryBanLedger::shared(),
+    )
+    .with_viewer_reports(reports_tx)
+    .with_timings(timings);
+    (YouTubePollerRun::start(poller, events), reports_rx)
+}
+
+struct YouTubePollerRun {
+    cancel: CancellationToken,
+    join: tokio::task::JoinHandle<Result<(), PlatformError>>,
+    _events: tokio::sync::mpsc::UnboundedReceiver<Event>,
+}
+
+impl YouTubePollerRun {
+    fn start(
+        poller: YouTubeChatPoller,
+        events: tokio::sync::mpsc::UnboundedReceiver<Event>,
+    ) -> Self {
+        let cancel = CancellationToken::new();
+        let join = tokio::spawn(poller.run(cancel.clone()));
+        Self {
+            cancel,
+            join,
+            _events: events,
+        }
+    }
+
+    async fn stop(self) {
+        self.cancel.cancel();
+        self.join.await.unwrap().unwrap();
+    }
+}
+
+#[tokio::test]
+async fn viewers_follow_the_broadcast_check_and_read_absent_after_three_failed_checks_in_a_row() {
+    let unreadable_check = || StubReply::text(reqwest::StatusCode::OK.as_u16(), "not json");
+    let live_with =
+        |viewers: &str| StubReply::ok(&checked_video("lc-live", "Test Stream", viewers));
+    for (label, checks, expected) in [
+        (
+            "one check",
+            vec![live_with("42")],
+            ViewerReport::Live { count: 42 },
+        ),
+        (
+            "two failures",
+            vec![live_with("42"), unreadable_check(), unreadable_check()],
+            ViewerReport::Live { count: 42 },
+        ),
+        (
+            "three failures",
+            vec![
+                live_with("42"),
+                unreadable_check(),
+                unreadable_check(),
+                unreadable_check(),
+            ],
+            ViewerReport::Absent,
+        ),
+        (
+            "a success between failures",
+            vec![
+                live_with("42"),
+                unreadable_check(),
+                unreadable_check(),
+                live_with("7"),
+                unreadable_check(),
+                unreadable_check(),
+            ],
+            ViewerReport::Live { count: 7 },
+        ),
+    ] {
+        let server = StubServer::start().await;
+        server.reply_always(BROADCASTS, live_broadcast());
+        server.reply_always(CHAT_MESSAGES, one_chat_page_only());
+        let answered = checks.len();
+        for reply in checks {
+            server.reply_times(VIDEOS, reply, 1);
+        }
+        server.reply_always(VIDEOS, StubReply::held());
+        let (run, reports) = live_poller_reporting_viewers(&server, FAST);
+
+        let settled = wait_until(|| server.request_count(VIDEOS) > answered).await;
+        let report = *reports.borrow();
+        run.stop().await;
+
+        assert_eq!((settled, report), (true, expected), "{label}");
+    }
+}
+
+#[tokio::test]
+async fn viewers_read_absent_once_the_poller_stops() {
+    let server = StubServer::start().await;
+    server.reply_always(BROADCASTS, live_broadcast());
+    server.reply_always(CHAT_MESSAGES, one_chat_page_only());
+    server.reply_always(
+        VIDEOS,
+        StubReply::ok(&checked_video("lc-live", "Test Stream", "42")),
+    );
+    let (run, reports) = live_poller_reporting_viewers(&server, FAST);
+    let went_live = wait_until(|| *reports.borrow() == ViewerReport::Live { count: 42 }).await;
+
+    run.stop().await;
+
+    assert_eq!((went_live, *reports.borrow()), (true, ViewerReport::Absent));
+}
+
+#[tokio::test]
+async fn a_check_reporting_the_broadcast_ended_clears_both_ids_before_the_next_lookup() {
+    let server = StubServer::start().await;
+    reply_then(
+        &server,
+        BROADCASTS,
+        live_broadcast(),
+        LIVE_LOOKUP_CALLS,
+        StubReply::held(),
+    );
+    server.reply_always(CHAT_MESSAGES, empty_chat_page());
+    server.reply_always(VIDEOS, StubReply::ok(&ended_video()));
+    let live = LiveChatIdHandle::new();
+    let broadcast = ActiveBroadcastIdHandle::new();
+    let (tx, events) = tokio::sync::mpsc::unbounded_channel();
+    let poller = YouTubeChatPoller::new(
+        crate::endpoints_test_support::data_api_at(&server.uri()),
+        token_source(),
+        tx,
+        "UCtest".to_owned(),
+        live.clone(),
+        broadcast.clone(),
+        crate::chat::ban_ledger_test_support::MemoryBanLedger::shared(),
+    )
+    .with_timings(FAST);
+    let run = YouTubePollerRun::start(poller, events);
+
+    let looked_up_again = wait_until(|| server.request_count(BROADCASTS) > LIVE_LOOKUP_CALLS).await;
+    let ids = (live.get(), broadcast.get());
+    run.stop().await;
+
+    assert_eq!((looked_up_again, ids), (true, (None, None)));
+}
+
+fn offline_poller(
+    server: &StubServer,
+    timings: ChatPollTimings,
+    wake: &BroadcastLookupWake,
+) -> YouTubePollerRun {
+    let (tx, events) = tokio::sync::mpsc::unbounded_channel();
+    let poller = YouTubeChatPoller::new(
+        crate::endpoints_test_support::data_api_at(&server.uri()),
+        token_source(),
+        tx,
+        "UCtest".to_owned(),
+        LiveChatIdHandle::new(),
+        ActiveBroadcastIdHandle::new(),
+        crate::chat::ban_ledger_test_support::MemoryBanLedger::shared(),
+    )
+    .with_timings(timings)
+    .with_lookup_wake(wake.clone());
+    YouTubePollerRun::start(poller, events)
+}
+
+#[tokio::test]
+async fn while_offline_the_lookup_waits_the_offline_cadence_not_the_broadcast_cadence() {
+    const OFFLINE: Duration = Duration::from_millis(200);
+    let server = StubServer::start().await;
+    server.reply_always(BROADCASTS, StubReply::ok(&empty_broadcast_response()));
+    let run = offline_poller(
+        &server,
+        ChatPollTimings {
+            broadcast_cadence: Duration::from_millis(1),
+            offline_cadence: OFFLINE,
+            ..FAST
+        },
+        &BroadcastLookupWake::new(),
+    );
+
+    let looked_up_twice = wait_until(|| server.request_count(BROADCASTS) >= 2).await;
+    run.stop().await;
+
+    let lookups = server.arrivals_of(BROADCASTS);
+    assert_eq!(
+        (looked_up_twice, lookups[1] - lookups[0] >= OFFLINE),
+        (true, true)
+    );
+}
+
+#[tokio::test]
+async fn a_wake_while_offline_looks_up_at_once_and_follows_up_three_times() {
+    const WAKE_LOOKUP_AND_FOLLOW_UPS: usize = 4;
+    let server = StubServer::start().await;
+    server.reply_always(BROADCASTS, StubReply::ok(&empty_broadcast_response()));
+    let wake = BroadcastLookupWake::new();
+    let run = offline_poller(
+        &server,
+        ChatPollTimings {
+            offline_cadence: crate::endpoints_test_support::HANG_GUARD * 10,
+            wake_follow_up_interval: Duration::from_millis(1),
+            ..FAST
+        },
+        &wake,
+    );
+    let first_lookup = wait_until(|| server.request_count(BROADCASTS) == 1).await;
+
+    wake.wake();
+    let followed_up =
+        wait_until(|| server.request_count(BROADCASTS) == 1 + WAKE_LOOKUP_AND_FOLLOW_UPS).await;
+    run.stop().await;
+
+    assert_eq!((first_lookup, followed_up), (true, true));
+}
+
+#[tokio::test]
+async fn a_wake_during_a_live_session_does_not_shorten_the_next_offline_wait() {
+    const OFFLINE: Duration = Duration::from_millis(300);
+    let server = StubServer::start().await;
+    reply_sequenced_broadcasts(
+        &server,
+        &broadcast_response("lc-live"),
+        &empty_broadcast_response(),
+    );
+    server.reply_always(CHAT_MESSAGES, empty_chat_page());
+    let check_in_flight = Arc::new(ReplyGate::default());
+    server.reply_times(
+        VIDEOS,
+        StubReply::ok(&ended_video()).gated_by(&check_in_flight),
+        1,
+    );
+    server.reply_always(VIDEOS, StubReply::ok(&ended_video()));
+    let wake = BroadcastLookupWake::new();
+    let run = offline_poller(
+        &server,
+        ChatPollTimings {
+            offline_cadence: OFFLINE,
+            ..FAST
+        },
+        &wake,
+    );
+
+    check_in_flight.arrival().await;
+    wake.wake();
+    check_in_flight.open();
+    let looked_up_after_the_offline_wait =
+        wait_until(|| server.request_count(BROADCASTS) >= 3).await;
+    run.stop().await;
+
+    let lookups = server.arrivals_of(BROADCASTS);
+    assert_eq!(
+        (
+            looked_up_after_the_offline_wait,
+            lookups[2] - lookups[1] >= OFFLINE
+        ),
+        (true, true)
+    );
 }

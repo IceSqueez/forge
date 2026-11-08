@@ -13,16 +13,16 @@ use forge_emulator::fakes::youtube::{
 use forge_emulator::fixture::YouTubeAccount;
 use forge_emulator::vocabulary::REDACTED;
 use forge_events::Event;
-use forge_platform_core::{PlatformEndpoints, PlatformError, ViewerReport};
+use forge_platform_core::{PlatformEndpoints, PlatformError};
 use forge_platform_youtube::{
-    ActiveBroadcastIdHandle, ChatPollerStop, GOOGLE_OAUTH_BUDGET_CAPACITY,
+    ActiveBroadcastIdHandle, ChatPollTimings, ChatPollerStop, GOOGLE_OAUTH_BUDGET_CAPACITY,
     GOOGLE_OAUTH_BUDGET_WINDOW, GoogleOAuthClient, LiveChatIdHandle, SharedQuota,
     YouTubeAuthBundle, YouTubeChatPoller, YouTubeCredentialsManager, YouTubeDataApi,
-    YouTubeSendChat, YouTubeViewerPoll, google_oauth_gateway,
+    YouTubeSendChat, google_oauth_gateway,
 };
 use forge_types::OAuthToken;
 use serde_json::{Map, Value, json};
-use tokio::sync::{mpsc, watch};
+use tokio::sync::mpsc;
 use tokio::task::JoinHandle;
 use tokio::time::timeout;
 
@@ -34,6 +34,7 @@ use support::{endpoints_from, static_token_source};
 
 const WAIT: Duration = Duration::from_secs(30);
 const CLIENT_SECRET: &str = "emulator-youtube-client-secret";
+const VIDEOS_PATH: &str = "/youtube/v3/videos";
 
 struct CancelOnDrop(JoinHandle<()>);
 
@@ -153,6 +154,10 @@ struct ForgePoller {
 
 impl ForgePoller {
     fn start(fake: &FakeYouTube) -> Self {
+        Self::start_with(fake, ChatPollTimings::DEFAULT)
+    }
+
+    fn start_with(fake: &FakeYouTube, timings: ChatPollTimings) -> Self {
         let (tx, events) = mpsc::unbounded_channel();
         let poller = YouTubeChatPoller::new(
             youtube_data_api(&endpoints(fake)),
@@ -162,7 +167,8 @@ impl ForgePoller {
             LiveChatIdHandle::new(),
             ActiveBroadcastIdHandle::new(),
             Arc::new(forge_storage::MockBanLedgerRepo::new()),
-        );
+        )
+        .with_timings(timings);
         let task = tokio::spawn(async move {
             poller.run_until_stopped(ChatPollerStop::new()).await.ok();
         });
@@ -570,27 +576,76 @@ async fn active_broadcast_list_follows_the_broadcast_state() {
 }
 
 #[tokio::test]
-async fn forge_viewer_poll_reports_the_live_concurrent_viewers() {
+async fn video_list_names_the_viewers_and_live_chat_only_while_live_and_the_end_after() {
     let fake = start(FakeYouTubeSetup {
         live_at_boot: true,
         concurrent_viewers: 77,
         ..FakeYouTubeSetup::default()
     })
     .await;
-    let broadcast = ActiveBroadcastIdHandle::new();
-    broadcast.set(Some(fake.config().broadcast_id.clone()));
-    let (reports_tx, mut reports) = watch::channel(ViewerReport::Absent);
-    let poll = YouTubeViewerPoll::new(
-        youtube_data_api(&endpoints(&fake)),
-        static_token_source(fake.access_token()),
-        broadcast,
-        reports_tx,
+    let broadcast_id = fake.config().broadcast_id.clone();
+    let query = [
+        ("part", "snippet,liveStreamingDetails"),
+        ("id", broadcast_id.as_str()),
+    ];
+    let details = |body: &Value| {
+        let streaming = &body["items"][0]["liveStreamingDetails"];
+        (
+            streaming["concurrentViewers"]
+                .as_str()
+                .map(ToOwned::to_owned),
+            streaming["activeLiveChatId"]
+                .as_str()
+                .map(ToOwned::to_owned),
+            streaming.get("actualEndTime").is_some(),
+        )
+    };
+    let (_, live) = get(&fake, "/videos", &query).await;
+    fake.set_live(false);
+    let (_, ended) = get(&fake, "/videos", &query).await;
+
+    assert_eq!(
+        (details(&live), details(&ended)),
+        (
+            (
+                Some("77".to_owned()),
+                Some(fake.config().live_chat_id.clone()),
+                false
+            ),
+            (None, None, true)
+        )
     );
-    let _task = CancelOnDrop(tokio::spawn(poll.run()));
+}
 
-    timeout(WAIT, reports.changed()).await.unwrap().unwrap();
+#[tokio::test]
+async fn forge_poller_checks_a_live_broadcast_with_video_list_and_no_further_broadcast_lookup() {
+    let fake = start_live().await;
+    let mut forge = ForgePoller::start_with(
+        &fake,
+        ChatPollTimings {
+            broadcast_cadence: Duration::from_millis(50),
+            ..ChatPollTimings::DEFAULT
+        },
+    );
+    forge.next_of(youtube_kinds::STREAM_ONLINE).await;
 
-    assert_eq!(*reports.borrow(), ViewerReport::Live { count: 77 });
+    fake.wait_for("a broadcast check", WAIT, |ledger| {
+        ledger
+            .requests
+            .iter()
+            .any(|request| request.path == VIDEOS_PATH && request.status == http_status::OK)
+            .then_some(())
+    })
+    .await
+    .unwrap();
+
+    let broadcast_lookups = fake
+        .ledger()
+        .requests
+        .iter()
+        .filter(|request| request.path == LIVE_BROADCASTS_PATH)
+        .count();
+    assert_eq!(broadcast_lookups, 1);
 }
 
 #[tokio::test]

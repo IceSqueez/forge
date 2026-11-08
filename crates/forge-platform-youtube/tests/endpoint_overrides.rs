@@ -5,13 +5,13 @@ use std::sync::Arc;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 use forge_net::TokenBucketRateLimiter;
-use forge_platform_core::{ChatPlatform, PlatformEndpoints, ViewerReport};
+use forge_platform_core::{ChatPlatform, PlatformEndpoints};
 use forge_platform_youtube::{
     ActiveBroadcastIdHandle, GOOGLE_OAUTH_BUDGET_CAPACITY, GOOGLE_OAUTH_BUDGET_WINDOW,
     GoogleOAuthClient, LiveChatIdHandle, SharedQuota, YouTubeAdBreak, YouTubeAuthBundle,
     YouTubeChannelLookup, YouTubeCredentialsManager, YouTubeDataApi, YouTubeModeration,
     YouTubePlatform, YouTubeSendChat, YouTubeStreamMetadata, YouTubeStreamStats, YouTubeThumbnail,
-    YouTubeViewerPoll, google_oauth_gateway,
+    google_oauth_gateway,
 };
 use forge_storage::MockBanLedgerRepo;
 use forge_storage::test_support::MemoryCredentials;
@@ -21,7 +21,6 @@ use serde_json::json;
 use support::{
     BroadcasterSource, TokenSource, data_api_override, endpoints, fixed_broadcaster, fixed_token,
 };
-use tokio::sync::watch;
 use wiremock::matchers::{body_string_contains, method, path};
 use wiremock::{Mock, MockServer, ResponseTemplate};
 
@@ -253,39 +252,6 @@ async fn data_api_override_carries_the_channel_handle_backfill_to_the_override_h
     let creds = manager.ensure_channel_handle().await.unwrap();
 
     assert_eq!(creds.channel_handle.as_deref(), Some("@backfilled"));
-}
-
-#[tokio::test]
-async fn data_api_override_carries_the_viewer_poll_to_the_override_host() {
-    let server = MockServer::start().await;
-    Mock::given(method("GET"))
-        .and(path("/youtube/v3/videos"))
-        .respond_with(
-            ResponseTemplate::new(reqwest::StatusCode::OK).set_body_json(json!({
-                "items": [{
-                    "id": BROADCAST_ID,
-                    "liveStreamingDetails": { "concurrentViewers": "42" }
-                }]
-            })),
-        )
-        .mount(&server)
-        .await;
-    let (reports_tx, mut reports_rx) = watch::channel(ViewerReport::Absent);
-    let poll = YouTubeViewerPoll::new(
-        api(&data_api_override(&server)),
-        token_source(),
-        active_broadcast(),
-        reports_tx,
-    );
-
-    let task = tokio::spawn(poll.run());
-    tokio::time::timeout(HANG_GUARD, reports_rx.changed())
-        .await
-        .unwrap()
-        .unwrap();
-    task.abort();
-
-    assert_eq!(*reports_rx.borrow(), ViewerReport::Live { count: 42 });
 }
 
 #[tokio::test]

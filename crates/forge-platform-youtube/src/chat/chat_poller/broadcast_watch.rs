@@ -47,7 +47,21 @@ impl YouTubeChatPoller {
         }
     }
 
-    pub(super) async fn watch_broadcast(
+    pub(super) async fn watch_broadcast_until_receive_stops(
+        &self,
+        watch: &mut BroadcastWatch,
+        broadcast_id: &str,
+        checked_chat: &tokio::sync::watch::Sender<CheckedChat>,
+        cancel: &CancellationToken,
+    ) {
+        self.watch_broadcast(watch, broadcast_id, checked_chat, cancel)
+            .await;
+        if cancel.is_cancelled() {
+            std::future::pending::<()>().await;
+        }
+    }
+
+    async fn watch_broadcast(
         &self,
         watch: &mut BroadcastWatch,
         broadcast_id: &str,

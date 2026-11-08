@@ -388,7 +388,7 @@ impl YouTubeChatPoller {
                         cancel,
                     },
                 ) => exit,
-                () = self.watch_broadcast(
+                () = self.watch_broadcast_until_receive_stops(
                     &mut watch,
                     &current.broadcast_id,
                     &checked_tx,

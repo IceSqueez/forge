@@ -811,7 +811,64 @@ fn own_hide_flag(palette: &ForgePalette, density: Density, cx: &App) -> AnyEleme
 
 #[cfg(test)]
 mod tests {
+    use forge_overlay::OverlayKindDescriptor;
+    use forge_overlay::kinds::alert::AlertOverlayKind;
+    use forge_overlay::kinds::card::CardOverlayKind;
+    use forge_overlay::kinds::latest::LatestOverlayKind;
+
+    use super::super::look_change::look_summary;
     use super::*;
+
+    fn base_of(descriptor: &dyn OverlayKindDescriptor) -> BaseState {
+        BaseState::new(BaseLaunch {
+            look: look_summary(descriptor),
+            looks: Vec::new(),
+            receiver: false,
+        })
+    }
+
+    #[test]
+    fn default_text_hints_say_kept_on_screen_only_for_looks_that_keep_their_content() {
+        let card = base_of(&CardOverlayKind);
+        let alert = base_of(&AlertOverlayKind);
+
+        assert_eq!(
+            [
+                card.default_text_hint(HEADLINE),
+                card.default_text_hint(SUBLINE)
+            ],
+            [
+                Some(tr!("overlays_content_headline_kept_hint")),
+                Some(tr!("overlays_content_subline_kept_hint")),
+            ],
+            "a card keeps its content, so its default shows until a step replaces it"
+        );
+        assert_eq!(
+            [
+                alert.default_text_hint(HEADLINE),
+                alert.default_text_hint(SUBLINE)
+            ],
+            [
+                Some(tr!("overlays_content_headline_hint")),
+                Some(tr!("overlays_content_subline_hint")),
+            ],
+            "an alert shows nothing between shows, so its default is never on screen alone"
+        );
+    }
+
+    #[test]
+    fn no_default_text_hint_is_offered_for_a_slot_bound_look_or_a_non_text_field() {
+        let latest = base_of(&LatestOverlayKind);
+        let card = base_of(&CardOverlayKind);
+
+        for (case, hint) in [
+            ("latest headline", latest.default_text_hint(HEADLINE)),
+            ("latest subline", latest.default_text_hint(SUBLINE)),
+            ("card text color", card.default_text_hint(TEXT_COLOR)),
+        ] {
+            assert_eq!(hint, None, "{case} was given a default-text hint");
+        }
+    }
 
     #[test]
     fn an_idle_show_button_explains_the_return_to_the_current_value_only_for_slot_bound_looks() {

@@ -3,9 +3,9 @@ use std::ops::Range;
 
 use gpui::{
     App, Bounds, ClipboardItem, Context, CursorStyle, Element, ElementId, ElementInputHandler,
-    Entity, EventEmitter, FocusHandle, Focusable, FontWeight, GlobalElementId, Hsla, LayoutId,
-    PaintQuad, Pixels, Point, ScrollEvent, SharedString, Style, TextAlign, TextRun, UnderlineStyle,
-    Window, WrappedLine, div, fill, point, prelude::*, px, relative, size,
+    Entity, EventEmitter, FocusHandle, Focusable, FontStyle, FontWeight, GlobalElementId, Hsla,
+    LayoutId, PaintQuad, Pixels, Point, ScrollEvent, SharedString, Style, TextAlign, TextRun,
+    UnderlineStyle, Window, WrappedLine, div, fill, point, prelude::*, px, relative, size,
 };
 
 use crate::caret_blink::{CaretBlink, CaretHost, watch_focus};
@@ -567,7 +567,7 @@ impl Element for AreaElement {
         let line_height = window.line_height();
 
         let (display_text, base_color): (SharedString, Hsla) = if content.is_empty() {
-            (input.placeholder.clone(), palette.text_muted.into())
+            (input.placeholder.clone(), palette.text_faint.into())
         } else {
             (content.clone(), style.color)
         };
@@ -582,11 +582,15 @@ impl Element for AreaElement {
         } else {
             &input.tints
         };
+        let mut font = style.font();
+        if content.is_empty() {
+            font.style = FontStyle::Italic;
+        }
         let runs = build_runs(
             &display_text,
             RunStyle {
                 base_color,
-                font: style.font(),
+                font,
                 tints,
                 palette: &palette,
             },

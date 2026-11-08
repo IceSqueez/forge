@@ -2,9 +2,9 @@ use std::ops::{Range, RangeInclusive};
 use std::rc::Rc;
 
 use gpui::{
-    App, Bounds, Corners, Element, ElementId, ElementInputHandler, Entity, Font, GlobalElementId,
-    Hsla, IntoElement, LayoutId, Pixels, Point, ShapedLine, SharedString, Style, TextAlign,
-    TextRun, Window, fill, point, px, relative, size,
+    App, Bounds, Corners, Element, ElementId, ElementInputHandler, Entity, Font, FontStyle,
+    GlobalElementId, Hsla, IntoElement, LayoutId, Pixels, Point, ShapedLine, SharedString, Style,
+    TextAlign, TextRun, Window, fill, point, px, relative, size,
 };
 
 use super::CodeEditor;
@@ -401,7 +401,7 @@ impl CodeEditor {
                         self.palette.text_extreme_faint.into(),
                     )
                 };
-                let label = shape_label(text, color, viewport, window);
+                let label = shape_label(text, color, FontStyle::Normal, viewport, window);
                 PaintLabel {
                     origin: point(
                         viewport.bounds.left() + gutter_width - GUTTER_PAD_R - label.width(),
@@ -421,7 +421,8 @@ impl CodeEditor {
             origin: point(viewport.text_x, viewport.origin_y),
             label: shape_label(
                 self.placeholder.clone(),
-                self.palette.text_muted.into(),
+                self.palette.text_faint.into(),
+                FontStyle::Italic,
                 viewport,
                 window,
             ),
@@ -432,12 +433,15 @@ impl CodeEditor {
 fn shape_label(
     text: SharedString,
     color: Hsla,
+    style: FontStyle,
     viewport: &Viewport,
     window: &mut Window,
 ) -> ShapedLine {
+    let mut font = viewport.font.clone();
+    font.style = style;
     let run = TextRun {
         len: text.len(),
-        font: viewport.font.clone(),
+        font,
         color,
         background_color: None,
         underline: None,

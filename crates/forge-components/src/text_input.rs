@@ -3,8 +3,8 @@ use std::ops::Range;
 
 use gpui::{
     App, Bounds, ClipboardItem, Context, CursorStyle, Element, ElementId, ElementInputHandler,
-    Entity, EventEmitter, FocusHandle, Focusable, GlobalElementId, Hsla, KeyBinding, LayoutId,
-    PaintQuad, Pixels, Point, Rgba, ShapedLine, SharedString, Style, TextAlign, TextRun,
+    Entity, EventEmitter, FocusHandle, Focusable, FontStyle, GlobalElementId, Hsla, KeyBinding,
+    LayoutId, PaintQuad, Pixels, Point, Rgba, ShapedLine, SharedString, Style, TextAlign, TextRun,
     UnderlineStyle, Window, actions, div, fill, point, prelude::*, px, relative, size,
 };
 
@@ -571,7 +571,7 @@ impl Element for TextElement {
         let style = window.text_style();
 
         let (display_text, text_color): (SharedString, Hsla) = if content.is_empty() {
-            (input.placeholder.clone(), palette.text_muted.into())
+            (input.placeholder.clone(), palette.text_faint.into())
         } else if secure {
             (SharedString::from(mask_graphemes(&content)), style.color)
         } else {
@@ -580,9 +580,13 @@ impl Element for TextElement {
 
         let display_index = |offset: usize| input.display_offset(offset);
 
+        let mut font = style.font();
+        if content.is_empty() {
+            font.style = FontStyle::Italic;
+        }
         let run = TextRun {
             len: display_text.len(),
-            font: style.font(),
+            font,
             color: text_color,
             background_color: None,
             underline: None,

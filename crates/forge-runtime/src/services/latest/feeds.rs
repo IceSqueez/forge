@@ -101,7 +101,7 @@ fn shown_name(name: Option<&str>, context: &FeedContext<'_>) -> String {
 
 pub(crate) fn read_donation(event: &Event, _context: &FeedContext<'_>) -> Option<SlotReading> {
     let donation = DonationReceived::from_event(event)?;
-    if donation.is_test || donation.amount_micros == 0 {
+    if event.is_rehearsal() || donation.amount_micros == 0 {
         return None;
     }
     let amount = ShownAmount::money(&donation.amount());

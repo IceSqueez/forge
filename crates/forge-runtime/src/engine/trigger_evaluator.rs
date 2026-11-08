@@ -292,6 +292,10 @@ impl TriggerEvaluator {
             }
         }
 
+        if event.is_rehearsal() {
+            return Some(args);
+        }
+
         let cooldown = cooldown_key(descriptor, instance, &args);
         if let Some(remaining) = self.cooldown_remaining(instance, cooldown, event.id) {
             self.publish_blocked(instance, event.id, BlockReason::Cooldown { remaining });

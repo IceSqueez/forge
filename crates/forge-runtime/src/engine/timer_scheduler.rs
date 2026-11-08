@@ -155,7 +155,7 @@ impl TimerScheduler {
     }
 
     fn count_chat(&mut self, event: &Event) {
-        if self.armed.is_empty() {
+        if self.armed.is_empty() || event.replay {
             return;
         }
         let now = Instant::now();

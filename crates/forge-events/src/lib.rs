@@ -54,6 +54,8 @@ use forge_types::EventId;
 use serde::{Deserialize, Serialize};
 use time::OffsetDateTime;
 
+const TEST_MARKER: &str = "test";
+
 #[derive(Clone, Serialize, Deserialize)]
 pub struct Event {
     pub id: EventId,
@@ -107,6 +109,15 @@ impl Event {
             caused_by: Some(parent),
             ..Self::new(source, kind, payload)
         }
+    }
+
+    pub fn is_rehearsal(&self) -> bool {
+        self.replay
+            || self
+                .payload
+                .get(TEST_MARKER)
+                .and_then(serde_json::Value::as_bool)
+                .unwrap_or(false)
     }
 }
 

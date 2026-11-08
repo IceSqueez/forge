@@ -18,7 +18,6 @@ use crate::services::latest::slots::{
 const STORAGE_OP_TIMEOUT: Duration = Duration::from_secs(5);
 const PERSIST_ATTEMPTS: u32 = 3;
 const PERSIST_RETRY_DELAY: Duration = Duration::from_millis(500);
-const TEST_MARKER: &str = "test";
 
 type SlotValues = BTreeMap<String, LatestValue>;
 
@@ -92,7 +91,7 @@ impl LatestValues {
     }
 
     pub(crate) async fn project(&self, event: &Event) {
-        if !admits(event) {
+        if event.is_rehearsal() {
             return;
         }
         let anonymous_name = self.anonymous_name.load();
@@ -232,15 +231,6 @@ impl LatestValueReader for LatestValues {
     fn latest(&self, slot: &str, scope: LatestScope<'_>) -> Option<LatestValue> {
         LatestValues::latest(self, slot, scope)
     }
-}
-
-fn admits(event: &Event) -> bool {
-    let test_marked = event
-        .payload
-        .get(TEST_MARKER)
-        .and_then(|marker| marker.as_bool())
-        .unwrap_or(false);
-    !event.replay && !test_marked
 }
 
 fn most_recent(slot_values: &SlotValues) -> Option<&LatestValue> {

@@ -198,3 +198,46 @@ async fn observer_sees_each_failure_exactly_once_with_its_request_context() {
         assert_eq!(harness.observer.seen(), vec![(failure, context)]);
     }
 }
+
+#[tokio::test]
+async fn dispatched_calls_count_only_requests_that_got_past_the_budget() {
+    let answered = serving(200).await;
+    let refused = serving(500).await;
+    let cancelled = CancellationToken::new();
+    cancelled.cancel();
+    for (label, harness, request, expected) in [
+        (
+            "answered",
+            Harness::new(&answered.uri(), platform()),
+            GatewayRequest::get("x"),
+            1,
+        ),
+        (
+            "refused upstream",
+            Harness::new(&refused.uri(), platform()),
+            GatewayRequest::get("x"),
+            1,
+        ),
+        (
+            "refused by the budget",
+            Harness::with_limiter(
+                &answered.uri(),
+                platform(),
+                RecordingRateLimiter::exhausted(),
+            ),
+            GatewayRequest::get("x"),
+            0,
+        ),
+        (
+            "cancelled before sending",
+            Harness::new(&answered.uri(), platform()),
+            GatewayRequest::get("x").cancel_on(cancelled.clone()),
+            0,
+        ),
+    ] {
+        let sent = harness.gateway.send(request).await;
+        drop(sent);
+
+        assert_eq!(harness.gateway.dispatched_calls(), expected, "{label}");
+    }
+}

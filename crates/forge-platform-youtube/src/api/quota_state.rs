@@ -458,6 +458,36 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn the_session_count_starts_at_zero_and_adds_only_accepted_charges() {
+        let quota = SharedQuota::new(used_on_day(QUOTA_DAILY_LIMIT - BROADCAST_COST));
+        let counted_from_start = quota.spent_this_session();
+
+        quota.charge(BROADCAST_COST, DAY).await.unwrap();
+        let rejected = quota.charge(CHAT_POLL_COST, DAY).await;
+
+        assert_eq!(
+            (
+                counted_from_start,
+                matches!(rejected, Err(PlatformError::QuotaExhausted)),
+                quota.spent_this_session()
+            ),
+            (0, true, u64::from(BROADCAST_COST))
+        );
+    }
+
+    #[tokio::test]
+    async fn a_refund_lowers_the_session_count_and_never_below_zero() {
+        let quota = SharedQuota::new(used_on_day(0));
+        quota.charge(5, DAY).await.unwrap();
+
+        quota.refund(3, DAY).await;
+        let after_partial_refund = quota.spent_this_session();
+        quota.refund(10, DAY).await;
+
+        assert_eq!((after_partial_refund, quota.spent_this_session()), (2, 0));
+    }
+
+    #[tokio::test]
     async fn several_charges_before_a_read_leave_a_single_pending_change() {
         let quota = SharedQuota::new(used_on_day(0));
         let mut changes = quota.subscribe_changes();

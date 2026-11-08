@@ -872,7 +872,6 @@ impl BuiltinContent for TwitchIntegrationBundle {
 
 #[cfg(test)]
 mod tests {
-    use crate::config::HELIX_BUDGET_CAPACITY;
     use forge_storage::test_support::MemoryCredentials;
 
     use forge_platform_core::{
@@ -1215,17 +1214,26 @@ mod tests {
         );
     }
 
-    #[test]
-    fn api_calls_metric_reports_helix_budget_ratio() {
+    #[tokio::test]
+    async fn api_calls_metric_counts_the_helix_calls_dispatched_this_session() {
         let b = make_bundle(ChatSessionState::Connected);
         let health: &dyn BuiltinHealth = b.as_ref();
-        let metrics = health.metrics();
-        let HealthValue::Ratio { used, total, .. } = metric_value(&metrics, &API_CALLS_METRIC)
-        else {
-            panic!("expected Ratio variant for the API Calls metric");
-        };
-        assert_eq!(*used, 0, "a fresh Helix budget has zero consumed calls");
-        assert_eq!(*total, u64::from(HELIX_BUDGET_CAPACITY));
+        let before = metric_value(&health.metrics(), &API_CALLS_METRIC).clone();
+
+        let sent = b.helix.send(forge_net::GatewayRequest::get("users")).await;
+
+        assert_eq!(
+            (
+                before,
+                sent.is_err(),
+                metric_value(&health.metrics(), &API_CALLS_METRIC).clone()
+            ),
+            (
+                HealthValue::Count { value: 0 },
+                true,
+                HealthValue::Count { value: 1 }
+            )
+        );
     }
 
     fn reward_revision_moved(revisions: &mut forge_platform_core::CollectionRevisions) -> bool {

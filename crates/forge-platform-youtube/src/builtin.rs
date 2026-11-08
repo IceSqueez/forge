@@ -1000,33 +1000,23 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn api_calls_metric_reads_zero_once_the_pacific_day_has_rolled_over() {
-        let previous_day = time::Date::from_calendar_date(2020, time::Month::January, 1).unwrap();
+    async fn api_calls_metric_leaves_out_units_spent_before_this_session() {
         let quota = SharedQuota::new(crate::api::quota_state::QuotaState {
             used_today: 9_500,
-            last_reset_date: previous_day,
+            last_reset_date: today_pacific(),
         });
         let (bundle, _platform) =
             make_bundle_with_quota(Arc::new(MemoryCredentials::default()), quota);
 
-        let metric = bundle.quota_metric();
-
-        assert!(
-            matches!(metric.value, HealthValue::Ratio { used: 0, .. }),
-            "got {:?}",
-            metric.value
-        );
+        assert_eq!(bundle.quota_metric().value, HealthValue::Count { value: 0 });
     }
 
-    async fn next_api_quota_usage(health: &mut HealthStream) -> (u64, u64) {
+    async fn next_api_calls_value(health: &mut HealthStream) -> HealthValue {
         tokio::time::timeout(forge_test_support::HANG_GUARD, async {
             loop {
                 let delta = health.next().await.unwrap();
                 if delta.metric == API_CALLS_METRIC {
-                    let HealthValue::Ratio { used, total, .. } = delta.new_value else {
-                        panic!("api quota row is not a ratio: {:?}", delta.new_value);
-                    };
-                    return (used, total);
+                    return delta.new_value;
                 }
             }
         })
@@ -1055,8 +1045,8 @@ mod tests {
             .unwrap();
 
         assert_eq!(
-            next_api_quota_usage(&mut health).await,
-            (105, u64::from(QUOTA_DAILY_LIMIT))
+            next_api_calls_value(&mut health).await,
+            HealthValue::Count { value: 105 }
         );
     }
 
@@ -1068,8 +1058,8 @@ mod tests {
         platform.api().quota().refund(40, today_pacific()).await;
 
         assert_eq!(
-            next_api_quota_usage(&mut health).await,
-            (60, u64::from(QUOTA_DAILY_LIMIT))
+            next_api_calls_value(&mut health).await,
+            HealthValue::Count { value: 60 }
         );
     }
 
@@ -1494,13 +1484,6 @@ mod tests {
         rig
     }
 
-    fn reset_hint_of(metric: &HealthMetric) -> Option<HealthText> {
-        match &metric.value {
-            HealthValue::Ratio { reset_hint, .. } => reset_hint.clone(),
-            _ => None,
-        }
-    }
-
     fn quota_limited() -> CapabilityFlags {
         CapabilityFlags {
             limited: true,
@@ -1530,20 +1513,6 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn an_identity_lookup_refused_for_quota_switches_the_quota_reset_hint() {
-        let rig = pending_rig().await;
-        rig.server
-            .reply_always(CHANNELS_PATH, quota_refusal_reply());
-
-        rig.bundle.refresh_identity().await;
-
-        assert_eq!(
-            reset_hint_of(&rig.bundle.quota_metric()),
-            Some(message_text(messages::quota_exhausted()))
-        );
-    }
-
-    #[tokio::test]
     async fn a_successful_identity_resolve_lifts_the_quota_limit() {
         let rig = pending_rig().await;
         rig.server
@@ -1555,14 +1524,8 @@ mod tests {
         rig.bundle.refresh_identity().await;
 
         assert_eq!(
-            (
-                BuiltinStatus::capability_flags(rig.bundle.as_ref()),
-                reset_hint_of(&rig.bundle.quota_metric())
-            ),
-            (
-                not_limited(),
-                Some(message_text(messages::health_quota_resets_daily()))
-            )
+            BuiltinStatus::capability_flags(rig.bundle.as_ref()),
+            not_limited()
         );
     }
 
@@ -1748,25 +1711,5 @@ mod tests {
         stored_json(repo)
             .and_then(|json| serde_json::from_str::<YouTubeCredentials>(&json).ok())
             .map(|creds| creds.channel_id)
-    }
-
-    #[tokio::test]
-    async fn api_calls_metric_keeps_the_last_reading_while_the_quota_is_busy() {
-        let quota = SharedQuota::default();
-        let today = today_pacific();
-        quota.lock().await.charge(7, today).unwrap();
-        let (bundle, _platform) =
-            make_bundle_with_quota(Arc::new(MemoryCredentials::default()), quota.clone());
-        bundle.quota_metric();
-
-        let held = quota.lock().await;
-        let metric = bundle.quota_metric();
-        drop(held);
-
-        assert!(
-            matches!(metric.value, HealthValue::Ratio { used: 7, .. }),
-            "got {:?}",
-            metric.value
-        );
     }
 }

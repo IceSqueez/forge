@@ -217,7 +217,6 @@ mod tests {
             MessageRef::new(HEALTH_LIVE_CHAT),
             MessageRef::new(HEALTH_EVENTS),
             MessageRef::new(HEALTH_API_CALLS),
-            health_quota_resets_daily(),
             health_shared_chat_feed(),
             health_viewers_live(),
             health_chat_transport_streaming(),

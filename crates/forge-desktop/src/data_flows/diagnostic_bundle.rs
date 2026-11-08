@@ -11,8 +11,8 @@ use crate::shared::repo_failure::RepoFailure;
 use forge_platform_core::HealthValue;
 use forge_runtime::COMMAND_LINE_TARGET;
 use forge_storage::{DataProvider, disclose_rows, load_setting_rows};
-use forge_types::REDACTION_STAMP;
 use forge_types::{INTEGRATION_DISABLED, LogLevel, SCRIPT_LOG_TARGET};
+use forge_types::{REDACTION_STAMP, RehearsalKind};
 use time::OffsetDateTime;
 
 use crate::app::log_archive;
@@ -363,6 +363,22 @@ fn trigger_shape(trigger: &DisclosedTrigger) -> String {
             event_id,
             scheduled_run_id,
         } => format!("scheduled({event_id}, run={scheduled_run_id})"),
+        DisclosedTrigger::Rehearsal {
+            event_id,
+            trigger_kind,
+            rehearsal,
+        } => format!(
+            "{}({event_id}, kind={})",
+            rehearsal_shape(*rehearsal),
+            trigger_kind.as_deref().unwrap_or("-")
+        ),
+    }
+}
+
+fn rehearsal_shape(rehearsal: RehearsalKind) -> &'static str {
+    match rehearsal {
+        RehearsalKind::TestRun => "test_run",
+        RehearsalKind::Replay => "replay",
     }
 }
 

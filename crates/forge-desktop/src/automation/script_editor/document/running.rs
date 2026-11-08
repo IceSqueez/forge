@@ -7,12 +7,10 @@ use forge_components::tr;
 use forge_events::EventPublisher;
 use forge_runtime::{RuntimeScriptGlobals, SchedulingContext};
 use forge_script::{RunResult, ScriptCapabilities, ScriptHost, run_inline};
-use forge_storage::ExecutionStatus;
 use forge_types::{ArgStack, ScriptId, VariantKind};
 use gpui::prelude::*;
 use gpui::{Context, Entity, SharedString};
 use std::sync::Arc;
-use time::OffsetDateTime;
 
 fn format_run_stats(duration_ms: f64, error_count: usize) -> String {
     let duration = format!("{duration_ms:.2}");
@@ -92,28 +90,12 @@ impl ScriptDocument {
                     .action_scheduler(SchedulingContext::outside_any_run(args.clone())),
             },
         };
-        let scripts = self.deps.backend.script_repo();
         async_bridge::run_async(
             &self.deps.rt_handle,
             async move {
-                let started_at = OffsetDateTime::now_utc();
-                let result = run_inline(body, contract, args, host, script_id)
+                run_inline(body, contract, args, host, script_id)
                     .await
-                    .map_err(RepoFailure::from);
-                if let Ok(r) = &result {
-                    let status = if r.error_count == 0 {
-                        ExecutionStatus::Success
-                    } else {
-                        ExecutionStatus::Error
-                    };
-                    if let Err(error) = scripts
-                        .record_execution(script_id, started_at, r.duration_ms as u64, status)
-                        .await
-                    {
-                        tracing::warn!(%error, "script execution could not be recorded");
-                    }
-                }
-                result
+                    .map_err(RepoFailure::from)
             },
             |this, result, cx| this.apply_run_finished(result, cx),
             cx,

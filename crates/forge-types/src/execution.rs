@@ -152,6 +152,25 @@ pub enum ExecutionMetadata {
         #[serde(default)]
         scheduled_by_run: Option<EventId>,
     },
+    Rehearsal {
+        event_id: EventId,
+        #[serde(default)]
+        trigger_kind: Option<String>,
+        rehearsal: RehearsalKind,
+    },
+}
+
+impl ExecutionMetadata {
+    pub fn is_rehearsal(&self) -> bool {
+        matches!(self, Self::Rehearsal { .. })
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum RehearsalKind {
+    TestRun,
+    Replay,
 }
 
 pub const COMMAND_NAME_VARIABLE: &str = "command_name";

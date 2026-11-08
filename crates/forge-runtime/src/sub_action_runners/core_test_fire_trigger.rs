@@ -129,7 +129,7 @@ impl CoreTestFireTriggerRunner {
                 action_id,
                 trigger_event_id: ctx.parent_event_id,
                 trigger_kind: Some(trigger_kind.clone()),
-                manual_test: false,
+                manual_test: true,
                 initial_args: synthetic_args.clone(),
                 admission: QueueAdmission::from(&action),
             };

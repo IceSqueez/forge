@@ -3,7 +3,8 @@ use std::fmt;
 
 use forge_types::{
     ActionId, EventId, ExecutionContext, ExecutionMetadata, ExecutionOutcome, IntegrationId,
-    REDACTION_STAMP, SubActionOutcome, SubActionTelemetry, Variant, datetime_to_text,
+    REDACTION_STAMP, RehearsalKind, SubActionOutcome, SubActionTelemetry, Variant,
+    datetime_to_text,
 };
 use time::OffsetDateTime;
 
@@ -70,6 +71,11 @@ pub(crate) enum DisclosedTrigger {
         event_id: EventId,
         scheduled_run_id: i64,
     },
+    Rehearsal {
+        event_id: EventId,
+        trigger_kind: Option<String>,
+        rehearsal: RehearsalKind,
+    },
 }
 
 impl From<&ExecutionMetadata> for DisclosedTrigger {
@@ -93,6 +99,15 @@ impl From<&ExecutionMetadata> for DisclosedTrigger {
             } => Self::Scheduled {
                 event_id: *event_id,
                 scheduled_run_id: *scheduled_run_id,
+            },
+            ExecutionMetadata::Rehearsal {
+                event_id,
+                trigger_kind,
+                rehearsal,
+            } => Self::Rehearsal {
+                event_id: *event_id,
+                trigger_kind: trigger_kind.clone(),
+                rehearsal: *rehearsal,
             },
         }
     }

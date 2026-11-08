@@ -1027,6 +1027,8 @@ action_editor_run_history_trigger_fallback = Тригер
 action_editor_run_history_scheduled_by = Заплановано дією { $name }
 action_editor_run_history_scheduled_by_removed = Заплановано видаленою дією
 action_editor_run_history_scheduled = Запланований запуск
+action_editor_run_history_test_run = Тестовий запуск - { $trigger }
+action_editor_run_history_replay = Повтор - { $trigger }
 action_editor_run_history_step_args_in = @in
 action_editor_run_history_step_produced = @out
 

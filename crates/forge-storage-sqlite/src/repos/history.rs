@@ -31,7 +31,7 @@ fn decode_contexts(rows: Vec<(String,)>) -> Result<Vec<ExecutionContext>, Storag
         .collect()
 }
 
-const ACTION_HISTORY_COLUMNS: usize = 6;
+const ACTION_HISTORY_COLUMNS: usize = 7;
 
 struct EncodedRun {
     action_id: String,
@@ -39,6 +39,7 @@ struct EncodedRun {
     started_at_ms: i64,
     duration_ms: i64,
     outcome: String,
+    rehearsal: bool,
     context: String,
 }
 
@@ -48,7 +49,8 @@ impl EncodedRun {
             action_id: ctx.action_id.to_string(),
             event_id: match &ctx.metadata {
                 ExecutionMetadata::Trigger { event_id, .. }
-                | ExecutionMetadata::Scheduled { event_id, .. } => Some(event_id.to_string()),
+                | ExecutionMetadata::Scheduled { event_id, .. }
+                | ExecutionMetadata::Rehearsal { event_id, .. } => Some(event_id.to_string()),
                 ExecutionMetadata::QuickAction { .. } => None,
             },
             started_at_ms: to_epoch_ms(ctx.started_at),
@@ -60,6 +62,7 @@ impl EncodedRun {
                 })
                 .unwrap_or(0),
             outcome: wire_label(&ctx.outcome)?,
+            rehearsal: ctx.metadata.is_rehearsal(),
             context: serde_json::to_string(ctx).map_err(StorageError::Serialization)?,
         })
     }
@@ -98,14 +101,15 @@ impl HistoryRepo for SqliteHistoryRepo {
         let row = EncodedRun::encode(ctx)?;
         sqlx::query(
             "INSERT INTO action_history
-                (action_id, triggering_event_id, started_at, duration_ms, outcome, context)
-             VALUES (?, ?, ?, ?, ?, ?)",
+                (action_id, triggering_event_id, started_at, duration_ms, outcome, rehearsal, context)
+             VALUES (?, ?, ?, ?, ?, ?, ?)",
         )
         .bind(&row.action_id)
         .bind(row.event_id.as_deref())
         .bind(row.started_at_ms)
         .bind(row.duration_ms)
         .bind(&row.outcome)
+        .bind(row.rehearsal)
         .bind(&row.context)
         .execute(self.db.writer())
         .await
@@ -132,7 +136,7 @@ impl HistoryRepo for SqliteHistoryRepo {
         insert_rows(
             &mut tx,
             "INSERT INTO action_history
-                (action_id, triggering_event_id, started_at, duration_ms, outcome, context) ",
+                (action_id, triggering_event_id, started_at, duration_ms, outcome, rehearsal, context) ",
             ACTION_HISTORY_COLUMNS,
             "",
             &rows,
@@ -143,6 +147,7 @@ impl HistoryRepo for SqliteHistoryRepo {
                     .push_bind(row.started_at_ms)
                     .push_bind(row.duration_ms)
                     .push_bind(row.outcome.as_str())
+                    .push_bind(row.rehearsal)
                     .push_bind(row.context.as_str());
             },
         )
@@ -225,7 +230,7 @@ impl HistoryRepo for SqliteHistoryRepo {
                     MAX(started_at) AS last_started,
                     SUM(CASE WHEN started_at >= ? THEN 1 ELSE 0 END) AS runs_24h
              FROM action_history
-             WHERE triggering_event_id IS NOT NULL
+             WHERE triggering_event_id IS NOT NULL AND rehearsal = 0
              GROUP BY action_id",
         )
         .bind(since_ms)

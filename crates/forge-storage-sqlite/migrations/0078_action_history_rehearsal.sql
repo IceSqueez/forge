@@ -1,0 +1,1 @@
+ALTER TABLE action_history ADD COLUMN rehearsal INTEGER NOT NULL DEFAULT 0;

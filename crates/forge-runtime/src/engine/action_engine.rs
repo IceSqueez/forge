@@ -15,8 +15,8 @@ use forge_registry::{
 use forge_storage::{ActionExecution, ActionRepo, ExecutionStatus, HistoryRepo, RunRefusal};
 use forge_types::{
     Action, ActionId, ArgStack, DEFAULT_QUEUE_ID, EventId, ExecutionContext, ExecutionMetadata,
-    ExecutionOutcome, MessageRef, NamesLanguage, QueueId, SubActionOutcome, SubActionStep,
-    UserText, VerbatimText,
+    ExecutionOutcome, MessageRef, NamesLanguage, QueueId, RehearsalKind, SubActionOutcome,
+    SubActionStep, UserText, VerbatimText,
 };
 use time::OffsetDateTime;
 use tokio::sync::{mpsc, oneshot};
@@ -316,7 +316,7 @@ impl ActionEngine {
         let started_at = OffsetDateTime::now_utc();
         let ctx = ExecutionContext {
             action_id: req.action_id,
-            metadata: run_metadata(origin, req.trigger_event_id, req.trigger_kind),
+            metadata: self.run_metadata(origin, &req),
             arg_stack_snapshot: req.initial_args.snapshot(),
             started_at,
             completed_at: Some(started_at),
@@ -390,8 +390,8 @@ impl ActionEngine {
             }
         };
 
+        let metadata = self.run_metadata(origin, &req);
         let arg_stack = req.initial_args;
-        let metadata = run_metadata(origin, req.trigger_event_id, req.trigger_kind);
         let started_at = OffsetDateTime::now_utc();
         let manual_test = req.manual_test;
 
@@ -443,6 +443,44 @@ impl ActionEngine {
         self.finish_run(&action, ctx, manual_test, start_event_id);
     }
 
+    fn run_metadata(
+        &self,
+        origin: Option<ScheduledOrigin>,
+        req: &ExecutionRequest,
+    ) -> ExecutionMetadata {
+        let event_id = req.trigger_event_id;
+        let trigger_kind = req.trigger_kind.clone();
+        if let Some(origin) = origin {
+            return origin.into_metadata(event_id);
+        }
+        match self.rehearsal_of(req) {
+            Some(rehearsal) => ExecutionMetadata::Rehearsal {
+                event_id,
+                trigger_kind,
+                rehearsal,
+            },
+            None => ExecutionMetadata::Trigger {
+                event_id,
+                trigger_kind,
+            },
+        }
+    }
+
+    fn rehearsal_of(&self, req: &ExecutionRequest) -> Option<RehearsalKind> {
+        if self.bus.is_replay(req.trigger_event_id) {
+            Some(RehearsalKind::Replay)
+        } else if req.manual_test
+            || self
+                .bus
+                .lookup(req.trigger_event_id)
+                .is_some_and(|event| event.is_rehearsal())
+        {
+            Some(RehearsalKind::TestRun)
+        } else {
+            None
+        }
+    }
+
     fn announce_start(
         &self,
         action: &Action,
@@ -481,6 +519,7 @@ impl ActionEngine {
             ExecutionOutcome::Failed(_) => Some(ExecutionStatus::Error),
             ExecutionOutcome::Cancelled => None,
         }
+        .filter(|_| !ctx.metadata.is_rehearsal())
         .map(|status| ActionExecution {
             action_id: action.id,
             started_at: ctx.started_at,
@@ -522,20 +561,6 @@ fn run_outcome(signal: ChainSignal) -> ExecutionOutcome {
         }),
         ChainSignal::Error(msg) => ExecutionOutcome::Failed(msg),
         ChainSignal::Aborted => ExecutionOutcome::Cancelled,
-    }
-}
-
-fn run_metadata(
-    origin: Option<ScheduledOrigin>,
-    event_id: EventId,
-    trigger_kind: Option<String>,
-) -> ExecutionMetadata {
-    match origin {
-        Some(origin) => origin.into_metadata(event_id),
-        None => ExecutionMetadata::Trigger {
-            event_id,
-            trigger_kind,
-        },
     }
 }
 

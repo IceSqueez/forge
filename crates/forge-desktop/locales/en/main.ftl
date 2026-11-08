@@ -1002,6 +1002,8 @@ action_editor_run_history_trigger_fallback = Trigger
 action_editor_run_history_scheduled_by = Scheduled by { $name }
 action_editor_run_history_scheduled_by_removed = Scheduled by a deleted action
 action_editor_run_history_scheduled = Scheduled run
+action_editor_run_history_test_run = Test run - { $trigger }
+action_editor_run_history_replay = Replay - { $trigger }
 action_editor_run_history_step_args_in = @in
 action_editor_run_history_step_produced = @out
 

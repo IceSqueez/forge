@@ -14,7 +14,7 @@ use forge_components::{
 };
 use forge_registry::TriggerRegistry;
 use forge_types::{
-    ActionId, ExecutionContext, ExecutionMetadata, ExecutionOutcome, IntegrationId,
+    ActionId, ExecutionContext, ExecutionMetadata, ExecutionOutcome, IntegrationId, RehearsalKind,
     SubActionOutcome, SubActionTelemetry,
 };
 use gpui::{
@@ -185,6 +185,15 @@ impl RunHistoryModal {
     pub(crate) fn with_action_names(mut self, names: HashMap<ActionId, SharedString>) -> Self {
         self.action_names = names;
         self
+    }
+
+    fn trigger_glyph_and_name(&self, trigger_kind: Option<&str>) -> (Icon, String) {
+        let descriptor = trigger_kind.and_then(|kind| self.trigger_registry.get(kind));
+        let glyph = Icon::from_name(descriptor.map(|kind| kind.icon_name()).unwrap_or("bolt"));
+        let name = descriptor
+            .map(crate::shared::kind_copy::trigger_name)
+            .unwrap_or_else(|| tr!("action_editor_run_history_trigger_fallback"));
+        (glyph, name)
     }
 
     fn scheduled_by_label(&self, scheduled_by: Option<ActionId>) -> SharedString {
@@ -515,15 +524,24 @@ impl RunHistoryModal {
     ) -> AnyElement {
         let (glyph, label): (Icon, SharedString) = match &ctx.metadata {
             ExecutionMetadata::Trigger { trigger_kind, .. } => {
-                let descriptor = trigger_kind
-                    .as_deref()
-                    .and_then(|kind| self.trigger_registry.get(kind));
-                let glyph =
-                    Icon::from_name(descriptor.map(|kind| kind.icon_name()).unwrap_or("bolt"));
-                let label = descriptor
-                    .map(|d| SharedString::from(crate::shared::kind_copy::trigger_name(d)))
-                    .unwrap_or_else(|| tr!("action_editor_run_history_trigger_fallback").into());
-                (glyph, label)
+                let (glyph, trigger) = self.trigger_glyph_and_name(trigger_kind.as_deref());
+                (glyph, trigger.into())
+            }
+            ExecutionMetadata::Rehearsal {
+                trigger_kind,
+                rehearsal,
+                ..
+            } => {
+                let (glyph, trigger) = self.trigger_glyph_and_name(trigger_kind.as_deref());
+                let label = match rehearsal {
+                    RehearsalKind::TestRun => {
+                        tr!("action_editor_run_history_test_run", trigger = trigger)
+                    }
+                    RehearsalKind::Replay => {
+                        tr!("action_editor_run_history_replay", trigger = trigger)
+                    }
+                };
+                (glyph, label.into())
             }
             ExecutionMetadata::QuickAction { label, .. } => {
                 (Icon::LayoutGrid, SharedString::from(label.clone()))

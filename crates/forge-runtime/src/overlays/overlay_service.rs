@@ -84,6 +84,12 @@ pub struct OverlaySendOptions {
     pub caused_by: Option<EventId>,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum ContentRetention {
+    Retain,
+    RestoreAfterHold,
+}
+
 #[derive(Debug)]
 pub enum OverlayDispatch {
     Applied(OverlayDelivery),
@@ -593,6 +599,35 @@ impl OverlayServiceHandle {
         args: &ArgStack,
         options: OverlaySendOptions,
     ) -> Result<OverlayDispatch, RuntimeError> {
+        self.dispatch(id, supplied, args, options, ContentRetention::Retain)
+            .await
+    }
+
+    pub async fn preview_send(
+        &self,
+        id: &OverlayId,
+        supplied: &OverlayConfig,
+        args: &ArgStack,
+        options: OverlaySendOptions,
+    ) -> Result<OverlayDispatch, RuntimeError> {
+        self.dispatch(
+            id,
+            supplied,
+            args,
+            options,
+            ContentRetention::RestoreAfterHold,
+        )
+        .await
+    }
+
+    async fn dispatch(
+        &self,
+        id: &OverlayId,
+        supplied: &OverlayConfig,
+        args: &ArgStack,
+        options: OverlaySendOptions,
+        retention: ContentRetention,
+    ) -> Result<OverlayDispatch, RuntimeError> {
         let OverlaySendOptions {
             duration_ms,
             caused_by,
@@ -640,9 +675,15 @@ impl OverlayServiceHandle {
             .await;
         let Some(timing) = show_timing(descriptor, &definition.config, duration_ms) else {
             let disposition = descriptor.delivery_disposition();
-            let delivery = self
-                .push(&definition.id, disposition, &content, duration_ms)
-                .await?;
+            let delivery = if retention == ContentRetention::RestoreAfterHold
+                && disposition.retains_last_content()
+            {
+                self.show_preview(&definition.id, &content, duration_ms)
+                    .await
+            } else {
+                self.push(&definition.id, disposition, &content, duration_ms)
+                    .await?
+            };
             self.inner
                 .show_media
                 .keep_applied(&definition.id, media_lease);
@@ -842,11 +883,7 @@ impl OverlayServiceHandle {
         if latest_binding(descriptor, &definition.config).is_some()
             || disposition.retains_last_content()
         {
-            let delivery = {
-                let _lane = self.inner.lanes.enter(&definition.id).await;
-                self.send(&definition.id, &content, None).await
-            };
-            self.restore_after_preview(definition.id);
+            let delivery = self.show_preview(&definition.id, &content, None).await;
             return Ok(TestFire { content, delivery });
         }
 
@@ -855,6 +892,20 @@ impl OverlayServiceHandle {
             .await?;
 
         Ok(TestFire { content, delivery })
+    }
+
+    async fn show_preview(
+        &self,
+        id: &OverlayId,
+        content: &OverlayConfig,
+        duration_ms: Option<u64>,
+    ) -> OverlayDelivery {
+        let delivery = {
+            let _lane = self.inner.lanes.enter(id).await;
+            self.send(id, content, duration_ms).await
+        };
+        self.restore_after_preview(id.clone());
+        delivery
     }
 
     fn restore_after_preview(&self, id: OverlayId) {

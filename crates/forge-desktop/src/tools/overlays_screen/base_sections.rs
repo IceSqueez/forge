@@ -362,7 +362,7 @@ impl OverlayPropertyPanel {
             async move {
                 let args = samples.sample(&id).await.args();
                 match service
-                    .send_to(
+                    .preview_send(
                         &id,
                         &OverlayConfig::new(),
                         &args,

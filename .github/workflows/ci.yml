@@ -43,7 +43,7 @@ jobs:
           save-if: ${{ github.event_name == 'push' && github.ref == 'refs/heads/main' }}
 
       - name: Install dependency linters
-        uses: taiki-e/install-action@v2.88.1
+        uses: taiki-e/install-action@v2.90.2
         with:
           tool: cargo-machete@0.9.2,cargo-deny@0.20.2
 

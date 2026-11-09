@@ -3,21 +3,22 @@ use std::net::{Ipv4Addr, SocketAddr};
 use crate::EmulatorError;
 
 const CONTROL_PATH: &str = "/ws/v1/";
-const OVERLAY_ROOT: &str = "/overlays";
 const CONFIG_DOCUMENT: &str = "config.json";
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct PageEndpoint {
     authority: String,
+    overlay_token: String,
 }
 
 impl PageEndpoint {
-    pub fn loopback(port: u16) -> Result<Self, EmulatorError> {
+    pub fn loopback(port: u16, overlay_token: &str) -> Result<Self, EmulatorError> {
         if port == 0 {
             return Err(EmulatorError::ZeroPort);
         }
         Ok(Self {
             authority: SocketAddr::from((Ipv4Addr::LOCALHOST, port)).to_string(),
+            overlay_token: overlay_token.to_owned(),
         })
     }
 
@@ -27,8 +28,8 @@ impl PageEndpoint {
 
     pub fn config_url(&self, identity: &str) -> String {
         format!(
-            "http://{}{OVERLAY_ROOT}/{identity}/{CONFIG_DOCUMENT}",
-            self.authority
+            "{}{CONFIG_DOCUMENT}",
+            forge_server::overlay_page_url(&self.origin(), &self.overlay_token, identity)
         )
     }
 
@@ -43,12 +44,12 @@ mod tests {
 
     #[test]
     fn a_page_is_addressed_exactly_as_the_browser_source_that_forge_generated_would_be() {
-        let endpoint = PageEndpoint::loopback(41234).expect("a non-zero port");
+        let endpoint = PageEndpoint::loopback(41234, "fgo_page").expect("a non-zero port");
 
         assert_eq!(endpoint.origin(), "http://127.0.0.1:41234");
         assert_eq!(
             endpoint.config_url("alert-box"),
-            "http://127.0.0.1:41234/overlays/alert-box/config.json"
+            "http://127.0.0.1:41234/overlays/fgo_page/alert-box/config.json"
         );
         assert_eq!(endpoint.socket_url(), "ws://127.0.0.1:41234/ws/v1/");
     }
@@ -56,7 +57,7 @@ mod tests {
     #[test]
     fn port_zero_is_refused() {
         assert!(matches!(
-            PageEndpoint::loopback(0),
+            PageEndpoint::loopback(0, "fgo_page"),
             Err(EmulatorError::ZeroPort)
         ));
     }

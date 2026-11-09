@@ -34,6 +34,7 @@ impl Redactions {
             .as_ref()
             .map(|account| account.access_token.clone());
         let bearer = seed.map(|seed| seed.server.bearer_token.clone());
+        let overlay_token = seed.map(|seed| seed.server.overlay_token.clone());
         let overlays = seed
             .into_iter()
             .flat_map(|seed| seed.overlays.iter())
@@ -65,6 +66,7 @@ impl Redactions {
                 .chain(webhooks)
                 .chain(fake_tokens)
                 .chain(bearer)
+                .chain(overlay_token)
                 .chain(overlays)
                 .chain(obs_password)
                 .chain(vtube_token)

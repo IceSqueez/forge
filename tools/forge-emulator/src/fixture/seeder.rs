@@ -8,7 +8,8 @@ use forge_registry::{COMMAND_CASE_SENSITIVE_KEY, COMMAND_PHRASE_KEY};
 use forge_runtime::{OVERLAY_SEND_KIND_ID, OVERLAY_TARGET_KEY};
 use forge_server::ServerSettings;
 use forge_storage::{
-    CredentialId, DATABASE_FILE_NAME, DataProvider, SERVER_BEARER_CREDENTIAL_ID, StorageError,
+    CredentialId, DATABASE_FILE_NAME, DataProvider, SERVER_BEARER_CREDENTIAL_ID,
+    SERVER_OVERLAY_TOKEN_CREDENTIAL_ID, StorageError,
 };
 use forge_storage_sqlite::SqliteBackend;
 use forge_types::{
@@ -49,6 +50,7 @@ pub async fn seed_forge_environment(fixture: &Fixture) -> Result<SeedReport, Emu
     )?;
     let port = free_loopback_port()?;
     let bearer_token = forge_server::generate_token();
+    let overlay_token = forge_server::generate_overlay_token();
 
     let paths = forge_paths::AppPaths::resolve();
     let database = data_dir.path().join(DATABASE_FILE_NAME);
@@ -56,7 +58,7 @@ pub async fn seed_forge_environment(fixture: &Fixture) -> Result<SeedReport, Emu
     let backend = SqliteBackend::open(&url, &paths)
         .await
         .map_err(|e| storage_error(e.into()))?;
-    let written = write_fixture(&backend, fixture, port, &bearer_token).await;
+    let written = write_fixture(&backend, fixture, port, &bearer_token, &overlay_token).await;
     backend.shutdown().await;
     let Written {
         twitch,
@@ -67,7 +69,11 @@ pub async fn seed_forge_environment(fixture: &Fixture) -> Result<SeedReport, Emu
 
     Ok(SeedReport {
         data_dir: data_dir.path().to_owned(),
-        server: SeededServer { port, bearer_token },
+        server: SeededServer {
+            port,
+            bearer_token,
+            overlay_token,
+        },
         twitch,
         overlays,
         chat_commands,
@@ -87,6 +93,7 @@ async fn write_fixture(
     fixture: &Fixture,
     port: u16,
     bearer_token: &str,
+    overlay_token: &str,
 ) -> Result<Written, EmulatorError> {
     let settings_repo = provider.settings_repo();
     let settings = settings_repo.as_ref();
@@ -104,6 +111,14 @@ async fn write_fixture(
         .store(
             &CredentialId::new(SERVER_BEARER_CREDENTIAL_ID),
             bearer_token,
+        )
+        .await
+        .map_err(storage_error)?;
+    provider
+        .credentials_repo()
+        .store(
+            &CredentialId::new(SERVER_OVERLAY_TOKEN_CREDENTIAL_ID),
+            overlay_token,
         )
         .await
         .map_err(storage_error)?;

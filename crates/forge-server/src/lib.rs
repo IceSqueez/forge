@@ -15,7 +15,7 @@ pub mod test_helpers;
 pub mod test_support;
 
 pub use access::auth::{generate_token, masked_token};
-pub use access::overlay_token::masked_overlay_token;
+pub use access::overlay_token::{generate_overlay_token, masked_overlay_token};
 pub use config::{
     DEFAULT_PORT, LAN_BIND_ADDRESS, LOCALHOST_BIND_ADDRESS, ServerConfig, ServerSettings,
 };

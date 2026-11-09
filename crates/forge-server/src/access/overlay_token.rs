@@ -77,7 +77,7 @@ impl OverlayTokenState {
     }
 }
 
-pub(crate) fn generate_overlay_token() -> String {
+pub fn generate_overlay_token() -> String {
     format!(
         "{OVERLAY_TOKEN_PREFIX}{}",
         mint_secret::<OVERLAY_TOKEN_BYTE_LEN>()

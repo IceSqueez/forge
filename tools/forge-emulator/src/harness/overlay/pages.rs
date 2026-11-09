@@ -50,7 +50,7 @@ impl OverlayMarks {
 impl OverlayPages {
     pub fn for_seed(seed: &SeedReport) -> Result<Self, EmulatorError> {
         Ok(Self {
-            endpoint: PageEndpoint::loopback(seed.server.port)?,
+            endpoint: PageEndpoint::loopback(seed.server.port, &seed.server.overlay_token)?,
             index: OverlayIndex::from_seed(seed),
             open: Mutex::new(HashMap::new()),
         })
@@ -107,6 +107,7 @@ mod tests {
             server: SeededServer {
                 port: 41234,
                 bearer_token: "bearer".to_owned(),
+                overlay_token: "fgo_overlay".to_owned(),
             },
             twitch: None,
             overlays,

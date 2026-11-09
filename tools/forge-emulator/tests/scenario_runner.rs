@@ -419,6 +419,7 @@ impl HarnessBuilder {
             server: SeededServer {
                 port: 1,
                 bearer_token: "fixture-bearer".to_owned(),
+                overlay_token: "fgo_fixture-overlay".to_owned(),
             },
             twitch: None,
             overlays: Vec::new(),

@@ -20,6 +20,7 @@ pub struct SeedReport {
 pub struct SeededServer {
     pub port: u16,
     pub bearer_token: String,
+    pub overlay_token: String,
 }
 
 impl fmt::Debug for SeededServer {
@@ -27,6 +28,7 @@ impl fmt::Debug for SeededServer {
         f.debug_struct("SeededServer")
             .field("port", &self.port)
             .field("bearer_token", &crate::vocabulary::REDACTED)
+            .field("overlay_token", &crate::vocabulary::REDACTED)
             .finish()
     }
 }
@@ -83,9 +85,11 @@ mod tests {
         let server = SeededServer {
             port: 40000,
             bearer_token: "secret-bearer-value".to_owned(),
+            overlay_token: "fgo_secret-overlay-token".to_owned(),
         };
         let rendered = format!("{server:?}");
         assert!(!rendered.contains("secret-bearer-value"), "{rendered}");
+        assert!(!rendered.contains("fgo_secret-overlay-token"), "{rendered}");
     }
 
     #[test]
@@ -109,6 +113,7 @@ mod tests {
         let server = SeededServer {
             port: 1,
             bearer_token: SECRET.to_owned(),
+            overlay_token: SECRET.to_owned(),
         };
         let overlay = SeededOverlay {
             id: "id".to_owned(),

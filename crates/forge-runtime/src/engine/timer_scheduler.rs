@@ -705,6 +705,34 @@ mod tests {
     }
 
     #[tokio::test(start_paused = true)]
+    async fn a_replayed_viewer_message_does_not_count() {
+        let mut rig = rig(vec![Timer::every(10).after_messages(1).instance()]).await;
+        let payload = ChatPayload {
+            badge_images: Vec::new(),
+            platform_msg_id: "msg-replayed".to_owned(),
+            author: "viewer".to_owned(),
+            author_color: None,
+            segments: vec![ChatSegment::Text {
+                text: "hello".to_owned(),
+            }],
+            badges: Vec::new(),
+            is_event: false,
+            event_detail: None,
+            moderation: ModerationMarks::default(),
+        };
+        let mut replayed = Event::new(
+            EventSource::Twitch,
+            "chat.message",
+            json!({ (ChatPayload::KEY): serde_json::to_value(&payload).unwrap() }),
+        );
+        replayed.replay = true;
+        rig.bus.publish(replayed);
+        settle().await;
+
+        assert_eq!(rig.tick_count_over(10 * MINUTE).await, 0);
+    }
+
+    #[tokio::test(start_paused = true)]
     async fn broadcaster_bot_and_notice_messages_do_not_count() {
         for (label, author, badges, is_event) in [
             ("broadcaster", "viewer", vec![UserBadge::Broadcaster], false),

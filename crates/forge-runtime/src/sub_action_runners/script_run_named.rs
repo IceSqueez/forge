@@ -537,6 +537,77 @@ mod tests {
         }
     }
 
+    struct RunOf(Option<forge_types::RehearsalKind>);
+
+    #[async_trait]
+    impl forge_registry::ChainExecutor for RunOf {
+        async fn run_child_chain(
+            &self,
+            _: &[forge_types::SubActionStep],
+            _: &ArgStack,
+            _: EventId,
+        ) -> Result<forge_registry::ChildChainOutcome, forge_registry::RegistryError> {
+            Err(forge_registry::RegistryError::DepthExceeded(0))
+        }
+
+        fn cancel_signal(&self) -> forge_registry::CancelSignal {
+            forge_registry::CancelSignal::new()
+        }
+
+        fn running_action(&self) -> Option<forge_registry::RunningAction> {
+            Some(forge_registry::RunningAction {
+                action_id: forge_types::ActionId::new(),
+                start_event_id: EventId::new(),
+                trigger_event_id: EventId::new(),
+                rehearsal: self.0,
+            })
+        }
+    }
+
+    impl NamedScript {
+        async fn recorded_after_one_run_of(
+            &self,
+            rehearsal: Option<forge_types::RehearsalKind>,
+        ) -> bool {
+            let stack = ArgStack::default();
+            let executor = RunOf(rehearsal);
+            let ctx = RunContext {
+                executor: &executor,
+                ..RunContext::leaf(&stack, 0, EventId::new(), &NullPublisher)
+            };
+            let (telemetry, _) = self.runner.execute(&self.config, &ctx).await;
+            assert!(
+                matches!(telemetry.outcome, SubActionOutcome::Success),
+                "{:?}",
+                telemetry.outcome
+            );
+            self.backend
+                .script_repo()
+                .telemetry(self.record.id)
+                .await
+                .unwrap()
+                .last_run
+                .is_some()
+        }
+    }
+
+    #[tokio::test]
+    async fn only_a_live_run_adds_to_a_named_scripts_run_stats() {
+        for (rehearsal, recorded) in [
+            (None, true),
+            (Some(forge_types::RehearsalKind::TestRun), false),
+            (Some(forge_types::RehearsalKind::Replay), false),
+        ] {
+            let script = NamedScript::saved("1").await;
+
+            assert_eq!(
+                script.recorded_after_one_run_of(rehearsal).await,
+                recorded,
+                "{rehearsal:?}"
+            );
+        }
+    }
+
     #[tokio::test]
     async fn a_script_saved_after_boot_runs_by_name_without_a_reload() {
         let script = NamedScript::saved("41 + 1").await;

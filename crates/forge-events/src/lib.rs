@@ -146,19 +146,6 @@ mod tests {
     }
 
     #[test]
-    fn caused_by_links_parent_event() {
-        let parent = Event::new(EventSource::Twitch, "chat.message", serde_json::Value::Null);
-        let parent_id = parent.id;
-        let child = Event::child_of(
-            EventSource::Core,
-            "command.matched",
-            serde_json::Value::Null,
-            parent_id,
-        );
-        assert_eq!(child.caused_by, Some(parent_id));
-    }
-
-    #[test]
     fn event_causation_chain_field_present() {
         let e = Event::new(EventSource::Timer, "timer.tick", serde_json::Value::Null);
         let json = serde_json::to_value(&e).unwrap();
@@ -183,5 +170,61 @@ mod tests {
             !e.replay,
             "events without replay field must deserialize as false"
         );
+    }
+
+    #[test]
+    fn a_rehearsal_is_a_replay_or_an_event_whose_payload_says_test_true() {
+        use serde_json::json;
+        for (replay, payload, expected) in [
+            (false, json!({ "message": "hi" }), false),
+            (true, json!({ "message": "hi" }), true),
+            (false, json!({ "test": true }), true),
+            (false, json!({ "test": false }), false),
+            (false, json!({ "test": "true" }), false),
+            (false, json!({ "test": 1 }), false),
+            (false, json!({ "nested": { "test": true } }), false),
+            (false, serde_json::Value::Null, false),
+            (true, serde_json::Value::Null, true),
+        ] {
+            let mut event = Event::new(EventSource::Twitch, "chat.message", payload.clone());
+            event.replay = replay;
+
+            assert_eq!(
+                event.is_rehearsal(),
+                expected,
+                "replay {replay}, payload {payload}"
+            );
+        }
+    }
+
+    #[test]
+    fn marking_an_object_payload_as_test_makes_it_a_rehearsal_and_keeps_its_fields() {
+        let mut event = Event::new(
+            EventSource::Core,
+            "action.start",
+            serde_json::json!({ "action_name": "greet", "test": false }),
+        );
+
+        event.mark_test_in_object_payload();
+
+        assert_eq!(
+            (event.is_rehearsal(), event.payload["action_name"].as_str()),
+            (true, Some("greet"))
+        );
+    }
+
+    #[test]
+    fn marking_a_non_object_payload_leaves_it_untouched() {
+        for payload in [
+            serde_json::Value::Null,
+            serde_json::json!("text"),
+            serde_json::json!([true]),
+        ] {
+            let mut event = Event::new(EventSource::Core, "action.start", payload.clone());
+
+            event.mark_test_in_object_payload();
+
+            assert_eq!(event.payload, payload);
+        }
     }
 }

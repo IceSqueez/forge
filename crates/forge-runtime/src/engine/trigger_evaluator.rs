@@ -2140,4 +2140,39 @@ mod tests {
 
         assert!(!rig.window_is_open());
     }
+
+    fn rehearsal_events() -> [(&'static str, Event); 2] {
+        let mut test_marked = command_event(LINE, "alice", vec![]);
+        test_marked.mark_test_in_object_payload();
+        let mut replayed = command_event(LINE, "alice", vec![]);
+        replayed.replay = true;
+        [("test-marked", test_marked), ("replayed", replayed)]
+    }
+
+    #[tokio::test]
+    async fn a_rehearsal_event_fires_while_the_cooldown_window_is_spent() {
+        for (label, rehearsal) in rehearsal_events() {
+            let mut rig = CooldownRig::new(true).await;
+            rig.bound_queue().await;
+            rig.fire().await;
+            let instance = rig.instance.clone();
+
+            assert!(
+                rig.evaluator.decide(&instance, &rehearsal).is_some(),
+                "a {label} event was held back by a live run's cooldown"
+            );
+        }
+    }
+
+    #[tokio::test]
+    async fn a_rehearsal_run_leaves_the_cooldown_window_unspent() {
+        for (label, rehearsal) in rehearsal_events() {
+            let mut rig = CooldownRig::new(true).await;
+            rig.bound_queue().await;
+
+            rig.evaluator.handle(&rehearsal).await;
+
+            assert!(rig.window_is_open(), "a {label} run spent the window");
+        }
+    }
 }

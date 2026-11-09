@@ -162,6 +162,7 @@ fn run_labels(records: &[ExecutionContext]) -> Vec<String> {
             ExecutionMetadata::QuickAction { builtin_id, label } => format!("{builtin_id}/{label}"),
             ExecutionMetadata::Trigger { .. } => "trigger".to_owned(),
             ExecutionMetadata::Scheduled { .. } => "scheduled".to_owned(),
+            ExecutionMetadata::Rehearsal { .. } => "rehearsal".to_owned(),
         })
         .collect()
 }
@@ -453,4 +454,60 @@ async fn a_scheduled_run_reads_back_with_its_scheduled_origin() {
         records.into_iter().map(|c| c.metadata).collect::<Vec<_>>(),
         vec![ctx.metadata]
     );
+}
+
+fn make_rehearsal_ctx_at(
+    action_id: ActionId,
+    rehearsal: forge_types::RehearsalKind,
+    started_at: OffsetDateTime,
+) -> ExecutionContext {
+    ExecutionContext {
+        metadata: ExecutionMetadata::Rehearsal {
+            event_id: EventId::new(),
+            trigger_kind: None,
+            rehearsal,
+        },
+        ..make_ctx_at(action_id, EventId::new(), started_at)
+    }
+}
+
+#[tokio::test]
+async fn stats_summary_counts_no_test_or_replay_run_whichever_way_it_was_saved() {
+    for batched in [false, true] {
+        let backend = setup().await;
+        let repo = backend.history_repo();
+        let action_id = ActionId::new();
+        let runs = [
+            make_ctx_at(action_id, EventId::new(), fixed_instant(60)),
+            make_rehearsal_ctx_at(
+                action_id,
+                forge_types::RehearsalKind::TestRun,
+                fixed_instant(120),
+            ),
+            make_rehearsal_ctx_at(
+                action_id,
+                forge_types::RehearsalKind::Replay,
+                fixed_instant(180),
+            ),
+        ];
+        if batched {
+            repo.save_batch(&runs).await.expect("save batch");
+        } else {
+            for run in &runs {
+                repo.save(run).await.expect("save run");
+            }
+        }
+
+        let stats = repo
+            .stats_summary(fixed_instant(0))
+            .await
+            .expect("stats_summary");
+        let entry = stats.get(&action_id).expect("action present");
+
+        assert_eq!(
+            (entry.runs_24h, entry.last_ran_at),
+            (1, fixed_instant(60)),
+            "batched {batched}"
+        );
+    }
 }

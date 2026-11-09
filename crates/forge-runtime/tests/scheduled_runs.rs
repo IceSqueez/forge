@@ -36,7 +36,7 @@ use forge_storage::{
 use forge_types::WallClock;
 use forge_types::{
     Action, ActionId, ArgStack, EventId, ExecutionContext, ExecutionMetadata, Queue, QueueId,
-    Variant,
+    RehearsalKind, Variant,
 };
 use tempfile::TempDir;
 use time::OffsetDateTime;
@@ -581,9 +581,14 @@ async fn a_run_whose_trigger_left_the_ring_fires_its_due_and_start_with_the_stor
         let _handle = harness.start(CatchUpSettle::immediately());
 
         let context = harness.next_run().await;
+        let due_id = match &context.metadata {
+            ExecutionMetadata::Scheduled { event_id, .. }
+            | ExecutionMetadata::Rehearsal { event_id, .. } => *event_id,
+            other => panic!("unexpected run metadata {other:?}"),
+        };
         let due = harness
             .bus
-            .lookup(scheduled_event_id(&context))
+            .lookup(due_id)
             .expect("the due event is in the lineage ring");
         let mut start = None;
         while let Ok(Some(event)) = subscription.try_recv() {
@@ -598,6 +603,31 @@ async fn a_run_whose_trigger_left_the_ring_fires_its_due_and_start_with_the_stor
             "stored replay = {replay}"
         );
     }
+}
+
+#[tokio::test]
+async fn a_run_scheduled_from_a_replay_lands_in_history_as_a_replay_rehearsal() {
+    let mut harness = Harness::new().await;
+    let action = harness.action(|_| {}).await;
+    let mut late_run = overdue(action.id, LATE_BY);
+    late_run.trigger_event_id = Some(EventId::new());
+    late_run.replay = true;
+    harness.place(&late_run).await;
+
+    let _handle = harness.start(CatchUpSettle::immediately());
+
+    let context = harness.next_run().await;
+    assert!(
+        matches!(
+            context.metadata,
+            ExecutionMetadata::Rehearsal {
+                rehearsal: RehearsalKind::Replay,
+                ..
+            }
+        ),
+        "{:?}",
+        context.metadata
+    );
 }
 
 #[tokio::test]

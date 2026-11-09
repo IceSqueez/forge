@@ -337,4 +337,30 @@ mod tests {
             );
         }
     }
+
+    #[tokio::test]
+    async fn a_step_card_names_the_overlay_the_step_sends_to() {
+        let (runtime, _backend) = frozen_core_runtime().await;
+        let runner = runtime
+            .sub_action_registry
+            .get(OVERLAY_SEND_KIND_ID)
+            .unwrap();
+
+        for (cfg, expected) in [
+            (
+                config(&[(OVERLAY_TARGET_KEY, Variant::String("chat-b".to_owned()))]),
+                "chat-b",
+            ),
+            (SubActionConfig::new(), ""),
+        ] {
+            assert_eq!(
+                runner.card_detail(&cfg),
+                Some(StepCardDetail::OptionLabel {
+                    options_key: OVERLAY_OPTIONS_KEY,
+                    value: expected.to_owned(),
+                }),
+                "{cfg:?}"
+            );
+        }
+    }
 }

@@ -1071,7 +1071,7 @@ action_editor_trigger_picker_footer_hint = Creates a new trigger of the chosen k
 
 ## Action editor - sub-action card titles
 
-action_editor_clip_missing = Missing clip
+action_editor_option_missing = Not found
 action_editor_kind_sub_action = Step
 
 ## Triggers registry - page header / filters

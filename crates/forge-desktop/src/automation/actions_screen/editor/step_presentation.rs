@@ -35,7 +35,7 @@ fn option_label_detail(
         .iter()
         .find(|option| option.value == value)
         .map(|option| option.label.clone())
-        .unwrap_or_else(|| tr!("action_editor_clip_missing"))
+        .unwrap_or_else(|| tr!("action_editor_option_missing"))
 }
 
 pub(super) fn shown_card_detail(
@@ -306,7 +306,7 @@ mod tests {
     const AIRHORN_ID: &str = "01JAAAAAAAAAAAAAAAAAAAAAAA";
     const BELL_ID: &str = "01JBBBBBBBBBBBBBBBBBBBBBBB";
     const DANGLING_ID: &str = "01JZZZZZZZZZZZZZZZZZZZZZZZ";
-    const MISSING_LABEL: &str = "Missing clip";
+    const MISSING_LABEL: &str = "Not found";
 
     fn clip_options(clips: &[(&str, &str)]) -> HashMap<String, Vec<ChoiceOption>> {
         HashMap::from([(

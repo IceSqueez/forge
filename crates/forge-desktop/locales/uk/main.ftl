@@ -1097,7 +1097,7 @@ action_editor_trigger_picker_footer_hint = Створює новий триге�
 
 ## Редактор дій - назви типів кроків
 
-action_editor_clip_missing = Звук не знайдено
+action_editor_option_missing = Не знайдено
 action_editor_kind_sub_action = Крок
 
 ## Реєстр тригерів - заголовок / фільтри

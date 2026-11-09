@@ -3,8 +3,8 @@ use forge_overlay::config::{DURATION_MAX_SECS, DURATION_MIN_SECS};
 use forge_registry::OVERLAY_OPTIONS_KEY;
 use forge_registry::{
     ConfigProblem, ConfigSpec, DynamicSelectField, FormRefinement, IntegerEditor, IntegerField,
-    OptionalField, RunContext, StepCatalogEntry, StepTimer, SubActionCategory, SubActionRunner,
-    ToggleField, TypedField, ValueBounds,
+    OptionalField, RunContext, StepCardDetail, StepCatalogEntry, StepTimer, SubActionCategory,
+    SubActionRunner, ToggleField, TypedField, ValueBounds, card_text,
 };
 use forge_storage::{OverlayConfig, OverlayId};
 use forge_types::{ArgStack, SubActionConfig, SubActionOutcome, SubActionTelemetry};
@@ -142,6 +142,15 @@ impl StepCatalogEntry for OverlaySendRunner {
     }
     fn icon_name(&self) -> &str {
         "layout"
+    }
+
+    fn card_detail(&self, config: &SubActionConfig) -> Option<StepCardDetail> {
+        Some(StepCardDetail::OptionLabel {
+            options_key: OVERLAY_OPTIONS_KEY,
+            value: card_text(config, OVERLAY_TARGET_KEY)
+                .unwrap_or_default()
+                .to_owned(),
+        })
     }
 }
 

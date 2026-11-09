@@ -583,7 +583,7 @@ mod tests {
 
         assert_eq!(
             details,
-            Some(("Airhorn".to_owned(), "Missing clip".to_owned()))
+            Some(("Airhorn".to_owned(), "Not found".to_owned()))
         );
     }
 

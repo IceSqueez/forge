@@ -12,8 +12,6 @@ use crate::{
 pub enum StoreChange {
     SaveQueue(Queue),
     DeleteQueue(QueueId),
-    AssignOverlayAlertQueue(QueueId),
-    ClaimOverlayAlertQueue(QueueId),
     SaveScript(Box<ScriptRecord>),
     RestoreScript(ScriptId),
     DeleteScript(ScriptId),
@@ -63,8 +61,6 @@ impl StoreChange {
             self,
             Self::SaveQueue(_)
                 | Self::DeleteQueue(_)
-                | Self::AssignOverlayAlertQueue(_)
-                | Self::ClaimOverlayAlertQueue(_)
                 | Self::SaveScript(_)
                 | Self::RestoreScript(_)
                 | Self::DeleteScript(_)

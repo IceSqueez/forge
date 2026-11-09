@@ -200,12 +200,8 @@ mod tests {
             .globals
             .insert("score".to_owned(), global("score"));
         let mut documents = no_documents();
-        documents
-            .queues
-            .push(QueueDocument::of(&queue("Fresh"), None));
-        documents
-            .queues
-            .push(QueueDocument::of(&queue("Named"), None));
+        documents.queues.push(QueueDocument::of(&queue("Fresh")));
+        documents.queues.push(QueueDocument::of(&queue("Named")));
         documents.globals.push(GlobalDocument::of(&global("score")));
         let registries = FixtureRegistries::new();
         let plan = plan_pack_import(

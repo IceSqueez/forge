@@ -448,13 +448,6 @@ impl RevisingQueueRepo {
 
 #[async_trait]
 impl QueueRepo for RevisingQueueRepo {
-    async fn overlay_alert_queue(
-        &self,
-        adoptable_name: &str,
-    ) -> Result<Option<Queue>, StorageError> {
-        self.inner.overlay_alert_queue(adoptable_name).await
-    }
-
     async fn list(&self) -> Result<Vec<Queue>, StorageError> {
         self.inner.list().await
     }

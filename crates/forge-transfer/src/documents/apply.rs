@@ -5,9 +5,9 @@ use forge_overlay::image_references;
 use forge_registry::{InternalNamespace, ReferenceRemap};
 use forge_storage::{
     DataProvider, MediaBlobId, MediaReferrer, MediaReferrerKind, OverlayConfig, OverlayId,
-    QueueRole, ScriptRecord, StoreChange, StoredClip, clip_source_referrer,
+    ScriptRecord, StoreChange, StoredClip, clip_source_referrer,
 };
-use forge_types::{ClipId, OutputDevice, Queue, QueueId, ScriptId};
+use forge_types::{ClipId, OutputDevice, ScriptId};
 use time::OffsetDateTime;
 
 use crate::documents::inventory::Stored;
@@ -148,19 +148,6 @@ pub(crate) fn overlay_media_retains(
                 })
         })
         .collect()
-}
-
-pub(crate) fn queue_changes(
-    queue: Queue,
-    role: Option<QueueRole>,
-    claim: fn(QueueId) -> StoreChange,
-) -> Vec<StoreChange> {
-    let id = queue.id;
-    let mut changes = vec![StoreChange::SaveQueue(queue)];
-    if role == Some(QueueRole::OverlayAlerts) {
-        changes.push(claim(id));
-    }
-    changes
 }
 
 pub(crate) fn absent<K: Ord + Clone>(

@@ -70,7 +70,6 @@ mod tests {
                 name: "imported".to_owned(),
                 description: String::new(),
                 concurrency: stored,
-                role: None,
             };
 
             assert_eq!(queue_of(&document).concurrency, imported, "{stored}");

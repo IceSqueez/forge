@@ -8,9 +8,7 @@ use crate::repos::globals;
 use crate::repos::media::{release_all_references, release_reference, retain_reference};
 use crate::repos::media_orphans::{MediaFiles, ReleasedBlobs};
 use crate::repos::overlay::{delete_overlay, insert_new_overlay, update_overlay};
-use crate::repos::queue::{
-    assign_overlay_alert_queue, claim_overlay_alert_queue, delete_queue, upsert_queue,
-};
+use crate::repos::queue::{delete_queue, upsert_queue};
 use crate::repos::script::upsert_script;
 use crate::repos::settings::{delete_row, upsert_row};
 use crate::repos::soundboard::{delete_clip, upsert_clip};
@@ -56,8 +54,6 @@ async fn apply(
     match change {
         StoreChange::SaveQueue(queue) => upsert_queue(conn, queue).await,
         StoreChange::DeleteQueue(id) => delete_queue(conn, *id).await.map(drop),
-        StoreChange::AssignOverlayAlertQueue(id) => assign_overlay_alert_queue(conn, *id).await,
-        StoreChange::ClaimOverlayAlertQueue(id) => claim_overlay_alert_queue(conn, *id).await,
         StoreChange::SaveScript(record) => upsert_script(conn, record).await,
         StoreChange::RestoreScript(id) => {
             execute(

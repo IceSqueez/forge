@@ -12,8 +12,8 @@ use forge_types::{ActionId, ClipId, QueueId, ScriptId, TriggerInstanceId};
 
 use crate::bundle::naming::fresh_pre_pack_stem;
 use crate::documents::apply::{
-    ClipTarget, MediaIntake, clip_changes, overlay_media_retains, queue_changes, remapped_media,
-    script_changes, staged_source,
+    ClipTarget, MediaIntake, clip_changes, overlay_media_retains, remapped_media, script_changes,
+    staged_source,
 };
 use crate::documents::closure::ClosureRegistries;
 use crate::documents::convert::{action_of, queue_of, trigger_of};
@@ -460,11 +460,7 @@ impl<'a> PackImport<'_, 'a> {
             queue.name = target.name.clone();
             let id = queue.id;
             self.written_queues.insert(id);
-            self.changes.extend(queue_changes(
-                queue,
-                document.role,
-                StoreChange::ClaimOverlayAlertQueue,
-            ));
+            self.changes.push(StoreChange::SaveQueue(queue));
             self.record_written(item, id.to_string(), &target);
         }
         Ok(())

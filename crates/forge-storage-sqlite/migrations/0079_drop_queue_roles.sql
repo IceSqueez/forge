@@ -1,0 +1,3 @@
+DROP INDEX IF EXISTS queues_role;
+
+ALTER TABLE queues DROP COLUMN role;

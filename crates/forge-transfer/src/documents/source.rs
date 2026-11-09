@@ -159,7 +159,7 @@ impl DocumentSource<'_> {
                 .queues
                 .iter()
                 .filter_map(|id| inventory.queues.get(id))
-                .map(|queue| QueueDocument::of(queue, inventory.queue_role(queue.id)))
+                .map(QueueDocument::of)
                 .collect(),
             scripts: selection
                 .scripts

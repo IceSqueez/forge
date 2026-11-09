@@ -10,8 +10,8 @@ use forge_storage::{
 use forge_types::ClipId;
 
 use crate::documents::apply::{
-    ClipTarget, MediaIntake, clip_changes, overlay_media_retains, queue_changes, remapped_media,
-    script_changes, staged_source,
+    ClipTarget, MediaIntake, clip_changes, overlay_media_retains, remapped_media, script_changes,
+    staged_source,
 };
 use crate::documents::convert::{action_of, queue_of, trigger_of};
 use crate::documents::model::{ClipSourceDocument, OverlayDocument};
@@ -67,11 +67,7 @@ impl<'a> SetupImport<'_, 'a> {
                 Some(local) if *local != queue => self.queues.changed.push(queue.clone()),
                 Some(_) => {}
             }
-            self.changes.extend(queue_changes(
-                queue,
-                document.role,
-                StoreChange::AssignOverlayAlertQueue,
-            ));
+            self.changes.push(StoreChange::SaveQueue(queue));
             self.refresh.insert(SetupLivePart::Queues);
         }
     }

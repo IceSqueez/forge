@@ -36,8 +36,6 @@ fn decode_row(row: QueueRow) -> Result<Queue, SqliteStorageError> {
     })
 }
 
-const OVERLAY_ALERT_ROLE: &str = "overlay_alerts";
-
 pub(crate) async fn upsert_queue<'e>(
     executor: impl sqlx::SqliteExecutor<'e>,
     queue: &Queue,
@@ -78,52 +76,6 @@ pub(crate) async fn delete_queue<'e>(
         .map_err(SqliteStorageError::Sqlx)?;
 
     Ok(result.rows_affected() > 0)
-}
-
-pub(crate) async fn mark_overlay_alert_queue<'e>(
-    executor: impl sqlx::SqliteExecutor<'e>,
-    id: QueueId,
-) -> Result<(), StorageError> {
-    sqlx::query("UPDATE queues SET role = ? WHERE id = ?")
-        .bind(OVERLAY_ALERT_ROLE)
-        .bind(id.to_string())
-        .execute(executor)
-        .await
-        .map_err(SqliteStorageError::Sqlx)?;
-
-    Ok(())
-}
-
-pub(crate) async fn assign_overlay_alert_queue(
-    conn: &mut sqlx::SqliteConnection,
-    id: QueueId,
-) -> Result<(), StorageError> {
-    sqlx::query("UPDATE queues SET role = NULL WHERE role = ? AND id <> ?")
-        .bind(OVERLAY_ALERT_ROLE)
-        .bind(id.to_string())
-        .execute(&mut *conn)
-        .await
-        .map_err(SqliteStorageError::Sqlx)?;
-
-    mark_overlay_alert_queue(conn, id).await
-}
-
-pub(crate) async fn claim_overlay_alert_queue<'e>(
-    executor: impl sqlx::SqliteExecutor<'e>,
-    id: QueueId,
-) -> Result<(), StorageError> {
-    sqlx::query(
-        "UPDATE queues SET role = ?
-         WHERE id = ? AND NOT EXISTS (SELECT 1 FROM queues WHERE role = ?)",
-    )
-    .bind(OVERLAY_ALERT_ROLE)
-    .bind(id.to_string())
-    .bind(OVERLAY_ALERT_ROLE)
-    .execute(executor)
-    .await
-    .map_err(SqliteStorageError::Sqlx)?;
-
-    Ok(())
 }
 
 pub struct SqliteQueueRepo {
@@ -190,30 +142,6 @@ impl QueueRepo for SqliteQueueRepo {
 
     async fn delete(&self, id: QueueId) -> Result<bool, StorageError> {
         delete_queue(self.db.writer(), id).await
-    }
-
-    async fn overlay_alert_queue(
-        &self,
-        adoptable_name: &str,
-    ) -> Result<Option<Queue>, StorageError> {
-        let row: Option<QueueRow> = sqlx::query_as(concat!(
-            "SELECT ",
-            queue_columns!(),
-            " FROM queues
-             WHERE role = ?
-                OR (name = ? AND NOT EXISTS (SELECT 1 FROM queues WHERE role = ?))
-             ORDER BY role IS NULL, id
-             LIMIT 1"
-        ))
-        .bind(OVERLAY_ALERT_ROLE)
-        .bind(adoptable_name)
-        .bind(OVERLAY_ALERT_ROLE)
-        .fetch_optional(self.db.reader())
-        .await
-        .map_err(SqliteStorageError::Sqlx)?;
-
-        row.map(|row| decode_row(row).map_err(StorageError::from))
-            .transpose()
     }
 
     async fn delete_reassigning_actions(&self, id: QueueId) -> Result<Option<u64>, StorageError> {

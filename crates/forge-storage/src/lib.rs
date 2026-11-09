@@ -75,7 +75,7 @@ pub use provider::{
     DATABASE_FILE_NAME, DataProvider, EXPECTED_SCHEMA_VERSION, LAST_PRE_BASELINE_RELEASE,
     database_unit_file_names,
 };
-pub use queue::{OVERLAY_ALERT_QUEUE_NAME, QueueRepo, QueueRole};
+pub use queue::QueueRepo;
 pub use scheduled_run::{
     MissedRunPolicy, RevisingScheduledRunRepo, RunRefusal, ScheduledRun, ScheduledRunId,
     ScheduledRunOutcome, ScheduledRunPlacement, ScheduledRunRepo, ScheduledRunSpec,

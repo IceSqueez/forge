@@ -285,7 +285,7 @@ mod tests {
         ];
         for (pack, expected) in cases {
             let mut documents = no_documents();
-            documents.queues.push(QueueDocument::of(&pack, None));
+            documents.queues.push(QueueDocument::of(&pack));
             assert_eq!(
                 only_item(&documents, &inventory).conflict,
                 expected,

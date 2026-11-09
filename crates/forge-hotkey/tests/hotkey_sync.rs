@@ -18,7 +18,7 @@ use forge_storage::{
     MediaBlobId, MockTriggerInstanceRepo, SoundboardClipsRepo, StorageError, StoredClip,
     TriggerChanges, TriggerInstanceRepo, TriggerWiring,
 };
-use forge_types::{ClipId, Queue, QueueId, TriggerInstance, TriggerInstanceId};
+use forge_types::{ClipId, QueueId, TriggerInstance, TriggerInstanceId};
 use support::{
     Store, clip, instance, recording_client, registered, seed_action, store, stored_combo,
     with_combo,
@@ -775,32 +775,19 @@ async fn re_enabling_a_binding_leaves_a_stored_engine_off_choice_alone() {
     assert_eq!(starts.load(Ordering::SeqCst), 0);
 }
 
-fn new_queue() -> Queue {
-    Queue {
-        id: QueueId::new(),
-        name: "alerts".to_owned(),
-        description: String::new(),
-        concurrency: std::num::NonZeroU32::MIN,
-    }
-}
-
 impl Synced {
     async fn wiring(&self, combo: &str) -> TriggerWiring {
         let backend = &self.store.provider;
         let action_id = seed_action(backend, "Play sound").await;
         let action = backend.action_repo().get(action_id).await.unwrap().unwrap();
         TriggerWiring {
-            created_queue: None,
             action,
-            instance: instance(event_kinds::GLOBAL_PRESSED, Some(combo)),
+            instance: Some(instance(event_kinds::GLOBAL_PRESSED, Some(combo))),
         }
     }
 
     async fn commit_wiring(&self, wiring: &TriggerWiring) -> Result<(), StorageError> {
-        let backend = &self.store.provider;
-        self.repo
-            .commit_overlay_wiring(wiring, backend.queue_repo(), backend.action_repo())
-            .await
+        self.repo.commit_overlay_wiring(wiring).await
     }
 
     async fn stored_blob(&self) -> MediaBlobId {
@@ -827,14 +814,18 @@ async fn an_overlay_wiring_through_the_synced_repo_registers_its_combo_in_canoni
 #[tokio::test]
 async fn an_overlay_wiring_through_the_synced_repo_stays_one_transaction() {
     let synced = synced().await;
-    let queue = new_queue();
     let mut wiring = synced.wiring("F5").await;
     wiring.action.queue_id = QueueId::new();
-    wiring.created_queue = Some(queue.clone());
+    let instance_id = wiring.instance.as_ref().unwrap().id;
 
     let failed = synced.commit_wiring(&wiring).await;
 
-    let kept = synced.store.provider.queue_repo().get(queue.id).await;
+    let kept = synced
+        .store
+        .provider
+        .trigger_instance_repo()
+        .get(instance_id)
+        .await;
     assert!(failed.is_err());
     assert_eq!(kept.unwrap(), None);
 }

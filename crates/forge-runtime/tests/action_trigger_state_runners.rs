@@ -175,8 +175,6 @@ impl TriggerInstanceRepo for MockTriggerInstanceRepo {
     async fn commit_overlay_wiring(
         &self,
         _wiring: &forge_storage::TriggerWiring,
-        _queues: std::sync::Arc<dyn forge_storage::QueueRepo>,
-        _actions: std::sync::Arc<dyn forge_storage::ActionRepo>,
     ) -> Result<(), forge_storage::StorageError> {
         Err(forge_storage::StorageError::NotReady)
     }

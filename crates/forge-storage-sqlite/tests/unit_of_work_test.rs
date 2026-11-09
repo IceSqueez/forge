@@ -87,11 +87,7 @@ impl Store {
     async fn commit_overlay_wiring(&self, wiring: &TriggerWiring) -> Result<(), StorageError> {
         self.backend
             .trigger_instance_repo()
-            .commit_overlay_wiring(
-                wiring,
-                self.backend.queue_repo(),
-                self.backend.action_repo(),
-            )
+            .commit_overlay_wiring(wiring)
             .await
     }
 
@@ -193,11 +189,9 @@ fn new_overlay(id: &str) -> NewOverlay {
 }
 
 fn wiring() -> TriggerWiring {
-    let queue = queue();
     TriggerWiring {
-        action: action(queue.id),
-        created_queue: Some(queue),
-        instance: instance(),
+        action: action(DEFAULT_QUEUE_ID),
+        instance: Some(instance()),
     }
 }
 
@@ -512,12 +506,7 @@ async fn deleting_a_linked_trigger_in_a_batch_takes_its_links_with_it() {
 
 #[tokio::test]
 async fn an_overlay_wiring_refused_at_any_write_leaves_nothing_behind() {
-    for table in [
-        "queues",
-        "actions",
-        "trigger_instances",
-        "action_trigger_instances",
-    ] {
+    for table in ["actions", "trigger_instances", "action_trigger_instances"] {
         let store = open().await;
         let before = store.row_counts().await;
         store.refuse("INSERT", table).await;

@@ -1,12 +1,48 @@
 # Changelog
 All notable changes to this project will be documented in this file.
 
+## [0.7.7] - 2026-11-09
+### ⚙️ Miscellaneous Tasks
+- *(ui)* Ship the font license texts next to the bundled fonts (closes #165)
+
+### ⚡ Performance
+- *(youtube)* Track a live broadcast with one videos.list per minute (closes #157)
+- *(youtube)* Widen the chat reconnect gap while chat is quiet (closes #159)
+- *(youtube)* Look for a broadcast less often while offline (closes #158)
+
+### 🐛 Bug Fixes
+- *(youtube)* Keep the quota refund when the chat poller stops mid-request
+- *(overlays)* Keep a card's shown content after a sample preview
+- *(overlays)* Explain that overlay text is a default a step overrides (closes #161)
+- *(overlays)* Keep a card's shown content after playing a sample show
+- *(ui)* Set input placeholders apart from entered text (closes #162)
+- *(automation)* Keep replays and test events out of cooldowns and timer counts
+- *(automation)* Use sample ids and logins no real account can have
+- *(automation)* Mark test and replay runs and keep them out of action stats
+- *(automation)* Let steps of a test or replay run act as a rehearsal
+
+### 🚀 Features
+- *(integrations)* Show API usage as a per-session counter (closes #160)
+
+### 🧪 Testing
+- *(integrations)* Cover per-session API call counters
+- *(youtube)* Cover the broadcast check, offline wake and quiet reconnect
+- *(overlays)* Cover card content returning after a sample preview
+- *(overlays)* Cover the default-text hint per overlay look
+- *(automation)* Cover test and replay runs as rehearsals
+- *(automation)* Pin sample ids and logins no real account can have
+- *(overlays)* Cover preview sends keeping a card's retained content
+- *(ui)* Cover the italic face for input placeholders
+
 ## [0.7.6] - 2026-11-07
 ### ⚠️ BREAKING CHANGES
 - **youtube**: YouTube sign-in and chat stop working in v0.7.5 and older; update to v0.7.6 or newer
 
 ### 🐛 Bug Fixes
 - *(integrations)* Log unreadable current values at debug level
+
+### 📚 Documentation
+- *(release)* Release v0.7.6
 
 ### 🚀 Features
 - *(youtube)* Update the earliest upcoming broadcast when none is live

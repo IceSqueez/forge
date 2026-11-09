@@ -250,7 +250,7 @@ impl ActionsService {
                     overlay,
                     trigger.id(),
                     PlannedAction::Create { action, queue },
-                    step,
+                    Some(step),
                     PlannedTrigger::Create(new_trigger(overlay, trigger)),
                 ))))
             }
@@ -265,13 +265,16 @@ impl ActionsService {
                     Some(instance) => PlannedTrigger::Reuse(instance),
                     None => PlannedTrigger::Create(new_trigger(overlay, trigger)),
                 };
+                let added_step = (!current.feeds_overlay).then_some(step);
+                let action = match &added_step {
+                    Some(step) => extended(current.action, step.clone()),
+                    None => current.action,
+                };
                 Ok(OverlayWiringPreview::Ready(Box::new(assemble(
                     overlay,
                     trigger.id(),
-                    PlannedAction::Extend {
-                        action: extended(current.action, step.clone()),
-                    },
-                    step,
+                    PlannedAction::Extend { action },
+                    added_step,
                     planned_trigger,
                 ))))
             }
@@ -346,10 +349,12 @@ impl ActionsService {
                     }
                     _ => return Err(OverlayWiringRefusal::PlanOutdated.into()),
                 };
-                Ok(Ok(TriggerWiring {
-                    action: extended(current.action, plan.added_step().clone()),
-                    instance,
-                }))
+                let action = match (plan.added_step(), current.feeds_overlay) {
+                    (Some(step), false) => extended(current.action, step.clone()),
+                    (None, true) => current.action,
+                    _ => return Err(OverlayWiringRefusal::PlanOutdated.into()),
+                };
+                Ok(Ok(TriggerWiring { action, instance }))
             }
         }
     }
@@ -372,11 +377,12 @@ impl ActionsService {
             .await?
             .into_iter()
             .find(|instance| instance.kind_id == trigger_kind_id);
-        let already_wired = linked_instance.is_some()
-            && feeds_overlay(&action.sub_actions, sub_actions, overlay.as_str());
+        let feeds_overlay = feeds_overlay(&action.sub_actions, sub_actions, overlay.as_str());
+        let already_wired = linked_instance.is_some() && feeds_overlay;
         Ok(CurrentWiring {
             action,
             linked_instance,
+            feeds_overlay,
             already_wired,
         })
     }
@@ -385,6 +391,7 @@ impl ActionsService {
 struct CurrentWiring {
     action: Action,
     linked_instance: Option<TriggerInstance>,
+    feeds_overlay: bool,
     already_wired: bool,
 }
 

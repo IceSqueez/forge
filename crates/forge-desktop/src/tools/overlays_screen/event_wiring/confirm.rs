@@ -435,6 +435,11 @@ fn render_records(
         ),
         ActionRecord::Extend { name } => (Tag::Changed, name.clone()),
     };
+    let step_tag = if draft.plan.added_step().is_some() {
+        Tag::Added
+    } else {
+        Tag::Kept
+    };
     let (trigger_tag, trigger_value) = match &draft.trigger {
         TriggerRecord::Create(name) => (Tag::New, name.clone()),
         TriggerRecord::Reuse(name) => (Tag::Kept, name.clone()),
@@ -468,7 +473,7 @@ fn render_records(
         ))
         .child(record_row(
             tr!("overlays_wire_record_step"),
-            Some(Tag::Added),
+            Some(step_tag),
             step_value,
             palette,
             density,

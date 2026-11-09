@@ -61,7 +61,7 @@ pub struct OverlayWiringPlan {
     overlay_id: OverlayId,
     trigger_kind_id: String,
     action: PlannedAction,
-    step: SubActionStep,
+    step: Option<SubActionStep>,
     trigger: PlannedTrigger,
 }
 
@@ -78,8 +78,8 @@ impl OverlayWiringPlan {
         &self.action
     }
 
-    pub fn added_step(&self) -> &SubActionStep {
-        &self.step
+    pub fn added_step(&self) -> Option<&SubActionStep> {
+        self.step.as_ref()
     }
 
     pub fn trigger(&self) -> &PlannedTrigger {
@@ -220,7 +220,7 @@ pub(crate) fn assemble(
     overlay: &OverlayDefinition,
     trigger_kind_id: &str,
     action: PlannedAction,
-    step: SubActionStep,
+    step: Option<SubActionStep>,
     trigger: PlannedTrigger,
 ) -> OverlayWiringPlan {
     OverlayWiringPlan {

@@ -67,7 +67,7 @@
         {
           "overlay_content": {
             "overlay": "Last Donation",
-            "values": { "label": "Last donation", "headline": "Olena", "subline": "150 UAH" },
+            "values": { "label": "Last donation", "headline": "Olena", "subline": "₴150" },
             "within_ms": 40000
           }
         }
@@ -99,7 +99,7 @@
         {
           "overlay_content": {
             "overlay": "Last Donation",
-            "values": { "headline": "Olena", "subline": "150 UAH" },
+            "values": { "headline": "Olena", "subline": "₴150" },
             "within_ms": 5000
           }
         }
@@ -112,7 +112,7 @@
         {
           "overlay_content": {
             "overlay": "Last Donation",
-            "values": { "headline": "Olena", "subline": "150 UAH" },
+            "values": { "headline": "Olena", "subline": "₴150" },
             "within_ms": 5000
           }
         }

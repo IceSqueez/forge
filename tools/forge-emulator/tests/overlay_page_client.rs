@@ -18,6 +18,7 @@ use tokio::time::Instant;
 
 const DEADLINE: Duration = Duration::from_secs(30);
 const IDENTITY: &str = "alert-box";
+const OVERLAY_TOKEN: &str = "fgo_stub-overlay-token";
 const CREDENTIAL: &str = "0123456789abcdef0123456789abcdef";
 const CONTENT: &str =
     r#"{"frame":"content","content":{"headline":"alice raised an alert"},"durationMs":5000}"#;
@@ -65,7 +66,10 @@ impl Stub {
             document: Arc::new(document),
         };
         let router = Router::new()
-            .route("/overlays/{*path}", get(serve_config))
+            .route(
+                &format!("/overlays/{OVERLAY_TOKEN}/{IDENTITY}/config.json"),
+                get(serve_config),
+            )
             .route("/ws/v1/", get(upgrade))
             .with_state(state);
         let listener = TcpListener::bind((Ipv4Addr::LOCALHOST, 0)).await.unwrap();
@@ -74,7 +78,7 @@ impl Stub {
             let _ = axum::serve(listener, router).await;
         });
         Self {
-            endpoint: PageEndpoint::loopback(addr.port()).unwrap(),
+            endpoint: PageEndpoint::loopback(addr.port(), OVERLAY_TOKEN).unwrap(),
             seen,
             task,
         }

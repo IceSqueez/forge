@@ -237,3 +237,48 @@ async fn a_card_that_showed_nothing_returns_to_its_opening_content_after_a_previ
         "the sample was stored as the card's retained content"
     );
 }
+
+impl Rig {
+    async fn preview_send(&self, headline: &str) {
+        self.service
+            .preview_send(
+                &OverlayId::new(OVERLAY),
+                &OverlayConfig::from([(HEADLINE.to_owned(), Variant::String(headline.to_owned()))]),
+                &ArgStack::new(),
+                OverlaySendOptions::default(),
+            )
+            .await
+            .expect("a card accepts a preview");
+    }
+}
+
+const PREVIEW_HEADLINE: &str = "Sample follower";
+
+#[tokio::test]
+async fn a_card_preview_send_leaves_the_real_event_as_its_retained_content() {
+    let rig = rig();
+    rig.show_real_event().await;
+
+    rig.preview_send(PREVIEW_HEADLINE).await;
+
+    assert_eq!(
+        rig.retained_headline(),
+        Some(Variant::String(REAL_EVENT_HEADLINE.to_owned())),
+        "a rehearsal send replaced what a reconnecting page opens on"
+    );
+}
+
+#[tokio::test(start_paused = true)]
+async fn a_card_returns_to_the_real_event_once_a_preview_send_hold_ends() {
+    let rig = rig();
+    rig.show_real_event().await;
+    rig.preview_send(PREVIEW_HEADLINE).await;
+
+    tokio::time::sleep(PREVIEW_HOLD + Duration::from_millis(1)).await;
+    rig.wait_for_frames(3).await;
+
+    assert_eq!(
+        rig.sink.headlines(),
+        [REAL_EVENT_HEADLINE, PREVIEW_HEADLINE, REAL_EVENT_HEADLINE].map(str::to_owned)
+    );
+}

@@ -267,7 +267,10 @@ fn manifest(contents: Vec<ContentEntry>) -> Vec<u8> {
 }
 
 fn bundle(dir: &Path, documents: &SetupDocuments, files: &[(&str, &[u8])]) -> PathBuf {
-    let documents_json = serde_json::to_vec(documents).unwrap();
+    bundle_json(dir, serde_json::to_vec(documents).unwrap(), files)
+}
+
+fn bundle_json(dir: &Path, documents_json: Vec<u8>, files: &[(&str, &[u8])]) -> PathBuf {
     let mut contents = vec![entry(DOCUMENTS_ENTRY, &documents_json)];
     contents.extend(files.iter().map(|(path, bytes)| entry(path, bytes)));
     let manifest = manifest(contents);
@@ -1316,5 +1319,29 @@ async fn a_setup_rewrites_a_send_steps_show_image_to_the_blob_its_media_landed_a
     assert_eq!(
         stored.sub_actions[0].config.get(SHOW_IMAGE),
         Some(&Variant::String(format!("image:{landed}")))
+    );
+}
+
+#[tokio::test]
+async fn a_setup_queue_still_carrying_the_retired_alert_role_imports_as_a_plain_queue() {
+    let store = Store::open().await;
+    let queue_id = QueueId::new();
+    let mut documents = empty_setup();
+    documents.configuration.queues = vec![QueueDocument {
+        id: queue_id,
+        name: "Stream alerts".to_owned(),
+        description: String::new(),
+        concurrency: 1,
+    }];
+    let mut json = serde_json::to_value(&documents).unwrap();
+    json["configuration"]["queues"][0]["role"] = serde_json::json!("overlay_alerts");
+    let path = bundle_json(store.data_dir(), serde_json::to_vec(&json).unwrap(), &[]);
+
+    store.import(path).await.unwrap();
+
+    let landed = store.provider.queue_repo().get(queue_id).await.unwrap();
+    assert_eq!(
+        landed.map(|queue| queue.name),
+        Some("Stream alerts".to_owned())
     );
 }

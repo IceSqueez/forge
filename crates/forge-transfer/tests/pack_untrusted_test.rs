@@ -675,3 +675,42 @@ async fn two_new_pack_overlays_with_one_name_land_under_distinct_ids() {
     ids.sort();
     assert_eq!(ids, ["twin", "twin-2"]);
 }
+
+#[tokio::test]
+async fn a_pack_queue_still_carrying_the_retired_alert_role_imports_as_a_plain_queue() {
+    let store = Store::open().await;
+    let queue_id = QueueId::new();
+    let documents = PackDocuments {
+        queues: vec![QueueDocument {
+            id: queue_id,
+            name: "Stream alerts".to_owned(),
+            description: String::new(),
+            concurrency: 1,
+        }],
+        actions: vec![ActionDocument {
+            id: ActionId::new(),
+            name: "alert".to_owned(),
+            group: None,
+            queue_id,
+            enabled: true,
+            concurrent: false,
+            bypass_pause: false,
+            execution_mode: ExecutionMode::Sequential,
+            description: None,
+            steps: Vec::new(),
+            trigger_ids: Vec::new(),
+        }],
+        ..empty_documents()
+    };
+    let mut json = serde_json::to_value(&documents).unwrap();
+    json["queues"][0]["role"] = serde_json::json!("overlay_alerts");
+    let path = bundle_at(store.data_dir(), &serde_json::to_vec(&json).unwrap(), &[]);
+
+    store.import(path).await.unwrap();
+
+    let landed = store.provider.queue_repo().get(queue_id).await.unwrap();
+    assert_eq!(
+        landed.map(|queue| queue.name),
+        Some("Stream alerts".to_owned())
+    );
+}

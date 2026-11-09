@@ -387,7 +387,9 @@ async fn the_added_step_keeps_only_the_kinds_content_and_always_targets_the_over
         panic!("the plan did not build: {preview:?}");
     };
     assert_eq!(
-        plan.added_step().config,
+        plan.added_step()
+            .expect("a new action carries the send step")
+            .config,
         SubActionConfig::from([
             (HEADLINE.to_owned(), Variant::String("Thanks!".to_owned())),
             (
@@ -587,5 +589,41 @@ async fn a_queue_deleted_between_plan_and_commit_refuses_and_writes_no_action() 
             .await
             .expect("the actions read"),
         None,
+    );
+}
+
+#[tokio::test]
+async fn wiring_a_second_event_into_an_action_already_feeding_the_overlay_adds_no_second_send() {
+    let stored = stored().await;
+    let first = stored.plan(new_action("Alert", None)).await;
+    let records = stored.wired(&first).await;
+
+    let preview = stored
+        .service
+        .plan_overlay_wiring(
+            OverlayWiringRequest {
+                overlay: &stored.overlay,
+                kind: &AlertOverlayKind,
+                trigger: &StubTrigger(OTHER_KIND),
+                target: WiringTarget::ExistingAction(records.action_id),
+                content: OverlayConfig::new(),
+            },
+            &stored.steps,
+        )
+        .await
+        .expect("plans");
+    let OverlayWiringPreview::Ready(plan) = preview else {
+        panic!("the second event was reported as already wired: {preview:?}");
+    };
+    assert!(plan.added_step().is_none(), "{plan:?}");
+    let second = stored.wired(&plan).await;
+
+    assert_eq!(
+        kind_ids(&stored.action(records.action_id).await),
+        [OVERLAY_SEND_KIND_ID]
+    );
+    assert!(
+        second.trigger_created,
+        "the second event's trigger is linked"
     );
 }

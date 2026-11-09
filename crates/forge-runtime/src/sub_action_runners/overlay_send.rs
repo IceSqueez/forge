@@ -11,7 +11,9 @@ use forge_types::{ArgStack, SubActionConfig, SubActionOutcome, SubActionTelemetr
 
 use super::overlay_targets::{OVERLAY_SEND_KIND_ID, OVERLAY_TARGET_KEY};
 use crate::core_messages;
-use crate::overlays::overlay_service::{OverlayDelivery, OverlayDispatch, OverlayServiceHandle};
+use crate::overlays::overlay_service::{
+    OverlayDelivery, OverlayDispatch, OverlaySendOptions, OverlayServiceHandle,
+};
 use crate::overlays::overlay_shows::ShowEnd;
 
 const DURATION_KEY: &str = "duration_seconds";
@@ -76,20 +78,23 @@ impl OverlaySendRunner {
         ctx: &RunContext<'_>,
     ) -> SubActionOutcome {
         let identity = send.target.as_str();
+        let id = OverlayId::new(identity);
+        let content = supplied_content(config);
+        let options = OverlaySendOptions {
+            duration_ms: send.duration_ms,
+            caused_by: Some(ctx.parent_event_id),
+        };
+        let dispatch = if ctx.rehearsal().is_some() {
+            self.overlays
+                .preview_send(&id, &content, ctx.arg_stack, options)
+                .await
+        } else {
+            self.overlays
+                .send_to(&id, &content, ctx.arg_stack, options)
+                .await
+        };
 
-        match self
-            .overlays
-            .send_to(
-                &OverlayId::new(identity),
-                &supplied_content(config),
-                ctx.arg_stack,
-                crate::overlays::overlay_service::OverlaySendOptions {
-                    duration_ms: send.duration_ms,
-                    caused_by: Some(ctx.parent_event_id),
-                },
-            )
-            .await
-        {
+        match dispatch {
             Ok(OverlayDispatch::Applied(delivery)) => delivered(identity, delivery),
             Ok(OverlayDispatch::Queued(ticket)) if send.wait_for_show => {
                 show_outcome(identity, ticket.finished().await)

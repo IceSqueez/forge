@@ -17,7 +17,7 @@ use forge_events::{
 };
 use forge_registry::TriggerRegistry;
 use forge_storage::EventLogRepo;
-use forge_types::{EventId, RecoverMutex};
+use forge_types::{EventId, RecoverMutex, RehearsalKind};
 use futures_util::FutureExt;
 use futures_util::future::Shared;
 use std::collections::HashMap;
@@ -56,6 +56,7 @@ pub struct EventBus {
 struct Lineage {
     depth: u16,
     replay: bool,
+    rehearsal: bool,
 }
 
 impl Lineage {
@@ -63,6 +64,7 @@ impl Lineage {
         Self {
             depth: event.causation_depth,
             replay: event.replay,
+            rehearsal: event.is_rehearsal(),
         }
     }
 
@@ -70,6 +72,24 @@ impl Lineage {
         Self {
             depth: self.depth.max(parent.depth),
             replay: self.replay || parent.replay,
+            rehearsal: self.rehearsal || parent.rehearsal,
+        }
+    }
+
+    fn stamp(self, event: &mut Event) {
+        event.replay = self.replay;
+        if self.rehearsal && !event.is_rehearsal() {
+            event.mark_test_in_object_payload();
+        }
+    }
+
+    fn rehearsal_kind(self) -> Option<RehearsalKind> {
+        if self.replay {
+            Some(RehearsalKind::Replay)
+        } else if self.rehearsal {
+            Some(RehearsalKind::TestRun)
+        } else {
+            None
         }
     }
 }
@@ -152,7 +172,7 @@ impl EventBus {
             let mut ring = self.ring.lock_recover();
             let lineage = self.lineage_with_parent(&event, &ring);
             event.causation_depth = lineage.depth;
-            event.replay = lineage.replay;
+            lineage.stamp(&mut event);
             for stamp in &self.stamps {
                 stamp.stamp(&mut event);
             }
@@ -172,7 +192,7 @@ impl EventBus {
 
     pub fn record(&self, mut event: Event) {
         let mut ring = self.ring.lock_recover();
-        event.replay = self.lineage_with_parent(&event, &ring).replay;
+        self.lineage_with_parent(&event, &ring).stamp(&mut event);
         ring.push(Arc::new(event));
     }
 
@@ -238,9 +258,9 @@ impl EventBus {
         self.lineage_of(event_id, &ring).depth
     }
 
-    pub(crate) fn is_replay(&self, event_id: EventId) -> bool {
+    pub(crate) fn rehearsal_of(&self, event_id: EventId) -> Option<RehearsalKind> {
         let ring = self.ring.lock_recover();
-        self.lineage_of(event_id, &ring).replay
+        self.lineage_of(event_id, &ring).rehearsal_kind()
     }
 
     pub(crate) fn hold_lineage(&self, event: &Event) -> LineageHold<'_> {

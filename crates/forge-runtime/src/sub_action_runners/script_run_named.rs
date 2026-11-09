@@ -250,17 +250,19 @@ impl SubActionRunner for ScriptRunNamedRunner {
             }
         };
 
-        let status = if matches!(outcome, SubActionOutcome::Success) {
-            ExecutionStatus::Success
-        } else {
-            ExecutionStatus::Error
-        };
-        if let Err(e) = self
-            .scripts
-            .record_execution(script_id, started_at, duration_ms, status)
-            .await
-        {
-            tracing::warn!(error = %e, "script_repo.record_execution failed");
+        if ctx.rehearsal().is_none() {
+            let status = if matches!(outcome, SubActionOutcome::Success) {
+                ExecutionStatus::Success
+            } else {
+                ExecutionStatus::Error
+            };
+            if let Err(e) = self
+                .scripts
+                .record_execution(script_id, started_at, duration_ms, status)
+                .await
+            {
+                tracing::warn!(error = %e, "script_repo.record_execution failed");
+            }
         }
 
         (

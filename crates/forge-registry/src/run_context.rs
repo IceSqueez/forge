@@ -1,5 +1,5 @@
 use forge_events::EventPublisher;
-use forge_types::{ArgStack, EventId};
+use forge_types::{ArgStack, EventId, RehearsalKind};
 
 use crate::chain::{CancelSignal, ChainExecutor, ControlCell, TelemetrySink};
 
@@ -12,6 +12,14 @@ pub struct RunContext<'a> {
     pub cancel: CancelSignal,
     pub control: ControlCell,
     pub telemetry: TelemetrySink,
+}
+
+impl RunContext<'_> {
+    pub fn rehearsal(&self) -> Option<RehearsalKind> {
+        self.executor
+            .running_action()
+            .and_then(|running| running.rehearsal)
+    }
 }
 
 #[cfg(test)]

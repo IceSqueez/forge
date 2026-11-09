@@ -316,7 +316,7 @@ impl ActionEngine {
         let started_at = OffsetDateTime::now_utc();
         let ctx = ExecutionContext {
             action_id: req.action_id,
-            metadata: self.run_metadata(origin, &req),
+            metadata: run_metadata(origin, &req, self.rehearsal_of(&req)),
             arg_stack_snapshot: req.initial_args.snapshot(),
             started_at,
             completed_at: Some(started_at),
@@ -390,7 +390,8 @@ impl ActionEngine {
             }
         };
 
-        let metadata = self.run_metadata(origin, &req);
+        let rehearsal = self.rehearsal_of(&req);
+        let metadata = run_metadata(origin, &req, rehearsal);
         let arg_stack = req.initial_args;
         let started_at = OffsetDateTime::now_utc();
         let manual_test = req.manual_test;
@@ -418,7 +419,7 @@ impl ActionEngine {
         };
 
         let (start_event_id, _lineage) =
-            self.announce_start(&action, req.trigger_event_id, trigger_depth);
+            self.announce_start(&action, req.trigger_event_id, trigger_depth, rehearsal);
 
         let pick = pick_steps(&action);
 
@@ -426,6 +427,7 @@ impl ActionEngine {
             action_id: action.id,
             start_event_id,
             trigger_event_id: req.trigger_event_id,
+            rehearsal,
         };
         let run = self
             .chain_engine
@@ -443,42 +445,10 @@ impl ActionEngine {
         self.finish_run(&action, ctx, manual_test, start_event_id);
     }
 
-    fn run_metadata(
-        &self,
-        origin: Option<ScheduledOrigin>,
-        req: &ExecutionRequest,
-    ) -> ExecutionMetadata {
-        let event_id = req.trigger_event_id;
-        let trigger_kind = req.trigger_kind.clone();
-        if let Some(origin) = origin {
-            return origin.into_metadata(event_id);
-        }
-        match self.rehearsal_of(req) {
-            Some(rehearsal) => ExecutionMetadata::Rehearsal {
-                event_id,
-                trigger_kind,
-                rehearsal,
-            },
-            None => ExecutionMetadata::Trigger {
-                event_id,
-                trigger_kind,
-            },
-        }
-    }
-
     fn rehearsal_of(&self, req: &ExecutionRequest) -> Option<RehearsalKind> {
-        if self.bus.is_replay(req.trigger_event_id) {
-            Some(RehearsalKind::Replay)
-        } else if req.manual_test
-            || self
-                .bus
-                .lookup(req.trigger_event_id)
-                .is_some_and(|event| event.is_rehearsal())
-        {
-            Some(RehearsalKind::TestRun)
-        } else {
-            None
-        }
+        self.bus
+            .rehearsal_of(req.trigger_event_id)
+            .or(req.manual_test.then_some(RehearsalKind::TestRun))
     }
 
     fn announce_start(
@@ -486,6 +456,7 @@ impl ActionEngine {
         action: &Action,
         trigger_event_id: EventId,
         trigger_depth: u16,
+        rehearsal: Option<RehearsalKind>,
     ) -> (EventId, LineageHold<'_>) {
         let mut start_event = ActionStarted {
             action_id: action.id,
@@ -494,6 +465,9 @@ impl ActionEngine {
         }
         .into_event(EventSource::Core, Some(trigger_event_id));
         start_event.causation_depth = trigger_depth.saturating_add(1);
+        if rehearsal == Some(RehearsalKind::TestRun) {
+            start_event.mark_test_in_object_payload();
+        }
         let start_event_id = start_event.id;
         let lineage = self.bus.hold_lineage(&start_event);
         self.bus.publish(start_event);
@@ -546,6 +520,26 @@ impl ActionEngine {
             self.bus
                 .publish(done.into_event(EventSource::Core, Some(start_event_id)));
         }
+    }
+}
+
+fn run_metadata(
+    origin: Option<ScheduledOrigin>,
+    req: &ExecutionRequest,
+    rehearsal: Option<RehearsalKind>,
+) -> ExecutionMetadata {
+    let event_id = req.trigger_event_id;
+    match (rehearsal, origin) {
+        (Some(rehearsal), _) => ExecutionMetadata::Rehearsal {
+            event_id,
+            trigger_kind: req.trigger_kind.clone(),
+            rehearsal,
+        },
+        (None, Some(origin)) => origin.into_metadata(event_id),
+        (None, None) => ExecutionMetadata::Trigger {
+            event_id,
+            trigger_kind: req.trigger_kind.clone(),
+        },
     }
 }
 

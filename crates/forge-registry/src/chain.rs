@@ -1,6 +1,6 @@
 use forge_types::{
-    ActionId, ArgStack, EventId, IntegrationAvailability, RecoverMutex, SubActionStep,
-    SubActionTelemetry, UserText,
+    ActionId, ArgStack, EventId, IntegrationAvailability, RecoverMutex, RehearsalKind,
+    SubActionStep, SubActionTelemetry, UserText,
 };
 use std::sync::{Arc, Mutex, MutexGuard};
 
@@ -120,6 +120,7 @@ pub struct RunningAction {
     pub action_id: ActionId,
     pub start_event_id: EventId,
     pub trigger_event_id: EventId,
+    pub rehearsal: Option<RehearsalKind>,
 }
 
 #[async_trait]

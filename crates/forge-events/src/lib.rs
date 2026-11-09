@@ -119,6 +119,12 @@ impl Event {
                 .and_then(serde_json::Value::as_bool)
                 .unwrap_or(false)
     }
+
+    pub fn mark_test_in_object_payload(&mut self) {
+        if let Some(fields) = self.payload.as_object_mut() {
+            fields.insert(TEST_MARKER.to_owned(), serde_json::Value::Bool(true));
+        }
+    }
 }
 
 #[cfg(test)]

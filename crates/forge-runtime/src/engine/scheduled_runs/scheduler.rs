@@ -228,7 +228,7 @@ impl ScheduledRunsTask {
         let replay = [request.cause, request.trigger_event_id]
             .into_iter()
             .flatten()
-            .any(|event_id| self.path.bus.is_replay(event_id));
+            .any(|event_id| self.path.bus.rehearsal_of(event_id).is_some());
         let spec = request.into_spec(self.clock.now(), target.name, replay)?;
         self.check_caps(&spec).await?;
         let placement = self.repo.schedule(&spec).await?;

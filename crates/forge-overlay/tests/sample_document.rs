@@ -44,7 +44,7 @@ const EXPECTED_SAMPLE_CONTENT: &[(&str, &[(&str, &str)])] = &[
     (
         CHAT_KIND,
         &[
-            (AUTHOR, "testuser"),
+            (AUTHOR, "~testuser"),
             (AUTHOR_COLOR, "#89dceb"),
             (AVATAR, ""),
             (BADGES, ""),
@@ -52,7 +52,7 @@ const EXPECTED_SAMPLE_CONTENT: &[(&str, &[(&str, &str)])] = &[
             (MESSAGE, "hey, great stream!"),
             (MESSAGE_ID, "messageid_sample"),
             (PLATFORM, ""),
-            (USER_ID, "37402112"),
+            (USER_ID, "sample-user-1"),
         ],
     ),
     (FRAME_KIND, &[(HEADLINE, ""), (SUBLINE, "LIVE")]),

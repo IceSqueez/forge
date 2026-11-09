@@ -263,11 +263,11 @@ mod tests {
     use super::*;
 
     const PRINCIPAL_NAME: &str = "StreamFan42";
-    const PRINCIPAL_LOGIN: &str = "streamfan42";
-    const PRINCIPAL_ID: &str = "51938264";
+    const PRINCIPAL_LOGIN: &str = "~streamfan42";
+    const PRINCIPAL_ID: &str = "sample-user-2";
     const MODERATOR_NAME: &str = "NightOwl";
-    const MODERATOR_LOGIN: &str = "nightowl";
-    const MODERATOR_ID: &str = "60114873";
+    const MODERATOR_LOGIN: &str = "~nightowl";
+    const MODERATOR_ID: &str = "sample-user-3";
     const CHOSEN_MESSAGE: &str = "love the content";
 
     fn sample() -> SynthesisSample {
@@ -397,7 +397,7 @@ mod tests {
     }
 
     #[test]
-    fn an_actor_login_is_that_same_actors_display_name_lowercased() {
+    fn an_actor_login_is_that_same_actors_display_name_lowercased_behind_the_sample_mark() {
         let stack = synthesize_args(
             &[
                 canonical_entry(CanonicalVariable::actor(
@@ -458,6 +458,51 @@ mod tests {
         assert_eq!(stack.get("moderator_id"), text(MODERATOR_ID).as_ref());
         assert_eq!(stack.get("chatter_id"), text(PRINCIPAL_ID).as_ref());
         assert_eq!(stack.get("deleted_by_id"), text(MODERATOR_ID).as_ref());
+    }
+
+    fn could_be_a_real_twitch_login(login: &str) -> bool {
+        (4..=25).contains(&login.len())
+            && login
+                .chars()
+                .all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || c == '_')
+    }
+
+    #[test]
+    fn no_synthesized_actor_id_or_login_can_belong_to_a_real_account() {
+        let mut variables: Vec<TriggerVariable> = ActorRole::ALL
+            .iter()
+            .flat_map(|role| {
+                [ActorSlot::Id, ActorSlot::Login]
+                    .map(|slot| canonical_entry(CanonicalVariable::actor(*role, slot)))
+            })
+            .collect();
+        variables.push(event_specific_entry(
+            "raider_login",
+            VariantKind::String,
+            Some(SynthesisHint::Username),
+        ));
+
+        for name_index in 0..DISPLAY_NAME_POOL.len() {
+            let stack = synthesize_args(
+                &variables,
+                &SynthesisSample {
+                    name_index,
+                    ..sample()
+                },
+            );
+            for variable in &variables {
+                let name = variable.declared.name.as_str();
+                let Some(Variant::String(value)) = stack.get(name) else {
+                    panic!("{name} was never minted as text");
+                };
+                let looks_real = if name.ends_with("_id") {
+                    value.chars().all(|c| c.is_ascii_digit())
+                } else {
+                    could_be_a_real_twitch_login(value)
+                };
+                assert!(!looks_real, "{name} = {value:?} at name index {name_index}");
+            }
+        }
     }
 
     #[test]

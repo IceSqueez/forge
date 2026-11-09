@@ -72,9 +72,9 @@ fn flow_registry() -> SubActionRegistry {
 
 fn chatter(_event: &forge_events::Event) -> ActorIdentity {
     ActorIdentity {
-        id: "51938264".to_owned(),
-        display_name: "StreamFan42".to_owned(),
-        login: Some("streamfan42".to_owned()),
+        id: "sample-user-1".to_owned(),
+        display_name: "SampleFan".to_owned(),
+        login: Some("~samplefan".to_owned()),
     }
 }
 

@@ -1,3 +1,4 @@
+use super::step_settings_detail::declared_settings_detail;
 use super::*;
 use crate::automation::globals::variant_kind_color;
 use crate::integrations::integration_catalog::{catalog_text, tint_color};
@@ -19,7 +20,7 @@ use std::ops::Range;
 
 pub(in crate::automation::actions_screen) const UNKNOWN_STEP_ICON: &str = "bolt";
 
-fn option_label_detail(
+pub(super) fn option_label_detail(
     options_key: &str,
     value: &str,
     select_options: &HashMap<String, Vec<ChoiceOption>>,
@@ -56,8 +57,11 @@ pub(in crate::automation::actions_screen) fn step_card_detail(
     step: &SubActionStep,
     select_options: &HashMap<String, Vec<ChoiceOption>>,
 ) -> Option<String> {
-    let detail = runner?.card_detail(&step.config)?;
-    Some(shown_card_detail(detail, select_options))
+    let runner = runner?;
+    match runner.card_detail(&step.config) {
+        Some(detail) => Some(shown_card_detail(detail, select_options)),
+        None => declared_settings_detail(runner, &step.config, select_options),
+    }
 }
 
 struct CategoryLook {
@@ -289,6 +293,7 @@ pub(super) fn variable_text(s: &str, palette: &ForgePalette, cx: &App) -> AnyEle
     div()
         .w_full()
         .min_w_0()
+        .truncate()
         .font_family(cx.mono_family())
         .text_size(FONT_XS)
         .text_color(palette.text_muted)

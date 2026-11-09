@@ -1098,6 +1098,8 @@ action_editor_trigger_picker_footer_hint = Створює новий триге�
 ## Редактор дій - назви типів кроків
 
 action_editor_option_missing = Не знайдено
+action_editor_step_setting_on = увімк.
+action_editor_step_setting_off = вимк.
 action_editor_kind_sub_action = Крок
 
 ## Реєстр тригерів - заголовок / фільтри

@@ -26,6 +26,7 @@ mod step_list;
 mod step_picker;
 mod step_presentation;
 mod step_scope;
+mod step_settings_detail;
 mod sub_form;
 mod test_launch;
 pub(in crate::automation::actions_screen) mod trigger_fill;

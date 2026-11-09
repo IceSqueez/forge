@@ -916,4 +916,98 @@ mod tests {
 
         assert!(!confirm_stage(&view, cx, |stage| stage.writing));
     }
+
+    #[gpui::test]
+    fn a_plan_answering_an_earlier_edit_is_discarded(cx: &mut TestAppContext) {
+        let (view, _rt) = mount(cx);
+        checking_on(&view, cx, SUBSCRIBER);
+        view.update(cx, |this, _| {
+            if let Some(stage) = this.confirm_stage_mut() {
+                stage.plan_gen.next();
+            }
+        });
+
+        view.update(cx, |this, cx| {
+            this.settle_plan(SUBSCRIBER, CURRENT_PLAN, Check::Wired(ActionId::new()), cx)
+        });
+
+        assert!(confirm_stage(&view, cx, |stage| matches!(
+            stage.preview,
+            Preview::Checking
+        ) && stage.planning));
+    }
+
+    fn ready_draft(rt: &tokio::runtime::Runtime) -> WiringDraft {
+        let mut queues = MockQueueRepo::new();
+        queues.expect_get().returning(|id| {
+            Ok(Some(forge_types::Queue {
+                id,
+                name: "Default".to_owned(),
+                description: String::new(),
+                concurrency: std::num::NonZeroU32::MIN,
+            }))
+        });
+        let service = ActionsService::new(
+            Arc::new(MockActionRepo::new()),
+            Arc::new(queues),
+            Arc::new(MockHistoryRepo::new()),
+            Arc::new(MockTriggerInstanceRepo::new()),
+        );
+        let triggers = trigger_registry(vec![StubTrigger::new(
+            SUBSCRIBER,
+            "Subscribed",
+            TriggerCategory::Subscriptions,
+            Declares::APrincipal,
+        )]);
+        let overlay = overlay_definition(alert::KIND_ID, OverlayConfig::new());
+        let trigger = triggers
+            .get(SUBSCRIBER)
+            .expect("the stub trigger registers");
+        let preview = rt.block_on(service.plan_overlay_wiring(
+            OverlayWiringRequest {
+                overlay: &overlay,
+                kind: &AlertOverlayKind,
+                trigger,
+                target: WiringTarget::NewAction {
+                    name: "Alert".to_owned(),
+                    queue_id: None,
+                },
+                content: OverlayConfig::new(),
+            },
+            &SubActionRegistry::new(),
+        ));
+        match preview {
+            Ok(OverlayWiringPreview::Ready(plan)) => plan::draft_wiring(*plan, &triggers),
+            other => panic!("the stub plan did not build: {other:?}"),
+        }
+    }
+
+    #[gpui::test]
+    fn create_waits_for_the_plan_of_the_latest_edit_before_writing(cx: &mut TestAppContext) {
+        let (view, rt) = mount(cx);
+        checking_on(&view, cx, SUBSCRIBER);
+        let draft = ready_draft(&rt);
+        view.update(cx, |this, _| {
+            if let Some(stage) = this.confirm_stage_mut() {
+                stage.preview = Preview::Ready(Box::new(draft));
+            }
+        });
+
+        view.update(cx, |this, cx| this.confirm(cx));
+        let wrote_while_planning = confirm_stage(&view, cx, |stage| stage.writing);
+        view.update(cx, |this, cx| {
+            if let Some(stage) = this.confirm_stage_mut() {
+                stage.planning = false;
+            }
+            this.confirm(cx);
+        });
+
+        assert_eq!(
+            (
+                wrote_while_planning,
+                confirm_stage(&view, cx, |stage| stage.writing)
+            ),
+            (false, true),
+        );
+    }
 }

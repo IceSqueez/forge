@@ -4,14 +4,16 @@
     reason = "test fixtures assert directly"
 )]
 mod common;
-use common::{ALERT_KIND, BLANK_KIND, GOAL_KIND, TICKER_KIND};
+use common::{BLANK_KIND, GOAL_KIND, LATEST_KIND};
 
 use std::collections::BTreeSet;
 
 use forge_overlay::PreviewComposition;
 use forge_overlay::config::{HEADLINE, SUBLINE};
 use forge_overlay::kinds::alert::AlertOverlayKind;
-use forge_overlay::{DeliveryDisposition, OverlayConfig, OverlayKindDescriptor, SectionedField};
+use forge_overlay::{
+    ContentFeed, DeliveryDisposition, OverlayConfig, OverlayKindDescriptor, SectionedField,
+};
 use forge_overlay::{
     EventWiringTrigger, OverlayKindRegistry, PageAssets, accepts_event_wiring, order_curated_first,
     register_builtin_kinds, suggested_content,
@@ -34,7 +36,7 @@ const UNCURATED: &str = "stub.uncurated";
 const STUB_LABEL: &str = "Something happened";
 
 struct Retuned {
-    disposition: DeliveryDisposition,
+    feed: ContentFeed,
     draws: bool,
 }
 
@@ -56,7 +58,11 @@ impl OverlayKindDescriptor for Retuned {
     }
 
     fn delivery_disposition(&self) -> DeliveryDisposition {
-        self.disposition
+        AlertOverlayKind.delivery_disposition()
+    }
+
+    fn content_feed(&self) -> ContentFeed {
+        self.feed
     }
 
     fn order_sensitive(&self) -> bool {
@@ -149,54 +155,31 @@ fn text_at(content: &OverlayConfig, key: &str) -> String {
 }
 
 #[test]
-fn a_kind_is_wireable_only_when_its_delivery_is_transient_and_it_draws_a_page() {
-    let accepted: Vec<(DeliveryDisposition, bool)> = [
-        DeliveryDisposition::Transient,
-        DeliveryDisposition::Replace,
-        DeliveryDisposition::Append,
-    ]
-    .into_iter()
-    .flat_map(|disposition| [false, true].map(move |draws| (disposition, draws)))
-    .filter(|(disposition, draws)| {
-        accepts_event_wiring(&Retuned {
-            disposition: *disposition,
-            draws: *draws,
+fn a_kind_is_wireable_only_when_it_takes_content_from_actions_and_draws_a_page() {
+    let accepted: Vec<(ContentFeed, bool)> = [ContentFeed::Deliveries, ContentFeed::LatestSlot]
+        .into_iter()
+        .flat_map(|feed| [false, true].map(move |draws| (feed, draws)))
+        .filter(|(feed, draws)| {
+            accepts_event_wiring(&Retuned {
+                feed: *feed,
+                draws: *draws,
+            })
         })
-    })
-    .collect();
-
-    assert_eq!(accepted, vec![(DeliveryDisposition::Transient, true)]);
-}
-
-#[test]
-fn exactly_the_alert_and_the_ticker_of_the_shipped_kinds_accept_event_wiring() {
-    let kinds = builtin_kinds();
-    let accepted: BTreeSet<&str> = kinds
-        .all()
-        .filter(|kind| accepts_event_wiring(*kind))
-        .map(OverlayKindDescriptor::id)
         .collect();
 
-    assert_eq!(accepted, BTreeSet::from([ALERT_KIND, TICKER_KIND]),);
+    assert_eq!(accepted, vec![(ContentFeed::Deliveries, true)]);
 }
 
 #[test]
-fn the_shipped_kind_refused_despite_a_transient_delivery_is_the_one_that_draws_nothing() {
+fn of_the_shipped_kinds_only_the_blank_and_the_latest_refuse_event_wiring() {
     let kinds = builtin_kinds();
     let refused: BTreeSet<&str> = kinds
         .all()
-        .filter(|kind| kind.delivery_disposition() == DeliveryDisposition::Transient)
         .filter(|kind| !accepts_event_wiring(*kind))
         .map(OverlayKindDescriptor::id)
         .collect();
 
-    assert_eq!(refused, BTreeSet::from([BLANK_KIND]));
-    assert!(
-        !kinds
-            .get(BLANK_KIND)
-            .expect("the blank look ships")
-            .has_visual_page(),
-    );
+    assert_eq!(refused, BTreeSet::from([BLANK_KIND, LATEST_KIND]));
 }
 
 #[test]

@@ -297,11 +297,10 @@ mod tests {
     }
 
     #[test]
-    fn an_event_with_nothing_an_overlay_could_show_is_never_offered() {
+    fn an_event_that_declares_no_variables_is_still_offered() {
         en();
 
         let groups = offered(vec![
-            speaks(SUBSCRIBER, "Subscribed", TriggerCategory::Subscriptions),
             StubTrigger::new(SILENT, "Silent", TriggerCategory::Chat, Declares::Nothing),
             StubTrigger::new(
                 BARREN,
@@ -311,10 +310,30 @@ mod tests {
             ),
         ]);
 
+        let offered_ids: BTreeSet<String> = groups.into_iter().flat_map(|(_, ids)| ids).collect();
+        assert_eq!(offered_ids, BTreeSet::from([card(SILENT), card(BARREN)]));
+    }
+
+    #[test]
+    fn the_queue_choices_leave_out_the_default_queue_and_sort_by_name_ignoring_case() {
+        let queue = |id: QueueId, name: &str| Queue {
+            id,
+            name: name.to_owned(),
+            description: String::new(),
+            concurrency: std::num::NonZeroU32::MIN,
+        };
+        let zeta = QueueId::new();
+        let alpha = QueueId::new();
+
+        let choices = queue_choices(vec![
+            queue(zeta, "zeta"),
+            queue(forge_types::DEFAULT_QUEUE_ID, "Default"),
+            queue(alpha, "Alpha"),
+        ]);
+
         assert_eq!(
-            groups,
-            vec![(SUGGESTED_SCOPE.to_owned(), vec![card(SUBSCRIBER)])],
-            "an event declaring nothing reached the picker, or its emptied category stayed behind",
+            choices,
+            vec![(alpha, "Alpha".to_owned()), (zeta, "zeta".to_owned())]
         );
     }
 

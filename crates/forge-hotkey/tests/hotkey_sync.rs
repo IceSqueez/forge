@@ -18,7 +18,7 @@ use forge_storage::{
     MediaBlobId, MockTriggerInstanceRepo, SoundboardClipsRepo, StorageError, StoredClip,
     TriggerChanges, TriggerInstanceRepo, TriggerWiring,
 };
-use forge_types::{ClipId, QueueId, TriggerInstance, TriggerInstanceId};
+use forge_types::{ClipId, TriggerInstance, TriggerInstanceId};
 use support::{
     Store, clip, instance, recording_client, registered, seed_action, store, stored_combo,
     with_combo,
@@ -814,20 +814,27 @@ async fn an_overlay_wiring_through_the_synced_repo_registers_its_combo_in_canoni
 #[tokio::test]
 async fn an_overlay_wiring_through_the_synced_repo_stays_one_transaction() {
     let synced = synced().await;
+    let mut taken = instance(event_kinds::GLOBAL_PRESSED, Some("F6"));
+    taken.user_defined = false;
+    synced.stored.save(&taken).await.unwrap();
     let mut wiring = synced.wiring("F5").await;
-    wiring.action.queue_id = QueueId::new();
-    let instance_id = wiring.instance.as_ref().unwrap().id;
+    wiring.action.name = "Renamed by the wiring".to_owned();
+    if let Some(clashing) = wiring.instance.as_mut() {
+        clashing.user_defined = false;
+    }
 
     let failed = synced.commit_wiring(&wiring).await;
 
     let kept = synced
         .store
         .provider
-        .trigger_instance_repo()
-        .get(instance_id)
-        .await;
+        .action_repo()
+        .get(wiring.action.id)
+        .await
+        .unwrap()
+        .unwrap();
     assert!(failed.is_err());
-    assert_eq!(kept.unwrap(), None);
+    assert_eq!(kept.name, "Play sound");
 }
 
 #[tokio::test]

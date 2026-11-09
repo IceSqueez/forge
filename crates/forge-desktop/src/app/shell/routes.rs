@@ -259,6 +259,7 @@ impl AppShell {
             audio_router: Arc::clone(&handles.audio.audio_router),
             speak: handles.speech.speak.clone(),
             actions: Arc::clone(&handles.overlays.actions),
+            queues: handles.backend.queue_repo(),
             triggers: handles.automation.trigger_registry.clone(),
             sub_actions: handles.automation.sub_action_registry.clone(),
             latest_values: handles.core.latest_values.clone(),

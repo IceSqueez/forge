@@ -266,7 +266,7 @@ pub(super) fn datetime_formats(
     std::iter::once(plain).chain(presets).collect()
 }
 
-pub(super) fn variable_groups(
+pub(crate) fn variable_groups(
     scope: &[ScopedVariable],
     language: NamesLanguage,
     now: OffsetDateTime,

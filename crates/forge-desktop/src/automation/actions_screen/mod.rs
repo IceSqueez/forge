@@ -43,6 +43,7 @@ mod shortcuts;
 mod state;
 mod step_validation;
 mod sub_action_modal;
+pub(crate) use sub_action_modal::variable_groups;
 mod test_run;
 mod test_trigger;
 mod tree;

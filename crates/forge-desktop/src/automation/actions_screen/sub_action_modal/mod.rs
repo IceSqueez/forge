@@ -12,6 +12,7 @@ use forge_types::{SubActionConfig, Variant};
 use gpui::FocusHandle;
 use select_picker::{SelectPickerForm, select_picker_items};
 use variable_insert::VariableInsert;
+pub(crate) use variable_insert::variable_groups;
 
 mod build;
 mod datetime_picker;

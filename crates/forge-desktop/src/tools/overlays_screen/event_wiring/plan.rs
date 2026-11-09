@@ -1,17 +1,18 @@
 use std::collections::HashMap;
 
 use forge_components::{ForgePalette, GridPickerGroup, GridPickerItem, GridScope, tr};
-use forge_overlay::{
-    OverlayConfig, OverlayKindDescriptor, SampleTrigger, delivered_content, is_curated,
-    order_curated_first, sample_context,
+use forge_overlay::{OverlayConfig, is_curated, order_curated_first};
+use forge_registry::{FormField, TriggerKindDescriptor, TriggerRegistry};
+use forge_runtime::{
+    OVERLAY_SEND_KIND_ID, OverlayFeed, OverlayWiringPlan, OverlayWiringRefusal, PlannedAction,
+    PlannedTrigger,
 };
-use forge_registry::{TriggerKindDescriptor, TriggerRegistry, declared_variables};
-use forge_runtime::{OverlayFeed, OverlayWiringPlan, OverlayWiringRefusal, PlannedAction};
 use forge_storage::OverlayDefinition;
-use forge_types::{ActionId, NamesLanguage, Variant};
+use forge_types::{ActionId, Queue, QueueId, Variant};
 use gpui::SharedString;
 
 use crate::automation::triggers_screen::build_kind_groups;
+use crate::shared::config_field_label::{field_label, field_placeholder};
 
 const SUGGESTED_SCOPE: &str = "suggested";
 
@@ -22,12 +23,27 @@ pub(super) struct FeedRow {
     pub trigger_labels: Vec<String>,
 }
 
+pub(super) enum ActionRecord {
+    Create { name: String, queue: String },
+    Extend { name: String },
+}
+
+pub(super) enum TriggerRecord {
+    Create(String),
+    Reuse(String),
+}
+
 pub(super) struct WiringDraft {
-    pub action_name: String,
-    pub trigger_name: String,
-    pub queue_name: String,
-    pub wording: Vec<String>,
+    pub action: ActionRecord,
+    pub trigger: TriggerRecord,
     pub plan: OverlayWiringPlan,
+}
+
+pub(super) struct WordingSpec {
+    pub key: String,
+    pub label: String,
+    pub placeholder: String,
+    pub seed: String,
 }
 
 pub(super) fn feed_rows(feeds: Vec<OverlayFeed>, registry: &TriggerRegistry) -> Vec<FeedRow> {
@@ -64,10 +80,6 @@ pub(super) fn feed_summary(feeds: &[FeedRow]) -> String {
     tr!("overlays_wire_fires_on", triggers = joined.as_str())
 }
 
-pub(super) fn declares_variables(descriptor: &dyn TriggerKindDescriptor) -> bool {
-    declared_variables(descriptor).is_some_and(|declared| !declared.is_empty())
-}
-
 pub(super) fn offered_events(
     registry: &TriggerRegistry,
     palette: &ForgePalette,
@@ -81,9 +93,6 @@ pub(super) fn offered_events(
             let Some(kind_id) = picks.get(&item.id) else {
                 continue;
             };
-            if !registry.get(kind_id).is_some_and(declares_variables) {
-                continue;
-            }
             if is_curated(kind_id) {
                 suggested.push((kind_id.clone(), item));
             } else {
@@ -117,62 +126,88 @@ pub(super) fn default_action_name(
     format!("{} on {}", overlay.display_name, trigger.label())
 }
 
-pub(super) fn draft_wiring(
-    overlay: &OverlayDefinition,
-    kind: &dyn OverlayKindDescriptor,
-    trigger: &dyn TriggerKindDescriptor,
-    plan: OverlayWiringPlan,
-    language: NamesLanguage,
-) -> WiringDraft {
-    let context = sample_context(&[SampleTrigger {
-        kind_id: trigger.id().to_owned(),
-        contract: trigger.platform_contract(),
-        variables: declared_variables(trigger).unwrap_or_default(),
-    }]);
-    let queue_name = match plan.action() {
-        PlannedAction::Create { queue, .. } => queue.name.clone(),
-        PlannedAction::Extend { .. } => String::new(),
-    };
-
-    WiringDraft {
-        action_name: plan.action().action().name.clone(),
-        trigger_name: plan.trigger().instance().name.clone(),
-        queue_name,
-        wording: content_lines(
-            kind,
-            &delivered_content(
-                kind,
-                &overlay.config,
-                &plan.added_step().config,
-                &context.with_names_language(language).args(),
-            ),
-        ),
-        plan,
-    }
-}
-
-fn content_lines(kind: &dyn OverlayKindDescriptor, content: &OverlayConfig) -> Vec<String> {
-    kind.config_fields()
+pub(super) fn wording_specs(fields: &[FormField], suggested: &OverlayConfig) -> Vec<WordingSpec> {
+    fields
         .iter()
-        .filter(|sectioned| sectioned.delivered)
-        .filter_map(|sectioned| {
-            content
-                .get(sectioned.field.key())
+        .filter_map(|spec| match spec {
+            FormField::Text {
+                key, placeholder, ..
+            } => Some((*key, *placeholder)),
+            FormField::TextArea { key, .. } => Some((*key, "")),
+            _ => None,
+        })
+        .map(|(key, placeholder)| WordingSpec {
+            key: key.to_owned(),
+            label: fields.iter().find(|spec| spec.key() == key).map_or_else(
+                || key.to_owned(),
+                |spec| field_label(OVERLAY_SEND_KIND_ID, spec),
+            ),
+            placeholder: field_placeholder(OVERLAY_SEND_KIND_ID, key, placeholder),
+            seed: suggested
+                .get(key)
                 .and_then(Variant::as_str)
-                .filter(|line| !line.is_empty())
-                .map(ToOwned::to_owned)
+                .unwrap_or_default()
+                .to_owned(),
         })
         .collect()
+}
+
+pub(super) fn written_content<'a>(
+    lines: impl IntoIterator<Item = (&'a str, &'a str)>,
+) -> OverlayConfig {
+    lines
+        .into_iter()
+        .filter(|(_, text)| !text.trim().is_empty())
+        .map(|(key, text)| (key.to_owned(), Variant::String(text.to_owned())))
+        .collect()
+}
+
+pub(super) fn queue_choices(queues: Vec<Queue>) -> Vec<(QueueId, String)> {
+    let mut choices: Vec<(QueueId, String)> = queues
+        .into_iter()
+        .filter(|queue| !queue.is_default())
+        .map(|queue| (queue.id, queue.name))
+        .collect();
+    choices.sort_by_key(|(_, name)| name.to_lowercase());
+    choices
+}
+
+pub(super) fn draft_wiring(plan: OverlayWiringPlan, registry: &TriggerRegistry) -> WiringDraft {
+    let action = match plan.action() {
+        PlannedAction::Create { action, queue } => ActionRecord::Create {
+            name: action.name.clone(),
+            queue: queue.name.clone(),
+        },
+        PlannedAction::Extend { action } => ActionRecord::Extend {
+            name: action.name.clone(),
+        },
+    };
+    let trigger_name = |instance: &forge_types::TriggerInstance| {
+        crate::shared::kind_copy::trigger_instance_name(
+            &instance.name,
+            registry.get(&instance.kind_id),
+        )
+    };
+    let trigger = match plan.trigger() {
+        PlannedTrigger::Create(instance) => TriggerRecord::Create(trigger_name(instance)),
+        PlannedTrigger::Reuse(instance) => TriggerRecord::Reuse(trigger_name(instance)),
+    };
+    WiringDraft {
+        action,
+        trigger,
+        plan,
+    }
 }
 
 pub(super) fn refusal_message(refusal: &OverlayWiringRefusal) -> String {
     match refusal {
         OverlayWiringRefusal::OverlayKindNotEligible { .. } => tr!("overlays_wire_refused_overlay"),
-        OverlayWiringRefusal::TargetMissing { .. }
-        | OverlayWiringRefusal::ActionNameEmpty
-        | OverlayWiringRefusal::ActionMissing { .. }
-        | OverlayWiringRefusal::QueueMissing { .. }
-        | OverlayWiringRefusal::PlanOutdated => tr!("overlays_wire_refused_missing"),
+        OverlayWiringRefusal::ActionNameEmpty => tr!("overlays_wire_refused_name"),
+        OverlayWiringRefusal::ActionMissing { .. } => tr!("overlays_wire_refused_action"),
+        OverlayWiringRefusal::QueueMissing { .. } => tr!("overlays_wire_refused_queue"),
+        OverlayWiringRefusal::TargetMissing { .. } | OverlayWiringRefusal::PlanOutdated => {
+            tr!("overlays_wire_refused_missing")
+        }
     }
 }
 
@@ -181,8 +216,6 @@ mod tests {
     use std::collections::BTreeSet;
 
     use forge_components::ThemeId;
-    use forge_overlay::config;
-    use forge_overlay::kinds::alert::AlertOverlayKind;
     use forge_registry::TriggerCategory;
     use forge_storage::Language;
     use forge_types::{
@@ -261,10 +294,6 @@ mod tests {
             action_enabled: true,
             trigger_labels: labels.iter().map(|label| (*label).to_owned()).collect(),
         }
-    }
-
-    fn text(value: &str) -> Variant {
-        Variant::String(value.to_owned())
     }
 
     #[test]
@@ -396,28 +425,6 @@ mod tests {
                 refusal_message(&refusal),
                 message_in(Language::En, key),
                 "{refusal:?}"
-            );
-        }
-    }
-
-    #[test]
-    fn the_wording_block_keeps_the_kinds_content_order_and_skips_a_line_left_blank() {
-        for (headline, subline, expected) in [
-            ("Lead", "Detail", vec!["Lead", "Detail"]),
-            ("", "Detail", vec!["Detail"]),
-            ("Lead", "", vec!["Lead"]),
-            ("", "", Vec::new()),
-        ] {
-            let content = OverlayConfig::from([
-                (config::HEADLINE.to_owned(), text(headline)),
-                (config::SUBLINE.to_owned(), text(subline)),
-                (config::ACCENT.to_owned(), text("mauve")),
-            ]);
-
-            assert_eq!(
-                content_lines(&AlertOverlayKind, &content),
-                expected,
-                "headline {headline:?} with subline {subline:?} read wrong",
             );
         }
     }

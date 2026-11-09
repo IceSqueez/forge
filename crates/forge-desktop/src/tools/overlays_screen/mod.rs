@@ -51,7 +51,9 @@ use forge_runtime::{
 use forge_server::ServerHandle;
 use forge_soundboard::ClipLibrary;
 use forge_speak_queue::SpeakQueueHandle;
-use forge_storage::{MediaRepo, OverlayDefinition, OverlayId, OverlayRepo, SettingsRepo};
+use forge_storage::{
+    MediaRepo, OverlayDefinition, OverlayId, OverlayRepo, QueueRepo, SettingsRepo,
+};
 use gpui::{
     AnyElement, App, Context, Entity, EventEmitter, Pixels, Subscription, Window, div, prelude::*,
     px,
@@ -170,6 +172,7 @@ pub(crate) struct OverlaysLaunch {
     pub audio_router: Arc<AudioRouter>,
     pub speak: Option<SpeakQueueHandle>,
     pub actions: Arc<ActionsService>,
+    pub queues: Arc<dyn QueueRepo>,
     pub triggers: Arc<TriggerRegistry>,
     pub sub_actions: Arc<SubActionRegistry>,
     pub latest_values: LatestValues,
@@ -195,6 +198,7 @@ impl OverlaysView {
             EventWiringView::new(
                 WiringLaunch {
                     actions: Arc::clone(&launch.actions),
+                    queues: Arc::clone(&launch.queues),
                     triggers: Arc::clone(&launch.triggers),
                     sub_actions: Arc::clone(&launch.sub_actions),
                     kinds: Arc::clone(&launch.kinds),

@@ -315,16 +315,9 @@ impl TriggerInstanceRepo for RevisingTriggerInstanceRepo {
             .await
     }
 
-    async fn commit_overlay_wiring(
-        &self,
-        wiring: &TriggerWiring,
-        queues: Arc<dyn QueueRepo>,
-        actions: Arc<dyn ActionRepo>,
-    ) -> Result<(), StorageError> {
+    async fn commit_overlay_wiring(&self, wiring: &TriggerWiring) -> Result<(), StorageError> {
         let _advance_on_exit = AdvanceOnDrop::armed(self.revision.clone());
-        self.inner
-            .commit_overlay_wiring(wiring, queues, actions)
-            .await
+        self.inner.commit_overlay_wiring(wiring).await
     }
 
     async fn link_action(

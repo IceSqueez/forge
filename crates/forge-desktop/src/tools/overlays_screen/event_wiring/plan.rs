@@ -6,7 +6,7 @@ use forge_overlay::{
     order_curated_first, sample_context,
 };
 use forge_registry::{TriggerKindDescriptor, TriggerRegistry, declared_variables};
-use forge_runtime::{OverlayFeed, OverlayWiringRefusal, plan_overlay_wiring};
+use forge_runtime::{OverlayFeed, OverlayWiringPlan, OverlayWiringRefusal, PlannedAction};
 use forge_storage::OverlayDefinition;
 use forge_types::{ActionId, NamesLanguage, Variant};
 use gpui::SharedString;
@@ -27,6 +27,7 @@ pub(super) struct WiringDraft {
     pub trigger_name: String,
     pub queue_name: String,
     pub wording: Vec<String>,
+    pub plan: OverlayWiringPlan,
 }
 
 pub(super) fn feed_rows(feeds: Vec<OverlayFeed>, registry: &TriggerRegistry) -> Vec<FeedRow> {
@@ -109,39 +110,45 @@ pub(super) fn offered_events(
     (groups, picks)
 }
 
+pub(super) fn default_action_name(
+    overlay: &OverlayDefinition,
+    trigger: &dyn TriggerKindDescriptor,
+) -> String {
+    format!("{} on {}", overlay.display_name, trigger.label())
+}
+
 pub(super) fn draft_wiring(
     overlay: &OverlayDefinition,
     kind: &dyn OverlayKindDescriptor,
     trigger: &dyn TriggerKindDescriptor,
+    plan: OverlayWiringPlan,
     language: NamesLanguage,
-) -> Result<WiringDraft, OverlayWiringRefusal> {
-    let plan = plan_overlay_wiring(overlay, kind, trigger)?;
-    let supplied: OverlayConfig = plan
-        .action
-        .steps
-        .first()
-        .map(|step| step.config.clone())
-        .unwrap_or_default();
+) -> WiringDraft {
     let context = sample_context(&[SampleTrigger {
         kind_id: trigger.id().to_owned(),
         contract: trigger.platform_contract(),
         variables: declared_variables(trigger).unwrap_or_default(),
     }]);
+    let queue_name = match plan.action() {
+        PlannedAction::Create { queue, .. } => queue.name.clone(),
+        PlannedAction::Extend { .. } => String::new(),
+    };
 
-    Ok(WiringDraft {
-        action_name: plan.action.name,
-        trigger_name: plan.trigger.name,
-        queue_name: plan.queue.name.to_owned(),
+    WiringDraft {
+        action_name: plan.action().action().name.clone(),
+        trigger_name: plan.trigger().instance().name.clone(),
+        queue_name,
         wording: content_lines(
             kind,
             &delivered_content(
                 kind,
                 &overlay.config,
-                &supplied,
+                &plan.added_step().config,
                 &context.with_names_language(language).args(),
             ),
         ),
-    })
+        plan,
+    }
 }
 
 fn content_lines(kind: &dyn OverlayKindDescriptor, content: &OverlayConfig) -> Vec<String> {
@@ -161,10 +168,11 @@ fn content_lines(kind: &dyn OverlayKindDescriptor, content: &OverlayConfig) -> V
 pub(super) fn refusal_message(refusal: &OverlayWiringRefusal) -> String {
     match refusal {
         OverlayWiringRefusal::OverlayKindNotEligible { .. } => tr!("overlays_wire_refused_overlay"),
-        OverlayWiringRefusal::TriggerDeclaresNoVariables { .. } => {
-            tr!("overlays_wire_refused_trigger")
-        }
-        OverlayWiringRefusal::TargetMissing { .. } => tr!("overlays_wire_refused_missing"),
+        OverlayWiringRefusal::TargetMissing { .. }
+        | OverlayWiringRefusal::ActionNameEmpty
+        | OverlayWiringRefusal::ActionMissing { .. }
+        | OverlayWiringRefusal::QueueMissing { .. }
+        | OverlayWiringRefusal::PlanOutdated => tr!("overlays_wire_refused_missing"),
     }
 }
 
@@ -174,8 +182,7 @@ mod tests {
 
     use forge_components::ThemeId;
     use forge_overlay::config;
-    use forge_overlay::kinds::alert::{self, AlertOverlayKind};
-    use forge_overlay::kinds::blank::{self, BlankOverlayKind};
+    use forge_overlay::kinds::alert::AlertOverlayKind;
     use forge_registry::TriggerCategory;
     use forge_storage::Language;
     use forge_types::{
@@ -184,7 +191,7 @@ mod tests {
 
     use super::*;
     use crate::app::i18n::{install_language, message_in};
-    use crate::test_support::{Declares, StubTrigger, overlay_definition, trigger_registry};
+    use crate::test_support::{Declares, StubTrigger, trigger_registry};
 
     const SUBSCRIBER: &str = "twitch.support.subscriber";
     const FOLLOW: &str = "twitch.channel.follow";
@@ -369,38 +376,6 @@ mod tests {
     }
 
     #[test]
-    fn a_plan_the_wiring_refuses_is_handed_back_with_the_cause_it_named() {
-        let speaking = speaks(SUBSCRIBER, "Subscribed", TriggerCategory::Subscriptions);
-        let silent = StubTrigger::new(SILENT, "Silent", TriggerCategory::Chat, Declares::Nothing);
-
-        let Err(drawless) = draft_wiring(
-            &overlay_definition(blank::KIND_ID, OverlayConfig::new()),
-            &BlankOverlayKind,
-            &speaking,
-            NamesLanguage::En,
-        ) else {
-            panic!("a look that draws nothing was drafted a wiring")
-        };
-        let Err(wordless) = draft_wiring(
-            &overlay_definition(alert::KIND_ID, OverlayConfig::new()),
-            &AlertOverlayKind,
-            &silent,
-            NamesLanguage::En,
-        ) else {
-            panic!("an event declaring nothing was drafted a wiring")
-        };
-
-        assert!(matches!(
-            drawless,
-            OverlayWiringRefusal::OverlayKindNotEligible { .. }
-        ));
-        assert!(matches!(
-            wordless,
-            OverlayWiringRefusal::TriggerDeclaresNoVariables { .. }
-        ));
-    }
-
-    #[test]
     fn each_refusal_explains_itself_in_its_own_words() {
         install_language(Language::En);
         for (refusal, key) in [
@@ -409,12 +384,6 @@ mod tests {
                     overlay_kind_id: "blank".to_owned(),
                 },
                 "overlays_wire_refused_overlay",
-            ),
-            (
-                OverlayWiringRefusal::TriggerDeclaresNoVariables {
-                    trigger_kind_id: SILENT.to_owned(),
-                },
-                "overlays_wire_refused_trigger",
             ),
             (
                 OverlayWiringRefusal::TargetMissing {
@@ -429,41 +398,6 @@ mod tests {
                 "{refusal:?}"
             );
         }
-    }
-
-    #[test]
-    fn the_preview_reads_the_plans_own_wording_with_its_tokens_filled_in() {
-        let stored = OverlayConfig::from([
-            (config::HEADLINE.to_owned(), text("Stored headline")),
-            (config::SUBLINE.to_owned(), text("Stored subline")),
-        ]);
-
-        let draft = draft_wiring(
-            &overlay_definition(alert::KIND_ID, stored),
-            &AlertOverlayKind,
-            &speaks(SUBSCRIBER, "Subscribed", TriggerCategory::Subscriptions),
-            NamesLanguage::En,
-        )
-        .unwrap_or_else(|_| panic!("a curated event on an alert overlay is wireable"));
-
-        assert!(
-            draft
-                .wording
-                .first()
-                .is_some_and(|line| line.ends_with(" just subscribed!")),
-            "the preview is not the wording the plan writes: {:?}",
-            draft.wording,
-        );
-        assert!(
-            !draft.wording.iter().any(|line| line.contains('%')),
-            "the preview left a raw token where a sampled value belongs: {:?}",
-            draft.wording,
-        );
-        assert!(
-            !draft.wording.iter().any(|line| line.contains("Stored")),
-            "the preview showed the stored line the wiring is about to override: {:?}",
-            draft.wording,
-        );
     }
 
     #[test]

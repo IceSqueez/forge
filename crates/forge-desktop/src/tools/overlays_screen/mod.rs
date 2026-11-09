@@ -47,7 +47,6 @@ use forge_registry::{SubActionRegistry, TriggerRegistry};
 use forge_runtime::ActionsService;
 use forge_runtime::{
     DateNamesHandle, EventBus, LatestValues, OverlaySampleSource, OverlayServiceHandle,
-    QueueSchedulerHandle,
 };
 use forge_server::ServerHandle;
 use forge_soundboard::ClipLibrary;
@@ -173,7 +172,6 @@ pub(crate) struct OverlaysLaunch {
     pub actions: Arc<ActionsService>,
     pub triggers: Arc<TriggerRegistry>,
     pub sub_actions: Arc<SubActionRegistry>,
-    pub scheduler: QueueSchedulerHandle,
     pub latest_values: LatestValues,
     pub bus: Arc<EventBus>,
 }
@@ -199,7 +197,6 @@ impl OverlaysView {
                     actions: Arc::clone(&launch.actions),
                     triggers: Arc::clone(&launch.triggers),
                     sub_actions: Arc::clone(&launch.sub_actions),
-                    scheduler: launch.scheduler,
                     kinds: Arc::clone(&launch.kinds),
                     settings: Arc::clone(&launch.settings_repo),
                     rt_handle: launch.rt_handle.clone(),

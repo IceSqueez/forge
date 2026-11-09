@@ -3,7 +3,7 @@ use std::collections::BTreeSet;
 use forge_registry::{ActorRole, ActorSlot, CanonicalVariable, TriggerVariable, VariableStanding};
 use forge_types::variable_references;
 
-use crate::catalog::descriptor::{DeliveryDisposition, OverlayConfig, OverlayKindDescriptor};
+use crate::catalog::descriptor::{ContentFeed, OverlayConfig, OverlayKindDescriptor};
 use crate::config;
 
 const PRINCIPAL_DISPLAY_NAME: CanonicalVariable =
@@ -71,8 +71,7 @@ struct Wording {
 }
 
 pub fn accepts_event_wiring(descriptor: &dyn OverlayKindDescriptor) -> bool {
-    descriptor.delivery_disposition() == DeliveryDisposition::Transient
-        && descriptor.has_visual_page()
+    descriptor.content_feed() == ContentFeed::Deliveries && descriptor.has_visual_page()
 }
 
 pub fn is_curated(trigger_kind_id: &str) -> bool {

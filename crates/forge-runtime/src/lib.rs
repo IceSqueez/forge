@@ -136,12 +136,11 @@ pub use overlays::overlay_service::EnabledOverlay;
 pub use overlays::overlay_service::OVERLAY_TEST_FIRE_KIND;
 pub use overlays::overlay_service::OverlaySendOptions;
 pub use runtime_builder::ScheduledRunsWorker;
-pub use services::actions::overlay_wiring::PlannedAction;
-pub use services::actions::overlay_wiring::QueuePlacement;
 pub use services::actions::types::ActionSummary;
 pub use services::actions::{
-    ActionDetail, ActionsService, OVERLAY_ALERT_QUEUE, OverlayFeed, OverlayWiringOutcome,
-    OverlayWiringPlan, OverlayWiringRecords, OverlayWiringRefusal, WiredQueue, plan_overlay_wiring,
+    ActionDetail, ActionsService, OverlayFeed, OverlayWiringOutcome, OverlayWiringPlan,
+    OverlayWiringPreview, OverlayWiringRecords, OverlayWiringRefusal, OverlayWiringRequest,
+    PlannedAction, PlannedTrigger, WiringTarget, suggest_overlay_content,
 };
 pub use services::catalog::CatalogBinding;
 pub use services::catalog::CatalogSnapshot;

@@ -261,7 +261,6 @@ impl AppShell {
             actions: Arc::clone(&handles.overlays.actions),
             triggers: handles.automation.trigger_registry.clone(),
             sub_actions: handles.automation.sub_action_registry.clone(),
-            scheduler: handles.automation.scheduler.clone(),
             latest_values: handles.core.latest_values.clone(),
             bus: Arc::clone(&handles.core.bus),
         };

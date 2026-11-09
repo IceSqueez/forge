@@ -1,11 +1,8 @@
 use std::collections::HashMap;
 use std::str::FromStr;
-use std::sync::Arc;
 
 use async_trait::async_trait;
-use forge_storage::{
-    ActionRepo, QueueRepo, StorageError, TriggerChanges, TriggerInstanceRepo, TriggerWiring,
-};
+use forge_storage::{StorageError, TriggerChanges, TriggerInstanceRepo, TriggerWiring};
 use forge_types::{ActionId, PermissionRung, PlatformScope, TriggerInstance, TriggerInstanceId};
 
 use crate::codec::epoch::epoch_ms_now;
@@ -14,7 +11,6 @@ use crate::codec::wire_label::parse_label;
 use crate::error::SqliteStorageError;
 use crate::pool::SqlitePools;
 use crate::repos::action::upsert_action;
-use crate::repos::queue::{mark_overlay_alert_queue, upsert_queue};
 
 macro_rules! trigger_instance_columns {
     () => {
@@ -295,12 +291,7 @@ impl TriggerInstanceRepo for SqliteTriggerInstanceRepo {
         Ok(())
     }
 
-    async fn commit_overlay_wiring(
-        &self,
-        wiring: &TriggerWiring,
-        _queues: Arc<dyn QueueRepo>,
-        _actions: Arc<dyn ActionRepo>,
-    ) -> Result<(), StorageError> {
+    async fn commit_overlay_wiring(&self, wiring: &TriggerWiring) -> Result<(), StorageError> {
         let mut tx = self
             .db
             .writer()
@@ -308,13 +299,11 @@ impl TriggerInstanceRepo for SqliteTriggerInstanceRepo {
             .await
             .map_err(SqliteStorageError::Sqlx)?;
 
-        if let Some(queue) = &wiring.created_queue {
-            upsert_queue(&mut *tx, queue).await?;
-        }
-        mark_overlay_alert_queue(&mut *tx, wiring.action.queue_id).await?;
         upsert_action(&mut *tx, &wiring.action).await?;
-        upsert_instance(&mut *tx, &wiring.instance).await?;
-        ignore_unique_violation(append_link(&mut *tx, wiring.action.id, wiring.instance.id).await)?;
+        if let Some(instance) = &wiring.instance {
+            upsert_instance(&mut *tx, instance).await?;
+            ignore_unique_violation(append_link(&mut *tx, wiring.action.id, instance.id).await)?;
+        }
 
         tx.commit().await.map_err(SqliteStorageError::Sqlx)?;
         Ok(())

@@ -2,9 +2,7 @@ use std::collections::HashMap;
 use std::sync::Arc;
 
 use async_trait::async_trait;
-use forge_storage::{
-    ActionRepo, QueueRepo, StorageError, TriggerChanges, TriggerInstanceRepo, TriggerWiring,
-};
+use forge_storage::{StorageError, TriggerChanges, TriggerInstanceRepo, TriggerWiring};
 use forge_types::{ActionId, TriggerInstance, TriggerInstanceId, Variant};
 
 use crate::bindings::reconciler::HotkeyReconciler;
@@ -117,19 +115,12 @@ impl TriggerInstanceRepo for HotkeySyncedTriggerRepo {
         Ok(())
     }
 
-    async fn commit_overlay_wiring(
-        &self,
-        wiring: &TriggerWiring,
-        queues: Arc<dyn QueueRepo>,
-        actions: Arc<dyn ActionRepo>,
-    ) -> Result<(), StorageError> {
+    async fn commit_overlay_wiring(&self, wiring: &TriggerWiring) -> Result<(), StorageError> {
         let canonical = TriggerWiring {
-            instance: canonicalized(&wiring.instance)?,
+            instance: wiring.instance.as_ref().map(canonicalized).transpose()?,
             ..wiring.clone()
         };
-        self.inner
-            .commit_overlay_wiring(&canonical, queues, actions)
-            .await?;
+        self.inner.commit_overlay_wiring(&canonical).await?;
         self.sync().await;
         Ok(())
     }

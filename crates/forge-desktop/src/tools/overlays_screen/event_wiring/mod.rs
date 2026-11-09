@@ -14,12 +14,12 @@ use forge_components::{
 use forge_overlay::{OverlayKindRegistry, accepts_event_wiring};
 use forge_registry::{SubActionRegistry, TriggerRegistry};
 use forge_runtime::{
-    ActionsService, OverlayFeed, OverlayWiringOutcome, OverlayWiringRecords, OverlayWiringRefusal,
-    WiredQueue,
+    ActionsService, OverlayFeed, OverlayWiringOutcome, OverlayWiringPlan, OverlayWiringPreview,
+    OverlayWiringRecords, OverlayWiringRefusal, OverlayWiringRequest, RuntimeError, WiringTarget,
+    suggest_overlay_content,
 };
-use forge_runtime::{MembershipOutcome, QueueSchedulerHandle};
 use forge_storage::{OverlayDefinition, OverlayId, SettingsRepo};
-use forge_types::{ActionId, NamesLanguage, Queue};
+use forge_types::{ActionId, NamesLanguage};
 use gpui::{
     App, Context, Entity, EventEmitter, SharedString, Subscription, Window, div, prelude::*,
 };
@@ -43,7 +43,6 @@ pub(super) struct WiringLaunch {
     pub actions: Arc<ActionsService>,
     pub triggers: Arc<TriggerRegistry>,
     pub sub_actions: Arc<SubActionRegistry>,
-    pub scheduler: QueueSchedulerHandle,
     pub kinds: Arc<OverlayKindRegistry>,
     pub settings: Arc<dyn SettingsRepo>,
     pub rt_handle: tokio::runtime::Handle,
@@ -51,7 +50,7 @@ pub(super) struct WiringLaunch {
 
 enum ConfirmState {
     Checking,
-    Ready(WiringDraft),
+    Ready(Box<WiringDraft>),
     AlreadyWired {
         action_id: ActionId,
         action_name: String,
@@ -78,16 +77,15 @@ enum WiringStage {
     Confirm(ConfirmStage),
 }
 
-struct QueueLanding {
-    name: String,
-    live: bool,
+enum Check {
+    Wired(ActionId),
+    Planned(Box<OverlayWiringPlan>),
+    Refused(OverlayWiringRefusal),
+    Failed(RepoFailure),
 }
 
 enum Landing {
-    Wired {
-        records: OverlayWiringRecords,
-        queue: Option<QueueLanding>,
-    },
+    Wired(OverlayWiringRecords),
     AlreadyWired(ActionId),
     Failed(RepoFailure),
     Missing,
@@ -294,29 +292,55 @@ impl EventWiringView {
 
         let actions = Arc::clone(&self.handles.actions);
         let sub_actions = Arc::clone(&self.handles.sub_actions);
+        let triggers = Arc::clone(&self.handles.triggers);
+        let kinds = Arc::clone(&self.handles.kinds);
         let probe = kind_id.clone();
         async_bridge::run_async(
             &self.handles.rt_handle,
             async move {
-                actions
+                match actions
                     .overlay_wired_to(&definition.id, &probe, &sub_actions)
                     .await
-            },
-            move |this, result: Result<Option<ActionId>, _>, cx| {
-                let wired = match result {
-                    Ok(wired) => wired,
+                {
+                    Ok(Some(action_id)) => return Check::Wired(action_id),
+                    Ok(None) => {}
                     Err(error) => {
                         tracing::warn!(%error, "whether this overlay is already wired is unreadable");
-                        None
                     }
+                }
+                let Some(kind) = kinds.get(&definition.kind_id) else {
+                    return Check::Refused(OverlayWiringRefusal::OverlayKindNotEligible {
+                        overlay_kind_id: definition.kind_id.clone(),
+                    });
                 };
-                this.settle_check(&kind_id, wired, cx);
+                let Some(trigger) = triggers.get(&probe) else {
+                    return Check::Refused(OverlayWiringRefusal::TargetMissing {
+                        trigger_kind_id: probe,
+                    });
+                };
+                let request = OverlayWiringRequest {
+                    overlay: &definition,
+                    kind,
+                    trigger,
+                    target: WiringTarget::NewAction {
+                        name: plan::default_action_name(&definition, trigger),
+                        queue_id: None,
+                    },
+                    content: suggest_overlay_content(kind, trigger),
+                };
+                match actions.plan_overlay_wiring(request, &sub_actions).await {
+                    Ok(OverlayWiringPreview::Ready(plan)) => Check::Planned(plan),
+                    Ok(OverlayWiringPreview::AlreadyWired { action_id }) => Check::Wired(action_id),
+                    Err(RuntimeError::OverlayWiringRefused(refusal)) => Check::Refused(refusal),
+                    Err(error) => Check::Failed(RepoFailure::operation(error)),
+                }
             },
+            move |this, check, cx| this.settle_check(&kind_id, check, cx),
             cx,
         );
     }
 
-    fn settle_check(&mut self, kind_id: &str, wired: Option<ActionId>, cx: &mut Context<Self>) {
+    fn settle_check(&mut self, kind_id: &str, check: Check, cx: &mut Context<Self>) {
         let Some(WiringStage::Confirm(stage)) = self.stage.as_ref() else {
             return;
         };
@@ -324,17 +348,21 @@ impl EventWiringView {
             return;
         }
 
-        let next = match wired {
-            Some(action_id) => ConfirmState::AlreadyWired {
+        let next = match check {
+            Check::Wired(action_id) => ConfirmState::AlreadyWired {
                 action_id,
                 action_name: self.action_name(action_id),
             },
-            None => match self
-                .build_draft(kind_id, crate::app::presentation::active_names_language(cx))
-            {
-                Ok(draft) => ConfirmState::Ready(draft),
+            Check::Planned(planned) => match self.build_draft(
+                kind_id,
+                planned,
+                crate::app::presentation::active_names_language(cx),
+            ) {
+                Ok(draft) => ConfirmState::Ready(Box::new(draft)),
                 Err(refusal) => ConfirmState::Refused(plan::refusal_message(&refusal)),
             },
+            Check::Refused(refusal) => ConfirmState::Refused(plan::refusal_message(&refusal)),
+            Check::Failed(failure) => ConfirmState::Refused(failure.text()),
         };
 
         if let Some(WiringStage::Confirm(stage)) = self.stage.as_mut() {
@@ -353,6 +381,7 @@ impl EventWiringView {
     fn build_draft(
         &self,
         kind_id: &str,
+        planned: Box<OverlayWiringPlan>,
         language: NamesLanguage,
     ) -> Result<WiringDraft, OverlayWiringRefusal> {
         let target_missing = || OverlayWiringRefusal::TargetMissing {
@@ -369,51 +398,36 @@ impl EventWiringView {
             .triggers
             .get(kind_id)
             .ok_or_else(target_missing)?;
-        plan::draft_wiring(overlay, kind, trigger, language)
+        Ok(plan::draft_wiring(
+            overlay, kind, trigger, *planned, language,
+        ))
     }
 
     fn confirm(&mut self, cx: &mut Context<Self>) {
-        let Some(WiringStage::Confirm(stage)) = self.stage.as_ref() else {
+        let Some(WiringStage::Confirm(stage)) = self.stage.as_mut() else {
             return;
         };
-        if stage.writing || !matches!(stage.state, ConfirmState::Ready(_)) {
+        if stage.writing {
             return;
         }
-        let Some(definition) = self.overlay.clone() else {
+        let ConfirmState::Ready(draft) = &stage.state else {
             return;
         };
-        let kind_id = stage.trigger_kind_id.clone();
-
-        if let Some(WiringStage::Confirm(stage)) = self.stage.as_mut() {
-            stage.writing = true;
-        }
+        let planned = draft.plan.clone();
+        stage.writing = true;
         cx.notify();
 
         let actions = Arc::clone(&self.handles.actions);
         let sub_actions = Arc::clone(&self.handles.sub_actions);
-        let triggers = Arc::clone(&self.handles.triggers);
-        let kinds = Arc::clone(&self.handles.kinds);
-        let scheduler = self.handles.scheduler.clone();
         async_bridge::run_async(
             &self.handles.rt_handle,
             async move {
-                let Some(kind) = kinds.get(&definition.kind_id) else {
-                    return Landing::Missing;
-                };
-                let Some(trigger) = triggers.get(&kind_id) else {
-                    return Landing::Missing;
-                };
-                match actions
-                    .wire_overlay_to_event(&definition, kind, trigger, &sub_actions)
-                    .await
-                {
+                match actions.commit_overlay_wiring(&planned, &sub_actions).await {
                     Ok(OverlayWiringOutcome::AlreadyWired { action_id }) => {
                         Landing::AlreadyWired(action_id)
                     }
-                    Ok(OverlayWiringOutcome::Wired(records)) => {
-                        let queue = register_created_queue(&scheduler, &records).await;
-                        Landing::Wired { records, queue }
-                    }
+                    Ok(OverlayWiringOutcome::Wired(records)) => Landing::Wired(records),
+                    Err(RuntimeError::OverlayWiringRefused(_)) => Landing::Missing,
                     Err(error) => Landing::Failed(RepoFailure::operation(error)),
                 }
             },
@@ -425,17 +439,13 @@ impl EventWiringView {
     fn settle_wiring(&mut self, landing: Landing, cx: &mut Context<Self>) {
         self.stage = None;
         match landing {
-            Landing::Wired { records, queue } => {
-                let created = tr!("overlays_wire_toast_created");
-                match records.action_id {
-                    Some(action_id) => {
-                        self.raise_open_toast(ToastKind::Success, created, action_id, cx)
-                    }
-                    None => cx.push_toast(ToastKind::Success, created),
-                }
-                if let Some(warning) = queue_warning(queue.as_ref()) {
-                    cx.push_toast(ToastKind::Error, warning);
-                }
+            Landing::Wired(records) => {
+                self.raise_open_toast(
+                    ToastKind::Success,
+                    tr!("overlays_wire_toast_created"),
+                    records.action_id,
+                    cx,
+                );
                 self.refresh_feeds(cx);
             }
             Landing::AlreadyWired(action_id) => self.raise_open_toast(
@@ -493,33 +503,6 @@ impl EventWiringView {
     }
 }
 
-async fn register_created_queue(
-    scheduler: &QueueSchedulerHandle,
-    records: &OverlayWiringRecords,
-) -> Option<QueueLanding> {
-    let queue: &Queue = records.queue.as_ref().and_then(WiredQueue::created)?;
-    let live = match scheduler.register(queue.clone()).await {
-        Ok(MembershipOutcome::Applied | MembershipOutcome::AlreadyRegistered) => true,
-        Ok(MembershipOutcome::NotFound) => false,
-        Err(error) => {
-            tracing::warn!(%error, "the scheduler refused the queue the wiring created");
-            false
-        }
-    };
-    Some(QueueLanding {
-        name: queue.name.clone(),
-        live,
-    })
-}
-
-fn queue_warning(queue: Option<&QueueLanding>) -> Option<String> {
-    let landing = queue.filter(|landing| !landing.live)?;
-    Some(tr!(
-        "overlays_wire_queue_not_live",
-        queue = landing.name.as_str()
-    ))
-}
-
 impl EventEmitter<NavRequested> for EventWiringView {}
 
 impl Render for EventWiringView {
@@ -556,66 +539,28 @@ impl Render for EventWiringView {
 
 #[cfg(test)]
 mod tests {
-    use forge_components::{Density, ThemeId, ToastKind};
+    use forge_components::{Density, ThemeId};
     use forge_overlay::kinds::alert::{self, AlertOverlayKind};
     use forge_overlay::{OverlayConfig, OverlayKindRegistry};
     use forge_registry::TriggerCategory;
-    use forge_runtime::WiredQueue;
-    use forge_runtime::{ActionCancelRegistry, EventBus, QueueScheduler, spawn_action_engine};
     use forge_storage::Language;
     use forge_storage::MockActionRepo;
     use forge_storage::MockHistoryRepo;
     use forge_storage::MockQueueRepo;
     use forge_storage::MockTriggerInstanceRepo;
     use forge_storage::test_support::MemorySettings;
-    use forge_types::QueueId;
     use gpui::TestAppContext;
 
     use super::*;
     use crate::app::i18n::install_language;
     use crate::test_support::{
-        Declares, StubEventLog, StubTrigger, overlay_definition, pump_until, runtime,
-        trigger_registry,
+        Declares, StubTrigger, overlay_definition, pump_until, runtime, trigger_registry,
     };
     use forge_components::Presentation;
     use forge_components::Toasts;
 
     const SUBSCRIBER: &str = "twitch.support.subscriber";
     const FOLLOW: &str = "twitch.channel.follow";
-    const QUEUE_NAME: &str = "Overlay Alerts";
-
-    fn scheduler_on(rt: &tokio::runtime::Runtime) -> QueueSchedulerHandle {
-        rt.block_on(async {
-            let bus = EventBus::new(Arc::new(StubEventLog));
-            let engine = spawn_action_engine(forge_runtime::ActionEngineParts {
-                bus: Arc::clone(&bus),
-                catalog: crate::test_support::stub_catalog(),
-                actions: Arc::new(MockActionRepo::new()),
-                history: Arc::new(MockHistoryRepo::new()),
-                sub_action_registry: Arc::new(SubActionRegistry::new()),
-                cancel_registry: Arc::new(ActionCancelRegistry::new()),
-                date_names: forge_runtime::DateNamesHandle::default(),
-                config: forge_runtime::Config::default(),
-            });
-            QueueScheduler::spawn(engine, bus, Vec::new())
-        })
-    }
-
-    fn alert_queue() -> Queue {
-        Queue {
-            id: QueueId::new(),
-            name: QUEUE_NAME.to_owned(),
-            description: String::new(),
-            concurrency: std::num::NonZeroU32::MIN,
-        }
-    }
-
-    fn records_for(queue: WiredQueue) -> OverlayWiringRecords {
-        OverlayWiringRecords {
-            queue: Some(queue),
-            ..OverlayWiringRecords::default()
-        }
-    }
 
     fn launch(rt: &tokio::runtime::Runtime) -> WiringLaunch {
         let mut kinds = OverlayKindRegistry::new();
@@ -644,7 +589,6 @@ mod tests {
                 ),
             ])),
             sub_actions: Arc::new(SubActionRegistry::new()),
-            scheduler: scheduler_on(rt),
             kinds: Arc::new(kinds),
             settings: Arc::new(forge_storage::test_support::MemorySettings::new()),
             rt_handle: rt.handle().clone(),
@@ -774,13 +718,6 @@ mod tests {
         })
     }
 
-    fn toasts<T>(
-        cx: &mut TestAppContext,
-        read: impl FnOnce(&[forge_components::ToastData]) -> T,
-    ) -> T {
-        cx.update(|cx| read(cx.global::<Toasts>().items()))
-    }
-
     #[gpui::test]
     fn a_check_that_finds_an_existing_action_offers_it_instead_of_a_second_wiring(
         cx: &mut TestAppContext,
@@ -790,46 +727,13 @@ mod tests {
         let already = ActionId::new();
 
         view.update(cx, |this, cx| {
-            this.settle_check(SUBSCRIBER, Some(already), cx)
+            this.settle_check(SUBSCRIBER, Check::Wired(already), cx)
         });
 
         assert!(confirm_stage(&view, cx, |stage| matches!(
             stage.state,
             ConfirmState::AlreadyWired { action_id, .. } if action_id == already
         )));
-    }
-
-    #[gpui::test]
-    fn a_draft_with_no_overlay_or_an_unknown_event_names_the_target_as_missing(
-        cx: &mut TestAppContext,
-    ) {
-        let (view, _rt) = mount(cx);
-        const UNKNOWN_EVENT: &str = "twitch.no_such_event";
-
-        let without_overlay = view.read_with(cx, |this, _| {
-            this.build_draft(SUBSCRIBER, NamesLanguage::En)
-        });
-        view.update(cx, |this, _| {
-            this.overlay = Some(overlay_definition(alert::KIND_ID, OverlayConfig::new()));
-        });
-        let without_trigger = view.read_with(cx, |this, _| {
-            this.build_draft(UNKNOWN_EVENT, NamesLanguage::En)
-        });
-
-        for (outcome, kind) in [
-            (without_overlay, SUBSCRIBER),
-            (without_trigger, UNKNOWN_EVENT),
-        ] {
-            assert!(
-                matches!(
-                    &outcome,
-                    Err(OverlayWiringRefusal::TargetMissing { trigger_kind_id })
-                        if trigger_kind_id == kind
-                ),
-                "{kind}: {:?}",
-                outcome.as_ref().err()
-            );
-        }
     }
 
     #[gpui::test]
@@ -840,7 +744,7 @@ mod tests {
         checking_on(&view, cx, SUBSCRIBER);
 
         view.update(cx, |this, cx| {
-            this.settle_check(FOLLOW, Some(ActionId::new()), cx)
+            this.settle_check(FOLLOW, Check::Wired(ActionId::new()), cx)
         });
 
         assert!(confirm_stage(&view, cx, |stage| matches!(
@@ -854,111 +758,11 @@ mod tests {
         let (view, _rt) = mount(cx);
         checking_on(&view, cx, SUBSCRIBER);
         view.update(cx, |this, cx| {
-            this.settle_check(SUBSCRIBER, Some(ActionId::new()), cx)
+            this.settle_check(SUBSCRIBER, Check::Wired(ActionId::new()), cx)
         });
 
         view.update(cx, |this, cx| this.confirm(cx));
 
         assert!(!confirm_stage(&view, cx, |stage| stage.writing));
-    }
-
-    #[gpui::test]
-    fn only_a_created_queue_the_scheduler_never_took_warns_beside_the_success(
-        cx: &mut TestAppContext,
-    ) {
-        for (landing, expected) in [
-            (None, vec![ToastKind::Success]),
-            (
-                Some(QueueLanding {
-                    name: QUEUE_NAME.to_owned(),
-                    live: true,
-                }),
-                vec![ToastKind::Success],
-            ),
-            (
-                Some(QueueLanding {
-                    name: QUEUE_NAME.to_owned(),
-                    live: false,
-                }),
-                vec![ToastKind::Success, ToastKind::Error],
-            ),
-        ] {
-            let warned = landing.as_ref().is_some_and(|held| !held.live);
-            let (view, _rt) = mount(cx);
-
-            view.update(cx, |this, cx| {
-                this.settle_wiring(
-                    Landing::Wired {
-                        records: OverlayWiringRecords::default(),
-                        queue: landing,
-                    },
-                    cx,
-                )
-            });
-
-            toasts(cx, |raised| {
-                let kinds: Vec<ToastKind> = raised.iter().map(|toast| toast.kind).collect();
-                assert_eq!(kinds, expected, "a queue warned {warned} raised {kinds:?}");
-                if warned {
-                    assert!(
-                        raised[1].message.contains(QUEUE_NAME),
-                        "the warning does not say which queue is dead: {}",
-                        raised[1].message,
-                    );
-                }
-            });
-        }
-    }
-
-    #[test]
-    fn a_queue_the_wiring_created_is_handed_to_the_scheduler_so_the_action_can_run() {
-        let rt = runtime();
-        let handle = scheduler_on(&rt);
-        let made = alert_queue();
-
-        let (landing, again) = rt.block_on(async {
-            let landing =
-                register_created_queue(&handle, &records_for(WiredQueue::Created(made.clone())))
-                    .await;
-            (landing, handle.register(made).await)
-        });
-
-        assert!(landing.is_some_and(|held| held.live));
-        assert_eq!(again.ok(), Some(MembershipOutcome::AlreadyRegistered));
-    }
-
-    #[test]
-    fn a_queue_that_was_already_there_is_never_announced_again() {
-        let rt = runtime();
-        let handle = scheduler_on(&rt);
-        let found = alert_queue();
-
-        let (landing, after) = rt.block_on(async {
-            let landing =
-                register_created_queue(&handle, &records_for(WiredQueue::Existing(found.clone())))
-                    .await;
-            (landing, handle.register(found).await)
-        });
-
-        assert!(landing.is_none());
-        assert_eq!(
-            after.ok(),
-            Some(MembershipOutcome::Applied),
-            "a queue the wiring only found was registered anyway",
-        );
-    }
-
-    #[test]
-    fn a_created_queue_the_scheduler_can_no_longer_take_is_reported_not_live() {
-        let gone = runtime();
-        let handle = scheduler_on(&gone);
-        drop(gone);
-
-        let landing = runtime().block_on(register_created_queue(
-            &handle,
-            &records_for(WiredQueue::Created(alert_queue())),
-        ));
-
-        assert!(landing.is_some_and(|held| !held.live && held.name == QUEUE_NAME));
     }
 }

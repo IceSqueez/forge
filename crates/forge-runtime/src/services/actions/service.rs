@@ -2,17 +2,19 @@ use crate::error::RuntimeError;
 use std::collections::HashSet;
 use std::sync::Arc;
 
-use forge_overlay::OverlayKindDescriptor;
-use forge_registry::{SubActionRegistry, TriggerKindDescriptor};
+use forge_registry::SubActionRegistry;
 use forge_storage::{
-    ActionRepo, ActionTelemetry, HistoryRepo, OverlayDefinition, OverlayId, QueueRepo,
-    StorageError, TriggerChanges, TriggerInstanceRepo, TriggerWiring,
+    ActionRepo, ActionTelemetry, HistoryRepo, OverlayId, QueueRepo, StorageError, TriggerChanges,
+    TriggerInstanceRepo, TriggerWiring,
 };
-use forge_types::{ActionId, ExecutionContext, TriggerInstance, TriggerInstanceId};
+use forge_types::{Action, ActionId, ExecutionContext, TriggerInstance, TriggerInstanceId};
 use time::OffsetDateTime;
 
 use super::overlay_wiring::{
-    OverlayWiringOutcome, OverlayWiringRecords, QueuePlacement, WiredQueue, plan_overlay_wiring,
+    OverlayWiringOutcome, OverlayWiringPlan, OverlayWiringPreview, OverlayWiringRecords,
+    OverlayWiringRefusal, OverlayWiringRequest, PlannedAction, PlannedTrigger, WiringTarget,
+    assemble, chosen_queue_id, ensure_eligible, extended, new_action, new_action_name, new_trigger,
+    send_step,
 };
 use super::types::{ActionDetail, ActionSummary, OverlayFeed};
 use crate::sub_action_runners::feeds_overlay;
@@ -219,58 +221,171 @@ impl ActionsService {
             .map(|feed| feed.action_id))
     }
 
-    pub async fn wire_overlay_to_event(
+    pub async fn plan_overlay_wiring(
         &self,
-        overlay: &OverlayDefinition,
-        kind: &dyn OverlayKindDescriptor,
-        trigger: &dyn TriggerKindDescriptor,
+        request: OverlayWiringRequest<'_>,
+        sub_actions: &SubActionRegistry,
+    ) -> Result<OverlayWiringPreview, RuntimeError> {
+        let OverlayWiringRequest {
+            overlay,
+            kind,
+            trigger,
+            target,
+            content,
+        } = request;
+        ensure_eligible(overlay, kind)?;
+        let step = send_step(overlay, kind, content);
+
+        match target {
+            WiringTarget::NewAction { name, queue_id } => {
+                let name = new_action_name(&name)?;
+                let queue_id = chosen_queue_id(queue_id);
+                let queue = self
+                    .queues
+                    .get(queue_id)
+                    .await?
+                    .ok_or(OverlayWiringRefusal::QueueMissing { queue_id })?;
+                let action = new_action(name, queue_id, step.clone());
+                Ok(OverlayWiringPreview::Ready(Box::new(assemble(
+                    overlay,
+                    trigger.id(),
+                    PlannedAction::Create { action, queue },
+                    step,
+                    PlannedTrigger::Create(new_trigger(overlay, trigger)),
+                ))))
+            }
+            WiringTarget::ExistingAction(action_id) => {
+                let current = self
+                    .current_wiring_state(action_id, &overlay.id, trigger.id(), sub_actions)
+                    .await?;
+                if current.already_wired {
+                    return Ok(OverlayWiringPreview::AlreadyWired { action_id });
+                }
+                let planned_trigger = match current.linked_instance {
+                    Some(instance) => PlannedTrigger::Reuse(instance),
+                    None => PlannedTrigger::Create(new_trigger(overlay, trigger)),
+                };
+                Ok(OverlayWiringPreview::Ready(Box::new(assemble(
+                    overlay,
+                    trigger.id(),
+                    PlannedAction::Extend {
+                        action: extended(current.action, step.clone()),
+                    },
+                    step,
+                    planned_trigger,
+                ))))
+            }
+        }
+    }
+
+    pub async fn commit_overlay_wiring(
+        &self,
+        plan: &OverlayWiringPlan,
         sub_actions: &SubActionRegistry,
     ) -> Result<OverlayWiringOutcome, RuntimeError> {
-        let plan = plan_overlay_wiring(overlay, kind, trigger)?;
         let _one_wiring_at_a_time = self.wiring_turn.lock().await;
 
-        match self
-            .overlay_wired_to(&overlay.id, trigger.id(), sub_actions)
-            .await
-        {
-            Ok(Some(action_id)) => return Ok(OverlayWiringOutcome::AlreadyWired { action_id }),
-            Ok(None) => {}
-            Err(source) => return Err(RuntimeError::OverlayWiringNothingWritten { source }),
-        }
-
-        let queue = match self.resolve_queue(plan.queue).await {
-            Ok(queue) => queue,
-            Err(source) => return Err(RuntimeError::OverlayWiringNothingWritten { source }),
+        let wiring = match self.wiring_to_write(plan, sub_actions).await {
+            Ok(Ok(wiring)) => wiring,
+            Ok(Err(action_id)) => return Ok(OverlayWiringOutcome::AlreadyWired { action_id }),
+            Err(RuntimeError::Storage(source)) => {
+                return Err(RuntimeError::OverlayWiringNothingWritten { source });
+            }
+            Err(error) => return Err(error),
         };
 
-        let action = plan.action.on_queue(queue.id());
-        let wiring = TriggerWiring {
-            created_queue: queue.created().cloned(),
-            action,
-            instance: plan.trigger,
-        };
-        if let Err(source) = self
-            .trigger_instances
-            .commit_overlay_wiring(&wiring, Arc::clone(&self.queues), Arc::clone(&self.actions))
-            .await
-        {
+        if let Err(source) = self.trigger_instances.commit_overlay_wiring(&wiring).await {
             return Err(RuntimeError::OverlayWiringNothingWritten { source });
         }
 
         Ok(OverlayWiringOutcome::Wired(OverlayWiringRecords {
-            queue: Some(queue),
-            action_id: Some(wiring.action.id),
-            trigger_instance_id: Some(wiring.instance.id),
-            linked: true,
+            action_id: wiring.action.id,
+            action_created: matches!(plan.action(), PlannedAction::Create { .. }),
+            trigger_instance_id: plan.trigger().instance().id,
+            trigger_created: wiring.instance.is_some(),
         }))
     }
 
-    async fn resolve_queue(&self, placement: QueuePlacement) -> Result<WiredQueue, StorageError> {
-        match self.queues.overlay_alert_queue(placement.name).await? {
-            Some(existing) => Ok(WiredQueue::Existing(existing)),
-            None => Ok(WiredQueue::Created(placement.into_queue())),
+    async fn wiring_to_write(
+        &self,
+        plan: &OverlayWiringPlan,
+        sub_actions: &SubActionRegistry,
+    ) -> Result<Result<TriggerWiring, ActionId>, RuntimeError> {
+        match plan.action() {
+            PlannedAction::Create { action, .. } => {
+                if self.queues.get(action.queue_id).await?.is_none() {
+                    return Err(OverlayWiringRefusal::QueueMissing {
+                        queue_id: action.queue_id,
+                    }
+                    .into());
+                }
+                let PlannedTrigger::Create(instance) = plan.trigger() else {
+                    return Err(OverlayWiringRefusal::PlanOutdated.into());
+                };
+                Ok(Ok(TriggerWiring {
+                    action: action.clone(),
+                    instance: Some(instance.clone()),
+                }))
+            }
+            PlannedAction::Extend { action } => {
+                let current = self
+                    .current_wiring_state(
+                        action.id,
+                        plan.overlay_id(),
+                        plan.trigger_kind_id(),
+                        sub_actions,
+                    )
+                    .await?;
+                if current.already_wired {
+                    return Ok(Err(action.id));
+                }
+                let instance = match (plan.trigger(), current.linked_instance) {
+                    (PlannedTrigger::Create(planned), None) => Some(planned.clone()),
+                    (PlannedTrigger::Reuse(planned), Some(linked)) if planned.id == linked.id => {
+                        None
+                    }
+                    _ => return Err(OverlayWiringRefusal::PlanOutdated.into()),
+                };
+                Ok(Ok(TriggerWiring {
+                    action: extended(current.action, plan.added_step().clone()),
+                    instance,
+                }))
+            }
         }
     }
+
+    async fn current_wiring_state(
+        &self,
+        action_id: ActionId,
+        overlay: &OverlayId,
+        trigger_kind_id: &str,
+        sub_actions: &SubActionRegistry,
+    ) -> Result<CurrentWiring, RuntimeError> {
+        let action = self
+            .actions
+            .get(action_id)
+            .await?
+            .ok_or(OverlayWiringRefusal::ActionMissing { action_id })?;
+        let linked_instance = self
+            .trigger_instances
+            .list_for_action(action_id)
+            .await?
+            .into_iter()
+            .find(|instance| instance.kind_id == trigger_kind_id);
+        let already_wired = linked_instance.is_some()
+            && feeds_overlay(&action.sub_actions, sub_actions, overlay.as_str());
+        Ok(CurrentWiring {
+            action,
+            linked_instance,
+            already_wired,
+        })
+    }
+}
+
+struct CurrentWiring {
+    action: Action,
+    linked_instance: Option<TriggerInstance>,
+    already_wired: bool,
 }
 
 fn compute_sub_action_averages(

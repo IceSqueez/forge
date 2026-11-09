@@ -1,10 +1,9 @@
 use std::collections::HashMap;
-use std::sync::Arc;
 
 use async_trait::async_trait;
-use forge_types::{Action, ActionId, Queue, TriggerInstance, TriggerInstanceId};
+use forge_types::{Action, ActionId, TriggerInstance, TriggerInstanceId};
 
-use crate::{ActionRepo, QueueRepo, StorageError};
+use crate::StorageError;
 
 #[derive(Debug, Clone, Default, PartialEq)]
 pub struct TriggerChanges {
@@ -16,9 +15,8 @@ pub struct TriggerChanges {
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct TriggerWiring {
-    pub created_queue: Option<Queue>,
     pub action: Action,
-    pub instance: TriggerInstance,
+    pub instance: Option<TriggerInstance>,
 }
 
 #[cfg_attr(feature = "test-mocks", mockall::automock)]
@@ -46,12 +44,7 @@ pub trait TriggerInstanceRepo: Send + Sync {
 
     async fn apply_changes(&self, changes: &TriggerChanges) -> Result<(), StorageError>;
 
-    async fn commit_overlay_wiring(
-        &self,
-        wiring: &TriggerWiring,
-        queues: Arc<dyn QueueRepo>,
-        actions: Arc<dyn ActionRepo>,
-    ) -> Result<(), StorageError>;
+    async fn commit_overlay_wiring(&self, wiring: &TriggerWiring) -> Result<(), StorageError>;
 
     async fn link_action(
         &self,

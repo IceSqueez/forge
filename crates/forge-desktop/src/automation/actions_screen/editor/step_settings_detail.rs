@@ -131,3 +131,247 @@ fn amount_text(
         .map_or(seed.unit, |option| option.label);
     Some(format!("{} {unit}", seed.amount))
 }
+
+#[cfg(test)]
+mod tests {
+    use forge_registry::{
+        CodeKind, CodeLanguage, RunContext, StepCardDetail, StepCatalogEntry, SubActionCategory,
+    };
+    use forge_storage::Language;
+    use forge_types::{ArgStack, SubActionStep, SubActionTelemetry};
+
+    use super::*;
+    use crate::automation::actions_screen::editor::step_presentation::step_card_detail;
+
+    const KIND: &str = "midi.stub_step";
+    const DIRECTION: &str = "direction";
+    const GREETING: &str = "greeting";
+    const LOUD: &str = "loud";
+
+    #[derive(Default)]
+    struct Declared {
+        fields: Vec<FormField>,
+        defaults: SubActionConfig,
+        own_detail: Option<String>,
+    }
+
+    impl StepCatalogEntry for Declared {
+        fn category(&self) -> SubActionCategory {
+            SubActionCategory::Logic
+        }
+        fn label(&self) -> &str {
+            KIND
+        }
+        fn summary(&self) -> &str {
+            KIND
+        }
+        fn search_text(&self) -> &str {
+            KIND
+        }
+        fn icon_name(&self) -> &str {
+            "bolt"
+        }
+        fn card_detail(&self, _config: &SubActionConfig) -> Option<StepCardDetail> {
+            self.own_detail.clone().map(StepCardDetail::Text)
+        }
+    }
+
+    #[async_trait::async_trait]
+    impl SubActionRunner for Declared {
+        fn id(&self) -> &str {
+            KIND
+        }
+
+        fn default_config(&self) -> SubActionConfig {
+            self.defaults.clone()
+        }
+
+        fn config_fields(&self) -> Vec<FormField> {
+            self.fields.clone()
+        }
+
+        async fn execute(
+            &self,
+            _: &SubActionConfig,
+            _: &RunContext<'_>,
+        ) -> (SubActionTelemetry, Option<ArgStack>) {
+            unreachable!("a card detail never runs a step")
+        }
+    }
+
+    fn direction() -> FormField {
+        FormField::Select {
+            key: DIRECTION,
+            label: "Way",
+            options: &["input", "output"],
+        }
+    }
+
+    fn text(key: &'static str, label: &'static str) -> FormField {
+        FormField::Text {
+            key,
+            label,
+            placeholder: "",
+        }
+    }
+
+    fn config(pairs: &[(&str, Variant)]) -> SubActionConfig {
+        pairs
+            .iter()
+            .map(|(key, value)| ((*key).to_owned(), value.clone()))
+            .collect()
+    }
+
+    fn string(text: &str) -> Variant {
+        Variant::String(text.to_owned())
+    }
+
+    fn detail(runner: &Declared, stored: &SubActionConfig) -> Option<String> {
+        crate::app::i18n::install_language(Language::En);
+        declared_settings_detail(runner, stored, &HashMap::new())
+    }
+
+    #[test]
+    fn the_card_names_each_required_setting_with_its_label_in_declared_order() {
+        let runner = Declared {
+            fields: vec![
+                direction(),
+                text(GREETING, "Greeting"),
+                FormField::Toggle {
+                    key: LOUD,
+                    label: "Loud",
+                },
+            ],
+            ..Declared::default()
+        };
+        let stored = config(&[
+            (LOUD, Variant::Bool(true)),
+            (GREETING, string("hi %user%")),
+            (DIRECTION, string("input")),
+        ]);
+
+        assert_eq!(
+            detail(&runner, &stored).as_deref(),
+            Some("Direction: Input · Greeting: hi %user% · Loud: on"),
+        );
+    }
+
+    #[test]
+    fn a_setting_the_step_never_stored_shows_the_runners_default() {
+        let runner = Declared {
+            fields: vec![direction()],
+            defaults: config(&[(DIRECTION, string("output"))]),
+            ..Declared::default()
+        };
+
+        assert_eq!(
+            detail(&runner, &SubActionConfig::new()).as_deref(),
+            Some("Direction: Output"),
+        );
+    }
+
+    #[test]
+    fn optional_and_long_form_settings_stay_off_the_card() {
+        let runner = Declared {
+            fields: vec![
+                FormField::Optional {
+                    key: "extra",
+                    label: "Extra",
+                    inner: Box::new(text("extra", "Extra")),
+                },
+                FormField::TextArea {
+                    key: "body",
+                    label: "Body",
+                },
+                FormField::Code {
+                    key: "script",
+                    label: "Script",
+                    language: CodeLanguage::Rhai,
+                    kind: CodeKind::Script,
+                },
+                FormField::SubChain {
+                    key: "then",
+                    label: "Then",
+                },
+                FormField::CaseList {
+                    key: "cases",
+                    label: "Cases",
+                },
+                text(GREETING, "Greeting"),
+            ],
+            ..Declared::default()
+        };
+        let stored = config(&[
+            ("extra", string("filled")),
+            ("body", string("filled")),
+            ("script", string("filled")),
+            ("then", string("filled")),
+            ("cases", string("filled")),
+            (GREETING, string("hello")),
+        ]);
+
+        assert_eq!(detail(&runner, &stored).as_deref(), Some("Greeting: hello"));
+    }
+
+    #[test]
+    fn a_blank_setting_is_left_off_the_card() {
+        let runner = Declared {
+            fields: vec![text("first", "First"), text(GREETING, "Greeting")],
+            ..Declared::default()
+        };
+        let stored = config(&[("first", string(" \t ")), (GREETING, string("hello"))]);
+
+        assert_eq!(detail(&runner, &stored).as_deref(), Some("Greeting: hello"));
+    }
+
+    #[test]
+    fn a_step_with_nothing_left_to_show_has_no_detail() {
+        for (label, runner) in [
+            ("no declared fields", Declared::default()),
+            (
+                "only a blank setting",
+                Declared {
+                    fields: vec![text(GREETING, "Greeting")],
+                    ..Declared::default()
+                },
+            ),
+            (
+                "only a long-form setting",
+                Declared {
+                    fields: vec![FormField::TextArea {
+                        key: "body",
+                        label: "Body",
+                    }],
+                    ..Declared::default()
+                },
+            ),
+        ] {
+            let stored = config(&[("body", string("filled"))]);
+
+            assert_eq!(detail(&runner, &stored), None, "{label}");
+        }
+    }
+
+    #[test]
+    fn a_runners_own_card_detail_wins_over_its_declared_settings() {
+        crate::app::i18n::install_language(Language::En);
+        let runner = Declared {
+            fields: vec![text(GREETING, "Greeting")],
+            own_detail: Some("Runner wording".to_owned()),
+            ..Declared::default()
+        };
+        let step = SubActionStep {
+            kind_id: KIND.to_owned(),
+            config: config(&[(GREETING, string("hello"))]),
+            enabled: true,
+            continue_on_error: false,
+            condition: None,
+            label: None,
+        };
+
+        assert_eq!(
+            step_card_detail(Some(&runner), &step, &HashMap::new()).as_deref(),
+            Some("Runner wording"),
+        );
+    }
+}

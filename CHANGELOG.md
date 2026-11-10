@@ -1,6 +1,68 @@
 # Changelog
 All notable changes to this project will be documented in this file.
 
+## [0.7.8] - 2026-11-10
+### 🐛 Bug Fixes
+- *(emulator)* Open overlay pages at their tokenized address (closes #168)
+- *(overlays)* Link a new event without a second send step to the same overlay
+- *(window)* Draw window controls and resize edges with an integrated title bar
+- *(window)* Keep a tiled side fixed when resizing from its corner
+- *(chat)* Close the whisper draft when another viewer is selected
+- *(discord)* Report a send that fails before the request as failed
+- *(chat)* Seed follow statuses from every logged follow event of the last week
+- *(actions)* Ask before closing a running test and report its end
+- *(overlays)* Keep the action mode switch only as wide as its options (closes #181)
+- *(ui)* Match picker searches against each entry's keywords
+- *(triggers)* Show which platform each trigger belongs to
+
+### 🚀 Features
+- *(automation)* Name the target overlay on a Send to Overlay step card
+- *(overlays)* Wire an overlay to an event with the user's action and queue
+- *(automation)* Show a step's key settings on its card (closes #167)
+- *(overlays)* Let Show on event pick the action, queue and wording (closes #166)
+- *(triggers)* Let a trigger kind report when a viewer followed
+- *(twitch)* Report the follow moment of a follow event
+- *(storage)* Keep known viewer follow statuses across restarts
+- *(chat)* Remember viewer follow statuses from lookups and follow events
+- *(storage)* Read logged events of given kinds since a moment
+- *(chat)* Start follow status memory with the app and forget it on sign-out
+- *(chat)* Show remembered follow dates and look one up only for an opened viewer
+- *(actions)* Let a caller cancel and await one run of an action
+- *(ui)* Show grid picker groups under section headers
+
+### 🚜 Refactor
+- *(storage)* Drop the overlay alerts queue role
+
+### 🛠️ Build
+- *(deps)* Bump taiki-e/install-action from 2.88.1 to 2.90.2 (#169)
+- *(deps)* Bump h2 from 0.4.19 to 0.4.20 (#170)
+- *(deps)* Bump flate2 from 1.1.10 to 1.1.11 (#171)
+- *(deps)* Bump jiff from 0.2.38 to 0.2.39 (#172)
+
+### 🧪 Testing
+- *(automation)* Cover the overlay name on a Send to Overlay step card
+- *(emulator)* Pin overlay pages to the tokenized address and the currency amount
+- *(overlays)* Follow the plan and commit wiring contract
+- *(automation)* Expect the generic missing-option label
+- *(storage)* Remove coverage of the dropped queue role
+- *(overlays)* Cover planning and committing an event wiring
+- *(automation)* Cover the declared settings shown on a step card
+- *(storage)* Cover dropping queue roles and importing retired roles
+- *(overlays)* Cover a second event wired into an action already feeding the overlay
+- *(window)* Cover resize edges, frame corners and title bar choice
+- *(window)* Cover corner resize next to a tiled side (closes #175)
+- *(chat)* Cover whisper draft reset when another viewer is selected (closes #176)
+- *(discord)* Cover sends refused before the request as one failed send (closes #178)
+- *(twitch)* Cover the follow moment a follow event reports
+- *(storage)* Cover follow knowledge storage, seeding and pruning
+- *(chat)* Cover follow status memory, lookups, live follows and seeding
+- *(chat)* Cover follow status flush on shutdown and erasure on sign-out
+- *(actions)* Cover cancelling and awaiting a watched action run
+- *(chat)* Cover the viewer card follow status over the shared follow memory (closes #177)
+- *(actions)* Cover closing, stopping and background reports of a test run (closes #179)
+- *(ui)* Cover picker searches through entry keywords (closes #180)
+- *(triggers)* Cover platform sections in trigger pickers (closes #182)
+
 ## [0.7.7] - 2026-11-09
 ### ⚙️ Miscellaneous Tasks
 - *(ui)* Ship the font license texts next to the bundled fonts (closes #165)
@@ -20,6 +82,9 @@ All notable changes to this project will be documented in this file.
 - *(automation)* Use sample ids and logins no real account can have
 - *(automation)* Mark test and replay runs and keep them out of action stats
 - *(automation)* Let steps of a test or replay run act as a rehearsal
+
+### 📚 Documentation
+- *(release)* Release v0.7.7
 
 ### 🚀 Features
 - *(integrations)* Show API usage as a per-session counter (closes #160)

@@ -22,8 +22,8 @@ use forge_registry::{
 use forge_runtime::{
     ActionCancelRegistry, ActionEngineHandle, Catalog, EventBus, ExecutionRequest,
     MAX_PENDING_PER_QUEUE, NullEventLogRepo, PendingQuickAction, QueueAdmission, QueueMode,
-    QueueRuntimeState, QueueScheduler, QueueSchedulerHandle, RuntimeError, SchedulerRequest,
-    spawn_action_engine,
+    QueueRuntimeState, QueueScheduler, QueueSchedulerHandle, RunEnd, RuntimeError,
+    SchedulerRequest, WatchedRun, spawn_action_engine,
 };
 use forge_runtime::{CoreLogicWaitRunner, WAIT_KIND_ID, WAIT_MS_KEY};
 use forge_storage::MockTriggerInstanceRepo;
@@ -201,6 +201,7 @@ struct Rig {
     saved: mpsc::UnboundedReceiver<ExecutionContext>,
     repo: Arc<InMemoryActionRepo>,
     until_cancelled_running: Arc<Notify>,
+    cancel_registry: Arc<ActionCancelRegistry>,
 }
 
 impl Rig {
@@ -296,6 +297,7 @@ async fn rig(queues: Vec<Queue>, actions: &[&Action]) -> Rig {
     let bus = EventBus::new(Arc::new(NullEventLogRepo));
     let repo_handle = Arc::clone(&repo);
     let repo: Arc<dyn ActionRepo> = repo;
+    let cancel_registry = Arc::new(ActionCancelRegistry::new());
     let mut instances = MockTriggerInstanceRepo::new();
     instances
         .expect_list_for_action()
@@ -316,7 +318,7 @@ async fn rig(queues: Vec<Queue>, actions: &[&Action]) -> Rig {
             gate: save_open,
         }),
         sub_action_registry: Arc::new(registry),
-        cancel_registry: Arc::new(ActionCancelRegistry::new()),
+        cancel_registry: Arc::clone(&cancel_registry),
         date_names: forge_runtime::DateNamesHandle::default(),
         config: forge_runtime::Config::default(),
     });
@@ -330,6 +332,7 @@ async fn rig(queues: Vec<Queue>, actions: &[&Action]) -> Rig {
         saved,
         repo: repo_handle,
         until_cancelled_running,
+        cancel_registry,
     }
 }
 
@@ -1278,4 +1281,243 @@ async fn a_run_that_ignores_the_cancel_is_dropped_when_the_grace_runs_out() {
     assert_eq!(asked.elapsed(), STOP_GRACE);
     assert!(matches!(queues, TaskShutdown::Aborted { .. }), "{queues:?}");
     assert!(matches!(engine, TaskShutdown::Aborted { .. }), "{engine:?}");
+}
+
+const RUN_END_DEADLINE: Duration = Duration::from_secs(600);
+
+async fn end_of(watched: WatchedRun) -> RunEnd {
+    tokio::time::timeout(RUN_END_DEADLINE, watched.completion.finished())
+        .await
+        .expect("a watched run must report how it ended")
+}
+
+async fn saved_run_of(rig: &mut Rig, trigger: EventId) -> ExecutionContext {
+    tokio::time::timeout(RUN_END_DEADLINE, async {
+        loop {
+            let saved = rig.saved.recv().await.expect("history channel closed");
+            if matches!(saved.metadata, ExecutionMetadata::Trigger { event_id, .. } if event_id == trigger)
+            {
+                return saved;
+            }
+        }
+    })
+    .await
+    .expect("the run was never saved to history")
+}
+
+#[tokio::test(start_paused = true)]
+async fn cancelling_a_watched_run_ends_only_that_run_of_the_action() {
+    let queue_id = QueueId::new();
+    let waiting = long_wait_then_instant(queue_id);
+    let mut rig = rig(vec![queue(queue_id, 2)], &[&waiting]).await;
+    let mut sub = rig.bus.subscribe();
+    let (watched_req, plain_req) = (req(&waiting), req(&waiting));
+    let plain_trigger = plain_req.trigger_event_id;
+
+    let watched = rig.sched.dispatch_watched(watched_req).unwrap();
+    rig.sched.dispatch(plain_req).unwrap();
+    events_until(&mut sub, nth_start(2)).await;
+    watched.canceller.cancel();
+
+    assert_eq!(
+        end_of(watched).await,
+        RunEnd::Finished(ExecutionOutcome::Cancelled)
+    );
+    assert_eq!(
+        saved_run_of(&mut rig, plain_trigger).await.outcome,
+        ExecutionOutcome::Success,
+        "the unwatched run of the same action must run to the end"
+    );
+    rig.sched.shutdown();
+}
+
+#[tokio::test(start_paused = true)]
+async fn a_cancelled_watched_run_is_saved_to_history_as_cancelled() {
+    let queue_id = QueueId::new();
+    let waiting = long_wait_then_instant(queue_id);
+    let mut rig = rig(vec![queue(queue_id, 1)], &[&waiting]).await;
+    let mut sub = rig.bus.subscribe();
+    let request = req(&waiting);
+    let trigger = request.trigger_event_id;
+
+    let watched = rig.sched.dispatch_watched(request).unwrap();
+    events_until(&mut sub, start_of(&waiting)).await;
+    watched.canceller.cancel();
+
+    let saved = saved_run_of(&mut rig, trigger).await;
+    assert_eq!(saved.outcome, ExecutionOutcome::Cancelled);
+    assert_eq!(
+        saved.telemetry.len(),
+        1,
+        "the step after the cancelled wait must never run"
+    );
+    rig.sched.shutdown();
+}
+
+#[tokio::test(start_paused = true)]
+async fn a_watched_run_cancelled_while_pending_ends_cancelled_without_running_a_step() {
+    let queue_id = QueueId::new();
+    let holder = single(queue_id, SLOW_KIND_ID);
+    let behind = single(queue_id, INSTANT_KIND_ID);
+    let mut rig = rig(vec![queue(queue_id, 1)], &[&holder, &behind]).await;
+    let mut sub = rig.bus.subscribe();
+    let request = req(&behind);
+    let trigger = request.trigger_event_id;
+
+    rig.sched.dispatch(req(&holder)).unwrap();
+    events_until(&mut sub, start_of(&holder)).await;
+    let watched = rig.sched.dispatch_watched(request).unwrap();
+    settle(&rig.sched, queue_id, "the watched run pending", |s| {
+        s.pending == 1
+    })
+    .await;
+    watched.canceller.cancel();
+    rig.open_slow_gate();
+
+    assert_eq!(
+        end_of(watched).await,
+        RunEnd::Finished(ExecutionOutcome::Cancelled)
+    );
+    assert!(
+        saved_run_of(&mut rig, trigger).await.telemetry.is_empty(),
+        "no step of a run cancelled before it started may run"
+    );
+    rig.sched.shutdown();
+}
+
+#[derive(Debug, Clone, Copy)]
+enum Unstartable {
+    PausedQueue,
+    MissingQueue,
+    DisabledAction,
+    MissingAction,
+    Overflow,
+    ClearedWhilePending,
+}
+
+async fn watched_unstartable(case: Unstartable) -> RunEnd {
+    let queue_id = QueueId::new();
+    let target = single(queue_id, INSTANT_KIND_ID);
+    let stored = match case {
+        Unstartable::DisabledAction => vec![Action {
+            enabled: false,
+            ..target.clone()
+        }],
+        Unstartable::MissingAction => Vec::new(),
+        _ => vec![target.clone()],
+    };
+    let rig = rig(vec![queue(queue_id, 1)], &stored.iter().collect::<Vec<_>>()).await;
+    let mut request = req(&target);
+    match case {
+        Unstartable::PausedQueue => {
+            rig.sched
+                .set_mode(queue_id, QueueMode::PAUSED)
+                .await
+                .unwrap();
+        }
+        Unstartable::MissingQueue => request.queue_id = QueueId::new(),
+        Unstartable::Overflow => {
+            rig.sched
+                .set_mode(queue_id, QueueMode::HOLDING)
+                .await
+                .unwrap();
+            for _ in 0..MAX_PENDING_PER_QUEUE {
+                rig.sched.dispatch(req(&target)).unwrap();
+            }
+        }
+        Unstartable::ClearedWhilePending => {
+            rig.sched
+                .set_mode(queue_id, QueueMode::HOLDING)
+                .await
+                .unwrap();
+        }
+        Unstartable::DisabledAction | Unstartable::MissingAction => {}
+    }
+    let watched = rig.sched.dispatch_watched(request).unwrap();
+    if matches!(case, Unstartable::ClearedWhilePending) {
+        settle(&rig.sched, queue_id, "the watched run held", |s| {
+            s.pending == 1
+        })
+        .await;
+        rig.sched
+            .clear(queue_id, forge_runtime::ClearMode::KeepCurrent)
+            .await
+            .unwrap();
+    }
+    let end = end_of(watched).await;
+    rig.sched.shutdown();
+    end
+}
+
+#[tokio::test(start_paused = true)]
+async fn a_watched_run_that_never_starts_reports_not_started() {
+    for case in [
+        Unstartable::PausedQueue,
+        Unstartable::MissingQueue,
+        Unstartable::DisabledAction,
+        Unstartable::MissingAction,
+        Unstartable::Overflow,
+        Unstartable::ClearedWhilePending,
+    ] {
+        assert_eq!(
+            watched_unstartable(case).await,
+            RunEnd::NotStarted,
+            "{case:?}"
+        );
+    }
+}
+
+#[tokio::test(start_paused = true)]
+async fn a_watched_run_reports_the_outcome_its_steps_reached() {
+    let queue_id = QueueId::new();
+    let passing = single(queue_id, INSTANT_KIND_ID);
+    let failing = single(queue_id, FAILING_KIND_ID);
+    let rig = rig(vec![queue(queue_id, 1)], &[&passing, &failing]).await;
+
+    let passed = end_of(rig.sched.dispatch_watched(req(&passing)).unwrap()).await;
+    let failed = end_of(rig.sched.dispatch_watched(req(&failing)).unwrap()).await;
+
+    assert_eq!(passed, RunEnd::Finished(ExecutionOutcome::Success));
+    assert!(
+        matches!(failed, RunEnd::Finished(ExecutionOutcome::Failed(_))),
+        "{failed:?}"
+    );
+    rig.sched.shutdown();
+}
+
+#[derive(Debug, Clone, Copy)]
+enum OutsideCancel {
+    PerAction,
+    QueueClear,
+}
+
+#[tokio::test(start_paused = true)]
+async fn a_watched_run_cancelled_from_outside_reports_cancelled() {
+    for how in [OutsideCancel::PerAction, OutsideCancel::QueueClear] {
+        let queue_id = QueueId::new();
+        let waiting = long_wait_then_instant(queue_id);
+        let rig = rig(vec![queue(queue_id, 1)], &[&waiting]).await;
+        let mut sub = rig.bus.subscribe();
+
+        let watched = rig.sched.dispatch_watched(req(&waiting)).unwrap();
+        events_until(&mut sub, start_of(&waiting)).await;
+        match how {
+            OutsideCancel::PerAction => {
+                rig.cancel_registry.cancel(waiting.id);
+            }
+            OutsideCancel::QueueClear => {
+                rig.sched
+                    .clear(queue_id, forge_runtime::ClearMode::CancelCurrent)
+                    .await
+                    .unwrap();
+            }
+        }
+
+        assert_eq!(
+            end_of(watched).await,
+            RunEnd::Finished(ExecutionOutcome::Cancelled),
+            "{how:?}"
+        );
+        rig.sched.shutdown();
+    }
 }

@@ -10,7 +10,7 @@ use forge_storage::{FollowKnowledgeEntry, FollowKnowledgeKey, KnownFollow};
 use forge_types::Variant;
 use time::{Duration, OffsetDateTime};
 
-const FOLLOWING_LIFETIME: Duration = Duration::days(7);
+pub(super) const FOLLOWING_LIFETIME: Duration = Duration::days(7);
 const HIDDEN_LIFETIME: Duration = Duration::days(7);
 const NOT_FOLLOWING_LIFETIME: Duration = Duration::hours(1);
 
@@ -59,19 +59,32 @@ pub(super) fn status(follow: KnownFollow) -> FollowStatus {
 pub(super) struct FollowTranslation {
     registry: Arc<TriggerRegistry>,
     follow_kinds: Vec<String>,
+    logged_follow_kinds: Vec<String>,
 }
 
 impl FollowTranslation {
     pub(super) fn new(registry: Arc<TriggerRegistry>) -> Self {
-        let follow_kinds = registry
+        let follow_descriptors: Vec<&dyn TriggerKindDescriptor> = registry
             .all()
             .filter(|descriptor| descriptor.chat_event() == Some(ChatEventKind::Follow))
+            .collect();
+        let follow_kinds = follow_descriptors
+            .iter()
             .map(|descriptor| descriptor.id().to_owned())
+            .collect();
+        let logged_follow_kinds = follow_descriptors
+            .iter()
+            .filter_map(|descriptor| descriptor.event_filter().kind_prefix)
             .collect();
         Self {
             registry,
             follow_kinds,
+            logged_follow_kinds,
         }
+    }
+
+    pub(super) fn logged_follow_kinds(&self) -> &[String] {
+        &self.logged_follow_kinds
     }
 
     pub(super) fn entry_of(&self, event: &Event) -> Option<FollowKnowledgeEntry> {

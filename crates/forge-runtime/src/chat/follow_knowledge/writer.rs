@@ -1,5 +1,4 @@
 use std::collections::HashMap;
-use std::collections::hash_map::Entry;
 use std::sync::Arc;
 use std::time::Duration;
 
@@ -11,12 +10,11 @@ use forge_types::PlatformId;
 use time::OffsetDateTime;
 use tokio::sync::{mpsc, oneshot, watch};
 
-use super::policy::{FollowTranslation, is_fresh};
+use super::policy::{FOLLOWING_LIFETIME, FollowTranslation, is_fresh};
 use crate::delivery::CriticalSubscription;
 
 pub(super) const STORE_OP_TIMEOUT: Duration = Duration::from_secs(5);
 const STARTUP_OP_TIMEOUT: Duration = Duration::from_secs(30);
-const SEED_SCAN_LIMIT: usize = 50_000;
 
 pub(super) enum WriteCommand {
     Record {
@@ -83,20 +81,20 @@ impl FollowWriter {
                 return;
             }
         }
-        let events =
-            match tokio::time::timeout(STARTUP_OP_TIMEOUT, event_log.recent(SEED_SCAN_LIMIT)).await
-            {
-                Ok(Ok(events)) => events,
-                Ok(Err(e)) => {
-                    tracing::warn!(error = %e, "event log read for follow seeding failed");
-                    return;
-                }
-                Err(_) => {
-                    tracing::warn!("event log read for follow seeding timed out");
-                    return;
-                }
-            };
-        let entries = self.newest_fresh_entries(&events);
+        let since = OffsetDateTime::now_utc().saturating_sub(FOLLOWING_LIFETIME);
+        let read = event_log.events_of_kinds_since(self.translation.logged_follow_kinds(), since);
+        let events = match tokio::time::timeout(STARTUP_OP_TIMEOUT, read).await {
+            Ok(Ok(events)) => events,
+            Ok(Err(e)) => {
+                tracing::warn!(error = %e, "event log read for follow seeding failed");
+                return;
+            }
+            Err(_) => {
+                tracing::warn!("event log read for follow seeding timed out");
+                return;
+            }
+        };
+        let entries = self.newest_entries(&events);
         match tokio::time::timeout(STARTUP_OP_TIMEOUT, self.repo.seed(&entries)).await {
             Ok(Ok(())) => {
                 if !entries.is_empty() {
@@ -108,24 +106,13 @@ impl FollowWriter {
         }
     }
 
-    fn newest_fresh_entries(&self, events: &[Event]) -> Vec<FollowKnowledgeEntry> {
-        let now = OffsetDateTime::now_utc();
+    fn newest_entries(&self, events: &[Event]) -> Vec<FollowKnowledgeEntry> {
         let mut newest: HashMap<FollowKnowledgeKey, FollowKnowledgeEntry> = HashMap::new();
         for entry in events
             .iter()
             .filter_map(|event| self.translation.entry_of(event))
-            .filter(|entry| is_fresh(entry, now))
         {
-            match newest.entry(entry.key.clone()) {
-                Entry::Occupied(mut kept) => {
-                    if entry.observed_at > kept.get().observed_at {
-                        kept.insert(entry);
-                    }
-                }
-                Entry::Vacant(slot) => {
-                    slot.insert(entry);
-                }
-            }
+            newest.insert(entry.key.clone(), entry);
         }
         newest.into_values().collect()
     }

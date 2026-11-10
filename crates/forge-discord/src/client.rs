@@ -1468,31 +1468,6 @@ pub(crate) mod tests {
     }
 
     #[tokio::test]
-    async fn missing_credential_returns_webhook_not_found() {
-        let client = DiscordClient::new_for_test();
-        let result = client
-            .post_text("nonexistent", "hello", MentionPolicy::default())
-            .await;
-        assert!(matches!(result, Err(DiscordError::WebhookNotFound { .. })));
-    }
-
-    #[tokio::test]
-    async fn embed_with_invalid_content_rejected_before_http() {
-        let server = MockServer::start().await;
-        let publisher = CapturingPublisher::shared();
-        let creds = Arc::new(MemoryCredentials::default());
-        let client = make_client(&server, Arc::clone(&publisher), Arc::clone(&creds)).await;
-
-        let embed = DiscordEmbed {
-            title: Some("bad\0null".to_owned()),
-            ..Default::default()
-        };
-        let result = client.post_embed("alerts", embed).await;
-        assert!(matches!(result, Err(DiscordError::Validation(_))));
-        assert_eq!(received_count(&server).await, 0);
-    }
-
-    #[tokio::test]
     async fn edit_message_patch_succeeds() {
         let server = MockServer::start().await;
         let publisher = CapturingPublisher::shared();
@@ -1792,29 +1767,160 @@ pub(crate) mod tests {
         assert_eq!(received_count(&server).await, 0);
     }
 
-    #[tokio::test]
-    async fn an_edit_with_neither_content_nor_an_embed_is_refused_before_any_request() {
+    enum EarlyFailure {
+        OverLongText,
+        InvalidEmbed,
+        EditWithNothing,
+        OverLongCaption,
+        DeleteOfNonSnowflake,
+        StoredUrlOutsideRoute,
+        MissingCredential,
+        TestToMalformedUrl,
+    }
+
+    impl EarlyFailure {
+        fn stored_url(&self) -> Option<String> {
+            match self {
+                Self::MissingCredential => None,
+                Self::StoredUrlOutsideRoute => Some(format!(
+                    "https://discord.com/api/webhooks/12a4/{HOOK_TOKEN}"
+                )),
+                _ => Some(hook_url("discord.com", "")),
+            }
+        }
+
+        async fn attempt(&self, client: &DiscordClient) -> DiscordError {
+            let over_limit = "x".repeat(MAX_CONTENT_CHARS + 1);
+            let policy = MentionPolicy::default();
+            let outcome = match self {
+                Self::OverLongText => client.post_text("alerts", &over_limit, policy).await,
+                Self::InvalidEmbed => {
+                    let embed = DiscordEmbed {
+                        title: Some("bad\0null".to_owned()),
+                        ..Default::default()
+                    };
+                    client.post_embed("alerts", embed).await
+                }
+                Self::EditWithNothing => client
+                    .edit_message("alerts", MESSAGE_ID, None, None, policy)
+                    .await
+                    .map(|()| String::new()),
+                Self::OverLongCaption => {
+                    client
+                        .send_file("alerts", Some(&over_limit), "a.png", &[1], policy)
+                        .await
+                }
+                Self::DeleteOfNonSnowflake => client
+                    .delete_message("alerts", "abc")
+                    .await
+                    .map(|()| String::new()),
+                Self::StoredUrlOutsideRoute | Self::MissingCredential => {
+                    client.post_text("alerts", "hi", policy).await
+                }
+                Self::TestToMalformedUrl => {
+                    client.post_test("alerts", "not a url at all", "ping").await
+                }
+            };
+            outcome.unwrap_err()
+        }
+
+        fn expects(&self, err: &DiscordError) -> bool {
+            match self {
+                Self::OverLongText | Self::OverLongCaption => matches!(
+                    err,
+                    DiscordError::Validation(ValidationFault::ContentTooLong { .. })
+                ),
+                Self::EditWithNothing => matches!(
+                    err,
+                    DiscordError::Validation(ValidationFault::NothingToEdit)
+                ),
+                Self::MissingCredential => matches!(err, DiscordError::WebhookNotFound { .. }),
+                Self::InvalidEmbed
+                | Self::DeleteOfNonSnowflake
+                | Self::StoredUrlOutsideRoute
+                | Self::TestToMalformedUrl => matches!(err, DiscordError::Validation(_)),
+            }
+        }
+    }
+
+    const EARLY_FAILURES: [EarlyFailure; 8] = [
+        EarlyFailure::OverLongText,
+        EarlyFailure::InvalidEmbed,
+        EarlyFailure::EditWithNothing,
+        EarlyFailure::OverLongCaption,
+        EarlyFailure::DeleteOfNonSnowflake,
+        EarlyFailure::StoredUrlOutsideRoute,
+        EarlyFailure::MissingCredential,
+        EarlyFailure::TestToMalformedUrl,
+    ];
+
+    struct EarlyFailureRun {
+        server: MockServer,
+        publisher: Arc<CapturingPublisher>,
+        client: Arc<DiscordClient>,
+        err: DiscordError,
+    }
+
+    async fn run_early_failure(case: &EarlyFailure) -> EarlyFailureRun {
         let server = MockServer::start().await;
-        let client = make_client(
-            &server,
-            CapturingPublisher::shared(),
-            Arc::new(MemoryCredentials::default()),
-        )
-        .await;
+        Mock::given(wiremock::matchers::any())
+            .respond_with(make_standard_response(MESSAGE_ID))
+            .mount(&server)
+            .await;
+        let creds = Arc::new(MemoryCredentials::default());
+        if let Some(url) = case.stored_url() {
+            store_hook(&creds, "alerts", &url);
+        }
+        let publisher = CapturingPublisher::shared();
+        let client = client_at(&server.uri(), &publisher, &creds);
+        let err = case.attempt(&client).await;
+        EarlyFailureRun {
+            server,
+            publisher,
+            client,
+            err,
+        }
+    }
 
-        let err = client
-            .edit_message("alerts", MESSAGE_ID, None, None, MentionPolicy::default())
-            .await
-            .unwrap_err();
+    #[tokio::test]
+    async fn a_send_refused_before_the_request_publishes_exactly_one_failed_event() {
+        for (index, case) in EARLY_FAILURES.iter().enumerate() {
+            let run = run_early_failure(case).await;
 
-        assert!(
-            matches!(
-                err,
-                DiscordError::Validation(ValidationFault::NothingToEdit)
-            ),
-            "{err:?}"
-        );
-        assert_eq!(received_count(&server).await, 0);
+            assert!(case.expects(&run.err), "case {index}: {:?}", run.err);
+            assert_eq!(received_count(&run.server).await, 0, "case {index}");
+            assert_eq!(
+                run.publisher.kinds(),
+                ["discord.webhook.failed"],
+                "case {index}"
+            );
+        }
+    }
+
+    #[tokio::test]
+    async fn a_send_refused_before_the_request_counts_once_as_a_failed_send() {
+        for (index, case) in EARLY_FAILURES.iter().enumerate() {
+            let run = run_early_failure(case).await;
+
+            let health = run.client.send_health();
+            assert_eq!(
+                (health.last_send_ok, health.errors_last_hour),
+                (Some(false), 1),
+                "case {index}"
+            );
+            let posts = run.client.recent_posts();
+            assert_eq!(posts.len(), 1, "case {index}");
+            assert!(!posts[0].ok, "case {index}");
+            assert_eq!(
+                run.client
+                    .content_state()
+                    .lock_recover()
+                    .registry
+                    .last_ok("alerts"),
+                Some(false),
+                "case {index}"
+            );
+        }
     }
 
     #[tokio::test]

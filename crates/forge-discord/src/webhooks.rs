@@ -224,19 +224,6 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn post_test_rejects_a_non_discord_endpoint_before_any_request() {
-        let creds = Arc::new(MemoryCredentials::default());
-        let client = client_with(&creds);
-
-        let err = client
-            .post_test("alerts", "https://192.0.2.1/api/webhooks/1/tok", "ping")
-            .await
-            .unwrap_err();
-
-        assert!(matches!(err, DiscordError::Validation(_)));
-    }
-
-    #[tokio::test]
     async fn list_webhooks_returns_sorted_names_and_ignores_foreign_credentials() {
         let creds = Arc::new(MemoryCredentials::default());
         creds.put(

@@ -66,16 +66,16 @@ pub fn resize_edge(
     let near_top = position.y < grab;
     let near_bottom = position.y > window_size.height - grab;
 
-    if !tiling.top && near_top && near_left {
+    if !tiling.top && !tiling.left && near_top && near_left {
         return Some(ResizeEdge::TopLeft);
     }
-    if !tiling.top && near_top && near_right {
+    if !tiling.top && !tiling.right && near_top && near_right {
         return Some(ResizeEdge::TopRight);
     }
-    if !tiling.bottom && near_bottom && near_left {
+    if !tiling.bottom && !tiling.left && near_bottom && near_left {
         return Some(ResizeEdge::BottomLeft);
     }
-    if !tiling.bottom && near_bottom && near_right {
+    if !tiling.bottom && !tiling.right && near_bottom && near_right {
         return Some(ResizeEdge::BottomRight);
     }
 

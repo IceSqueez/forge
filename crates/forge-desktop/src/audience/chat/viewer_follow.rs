@@ -1,16 +1,15 @@
 use crate::integrations::platform_visuals::BadgeKind;
-use std::collections::HashMap;
-use std::time::{Duration, Instant};
 
 use forge_components::{DateShape, ForgePalette, fmt_display, tr};
 use forge_platform_core::FollowStatus;
+use forge_runtime::FollowKnowledgeHandle;
 use forge_types::{IntegrationId, PlatformId};
 use gpui::{Context, Rgba, SharedString, Task};
 
 use super::INFINITY_GLYPH;
 use super::viewer_drawer::ViewerDrawer;
 use crate::audience::chat_author::{AuthorHandle, AuthorKey};
-use crate::audience::chat_drawer::DASH;
+use crate::audience::chat_drawer::{DASH, displayed_viewer};
 use forge_host::integration_catalog::chat_limits;
 use forge_host::integrations::BuiltinRegistry;
 
@@ -58,112 +57,169 @@ pub(crate) fn follow_display(
     })
 }
 
-struct KnownFollow {
-    status: FollowStatus,
-    checked_at: Instant,
+struct FollowSource {
+    builtins: BuiltinRegistry,
+    knowledge: FollowKnowledgeHandle,
 }
-
-const FOLLOW_STATUS_TTL: Duration = Duration::from_secs(10 * 60);
 
 #[derive(Default)]
-pub(crate) struct FollowLookups {
-    builtins: BuiltinRegistry,
-    known: HashMap<AuthorKey, KnownFollow>,
-    pending: Option<AuthorKey>,
-    _request: Option<Task<()>>,
+pub(crate) struct DisplayedFollow {
+    source: Option<FollowSource>,
+    viewer: Option<AuthorKey>,
+    status: Option<FollowStatus>,
+    _peek: Option<Task<()>>,
+    _resolve: Option<Task<()>>,
+    _changes: Option<Task<()>>,
 }
 
-impl FollowLookups {
-    pub(crate) fn new(builtins: BuiltinRegistry) -> Self {
-        Self {
-            builtins,
-            ..Self::default()
+impl DisplayedFollow {
+    pub(crate) fn status_of(&self, key: &AuthorKey) -> Option<FollowStatus> {
+        if self.viewer.as_ref() == Some(key) {
+            self.status
+        } else {
+            None
         }
     }
 
-    pub(crate) fn status_of(&self, key: &AuthorKey) -> Option<FollowStatus> {
-        self.known.get(key).map(|known| known.status)
-    }
-
-    pub(crate) fn needs_request(&self, key: &AuthorKey) -> bool {
-        let fresh = self
-            .known
-            .get(key)
-            .is_some_and(|known| known.checked_at.elapsed() < FOLLOW_STATUS_TTL);
-        !fresh && self.pending.as_ref() != Some(key)
-    }
-
-    fn begin(&mut self, key: AuthorKey, request: Task<()>) {
-        self.pending = Some(key);
-        self._request = Some(request);
-    }
-
-    pub(crate) fn settle(&mut self, key: AuthorKey, status: FollowStatus) -> bool {
-        if self.pending.as_ref() != Some(&key) {
+    pub(crate) fn retarget(&mut self, viewer: Option<AuthorKey>) -> bool {
+        if self.viewer == viewer {
             return false;
         }
-        self.pending = None;
-        if status != FollowStatus::Unavailable {
-            self.known.insert(
-                key,
-                KnownFollow {
-                    status,
-                    checked_at: Instant::now(),
-                },
-            );
+        self.viewer = viewer;
+        self.status = None;
+        true
+    }
+
+    pub(crate) fn settle(&mut self, key: &AuthorKey, status: Option<FollowStatus>) -> bool {
+        if self.viewer.as_ref() != Some(key) || self.status == status {
+            return false;
         }
+        self.status = status;
         true
     }
 }
 
 impl ViewerDrawer {
-    pub(super) fn request_selected_follow(&mut self, cx: &mut Context<Self>) {
-        if let Some(key) = self.selected_viewer.clone() {
-            self.request_follow(&key, cx);
+    pub(super) fn set_follow_knowledge(
+        &mut self,
+        builtins: BuiltinRegistry,
+        knowledge: FollowKnowledgeHandle,
+        cx: &mut Context<Self>,
+    ) {
+        let mut changes = knowledge.changes();
+        self.follows.source = Some(FollowSource {
+            builtins,
+            knowledge,
+        });
+        self.follows._changes = Some(cx.spawn(async move |this, cx| {
+            while changes.changed().await {
+                if this
+                    .update(cx, |this, cx| this.peek_displayed_follow(cx))
+                    .is_err()
+                {
+                    break;
+                }
+            }
+        }));
+        self.follows.viewer = None;
+        self.sync_displayed_follow(cx);
+    }
+
+    pub(super) fn sync_displayed_follow(&mut self, cx: &mut Context<Self>) {
+        let displayed =
+            displayed_viewer(self.selected_viewer.as_ref(), self.feed.read(cx).authors());
+        if self.follows.retarget(displayed) {
+            self.peek_displayed_follow(cx);
+            cx.notify();
         }
     }
 
-    fn request_follow(&mut self, key: &AuthorKey, cx: &mut Context<Self>) {
-        let Some(request) = follow_request(key) else {
+    fn peek_displayed_follow(&mut self, cx: &mut Context<Self>) {
+        let Some(source) = &self.follows.source else {
+            return;
+        };
+        let Some(key) = self.follows.viewer.clone() else {
+            return;
+        };
+        let Some(request) = follow_request(&key) else {
+            return;
+        };
+        let knowledge = source.knowledge.clone();
+        let platform = key.platform;
+        let reply = crate::app::async_bridge::on_runtime(&self.services.rt_handle, async move {
+            knowledge.peek(platform, &request.viewer_id).await
+        });
+        self.follows._peek = Some(cx.spawn(async move |this, cx| {
+            let Ok(status) = reply.await else {
+                return;
+            };
+            #[expect(
+                clippy::let_underscore_must_use,
+                reason = "the view may close before the result arrives"
+            )]
+            let _ = this.update(cx, |this, cx| {
+                if this.follows.settle(&key, status) {
+                    cx.notify();
+                }
+            });
+        }));
+    }
+
+    pub(super) fn request_selected_follow(&mut self, cx: &mut Context<Self>) {
+        if let Some(key) = self.selected_viewer.clone() {
+            self.resolve_follow(key, cx);
+        }
+    }
+
+    fn resolve_follow(&mut self, key: AuthorKey, cx: &mut Context<Self>) {
+        let Some(source) = &self.follows.source else {
+            return;
+        };
+        let Some(request) = follow_request(&key) else {
             return;
         };
         let role = self
             .feed
             .read(cx)
             .authors()
-            .get(key)
+            .get(&key)
             .and_then(|activity| activity.role);
-        if role == Some(BadgeKind::Broadcaster)
-            || !self.follows.needs_request(key)
-            || !self.platform_running(key.platform, cx)
-        {
+        if role == Some(BadgeKind::Broadcaster) || !self.platform_running(key.platform, cx) {
             return;
         }
-        let builtins = self.follows.builtins.clone();
+        let builtins = source.builtins.clone();
+        let knowledge = source.knowledge.clone();
+        let platform = key.platform;
         let reply = crate::app::async_bridge::on_runtime(&self.services.rt_handle, async move {
             let lookup = builtins
                 .get(&request.builtin)
                 .and_then(|object| object.follow);
-
             match lookup {
-                Some(lookup) => lookup.follow_status(&request.viewer_id).await,
+                Some(lookup) => {
+                    knowledge
+                        .resolve(platform, &request.viewer_id, lookup.as_ref())
+                        .await
+                }
                 None => FollowStatus::Unavailable,
             }
         });
-        let pending = key.clone();
-        let task = cx.spawn(async move |this, cx| {
-            let status = reply.await.unwrap_or(FollowStatus::Unavailable);
+        self.follows._resolve = Some(cx.spawn(async move |this, cx| {
+            let Ok(status) = reply.await else {
+                return;
+            };
+            if status == FollowStatus::Unavailable {
+                return;
+            }
             #[expect(
                 clippy::let_underscore_must_use,
                 reason = "the view may close before the result arrives"
             )]
             let _ = this.update(cx, |this, cx| {
-                if this.follows.settle(pending, status) {
+                if this.follows.settle(&key, Some(status)) {
                     cx.notify();
                 }
             });
-        });
-        self.follows.begin(key.clone(), task);
+        }));
     }
 }
 

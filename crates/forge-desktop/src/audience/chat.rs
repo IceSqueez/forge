@@ -158,13 +158,15 @@ impl ChatView {
     }
 
     #[must_use]
-    pub(crate) fn with_follow_lookups(
+    pub(crate) fn with_follow_knowledge(
         self,
         builtins: BuiltinRegistry,
+        knowledge: forge_runtime::FollowKnowledgeHandle,
         cx: &mut Context<Self>,
     ) -> Self {
-        self.drawer
-            .update(cx, |drawer, _| drawer.set_follow_lookups(builtins));
+        self.drawer.update(cx, |drawer, cx| {
+            drawer.set_follow_knowledge(builtins, knowledge, cx)
+        });
         self
     }
 }

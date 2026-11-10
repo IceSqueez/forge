@@ -1,7 +1,7 @@
 use super::DRAWER_WIDTH;
 use super::moderation::ChatModeration;
 use super::viewer_actions::ViewerTarget;
-use super::viewer_follow::FollowLookups;
+use super::viewer_follow::DisplayedFollow;
 use super::viewer_history::{ViewerHistory, ViewerHistoryDismissed};
 use super::viewer_tts::TtsVoiceHost;
 use crate::app::navigable_list::ListCursor;
@@ -13,7 +13,6 @@ use crate::audience::chat_feed::ChatFeed;
 use crate::audience::chat_viewer_messages::ViewerMessages;
 use crate::integrations::integration_lifecycle::IntegrationLifecycle;
 use forge_components::{ActivePresentation, InputEvent, SearchState, TextInput, tr};
-use forge_host::integrations::BuiltinRegistry;
 use forge_speak_queue::SpeakQueueHandle;
 use forge_storage::{ChatHistoryRepo, ViewerRepo, VoiceAliasRepo};
 use gpui::{
@@ -51,7 +50,7 @@ pub(super) struct ViewerDrawer {
     pub(super) drawer_search: SearchState,
     pub(super) drawer_menu_open: Option<Point<Pixels>>,
     pub(super) selected_viewer: Option<AuthorKey>,
-    pub(super) follows: FollowLookups,
+    pub(super) follows: DisplayedFollow,
     pub(super) viewer_messages: Entity<ViewerMessages>,
     pub(super) viewer_history: Option<ViewerHistoryHost>,
     pub(super) tts_voice: Option<TtsVoiceHost>,
@@ -103,7 +102,7 @@ impl ViewerDrawer {
             drawer_search,
             drawer_menu_open: None,
             selected_viewer: None,
-            follows: FollowLookups::default(),
+            follows: DisplayedFollow::default(),
             viewer_messages,
             viewer_history: None,
             tts_voice: None,
@@ -124,10 +123,6 @@ impl ViewerDrawer {
         drawer
     }
 
-    pub(super) fn set_follow_lookups(&mut self, builtins: BuiltinRegistry) {
-        self.follows = FollowLookups::new(builtins);
-    }
-
     pub(super) fn set_lifecycle(&mut self, lifecycle: Entity<IntegrationLifecycle>) {
         self.lifecycle = Some(lifecycle);
     }
@@ -140,6 +135,7 @@ impl ViewerDrawer {
         self.feed_changed.send_replace(());
         self.refresh_drawer_keys(cx);
         self.absorb_viewer_messages(cx);
+        self.sync_displayed_follow(cx);
         cx.notify();
     }
 
@@ -225,6 +221,7 @@ impl ViewerDrawer {
             self.reset_whisper(cx);
         }
         self.selected_viewer = Some(key);
+        self.sync_displayed_follow(cx);
         self.request_selected_follow(cx);
     }
 

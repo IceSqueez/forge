@@ -75,6 +75,7 @@ impl AppShell {
         };
         let bus = Arc::clone(&handles.core.bus);
         let builtins = handles.integrations.builtins.clone();
+        let follow_knowledge = handles.automation.follow_knowledge.clone();
         cx.new(|cx| {
             ChatView::new(
                 topics.chat_feed.clone(),
@@ -84,7 +85,7 @@ impl AppShell {
                 palette,
                 cx,
             )
-            .with_follow_lookups(builtins.clone(), cx)
+            .with_follow_knowledge(builtins.clone(), follow_knowledge, cx)
             .with_ban_list(builtins, Arc::clone(&bus))
             .with_lifecycle(topics.integration_lifecycle.clone(), cx)
             .with_chat_bus(bus, cx)

@@ -127,3 +127,44 @@ fn principal_id(descriptor: &dyn TriggerKindDescriptor, event: &Event) -> Option
         _ => None,
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use forge_types::PlatformId;
+
+    use super::*;
+
+    const OBSERVED_UNIX_SECS: i64 = 1_791_115_200;
+
+    fn key() -> FollowKnowledgeKey {
+        FollowKnowledgeKey {
+            platform: PlatformId::Twitch,
+            viewer_id: "viewer".to_owned(),
+        }
+    }
+
+    #[test]
+    fn each_known_status_stays_fresh_until_its_lifetime_ends() {
+        let observed_at = OffsetDateTime::from_unix_timestamp(OBSERVED_UNIX_SECS).unwrap();
+        let following_since = observed_at - Duration::days(30);
+        for (follow, lifetime) in [
+            (
+                KnownFollow::FollowingSince(following_since),
+                Duration::days(7),
+            ),
+            (KnownFollow::Hidden, Duration::days(7)),
+            (KnownFollow::NotFollowing, Duration::hours(1)),
+        ] {
+            let entry = observed(key(), follow, observed_at);
+            let end = observed_at + lifetime;
+            assert!(
+                is_fresh(&entry, end - Duration::nanoseconds(1)),
+                "{follow:?} must still be fresh just before its lifetime ends"
+            );
+            assert!(
+                !is_fresh(&entry, end),
+                "{follow:?} must expire once its lifetime ends"
+            );
+        }
+    }
+}

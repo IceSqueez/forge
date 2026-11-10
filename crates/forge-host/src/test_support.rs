@@ -29,12 +29,12 @@ use forge_storage::test_support::{MemorySettings, StoredSettingRow};
 use forge_storage::{
     ActionRepo, ActionStats, ActionTelemetry, BanLedgerRepo, CatalogRevision, ChatHistoryRepo,
     CredentialId, CredentialsRepo, DataProvider, DonationRepo, EventLogRepo, ExecutionStatus,
-    GlobalEntry, GlobalsRepo, HistoryRepo, LatestValueRepo, MediaBlob, MediaBlobId, MediaReferrer,
-    MediaReferrerKind, MediaRepo, OverlayConfig, OverlayDefinition, OverlayId, OverlayRepo,
-    QueueRepo, RowClasses, RowGate, ScheduledRunRepo, ScriptRecord, ScriptReferences, ScriptRepo,
-    ScriptTelemetry, Setting, SettingCodec, SettingFamily, SettingRow, SettingsRepo,
-    SoundboardClipsRepo, StorageError, TriggerInstanceRepo, TtsFiltersRepo, UserGlobalEntry,
-    UserGlobalKey, UserGlobalsRepo, ViewerRepo, VoiceAliasRepo,
+    FollowKnowledgeRepo, GlobalEntry, GlobalsRepo, HistoryRepo, LatestValueRepo, MediaBlob,
+    MediaBlobId, MediaReferrer, MediaReferrerKind, MediaRepo, OverlayConfig, OverlayDefinition,
+    OverlayId, OverlayRepo, QueueRepo, RowClasses, RowGate, ScheduledRunRepo, ScriptRecord,
+    ScriptReferences, ScriptRepo, ScriptTelemetry, Setting, SettingCodec, SettingFamily,
+    SettingRow, SettingsRepo, SoundboardClipsRepo, StorageError, TriggerInstanceRepo,
+    TtsFiltersRepo, UserGlobalEntry, UserGlobalKey, UserGlobalsRepo, ViewerRepo, VoiceAliasRepo,
 };
 use forge_types::{
     Action, ActionId, EventId, ExecutionContext, OverlayCredential, ScriptId, Variant,
@@ -722,6 +722,10 @@ impl DataProvider for TestBackend {
 
     fn ban_ledger_repo(&self) -> Arc<dyn BanLedgerRepo> {
         unreachable!("this TestBackend was built without a ban_ledger repo")
+    }
+
+    fn follow_knowledge_repo(&self) -> Arc<dyn FollowKnowledgeRepo> {
+        unreachable!("this TestBackend was built without a follow_knowledge repo")
     }
 
     fn scheduled_run_repo(&self) -> Arc<dyn ScheduledRunRepo> {

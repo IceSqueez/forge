@@ -9,6 +9,7 @@ use forge_storage::MockBanLedgerRepo;
 use forge_storage::MockChatHistoryRepo;
 use forge_storage::MockDonationRepo;
 use forge_storage::MockEventLogRepo;
+use forge_storage::MockFollowKnowledgeRepo;
 use forge_storage::MockGlobalsRepo;
 use forge_storage::MockHistoryRepo;
 use forge_storage::MockLatestValueRepo;
@@ -26,8 +27,8 @@ use forge_storage::credentials::MockCredentialsRepo;
 use forge_storage::test_support::MemorySettings;
 use forge_storage::{
     ActionRepo, BanLedgerRepo, ChatHistoryRepo, CredentialsRepo, DataProvider, DonationRepo,
-    EventLogRepo, GlobalsRepo, HistoryRepo, LatestValueRepo, MediaRepo, QueueRepo,
-    ScheduledRunRepo, ScriptRepo, SettingsRepo, SoundboardClipsRepo, StorageError,
+    EventLogRepo, FollowKnowledgeRepo, GlobalsRepo, HistoryRepo, LatestValueRepo, MediaRepo,
+    QueueRepo, ScheduledRunRepo, ScriptRepo, SettingsRepo, SoundboardClipsRepo, StorageError,
     TriggerInstanceRepo, TtsFiltersRepo, UserGlobalsRepo, ViewerRepo, VoiceAliasRepo,
 };
 use forge_storage::{MockOverlayRepo, OverlayRepo};
@@ -49,6 +50,7 @@ pub(crate) struct StubProvider {
     pub donation_repo: Arc<MockDonationRepo>,
     pub latest_value_repo: Arc<MockLatestValueRepo>,
     pub ban_ledger_repo: Arc<MockBanLedgerRepo>,
+    pub follow_knowledge_repo: Arc<MockFollowKnowledgeRepo>,
     pub scheduled_run_repo: Arc<MockScheduledRunRepo>,
     pub scheduled_run_revision: CatalogRevision,
     pub globals_repo: Arc<MockGlobalsRepo>,
@@ -74,6 +76,7 @@ impl StubProvider {
             donation_repo: Arc::new(MockDonationRepo::new()),
             latest_value_repo: Arc::new(MockLatestValueRepo::new()),
             ban_ledger_repo: Arc::new(MockBanLedgerRepo::new()),
+            follow_knowledge_repo: Arc::new(MockFollowKnowledgeRepo::new()),
             scheduled_run_repo: Arc::new(MockScheduledRunRepo::new()),
             scheduled_run_revision: CatalogRevision::new(),
             voice_alias_repo: Arc::new(MockVoiceAliasRepo::new()),
@@ -247,6 +250,10 @@ impl DataProvider for StubProvider {
 
     fn ban_ledger_repo(&self) -> Arc<dyn BanLedgerRepo> {
         Arc::clone(&self.ban_ledger_repo) as Arc<dyn BanLedgerRepo>
+    }
+
+    fn follow_knowledge_repo(&self) -> Arc<dyn FollowKnowledgeRepo> {
+        Arc::clone(&self.follow_knowledge_repo) as Arc<dyn FollowKnowledgeRepo>
     }
 
     fn scheduled_run_repo(&self) -> Arc<dyn ScheduledRunRepo> {

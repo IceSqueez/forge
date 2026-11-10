@@ -39,6 +39,8 @@ pub use repos::credentials::SqliteCredentialsRepo;
 #[cfg(feature = "test-support")]
 pub use repos::event_log::SqliteEventLogRepo;
 #[cfg(feature = "test-support")]
+pub use repos::follow_knowledge::SqliteFollowKnowledgeRepo;
+#[cfg(feature = "test-support")]
 pub use repos::globals::SqliteGlobalsRepo;
 #[cfg(feature = "test-support")]
 pub use repos::history::SqliteHistoryRepo;

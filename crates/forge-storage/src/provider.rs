@@ -4,12 +4,13 @@ use async_trait::async_trait;
 
 use crate::{
     ActionRepo, BanLedgerRepo, CatalogRevision, ChatHistoryRepo, CredentialsRepo, DonationRepo,
-    EventLogRepo, GlobalsRepo, HistoryRepo, LatestValueRepo, MediaRepo, OverlayRepo, QueueRepo,
-    ScheduledRunRepo, ScriptRepo, SettingsRepo, SoundboardClipsRepo, StorageError, StoreChange,
-    TriggerInstanceRepo, TtsFiltersRepo, UserGlobalsRepo, ViewerRepo, VoiceAliasRepo,
+    EventLogRepo, FollowKnowledgeRepo, GlobalsRepo, HistoryRepo, LatestValueRepo, MediaRepo,
+    OverlayRepo, QueueRepo, ScheduledRunRepo, ScriptRepo, SettingsRepo, SoundboardClipsRepo,
+    StorageError, StoreChange, TriggerInstanceRepo, TtsFiltersRepo, UserGlobalsRepo, ViewerRepo,
+    VoiceAliasRepo,
 };
 
-pub const EXPECTED_SCHEMA_VERSION: u32 = 79;
+pub const EXPECTED_SCHEMA_VERSION: u32 = 80;
 
 pub const DATABASE_FILE_NAME: &str = "forge.db";
 const WAL_SUFFIX: &str = "-wal";
@@ -47,6 +48,7 @@ pub trait DataProvider: Send + Sync {
     fn donation_repo(&self) -> Arc<dyn DonationRepo>;
     fn latest_value_repo(&self) -> Arc<dyn LatestValueRepo>;
     fn ban_ledger_repo(&self) -> Arc<dyn BanLedgerRepo>;
+    fn follow_knowledge_repo(&self) -> Arc<dyn FollowKnowledgeRepo>;
 
     fn scheduled_run_repo(&self) -> Arc<dyn ScheduledRunRepo>;
 

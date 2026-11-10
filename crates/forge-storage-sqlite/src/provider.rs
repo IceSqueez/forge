@@ -9,8 +9,8 @@ use forge_storage::ActionTelemetry;
 use forge_storage::{
     ActionRepo, BanLedgerRepo, CatalogRevision, ChatHistoryRepo, CredentialsKeyLoss,
     CredentialsRepo, DataProvider, DonationRepo, EXPECTED_SCHEMA_VERSION, EventLogRepo,
-    GlobalsRepo, HistoryRepo, LatestValueRepo, MediaRepo, OverlayRepo, QueueRepo,
-    RevisingActionRepo, RevisingQueueRepo, RevisingScheduledRunRepo, RevisingScriptRepo,
+    FollowKnowledgeRepo, GlobalsRepo, HistoryRepo, LatestValueRepo, MediaRepo, OverlayRepo,
+    QueueRepo, RevisingActionRepo, RevisingQueueRepo, RevisingScheduledRunRepo, RevisingScriptRepo,
     RevisingTriggerInstanceRepo, ScheduledRunRepo, ScriptRepo, SettingsRepo, SoundboardClipsRepo,
     StorageError, StoreChange, TriggerInstanceRepo, TtsFiltersRepo, UserGlobalsRepo, ViewerRepo,
     VoiceAliasRepo,
@@ -28,8 +28,8 @@ use crate::pool::connect_pools;
 use crate::repos::media_orphans::{OrphanedBlob, remove_unreferenced_blobs};
 use crate::repos::{
     SqliteActionRepo, SqliteBanLedgerRepo, SqliteChatHistoryRepo, SqliteCredentialsRepo,
-    SqliteDonationRepo, SqliteEventLogRepo, SqliteGlobalsRepo, SqliteHistoryRepo,
-    SqliteLatestValueRepo, SqliteMediaRepo, SqliteOverlayRepo, SqliteQueueRepo,
+    SqliteDonationRepo, SqliteEventLogRepo, SqliteFollowKnowledgeRepo, SqliteGlobalsRepo,
+    SqliteHistoryRepo, SqliteLatestValueRepo, SqliteMediaRepo, SqliteOverlayRepo, SqliteQueueRepo,
     SqliteScheduledRunRepo, SqliteScriptRepo, SqliteSettingsRepo, SqliteSoundboardClipsRepo,
     SqliteTriggerInstanceRepo, SqliteTtsFiltersRepo, SqliteUserGlobalsRepo, SqliteViewerRepo,
     SqliteVoiceAliasRepo,
@@ -120,6 +120,7 @@ pub struct SqliteBackend {
     donation: Arc<SqliteDonationRepo>,
     latest_value: Arc<SqliteLatestValueRepo>,
     ban_ledger: Arc<SqliteBanLedgerRepo>,
+    follow_knowledge: Arc<SqliteFollowKnowledgeRepo>,
     shutdown: Arc<Notify>,
     retention_running: watch::Receiver<()>,
     checkpoint: AbortHandle,
@@ -281,6 +282,7 @@ impl SqliteBackend {
             donation: Arc::new(SqliteDonationRepo::new(pool.clone())),
             latest_value: Arc::new(SqliteLatestValueRepo::new(pool.clone())),
             ban_ledger: Arc::new(SqliteBanLedgerRepo::new(pool.clone())),
+            follow_knowledge: Arc::new(SqliteFollowKnowledgeRepo::new(pool.clone())),
             credentials: Arc::new(credentials),
             shutdown,
             retention_running,
@@ -433,6 +435,10 @@ impl DataProvider for SqliteBackend {
 
     fn ban_ledger_repo(&self) -> Arc<dyn BanLedgerRepo> {
         Arc::clone(&self.ban_ledger) as Arc<dyn BanLedgerRepo>
+    }
+
+    fn follow_knowledge_repo(&self) -> Arc<dyn FollowKnowledgeRepo> {
+        Arc::clone(&self.follow_knowledge) as Arc<dyn FollowKnowledgeRepo>
     }
 
     fn scheduled_run_repo(&self) -> Arc<dyn ScheduledRunRepo> {

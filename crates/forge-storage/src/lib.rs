@@ -6,6 +6,7 @@ pub mod credentials;
 mod donation;
 mod error;
 mod event_log;
+mod follow_knowledge;
 mod globals;
 mod history;
 mod integration_state;
@@ -50,6 +51,9 @@ pub use error::StorageError;
 pub use event_log::{
     DEFAULT_EVENT_LOG_RETENTION_DAYS, EventLogRepo, MAX_EVENT_LOG_RETENTION_DAYS,
     MIN_EVENT_LOG_RETENTION_DAYS, event_log_retention_days, set_event_log_retention_days,
+};
+pub use follow_knowledge::{
+    FollowKnowledgeEntry, FollowKnowledgeKey, FollowKnowledgeRepo, KnownFollow,
 };
 pub use globals::{GlobalEntry, GlobalsRepo};
 pub use history::{
@@ -128,6 +132,8 @@ pub use voice_aliases::VoiceAliasRepo;
 pub use ban_ledger::MockBanLedgerRepo;
 #[cfg(feature = "test-mocks")]
 pub use donation::MockDonationRepo;
+#[cfg(feature = "test-mocks")]
+pub use follow_knowledge::MockFollowKnowledgeRepo;
 #[cfg(feature = "test-mocks")]
 pub use latest_value::MockLatestValueRepo;
 #[cfg(feature = "test-mocks")]

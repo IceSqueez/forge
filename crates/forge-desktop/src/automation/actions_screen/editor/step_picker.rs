@@ -217,6 +217,48 @@ mod tests {
     use super::*;
 
     #[tokio::test]
+    async fn every_step_item_carries_its_runners_search_text_as_keywords() {
+        crate::app::i18n::install_language(forge_storage::Language::En);
+        let (_, steps) = crate::test_support::every_registry_entry().await;
+
+        let (groups, _) = build_step_groups(&steps, &forge_components::FORGE_DEFAULT);
+
+        let carried: HashMap<String, String> = groups
+            .iter()
+            .flat_map(|group| group.items.iter())
+            .map(|item| (item.id.to_string(), item.keywords.to_string()))
+            .collect();
+        for runner in steps.all() {
+            assert_eq!(
+                carried
+                    .get(&format!("step-{}", runner.id()))
+                    .map(String::as_str),
+                Some(runner.search_text()),
+                "{}",
+                runner.id()
+            );
+        }
+    }
+
+    #[tokio::test]
+    async fn an_abort_query_finds_the_cancel_raid_step_only_through_keywords() {
+        crate::app::i18n::install_language(forge_storage::Language::En);
+        let (_, steps) = crate::test_support::every_registry_entry().await;
+        let (groups, _) = build_step_groups(&steps, &forge_components::FORGE_DEFAULT);
+
+        let item = groups
+            .iter()
+            .flat_map(|group| group.items.iter())
+            .find(|item| item.name.as_ref() == "Cancel Raid")
+            .expect("the Cancel Raid step is registered");
+
+        let query = "abort";
+        assert!(forge_components::contains_folded(&item.keywords, query));
+        assert!(!forge_components::contains_folded(&item.name, query));
+        assert!(!forge_components::contains_folded(&item.desc, query));
+    }
+
+    #[tokio::test]
     async fn owned_steps_keep_their_group_scope_label_and_tint() {
         crate::app::i18n::install_language(forge_storage::Language::En);
         let palette = forge_components::FORGE_DEFAULT;

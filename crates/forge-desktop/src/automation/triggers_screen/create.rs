@@ -486,6 +486,48 @@ mod tests {
 
     const TWITCH_CHAT: &str = "twitch.chat";
 
+    #[tokio::test]
+    async fn every_kind_item_carries_its_descriptors_search_text_as_keywords() {
+        crate::app::i18n::install_language(forge_storage::Language::En);
+        let (triggers, _) = crate::test_support::every_registry_entry().await;
+
+        let (groups, _) = build_kind_groups(&triggers, &forge_components::FORGE_DEFAULT);
+
+        let carried: std::collections::HashMap<String, String> = groups
+            .iter()
+            .flat_map(|group| group.items.iter())
+            .map(|item| (item.id.to_string(), item.keywords.to_string()))
+            .collect();
+        for descriptor in triggers.all() {
+            assert_eq!(
+                carried
+                    .get(&format!("kind-{}", descriptor.id()))
+                    .map(String::as_str),
+                Some(descriptor.search_text()),
+                "{}",
+                descriptor.id()
+            );
+        }
+    }
+
+    #[tokio::test]
+    async fn a_subscribed_query_finds_the_new_subscriber_kind_only_through_keywords() {
+        crate::app::i18n::install_language(forge_storage::Language::En);
+        let (triggers, _) = crate::test_support::every_registry_entry().await;
+        let (groups, _) = build_kind_groups(&triggers, &forge_components::FORGE_DEFAULT);
+
+        let item = groups
+            .iter()
+            .flat_map(|group| group.items.iter())
+            .find(|item| item.name.as_ref() == "New subscriber")
+            .expect("the New subscriber kind is registered");
+
+        let query = "subbed";
+        assert!(forge_components::contains_folded(&item.keywords, query));
+        assert!(!forge_components::contains_folded(&item.name, query));
+        assert!(!forge_components::contains_folded(&item.desc, query));
+    }
+
     fn fill_form(cx: &mut TestAppContext, greeting: &str) -> Fixture {
         crate::app::i18n::install_language(forge_storage::Language::En);
         cx.update(|cx| cx.set_global(Toasts::new()));

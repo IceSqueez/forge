@@ -1044,6 +1044,44 @@ mod tests {
         vcx.update(|_window, cx| picked.read(cx).seen.clone())
     }
 
+    fn keyworded(
+        name: &str,
+        desc: &str,
+        keywords: &str,
+        matches: Option<GridItemQuery>,
+    ) -> GridPickerItem {
+        GridPickerItem {
+            keywords: SharedString::from(keywords.to_owned()),
+            ..item("kw", name, desc, matches)
+        }
+    }
+
+    #[test]
+    fn a_query_hits_an_item_through_its_keywords_alone() {
+        let entry = keyworded("Alpha", "first letter", "abort cancel", None);
+
+        for query in ["abort", "cancel", "ort can"] {
+            assert!(item_hit(&entry, query), "{query}");
+        }
+        assert!(!item_hit(&entry, "omega"));
+    }
+
+    #[test]
+    fn keywords_stored_in_upper_case_still_hit_a_folded_query() {
+        let entry = keyworded("Alpha", "first letter", "ABORT", None);
+
+        assert!(item_hit(&entry, "abort"));
+    }
+
+    #[test]
+    fn an_item_without_keywords_misses_a_query_only_keywords_could_answer() {
+        let entry = keyworded("Alpha", "first letter", "", None);
+
+        assert!(!item_hit(&entry, "abort"));
+        assert!(item_hit(&entry, "alpha"));
+        assert!(item_hit(&entry, "letter"));
+    }
+
     #[test]
     fn a_taller_tile_grows_the_card_and_its_row_by_what_the_tile_gained() {
         let base = GridPickerArt::default();

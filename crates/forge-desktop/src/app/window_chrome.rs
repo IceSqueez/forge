@@ -97,3 +97,77 @@ pub(crate) fn repaint_on_decoration_change(window: &Window) {
         .observe_window_appearance(|window, _| window.refresh())
         .detach();
 }
+
+#[cfg(test)]
+mod tests {
+    use super::{APPLIES_LIVE, TitlebarChoice, forge_titlebar_shown};
+
+    #[test]
+    fn switching_away_from_the_launched_mode_needs_a_restart_only_where_it_cannot_apply_live() {
+        for launched in [true, false] {
+            let switched = TitlebarChoice::launched(launched).choose(!launched);
+
+            assert_eq!(
+                switched.restart_pending(),
+                !APPLIES_LIVE,
+                "launched integrated = {launched}"
+            );
+        }
+    }
+
+    #[test]
+    fn choosing_the_launched_mode_again_clears_the_pending_restart() {
+        for launched in [true, false] {
+            let returned = TitlebarChoice::launched(launched)
+                .choose(!launched)
+                .choose(launched);
+
+            assert!(
+                !returned.restart_pending(),
+                "launched integrated = {launched}"
+            );
+        }
+    }
+
+    fn titlebar_shown_after(choice: TitlebarChoice, cx: &mut gpui::TestAppContext) -> bool {
+        cx.update(|cx| cx.set_global(choice));
+        cx.add_empty_window()
+            .update(|window, cx| forge_titlebar_shown(window, cx))
+    }
+
+    #[cfg(target_os = "linux")]
+    #[gpui::test]
+    fn the_forge_title_bar_follows_the_live_choice_on_a_server_decorated_window(
+        cx: &mut gpui::TestAppContext,
+    ) {
+        let shown = (
+            titlebar_shown_after(TitlebarChoice::launched(true).choose(false), cx),
+            titlebar_shown_after(TitlebarChoice::launched(false).choose(true), cx),
+        );
+
+        assert_eq!(shown, (false, true));
+    }
+
+    #[cfg(target_os = "linux")]
+    #[gpui::test]
+    fn a_server_decorated_window_never_draws_forge_window_controls(cx: &mut gpui::TestAppContext) {
+        cx.update(|cx| cx.set_global(TitlebarChoice::launched(true)));
+
+        let controls = cx
+            .add_empty_window()
+            .update(|window, cx| super::forge_window_controls_shown(window, cx));
+
+        assert!(!controls);
+    }
+
+    #[cfg(not(target_os = "linux"))]
+    #[gpui::test]
+    fn the_forge_title_bar_keeps_the_launched_mode_until_a_restart(cx: &mut gpui::TestAppContext) {
+        let shown = (
+            titlebar_shown_after(TitlebarChoice::launched(true).choose(false), cx),
+            titlebar_shown_after(TitlebarChoice::launched(false).choose(true), cx),
+        );
+
+        assert_eq!(shown, (true, false));
+    }
+}

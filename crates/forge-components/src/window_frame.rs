@@ -192,3 +192,149 @@ pub fn window_frame(
         })
         .into_any_element()
 }
+
+#[cfg(test)]
+mod tests {
+    use gpui::{Corners, Pixels, Point, ResizeEdge, Size, Tiling, point, px, size};
+
+    use super::{CLIENT_CORNER, SQUARE_CORNER, resize_edge, rounded_corners};
+
+    fn window() -> Size<Pixels> {
+        size(px(800.0), px(600.0))
+    }
+
+    fn at(x: f32, y: f32) -> Point<Pixels> {
+        point(px(x), px(y))
+    }
+
+    fn left_tiled() -> Tiling {
+        Tiling {
+            left: true,
+            ..Tiling::default()
+        }
+    }
+
+    #[test]
+    fn a_floating_window_resizes_from_each_edge_and_corner_with_corners_winning() {
+        for (position, expected) in [
+            (at(400.0, 5.0), ResizeEdge::Top),
+            (at(400.0, 595.0), ResizeEdge::Bottom),
+            (at(5.0, 300.0), ResizeEdge::Left),
+            (at(795.0, 300.0), ResizeEdge::Right),
+            (at(5.0, 5.0), ResizeEdge::TopLeft),
+            (at(795.0, 5.0), ResizeEdge::TopRight),
+            (at(5.0, 595.0), ResizeEdge::BottomLeft),
+            (at(795.0, 595.0), ResizeEdge::BottomRight),
+        ] {
+            assert_eq!(
+                resize_edge(position, window(), Tiling::default()),
+                Some(expected),
+                "at {position:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn past_the_shadow_strip_only_the_corner_grab_still_resizes() {
+        for (position, expected) in [
+            (at(9.0, 300.0), Some(ResizeEdge::Left)),
+            (at(10.0, 300.0), None),
+            (at(14.0, 300.0), None),
+            (at(14.0, 14.0), Some(ResizeEdge::TopLeft)),
+            (at(786.0, 586.0), Some(ResizeEdge::BottomRight)),
+            (at(15.0, 15.0), None),
+            (at(400.0, 300.0), None),
+        ] {
+            assert_eq!(
+                resize_edge(position, window(), Tiling::default()),
+                expected,
+                "at {position:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn a_fully_tiled_window_offers_no_resize_edge_anywhere_on_its_border() {
+        for position in [
+            at(400.0, 5.0),
+            at(400.0, 595.0),
+            at(5.0, 300.0),
+            at(795.0, 300.0),
+            at(5.0, 5.0),
+            at(795.0, 5.0),
+            at(5.0, 595.0),
+            at(795.0, 595.0),
+        ] {
+            assert_eq!(
+                resize_edge(position, window(), Tiling::tiled()),
+                None,
+                "at {position:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn a_tiled_side_offers_no_edge_while_the_free_sides_still_resize() {
+        assert_eq!(
+            (
+                resize_edge(at(5.0, 300.0), window(), left_tiled()),
+                resize_edge(at(795.0, 300.0), window(), left_tiled()),
+                resize_edge(at(400.0, 5.0), window(), left_tiled()),
+            ),
+            (None, Some(ResizeEdge::Right), Some(ResizeEdge::Top))
+        );
+    }
+
+    #[test]
+    fn a_tiled_side_squares_the_two_corners_it_touches() {
+        let rounded = CLIENT_CORNER;
+        let square = SQUARE_CORNER;
+        for (tiling, expected) in [
+            (
+                Tiling::default(),
+                Corners {
+                    top_left: rounded,
+                    top_right: rounded,
+                    bottom_left: rounded,
+                    bottom_right: rounded,
+                },
+            ),
+            (
+                left_tiled(),
+                Corners {
+                    top_left: square,
+                    top_right: rounded,
+                    bottom_left: square,
+                    bottom_right: rounded,
+                },
+            ),
+            (
+                Tiling {
+                    top: true,
+                    ..Tiling::default()
+                },
+                Corners {
+                    top_left: square,
+                    top_right: square,
+                    bottom_left: rounded,
+                    bottom_right: rounded,
+                },
+            ),
+            (
+                Tiling {
+                    bottom: true,
+                    right: true,
+                    ..Tiling::default()
+                },
+                Corners {
+                    top_left: rounded,
+                    top_right: square,
+                    bottom_left: square,
+                    bottom_right: square,
+                },
+            ),
+        ] {
+            assert_eq!(rounded_corners(tiling), expected, "for {tiling:?}");
+        }
+    }
+}

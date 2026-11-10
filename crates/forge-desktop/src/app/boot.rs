@@ -396,6 +396,7 @@ mod tests {
     use forge_storage::settings::core_settings::{ACCENT, FONT_BODY, FONT_MONO, THEME};
     use forge_storage::write_setting;
 
+    use crate::app::window_chrome::INTEGRATED_TITLEBAR;
     use crate::preferences::settings_catalog::DENSITY;
 
     use super::{
@@ -542,6 +543,31 @@ mod tests {
         let appearance = load_appearance(backend.settings_repo().as_ref()).await;
 
         assert_eq!(appearance.accent, AccentColor::Mauve);
+    }
+
+    #[tokio::test]
+    async fn a_store_without_a_titlebar_choice_boots_with_the_integrated_title_bar() {
+        let (backend, _writes) = test_backend();
+
+        let appearance = load_appearance(backend.settings_repo().as_ref()).await;
+
+        assert!(appearance.integrated_titlebar);
+    }
+
+    #[tokio::test]
+    async fn a_stored_titlebar_opt_out_boots_with_the_system_title_bar() {
+        let (backend, _writes) = test_backend();
+        write_setting(
+            backend.settings_repo().as_ref(),
+            &INTEGRATED_TITLEBAR,
+            &false,
+        )
+        .await
+        .unwrap();
+
+        let appearance = load_appearance(backend.settings_repo().as_ref()).await;
+
+        assert!(!appearance.integrated_titlebar);
     }
 
     fn opened_backend() -> Arc<dyn DataProvider> {

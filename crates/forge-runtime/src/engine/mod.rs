@@ -8,6 +8,7 @@ pub(crate) mod queue_depth;
 pub(crate) mod queue_scheduler;
 pub(crate) mod queue_service;
 pub(crate) mod run_history;
+pub(crate) mod run_watch;
 pub(crate) mod scheduled_runs;
 pub(crate) mod timer_scheduler;
 pub(crate) mod trigger_evaluator;

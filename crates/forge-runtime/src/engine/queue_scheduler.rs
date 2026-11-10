@@ -15,6 +15,7 @@ use tokio::sync::{Notify, mpsc, oneshot, watch};
 use tracing::{info, warn};
 
 use crate::engine::queue_depth::{DepthBoard, DepthCell, QueueDepthWatch, RunningAction};
+use crate::engine::run_watch::{RunEnd, RunWatch, WatchedRun, watch_run};
 use crate::engine::scheduled_runs::ScheduledOrigin;
 use crate::{ActionEngineHandle, EventBus, ExecutionRequest};
 
@@ -199,7 +200,7 @@ pub enum ClearMode {
 }
 
 enum SchedulerCommand {
-    Enqueue(SchedulerRequest),
+    Enqueue(SchedulerRequest, Option<RunWatch>),
     Offer(SchedulerRequest, oneshot::Sender<Result<(), RuntimeError>>),
     Admit(
         SchedulerRequest,
@@ -225,7 +226,7 @@ enum SchedulerCommand {
 }
 
 enum Arrival {
-    Triggered,
+    Triggered(Option<RunWatch>),
     Scheduled(ScheduledOrigin),
 }
 
@@ -479,6 +480,7 @@ struct QueueTask {
     origin: Option<ScheduledOrigin>,
     initial_args: ArgStack,
     admission: QueueAdmission,
+    watch: Option<RunWatch>,
 }
 
 impl QueueTask {
@@ -494,8 +496,16 @@ impl QueueTask {
 impl QueueSchedulerHandle {
     pub fn dispatch(&self, req: SchedulerRequest) -> Result<(), RuntimeError> {
         self.sender
-            .send(SchedulerCommand::Enqueue(req))
+            .send(SchedulerCommand::Enqueue(req, None))
             .map_err(|_| RuntimeError::SchedulerChannelClosed)
+    }
+
+    pub fn dispatch_watched(&self, req: SchedulerRequest) -> Result<WatchedRun, RuntimeError> {
+        let (watch, watched) = watch_run();
+        self.sender
+            .send(SchedulerCommand::Enqueue(req, Some(watch)))
+            .map_err(|_| RuntimeError::SchedulerChannelClosed)?;
+        Ok(watched)
     }
 
     pub(crate) async fn offer(&self, req: SchedulerRequest) -> Result<(), RuntimeError> {
@@ -669,12 +679,14 @@ impl Launcher {
             initial_args: task.initial_args,
         };
         let origin = task.origin;
-
-        let cancel = CancelSignal::new();
+        let (cancel, report) = match task.watch {
+            Some(RunWatch { cancel, report }) => (cancel, Some(report)),
+            None => (CancelSignal::new(), None),
+        };
         let id = self.inflight.register(cancel.clone(), action_id);
         let launcher = self.clone();
         self.tasks.spawn(async move {
-            let (done_tx, done_rx) = oneshot::channel::<()>();
+            let (done_tx, done_rx) = oneshot::channel::<RunEnd>();
             let dispatched = match origin {
                 Some(origin) => {
                     launcher
@@ -684,14 +696,8 @@ impl Launcher {
                 }
                 None => launcher.engine.dispatch_tracked(req, cancel, done_tx).await,
             };
-            match dispatched {
-                Ok(()) => {
-                    #[expect(
-                        clippy::let_underscore_must_use,
-                        reason = "a dropped completion signal also means the run ended"
-                    )]
-                    let _ = done_rx.await;
-                }
+            let end = match dispatched {
+                Ok(()) => done_rx.await.unwrap_or(RunEnd::NotStarted),
                 Err(error) => {
                     warn!(action = %action_id, %error, "queued run could not reach the engine");
                     QueueScheduler::publish_skip(
@@ -701,10 +707,18 @@ impl Launcher {
                         trigger_event_id,
                         RunRefusal::EngineStopped,
                     );
+                    RunEnd::NotStarted
                 }
-            }
+            };
             launcher.inflight.complete(id);
             drop(permit);
+            if let Some(report) = report {
+                #[expect(
+                    clippy::let_underscore_must_use,
+                    reason = "the watcher may stop waiting for the run"
+                )]
+                let _ = report.send(end);
+            }
         });
     }
 }
@@ -854,15 +868,15 @@ impl QueueScheduler {
     ) {
         while let Some(cmd) = cmd_rx.recv().await {
             match cmd {
-                SchedulerCommand::Enqueue(req) => {
+                SchedulerCommand::Enqueue(req, watch) => {
                     #[expect(
                         clippy::let_underscore_must_use,
                         reason = "refusals are published as skip events inside enqueue"
                     )]
-                    let _ = Self::enqueue(req, Arrival::Triggered, &mut slots, &bus);
+                    let _ = Self::enqueue(req, Arrival::Triggered(watch), &mut slots, &bus);
                 }
                 SchedulerCommand::Offer(req, reply) => {
-                    let admitted = Self::enqueue(req, Arrival::Triggered, &mut slots, &bus)
+                    let admitted = Self::enqueue(req, Arrival::Triggered(None), &mut slots, &bus)
                         .map_err(RuntimeError::QueueRefused);
                     #[expect(
                         clippy::let_underscore_must_use,
@@ -1002,15 +1016,15 @@ impl QueueScheduler {
             return Err(RunRefusal::QueueNotFound);
         };
 
-        let origin = match arrival {
-            Arrival::Triggered => {
+        let (origin, watch) = match arrival {
+            Arrival::Triggered(watch) => {
                 if let Some(reason) = slot.mode.intake_refusal(admission.bypass_pause) {
                     Self::publish_skip(bus, queue_id, action_id, trigger_event_id, reason);
                     return Err(reason);
                 }
-                None
+                (None, watch)
             }
-            Arrival::Scheduled(origin) => Some(origin),
+            Arrival::Scheduled(origin) => (Some(origin), None),
         };
 
         let accepted = slot.pending.push(QueueTask {
@@ -1021,6 +1035,7 @@ impl QueueScheduler {
             origin,
             initial_args,
             admission,
+            watch,
         });
 
         if accepted {
@@ -2658,6 +2673,7 @@ mod tests {
             origin: None,
             initial_args: ArgStack::new(),
             admission,
+            watch: None,
         };
         (action_id, task)
     }

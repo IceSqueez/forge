@@ -26,6 +26,7 @@ use crate::core_messages;
 use crate::engine::action_cancel::ActionCancelRegistry;
 use crate::engine::chain::{ChainEngine, pick_steps};
 use crate::engine::run_history::RunHistoryWriter;
+use crate::engine::run_watch::RunEnd;
 use crate::engine::scheduled_runs::ScheduledOrigin;
 use crate::event_flow::bus::LineageHold;
 use crate::integrations::integration_gate::{GatedLeafExecutor, IntegrationGate};
@@ -80,7 +81,7 @@ struct EngineJob {
     request: ExecutionRequest,
     origin: Option<ScheduledOrigin>,
     cancel: CancelSignal,
-    on_complete: Option<oneshot::Sender<()>>,
+    on_complete: Option<oneshot::Sender<RunEnd>>,
 }
 
 impl ActionEngineHandle {
@@ -100,7 +101,7 @@ impl ActionEngineHandle {
         &self,
         req: ExecutionRequest,
         cancel: CancelSignal,
-        on_complete: oneshot::Sender<()>,
+        on_complete: oneshot::Sender<RunEnd>,
     ) -> Result<(), RuntimeError> {
         self.send_tracked(req, None, cancel, on_complete).await
     }
@@ -110,7 +111,7 @@ impl ActionEngineHandle {
         req: ExecutionRequest,
         origin: ScheduledOrigin,
         cancel: CancelSignal,
-        on_complete: oneshot::Sender<()>,
+        on_complete: oneshot::Sender<RunEnd>,
     ) -> Result<(), RuntimeError> {
         self.send_tracked(req, Some(origin), cancel, on_complete)
             .await
@@ -121,7 +122,7 @@ impl ActionEngineHandle {
         req: ExecutionRequest,
         origin: Option<ScheduledOrigin>,
         cancel: CancelSignal,
-        on_complete: oneshot::Sender<()>,
+        on_complete: oneshot::Sender<RunEnd>,
     ) -> Result<(), RuntimeError> {
         self.sender
             .send(EngineJob {
@@ -263,14 +264,14 @@ impl ActionEngine {
         };
         let engine = Arc::clone(self);
         self.tasks.spawn(async move {
-            engine.run_execution(request, origin, &cancel).await;
+            let end = engine.run_execution(request, origin, &cancel).await;
             drop(cancel_guard);
             if let Some(done) = on_complete {
                 #[expect(
                     clippy::let_underscore_must_use,
                     reason = "the caller may stop waiting for completion"
                 )]
-                let _ = done.send(());
+                let _ = done.send(end);
             }
         });
     }
@@ -368,13 +369,13 @@ impl ActionEngine {
         req: ExecutionRequest,
         origin: Option<ScheduledOrigin>,
         cancel: &CancelSignal,
-    ) {
+    ) -> RunEnd {
         let action = match self.catalog.current().await {
             Ok(catalog) => match catalog.action(req.action_id) {
                 Some(action) => Arc::clone(action),
                 None => {
                     self.refuse_unrunnable(req, origin).await;
-                    return;
+                    return RunEnd::NotStarted;
                 }
             },
             Err(e) => {
@@ -386,7 +387,7 @@ impl ActionEngine {
                     DEFAULT_QUEUE_ID,
                     core_messages::storage_failed(e),
                 );
-                return;
+                return RunEnd::NotStarted;
             }
         };
 
@@ -405,7 +406,7 @@ impl ActionEngine {
                 arg_stack,
                 started_at,
             );
-            return;
+            return RunEnd::NotStarted;
         }
 
         let mut ctx = ExecutionContext {
@@ -442,7 +443,9 @@ impl ActionEngine {
         };
         ctx.completed_at = Some(OffsetDateTime::now_utc());
 
+        let outcome = ctx.outcome.clone();
         self.finish_run(&action, ctx, manual_test, start_event_id);
+        RunEnd::Finished(outcome)
     }
 
     fn rehearsal_of(&self, req: &ExecutionRequest) -> Option<RehearsalKind> {

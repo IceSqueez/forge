@@ -46,6 +46,7 @@ pub use engine::queue_scheduler::{
     QueueModeChanged, QueueProcessing, QueueRuntimeState, QueueScheduler, QueueSchedulerHandle,
     SchedulerRequest,
 };
+pub use engine::run_watch::{RunCanceller, RunCompletion, RunEnd, WatchedRun};
 pub use engine::scheduled_runs::{
     CatchUpSettle, HandOff, ScheduleDue, ScheduleRequest, ScheduledRunsHandle, ScheduledRunsParts,
     SchedulingContext, WaitingForQueueWatch, WaitingRuns, spawn_scheduled_runs,

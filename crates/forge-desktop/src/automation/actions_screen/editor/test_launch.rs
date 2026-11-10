@@ -106,6 +106,12 @@ impl ActionEditor {
         cx.notify();
     }
 
+    pub(super) fn hand_off_test_run(&mut self, cx: &mut App) {
+        if let Some(modal) = self.modals.test_run.take() {
+            modal.update(cx, |modal, _| modal.continue_in_background());
+        }
+    }
+
     fn test_run_row(
         &self,
         index: usize,
@@ -138,7 +144,7 @@ impl ActionEditor {
 
     fn on_test_run_event(
         &mut self,
-        _modal: Entity<TestRunModal>,
+        modal: Entity<TestRunModal>,
         event: &TestRunEvent,
         cx: &mut Context<Self>,
     ) {
@@ -146,9 +152,12 @@ impl ActionEditor {
             TestRunEvent::Relaunch {
                 action_id,
                 selected,
-            } => self.launch_test_run(*action_id, *selected, cx),
+            } => {
+                modal.update(cx, |modal, _| modal.continue_in_background());
+                self.launch_test_run(*action_id, *selected, cx);
+            }
             TestRunEvent::DetailChanged(id) => self.load_detail_for(*id, cx),
-            TestRunEvent::Cancelled(id) => {
+            TestRunEvent::Closed(id) => {
                 self.modals.test_run = None;
                 self.modals._test_run_sub = None;
                 self.load_detail_for(*id, cx);

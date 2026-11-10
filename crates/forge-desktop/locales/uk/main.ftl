@@ -1077,6 +1077,16 @@ action_editor_test_run_foot_simulating = Моделювання...
 action_editor_test_run_foot_finished = Запуск завершено
 action_editor_test_run_foot_halted = Зупинено через помилку
 action_editor_test_run_foot_notstarted = Не запущено
+action_editor_test_run_foot_stopped = Тест зупинено
+action_editor_test_run_busy_title = Тест ще виконується
+action_editor_test_run_busy_body = Зупиніть його зараз або залиште виконуватися у фоні - коли він завершиться, з'явиться сповіщення.
+action_editor_test_run_busy_stop = Зупинити тест
+action_editor_test_run_busy_keep = Продовжити у фоні
+action_editor_test_run_busy_esc_hint = щоб повернутися
+action_editor_test_run_toast_finished = Тест «{ $name }» завершено
+action_editor_test_run_toast_failed = Тест «{ $name }» завершився з помилкою: { $error }
+action_editor_test_run_toast_stopped = Тест «{ $name }» зупинено
+action_editor_test_run_toast_notstarted = Тест «{ $name }» не запустився
 action_editor_test_run_again = Запустити знову
 action_editor_test_run_close = Закрити
 

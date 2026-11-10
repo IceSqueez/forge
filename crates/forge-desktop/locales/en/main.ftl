@@ -1052,6 +1052,16 @@ action_editor_test_run_foot_simulating = Simulating...
 action_editor_test_run_foot_finished = Run finished
 action_editor_test_run_foot_halted = Halted on error
 action_editor_test_run_foot_notstarted = Did not start
+action_editor_test_run_foot_stopped = Test stopped
+action_editor_test_run_busy_title = Test is still running
+action_editor_test_run_busy_body = Stop it now, or keep it running and get a notice when it ends.
+action_editor_test_run_busy_stop = Stop test
+action_editor_test_run_busy_keep = Keep running
+action_editor_test_run_busy_esc_hint = to go back
+action_editor_test_run_toast_finished = Test of "{ $name }" finished
+action_editor_test_run_toast_failed = Test of "{ $name }" failed: { $error }
+action_editor_test_run_toast_stopped = Test of "{ $name }" was stopped
+action_editor_test_run_toast_notstarted = Test of "{ $name }" did not start
 action_editor_test_run_again = Run again
 action_editor_test_run_close = Close
 

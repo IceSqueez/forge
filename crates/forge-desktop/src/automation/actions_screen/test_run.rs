@@ -5,13 +5,13 @@ use crate::shared::repo_failure::RepoFailure;
 use crate::shared::user_text::resolve_user_text;
 use forge_components::ROW_OFF_OPACITY;
 use forge_components::{
-    ActivePresentation, BORDER_THIN, Density, FONT_SM, FONT_XS, FONT_XXS, KeyActivated, MenuItem,
-    Radius, Spacing, context_menu, ghost_button_with_icon, menu_header, menu_item, modal,
-    primary_button, radius, scaled, spacing,
+    ActivePresentation, BORDER_THIN, ConfirmTone, Density, FONT_SM, FONT_XS, FONT_XXS,
+    KeyActivated, MenuItem, PushToast, Radius, Spacing, ToastKind, confirm_modal, context_menu,
+    ghost_button_with_icon, menu_header, menu_item, modal, primary_button, radius, scaled, spacing,
 };
 use forge_events::{Event, RunOutcome, SubActionDone};
-use forge_runtime::QueueAdmission;
-use forge_types::{ArgStack, EventId};
+use forge_runtime::{QueueAdmission, RunCanceller, RunCompletion, RunEnd, WatchedRun};
+use forge_types::{ArgStack, EventId, ExecutionOutcome};
 use gpui::{App, Rgba, Task, relative};
 use std::time::Duration;
 
@@ -69,13 +69,17 @@ enum TestRunPhase {
     Done { errors: usize },
     Halted { step: usize },
     NotStarted,
+    Stopped,
 }
 
 impl TestRunPhase {
     fn is_terminal(&self) -> bool {
         matches!(
             self,
-            TestRunPhase::Done { .. } | TestRunPhase::Halted { .. } | TestRunPhase::NotStarted
+            TestRunPhase::Done { .. }
+                | TestRunPhase::Halted { .. }
+                | TestRunPhase::NotStarted
+                | TestRunPhase::Stopped
         )
     }
 }
@@ -84,6 +88,19 @@ enum FireOutcome {
     StartTimeout,
     Repaint,
     Error(String),
+}
+
+enum RunControl {
+    Dispatching,
+    Live(RunCanceller),
+    Ended,
+    Refused,
+}
+
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum AfterClose {
+    Stop,
+    Report,
 }
 
 pub(super) struct TestRunLaunch {
@@ -105,7 +122,7 @@ pub(super) enum TestRunEvent {
         selected: Option<usize>,
     },
     DetailChanged(ActionId),
-    Cancelled(ActionId),
+    Closed(ActionId),
     Failed(String),
 }
 
@@ -123,8 +140,10 @@ pub(super) struct TestRunModal {
     root: Option<EventId>,
     top_run_ids: HashMap<EventId, usize>,
     phase: TestRunPhase,
+    run: RunControl,
+    close_prompt: bool,
+    after_close: Option<AfterClose>,
     _bridge: Task<()>,
-    _fire: Task<()>,
     _timeout: Option<Task<()>>,
 }
 
@@ -257,15 +276,21 @@ impl TestRunModal {
             )
             .await
         });
-        let fire = cx.spawn(async move |this, cx| {
-            if let Ok(result) = reply.await {
-                #[expect(
-                    clippy::let_underscore_must_use,
-                    reason = "the view may close before the result arrives"
-                )]
-                let _ = this.update(cx, |this, cx| this.on_test_fired(action_id, result, cx));
+        cx.spawn(async move |this, cx| {
+            let Some(modal) = this.upgrade() else {
+                return;
+            };
+            let Ok(result) = reply.await else {
+                return;
+            };
+            let completion =
+                modal.update(cx, |modal, cx| modal.on_test_fired(action_id, result, cx));
+            if let Some(completion) = completion {
+                let end = completion.finished().await;
+                modal.update(cx, |modal, cx| modal.on_run_end(end, cx));
             }
-        });
+        })
+        .detach();
 
         TestRunModal {
             action_id,
@@ -281,8 +306,10 @@ impl TestRunModal {
             root: None,
             top_run_ids: HashMap::new(),
             phase: TestRunPhase::Awaiting,
+            run: RunControl::Dispatching,
+            close_prompt: false,
+            after_close: None,
             _bridge: bridge,
-            _fire: fire,
             _timeout: None,
         }
     }
@@ -334,34 +361,119 @@ impl TestRunModal {
         cx.notify();
     }
 
-    fn cancel(&mut self, cx: &mut Context<Self>) {
-        cx.emit(TestRunEvent::Cancelled(self.action_id));
+    fn run_settled(&self) -> bool {
+        matches!(self.run, RunControl::Ended | RunControl::Refused)
+            || matches!(
+                self.phase,
+                TestRunPhase::Done { .. } | TestRunPhase::Halted { .. }
+            )
+    }
+
+    fn request_close(&mut self, cx: &mut Context<Self>) {
+        if self.run_settled() {
+            cx.emit(TestRunEvent::Closed(self.action_id));
+        } else {
+            self.close_prompt = true;
+            cx.notify();
+        }
+    }
+
+    fn return_to_test_run(&mut self, cx: &mut Context<Self>) {
+        self.close_prompt = false;
+        cx.notify();
+    }
+
+    fn stop_test(&mut self, cx: &mut Context<Self>) {
+        self.close_prompt = false;
+        self.after_close = Some(AfterClose::Stop);
+        if let RunControl::Live(canceller) = &self.run {
+            canceller.cancel();
+        }
+        cx.emit(TestRunEvent::Closed(self.action_id));
+        cx.notify();
+    }
+
+    fn keep_running(&mut self, cx: &mut Context<Self>) {
+        self.close_prompt = false;
+        self.after_close = Some(AfterClose::Report);
+        cx.emit(TestRunEvent::Closed(self.action_id));
+        cx.notify();
+    }
+
+    pub(super) fn continue_in_background(&mut self) {
+        if !self.run_settled() && self.after_close.is_none() {
+            self.after_close = Some(AfterClose::Report);
+        }
     }
 
     fn on_test_fired(
         &mut self,
         id: ActionId,
-        result: Result<(), RepoFailure>,
+        result: Result<WatchedRun, RepoFailure>,
         cx: &mut Context<Self>,
-    ) {
+    ) -> Option<RunCompletion> {
         if self.action_id != id {
-            return;
+            return None;
         }
-        let outcome = match result {
-            Ok(()) => {
-                if matches!(self.phase, TestRunPhase::Awaiting) {
+        let (outcome, completion) = match result {
+            Ok(WatchedRun {
+                canceller,
+                completion,
+            }) => {
+                if self.after_close == Some(AfterClose::Stop) {
+                    canceller.cancel();
+                }
+                self.run = RunControl::Live(canceller);
+                let outcome = if matches!(self.phase, TestRunPhase::Awaiting) {
                     FireOutcome::StartTimeout
                 } else {
                     FireOutcome::Repaint
-                }
+                };
+                (outcome, Some(completion))
             }
-            Err(message) => FireOutcome::Error(message.text()),
+            Err(message) => {
+                self.run = RunControl::Refused;
+                (FireOutcome::Error(message.text()), None)
+            }
         };
         match outcome {
             FireOutcome::StartTimeout => self.start_test_timeout(cx),
             FireOutcome::Repaint => cx.notify(),
+            FireOutcome::Error(message) if self.after_close.is_some() => cx.push_toast(
+                ToastKind::Error,
+                tr!("action_editor_test_failed", error = message.as_str()),
+            ),
             FireOutcome::Error(message) => cx.emit(TestRunEvent::Failed(message)),
         }
+        completion
+    }
+
+    fn on_run_end(&mut self, end: RunEnd, cx: &mut Context<Self>) {
+        match self.after_close {
+            Some(AfterClose::Report) => {
+                let (kind, message) = background_report(&self.action_name, &end);
+                cx.push_toast(kind, message);
+            }
+            Some(AfterClose::Stop) => {}
+            None => {
+                self.close_prompt = false;
+                let ended_early = match &end {
+                    RunEnd::NotStarted => Some(TestRunPhase::NotStarted),
+                    RunEnd::Finished(ExecutionOutcome::Cancelled) => Some(TestRunPhase::Stopped),
+                    RunEnd::Finished(_) => None,
+                };
+                if let Some(phase) = ended_early
+                    && !matches!(
+                        self.phase,
+                        TestRunPhase::Done { .. } | TestRunPhase::Halted { .. }
+                    )
+                {
+                    self.phase = phase;
+                }
+            }
+        }
+        self.run = RunControl::Ended;
+        cx.notify();
     }
 
     fn start_test_timeout(&mut self, cx: &mut Context<Self>) {
@@ -552,7 +664,7 @@ impl TestRunModal {
             TestRunPhase::Halted { .. } => palette.danger,
             TestRunPhase::Done { errors } if errors > 0 => palette.warning,
             TestRunPhase::Done { .. } => palette.success,
-            TestRunPhase::NotStarted => palette.text_faint,
+            TestRunPhase::NotStarted | TestRunPhase::Stopped => palette.text_faint,
             _ => palette.brand,
         };
         let progress = div()
@@ -799,6 +911,7 @@ impl TestRunModal {
             TestRunPhase::Halted { .. } => tr!("action_editor_test_run_foot_halted"),
             TestRunPhase::Done { .. } => tr!("action_editor_test_run_foot_finished"),
             TestRunPhase::NotStarted => tr!("action_editor_test_run_foot_notstarted"),
+            TestRunPhase::Stopped => tr!("action_editor_test_run_foot_stopped"),
             _ => tr!("action_editor_test_run_foot_simulating"),
         };
 
@@ -819,7 +932,7 @@ impl TestRunModal {
         actions = actions.child(
             primary_button(tr!("action_editor_test_run_close"), palette).on_click(
                 "actions-test-run-close",
-                cx.listener(|this, _: &ClickEvent, _, cx| this.cancel(cx)),
+                cx.listener(|this, _: &ClickEvent, _, cx| this.request_close(cx)),
             ),
         );
 
@@ -885,19 +998,22 @@ impl Render for TestRunModal {
         .footer(footer)
         .on_close(
             "actions-test-run-close-x",
-            cx.listener(|this, _: &ClickEvent, _, cx| this.cancel(cx)),
+            cx.listener(|this, _: &ClickEvent, _, cx| this.request_close(cx)),
         );
 
         let view = cx.entity();
         let card_overlay = overlay(card, palette)
             .position(OverlayPosition::Center)
             .on_dismiss("actions-test-run-scrim", move |_window, cx| {
-                view.update(cx, |this, cx| this.cancel(cx));
+                view.update(cx, |this, cx| this.request_close(cx));
             });
 
         let menu = self
             .trigger_menu
             .map(|pos| self.render_trigger_menu(pos, palette, cx));
+        let close_prompt = self
+            .close_prompt
+            .then(|| self.render_close_prompt(palette, cx));
 
         div()
             .absolute()
@@ -906,6 +1022,69 @@ impl Render for TestRunModal {
             .size_full()
             .child(card_overlay)
             .children(menu)
+            .children(close_prompt)
+    }
+}
+
+impl TestRunModal {
+    fn render_close_prompt(&self, palette: &ForgePalette, cx: &mut Context<Self>) -> AnyElement {
+        let card = confirm_modal(
+            tr!("action_editor_test_run_busy_title"),
+            tr!("action_editor_test_run_busy_body"),
+            ConfirmTone::Destructive,
+            palette,
+        )
+        .item_name(self.action_name.clone())
+        .esc_hint(tr!("action_editor_test_run_busy_esc_hint"))
+        .on_cancel(
+            "actions-test-run-keep",
+            tr!("action_editor_test_run_busy_keep"),
+            cx.listener(|this, _: &ClickEvent, _, cx| this.keep_running(cx)),
+        )
+        .on_confirm(
+            "actions-test-run-stop",
+            tr!("action_editor_test_run_busy_stop"),
+            cx.listener(|this, _: &ClickEvent, _, cx| this.stop_test(cx)),
+        );
+
+        let view = cx.entity();
+        overlay(card, palette)
+            .position(OverlayPosition::Center)
+            .on_dismiss("actions-test-run-busy-scrim", move |_window, cx| {
+                view.update(cx, |this, cx| this.return_to_test_run(cx));
+            })
+            .into_any_element()
+    }
+}
+
+fn background_report(action_name: &str, end: &RunEnd) -> (ToastKind, String) {
+    match end {
+        RunEnd::Finished(ExecutionOutcome::Success) => (
+            ToastKind::Success,
+            tr!("action_editor_test_run_toast_finished", name = action_name),
+        ),
+        RunEnd::Finished(ExecutionOutcome::Failed(reason)) => {
+            let reason = resolve_user_text(reason).inline();
+            (
+                ToastKind::Error,
+                tr!(
+                    "action_editor_test_run_toast_failed",
+                    name = action_name,
+                    error = reason.as_str()
+                ),
+            )
+        }
+        RunEnd::Finished(ExecutionOutcome::Cancelled) => (
+            ToastKind::Info,
+            tr!("action_editor_test_run_toast_stopped", name = action_name),
+        ),
+        RunEnd::NotStarted => (
+            ToastKind::Warn,
+            tr!(
+                "action_editor_test_run_toast_notstarted",
+                name = action_name
+            ),
+        ),
     }
 }
 

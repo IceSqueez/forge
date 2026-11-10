@@ -1,5 +1,5 @@
 use forge_events::{Event, EventSource, ManualTestRun, TypedEvent};
-use forge_runtime::{EventBus, QueueAdmission, QueueSchedulerHandle, SchedulerRequest};
+use forge_runtime::{EventBus, QueueAdmission, QueueSchedulerHandle, SchedulerRequest, WatchedRun};
 use forge_types::{ActionId, ArgStack, QueueId};
 
 use crate::shared::repo_failure::RepoFailure;
@@ -21,7 +21,7 @@ pub(super) async fn dispatch_test_run(
     scheduler: &QueueSchedulerHandle,
     bus: &EventBus,
     request: TestRunRequest,
-) -> Result<(), RepoFailure> {
+) -> Result<WatchedRun, RepoFailure> {
     let TestRunRequest {
         root,
         action_id,
@@ -33,7 +33,7 @@ pub(super) async fn dispatch_test_run(
     let trigger_event_id = root.id;
     bus.record(root);
     scheduler
-        .dispatch(SchedulerRequest {
+        .dispatch_watched(SchedulerRequest {
             queue_id,
             action_id,
             trigger_event_id,

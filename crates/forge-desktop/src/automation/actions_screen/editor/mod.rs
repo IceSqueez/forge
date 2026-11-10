@@ -175,6 +175,8 @@ impl ActionEditor {
             modals: EditorModals::default(),
             show_media: None,
         };
+        cx.on_release(|editor: &mut Self, cx| editor.hand_off_test_run(cx))
+            .detach();
         editor.fetch_select_options(cx);
         editor
     }

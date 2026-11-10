@@ -26,6 +26,7 @@ pub const EVENT_TRAIL: &str = "event_trail";
 pub const TIMER_SCHEDULER: &str = "timer_scheduler";
 pub const NOTIFICATION_POLICY: &str = "notification_policy";
 pub const TWITCH_EMOTE_LEXICON: &str = "twitch_emote_lexicon";
+pub const FOLLOW_KNOWLEDGE: &str = "follow_knowledge";
 pub const UNNAMED_OBSERVER: &str = "observer";
 
 const CORE_BULK_KINDS: &[&str] = &[

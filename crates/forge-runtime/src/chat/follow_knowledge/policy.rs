@@ -1,0 +1,116 @@
+use std::sync::Arc;
+
+use forge_events::Event;
+use forge_platform_core::FollowStatus;
+use forge_registry::{
+    ActorRole, ActorSlot, CanonicalVariable, ChatEventKind, TriggerKindDescriptor, TriggerRegistry,
+    kind_matches_prefix,
+};
+use forge_storage::{FollowKnowledgeEntry, FollowKnowledgeKey, KnownFollow};
+use forge_types::Variant;
+use time::{Duration, OffsetDateTime};
+
+const FOLLOWING_LIFETIME: Duration = Duration::days(7);
+const HIDDEN_LIFETIME: Duration = Duration::days(7);
+const NOT_FOLLOWING_LIFETIME: Duration = Duration::hours(1);
+
+fn lifetime(follow: KnownFollow) -> Duration {
+    match follow {
+        KnownFollow::FollowingSince(_) => FOLLOWING_LIFETIME,
+        KnownFollow::Hidden => HIDDEN_LIFETIME,
+        KnownFollow::NotFollowing => NOT_FOLLOWING_LIFETIME,
+    }
+}
+
+pub(super) fn observed(
+    key: FollowKnowledgeKey,
+    follow: KnownFollow,
+    observed_at: OffsetDateTime,
+) -> FollowKnowledgeEntry {
+    FollowKnowledgeEntry {
+        key,
+        follow,
+        observed_at,
+        fresh_until: observed_at.saturating_add(lifetime(follow)),
+    }
+}
+
+pub(super) fn is_fresh(entry: &FollowKnowledgeEntry, now: OffsetDateTime) -> bool {
+    entry.fresh_until > now
+}
+
+pub(super) fn known(status: FollowStatus) -> Option<KnownFollow> {
+    match status {
+        FollowStatus::FollowedSince(since) => Some(KnownFollow::FollowingSince(since)),
+        FollowStatus::NotFollowing => Some(KnownFollow::NotFollowing),
+        FollowStatus::Hidden => Some(KnownFollow::Hidden),
+        FollowStatus::Unavailable => None,
+    }
+}
+
+pub(super) fn status(follow: KnownFollow) -> FollowStatus {
+    match follow {
+        KnownFollow::FollowingSince(since) => FollowStatus::FollowedSince(since),
+        KnownFollow::NotFollowing => FollowStatus::NotFollowing,
+        KnownFollow::Hidden => FollowStatus::Hidden,
+    }
+}
+
+pub(super) struct FollowTranslation {
+    registry: Arc<TriggerRegistry>,
+    follow_kinds: Vec<String>,
+}
+
+impl FollowTranslation {
+    pub(super) fn new(registry: Arc<TriggerRegistry>) -> Self {
+        let follow_kinds = registry
+            .all()
+            .filter(|descriptor| descriptor.chat_event() == Some(ChatEventKind::Follow))
+            .map(|descriptor| descriptor.id().to_owned())
+            .collect();
+        Self {
+            registry,
+            follow_kinds,
+        }
+    }
+
+    pub(super) fn entry_of(&self, event: &Event) -> Option<FollowKnowledgeEntry> {
+        if event.replay {
+            return None;
+        }
+        let platform = event.source.to_platform_id()?;
+        let descriptor = self.follow_descriptor_of(event)?;
+        let viewer_id = principal_id(descriptor, event)?;
+        let since = descriptor.follow_moment(event).unwrap_or(event.timestamp);
+        Some(observed(
+            FollowKnowledgeKey {
+                platform,
+                viewer_id,
+            },
+            KnownFollow::FollowingSince(since),
+            event.timestamp,
+        ))
+    }
+
+    fn follow_descriptor_of(&self, event: &Event) -> Option<&dyn TriggerKindDescriptor> {
+        self.follow_kinds
+            .iter()
+            .filter_map(|kind_id| self.registry.get(kind_id))
+            .find(|descriptor| {
+                let filter = descriptor.event_filter();
+                filter.source.is_none_or(|source| source == event.source)
+                    && filter
+                        .kind_prefix
+                        .as_deref()
+                        .is_none_or(|prefix| kind_matches_prefix(&event.kind, prefix))
+            })
+    }
+}
+
+fn principal_id(descriptor: &dyn TriggerKindDescriptor, event: &Event) -> Option<String> {
+    let args = descriptor.build_arg_stack(event);
+    match args.get(CanonicalVariable::actor(ActorRole::Principal, ActorSlot::Id).name()) {
+        Some(Variant::String(id)) if !id.is_empty() => Some(id.clone()),
+        _ => None,
+    }
+}

@@ -20,6 +20,9 @@ pub use chat::chat_history_persistence::{
 };
 pub use chat::chat_send_router::spawn_chat_send_router;
 pub use chat::first_chat_ledger::FirstChatLedger;
+pub use chat::follow_knowledge::{
+    FollowKnowledgeChanges, FollowKnowledgeHandle, FollowKnowledgeParts, spawn_follow_knowledge,
+};
 pub use chat::live_viewers::{
     LiveViewerAggregatorHandle, LiveViewerCount, spawn_live_viewer_aggregator,
 };

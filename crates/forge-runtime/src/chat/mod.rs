@@ -2,6 +2,7 @@ pub(crate) mod chat_history_persistence;
 pub(crate) mod chat_send_router;
 pub(crate) mod chat_stream;
 pub(crate) mod first_chat_ledger;
+pub(crate) mod follow_knowledge;
 pub(crate) mod live_viewers;
 pub(crate) mod own_chat_echoes;
 pub(crate) mod stream_live;

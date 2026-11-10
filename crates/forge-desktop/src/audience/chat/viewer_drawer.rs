@@ -221,6 +221,9 @@ impl ViewerDrawer {
 
     pub(super) fn point_at_viewer(&mut self, key: AuthorKey, cx: &mut Context<Self>) {
         self.drawer_list_keys.move_to(key.clone());
+        if selection_changes(self.selected_viewer.as_ref(), &key) {
+            self.reset_whisper(cx);
+        }
         self.selected_viewer = Some(key);
         self.request_selected_follow(cx);
     }
@@ -272,4 +275,8 @@ impl Render for ViewerDrawer {
         let density = cx.density();
         self.render_drawer(&palette, density, cx)
     }
+}
+
+pub(super) fn selection_changes(current: Option<&AuthorKey>, next: &AuthorKey) -> bool {
+    current != Some(next)
 }

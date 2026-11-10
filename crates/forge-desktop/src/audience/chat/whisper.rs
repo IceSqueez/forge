@@ -24,9 +24,13 @@ impl ViewerDrawer {
         cx.notify();
     }
 
-    fn cancel_whisper(&mut self, cx: &mut Context<Self>) {
+    pub(super) fn reset_whisper(&mut self, cx: &mut Context<Self>) {
         self.whisper_open = false;
         self.whisper_input.update(cx, |input, cx| input.clear(cx));
+    }
+
+    fn cancel_whisper(&mut self, cx: &mut Context<Self>) {
+        self.reset_whisper(cx);
         cx.notify();
     }
 

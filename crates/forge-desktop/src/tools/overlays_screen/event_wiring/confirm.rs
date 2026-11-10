@@ -131,7 +131,7 @@ impl EventWiringView {
                 palette,
                 cx,
             ))
-            .child(modes);
+            .child(div().flex().child(modes));
 
         section = match form.mode {
             TargetMode::New => {

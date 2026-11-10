@@ -1,5 +1,6 @@
 use forge_events::{DeliveryLane, Event};
 use forge_types::{ArgStack, TriggerConfig, UserText, VariableSchema, Variant};
+use time::OffsetDateTime;
 
 use crate::category::TriggerCategory;
 use crate::chat_event::ChatEventKind;
@@ -73,6 +74,9 @@ pub trait TriggerKindDescriptor: TriggerCatalogEntry + Send + Sync {
     }
     fn actors(&self) -> ActorDeclaration {
         ActorDeclaration::Undeclared
+    }
+    fn follow_moment(&self, _: &Event) -> Option<OffsetDateTime> {
+        None
     }
     fn build_arg_stack(&self, event: &Event) -> ArgStack {
         self.variables()

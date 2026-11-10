@@ -286,6 +286,22 @@ mod tests {
     }
 
     #[test]
+    fn a_corner_on_a_tiled_side_resizes_only_along_the_free_side() {
+        assert_eq!(
+            (
+                resize_edge(at(5.0, 5.0), window(), left_tiled()),
+                resize_edge(at(5.0, 595.0), window(), left_tiled()),
+                resize_edge(at(795.0, 5.0), window(), left_tiled()),
+            ),
+            (
+                Some(ResizeEdge::Top),
+                Some(ResizeEdge::Bottom),
+                Some(ResizeEdge::TopRight)
+            )
+        );
+    }
+
+    #[test]
     fn a_tiled_side_squares_the_two_corners_it_touches() {
         let rounded = CLIENT_CORNER;
         let square = SQUARE_CORNER;

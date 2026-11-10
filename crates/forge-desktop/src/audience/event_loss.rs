@@ -142,7 +142,15 @@ mod tests {
     use forge_runtime::delivery::{EVENT_LOG, RUN_HISTORY, TRIGGER_EVALUATOR, VIEWER_TRACKER};
     use forge_runtime::{ConsumerLoss, DeliveryTier, LossCount};
 
-    use super::{EventLoss, UI_CHAT_DISPLAY, UI_EVENTS, breakdown, consumer_label};
+    use forge_host::integration_factories::{
+        KICK_EVENT_RELAY, TWITCH_EVENT_RELAY, YOUTUBE_EVENT_RELAY,
+    };
+    use forge_runtime::delivery::{
+        CHAT_HISTORY, EVENT_TRAIL, FOLLOW_KNOWLEDGE, LATEST_OVERLAYS, LATEST_VALUES,
+        UNNAMED_OBSERVER,
+    };
+
+    use super::{EventLoss, UI_CHAT_DISPLAY, UI_CHAT_FEED, UI_EVENTS, breakdown, consumer_label};
 
     fn lost(consumer: &'static str, tier: DeliveryTier, loss: LossCount) -> ConsumerLoss {
         ConsumerLoss {
@@ -301,6 +309,38 @@ mod tests {
                 "6 bulk dropped",
             ]
         );
+    }
+
+    #[test]
+    fn every_known_consumer_has_a_translated_label_in_each_language() {
+        let known = [
+            TRIGGER_EVALUATOR,
+            EVENT_LOG,
+            CHAT_HISTORY,
+            FOLLOW_KNOWLEDGE,
+            VIEWER_TRACKER,
+            LATEST_VALUES,
+            LATEST_OVERLAYS,
+            RUN_HISTORY,
+            EVENT_TRAIL,
+            UNNAMED_OBSERVER,
+            UI_EVENTS,
+            UI_CHAT_FEED,
+            UI_CHAT_DISPLAY,
+            TWITCH_EVENT_RELAY,
+            YOUTUBE_EVENT_RELAY,
+            KICK_EVENT_RELAY,
+        ];
+        for language in [forge_storage::Language::En, forge_storage::Language::Uk] {
+            crate::app::i18n::install_language(language);
+            for consumer in known {
+                let label = consumer_label(consumer);
+                assert!(
+                    label != consumer.replace('_', " ") && !label.starts_with("event_loss_"),
+                    "{consumer} in {language:?} is labelled {label:?}"
+                );
+            }
+        }
     }
 
     #[test]

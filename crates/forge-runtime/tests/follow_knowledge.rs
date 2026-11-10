@@ -2,7 +2,7 @@
 
 use std::collections::HashMap;
 use std::future::Future;
-use std::sync::atomic::{AtomicUsize, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
@@ -951,4 +951,215 @@ async fn clearing_a_platform_forgets_only_that_platform() {
         ),
         (None, Some(FollowStatus::Hidden))
     );
+}
+
+#[derive(Default)]
+struct HeldFollows {
+    inner: MemoryFollows,
+    clear_entered: Notify,
+    clear_release: Notify,
+    hold_upserts: AtomicBool,
+    upsert_entered: Notify,
+    upserts: AtomicUsize,
+}
+
+impl HeldFollows {
+    fn remembered(&self, platform: PlatformId) -> Vec<String> {
+        let mut viewers: Vec<String> = self
+            .inner
+            .entries
+            .lock()
+            .unwrap()
+            .keys()
+            .filter(|key| key.platform == platform)
+            .map(|key| key.viewer_id.clone())
+            .collect();
+        viewers.sort();
+        viewers
+    }
+
+    fn upserts(&self) -> usize {
+        self.upserts.load(Ordering::SeqCst)
+    }
+}
+
+#[async_trait]
+impl FollowKnowledgeRepo for HeldFollows {
+    async fn get(
+        &self,
+        key: &FollowKnowledgeKey,
+    ) -> Result<Option<FollowKnowledgeEntry>, StorageError> {
+        self.inner.get(key).await
+    }
+
+    async fn upsert(&self, entry: &FollowKnowledgeEntry) -> Result<(), StorageError> {
+        self.upserts.fetch_add(1, Ordering::SeqCst);
+        self.upsert_entered.notify_one();
+        if self.hold_upserts.load(Ordering::SeqCst) {
+            std::future::pending::<()>().await;
+        }
+        self.inner.upsert(entry).await
+    }
+
+    async fn seed(&self, entries: &[FollowKnowledgeEntry]) -> Result<(), StorageError> {
+        self.inner.seed(entries).await
+    }
+
+    async fn is_seeded(&self) -> Result<bool, StorageError> {
+        self.inner.is_seeded().await
+    }
+
+    async fn prune_expired(&self, now: OffsetDateTime) -> Result<u64, StorageError> {
+        self.inner.prune_expired(now).await
+    }
+
+    async fn clear_platform(&self, platform: PlatformId) -> Result<u64, StorageError> {
+        self.clear_entered.notify_one();
+        self.clear_release.notified().await;
+        self.inner.clear_platform(platform).await
+    }
+}
+
+#[derive(Default)]
+struct StuckSeedRead {
+    entered: Notify,
+}
+
+#[async_trait]
+impl EventLogRepo for StuckSeedRead {
+    async fn insert(&self, _event: &Event) -> Result<(), StorageError> {
+        Ok(())
+    }
+
+    async fn get(&self, _id: EventId) -> Result<Option<Event>, StorageError> {
+        Ok(None)
+    }
+
+    async fn recent(&self, _limit: usize) -> Result<Vec<Event>, StorageError> {
+        Ok(Vec::new())
+    }
+
+    async fn recent_since(
+        &self,
+        _limit: usize,
+        _since: Option<EventId>,
+    ) -> Result<Vec<Event>, StorageError> {
+        Ok(Vec::new())
+    }
+
+    async fn events_of_kinds_since(
+        &self,
+        _kinds: &[String],
+        _since: OffsetDateTime,
+    ) -> Result<Vec<Event>, StorageError> {
+        self.entered.notify_one();
+        std::future::pending().await
+    }
+}
+
+fn spawn_clear(handle: &FollowKnowledgeHandle) -> JoinHandle<()> {
+    let handle = handle.clone();
+    tokio::spawn(async move { handle.clear_platform(PlatformId::Twitch).await })
+}
+
+async fn flush_completes(bus: &EventBus) -> bool {
+    tokio::time::timeout(HANG_GUARD, bus.await_flush())
+        .await
+        .is_ok()
+}
+
+fn publish_follows_of(bus: &EventBus, viewers: &[&str]) {
+    let now = whole_second_now();
+    for viewer_id in viewers {
+        bus.publish(twitch_follow(viewer_id, FOLLOWED_AT_UNIX_SECS, now));
+    }
+}
+
+#[tokio::test(start_paused = true)]
+async fn shutting_down_an_idle_writer_completes_the_flush() {
+    let rig = spawn_rig(
+        Arc::new(MemoryFollows::default()),
+        Arc::new(NullEventLogRepo),
+    );
+    writer_idle(&rig.handle).await;
+
+    rig.bus.shutdown();
+
+    assert!(flush_completes(&rig.bus).await);
+}
+
+#[tokio::test(start_paused = true)]
+async fn shutting_down_during_a_stuck_startup_seed_completes_the_flush_at_once() {
+    let event_log = Arc::new(StuckSeedRead::default());
+    let rig = spawn_rig(Arc::new(MemoryFollows::default()), event_log.clone());
+    guarded(event_log.entered.notified()).await;
+    let stopped_at = tokio::time::Instant::now();
+
+    rig.bus.shutdown();
+    guarded(rig.bus.await_flush()).await;
+
+    assert_eq!(stopped_at.elapsed(), Duration::ZERO);
+}
+
+#[tokio::test(start_paused = true)]
+async fn follow_events_queued_at_shutdown_are_written_before_the_flush_completes() {
+    let repo = Arc::new(HeldFollows::default());
+    let rig = spawn_rig(repo.clone(), Arc::new(NullEventLogRepo));
+    let _clearing = spawn_clear(&rig.handle);
+    guarded(repo.clear_entered.notified()).await;
+    publish_follows_of(&rig.bus, &[VIEWER, OTHER_VIEWER]);
+
+    rig.bus.shutdown();
+    repo.clear_release.notify_one();
+    guarded(rig.bus.await_flush()).await;
+
+    assert_eq!(repo.remembered(PlatformId::Twitch), [VIEWER, OTHER_VIEWER]);
+}
+
+#[tokio::test(start_paused = true)]
+async fn abandoning_the_flush_stops_draining_queued_follow_events() {
+    let repo = Arc::new(HeldFollows::default());
+    let rig = spawn_rig(repo.clone(), Arc::new(NullEventLogRepo));
+    let _clearing = spawn_clear(&rig.handle);
+    guarded(repo.clear_entered.notified()).await;
+    publish_follows_of(&rig.bus, &[VIEWER, OTHER_VIEWER]);
+    rig.bus.shutdown();
+    repo.hold_upserts.store(true, Ordering::SeqCst);
+    repo.clear_release.notify_one();
+    guarded(repo.upsert_entered.notified()).await;
+
+    guarded(rig.bus.abandon_flush()).await;
+
+    assert_eq!(repo.upserts(), 1);
+}
+
+#[tokio::test(start_paused = true)]
+async fn clearing_after_the_writer_has_flushed_returns() {
+    let rig = spawn_rig(
+        Arc::new(MemoryFollows::default()),
+        Arc::new(NullEventLogRepo),
+    );
+    writer_idle(&rig.handle).await;
+    rig.bus.shutdown();
+    guarded(rig.bus.await_flush()).await;
+
+    let cleared =
+        tokio::time::timeout(HANG_GUARD, rig.handle.clear_platform(PlatformId::Twitch)).await;
+
+    assert!(cleared.is_ok());
+}
+
+#[tokio::test(start_paused = true)]
+async fn a_clear_queued_behind_a_stuck_startup_returns_as_soon_as_the_bus_shuts_down() {
+    let event_log = Arc::new(StuckSeedRead::default());
+    let rig = spawn_rig(Arc::new(MemoryFollows::default()), event_log.clone());
+    guarded(event_log.entered.notified()).await;
+    let clearing = spawn_clear(&rig.handle);
+    tokio::task::yield_now().await;
+    let stopped_at = tokio::time::Instant::now();
+
+    rig.bus.shutdown();
+    guarded(clearing).await.unwrap();
+
+    assert_eq!(stopped_at.elapsed(), Duration::ZERO);
 }

@@ -418,6 +418,157 @@ mod tests {
         assert!(sign_out.entry(&IntegrationId::new("donatello")).is_none());
     }
 
+    struct RecordingErasure {
+        journal: Journal,
+        erased: Mutex<Vec<PlatformId>>,
+    }
+
+    impl RecordingErasure {
+        fn on(journal: &Journal) -> Arc<Self> {
+            Arc::new(Self {
+                journal: Arc::clone(journal),
+                erased: Mutex::new(Vec::new()),
+            })
+        }
+
+        fn erased(&self) -> Vec<PlatformId> {
+            self.erased.lock().unwrap().clone()
+        }
+    }
+
+    #[async_trait]
+    impl PlatformDataErasure for RecordingErasure {
+        async fn erase(&self, platform: PlatformId) {
+            self.journal.lock().unwrap().push("erase");
+            self.erased.lock().unwrap().push(platform);
+        }
+    }
+
+    struct JournalSlots(Journal);
+
+    #[async_trait]
+    impl SlotRebuild for JournalSlots {
+        async fn rebuild(&self, _id: &IntegrationId) {
+            self.0.lock().unwrap().push("rebuild");
+        }
+    }
+
+    fn completing_forget(journal: &Journal, deleted: bool) -> ForgetCredentials {
+        let journal = Arc::clone(journal);
+        Arc::new(move || {
+            let journal = Arc::clone(&journal);
+            Box::pin(async move {
+                tokio::task::yield_now().await;
+                if deleted {
+                    journal.lock().unwrap().push("forgotten");
+                    Ok(())
+                } else {
+                    Err(io_failure())
+                }
+            })
+        })
+    }
+
+    async fn sign_out_erasing(
+        id: IntegrationId,
+        route: SignOutRoute,
+        journal: &Journal,
+        erasure: &Arc<RecordingErasure>,
+    ) -> Result<SignOutOutcome, PlatformError> {
+        let mut routes = SignOutRoutes::default();
+        routes.register(id.clone(), route);
+        routes
+            .over(Arc::new(JournalSlots(Arc::clone(journal))))
+            .erasing(vec![Arc::clone(erasure) as Arc<dyn PlatformDataErasure>])
+            .entry(&id)
+            .unwrap()
+            .run(None)
+            .await
+    }
+
+    #[tokio::test]
+    async fn chat_platform_sign_out_erases_its_data_once_between_forgetting_and_the_rebuild() {
+        for platform in PlatformId::ALL {
+            let journal = Journal::default();
+            let erasure = RecordingErasure::on(&journal);
+            let route = SignOutRoute {
+                forget: completing_forget(&journal, true),
+                teardown: Teardown::RebuildSlot,
+            };
+
+            let result = sign_out_erasing(
+                IntegrationId::from_static(platform.as_str()),
+                route,
+                &journal,
+                &erasure,
+            )
+            .await;
+
+            assert_eq!(
+                (
+                    result.ok(),
+                    journal.lock().unwrap().clone(),
+                    erasure.erased()
+                ),
+                (
+                    Some(SignOutOutcome::Disconnected),
+                    vec!["forgotten", "erase", "rebuild"],
+                    vec![platform]
+                ),
+                "{platform:?}"
+            );
+        }
+    }
+
+    #[tokio::test]
+    async fn a_failed_credential_forget_erases_no_platform_data() {
+        let journal = Journal::default();
+        let erasure = RecordingErasure::on(&journal);
+        let route = SignOutRoute {
+            forget: completing_forget(&journal, false),
+            teardown: Teardown::RebuildSlot,
+        };
+
+        let result = sign_out_erasing(
+            IntegrationId::from_static(PlatformId::Twitch.as_str()),
+            route,
+            &journal,
+            &erasure,
+        )
+        .await;
+
+        assert!(
+            matches!(result, Err(PlatformError::Storage { .. })),
+            "{result:?}"
+        );
+        assert_eq!(erasure.erased(), Vec::<PlatformId>::new());
+    }
+
+    #[tokio::test]
+    async fn signing_out_of_obs_or_vtube_erases_no_platform_data() {
+        for id in [
+            forge_obs::OBS_INTEGRATION.id,
+            forge_vtube::VTUBE_INTEGRATION.id,
+        ] {
+            let journal = Journal::default();
+            let erasure = RecordingErasure::on(&journal);
+
+            let result = sign_out_erasing(
+                id.clone(),
+                disconnecting_route(&journal, true),
+                &journal,
+                &erasure,
+            )
+            .await;
+
+            assert_eq!(
+                (result.ok(), erasure.erased()),
+                (Some(SignOutOutcome::Disconnected), Vec::new()),
+                "{id:?}"
+            );
+        }
+    }
+
     struct RefusingDeletes;
 
     #[async_trait]

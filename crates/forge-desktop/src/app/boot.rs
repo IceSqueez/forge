@@ -21,6 +21,7 @@ use forge_types::Shared;
 use crate::app::log_tail::LogTail;
 use crate::app::runtime_handles::RuntimeHandles;
 use crate::app::stay_awake::StayAwakeSetting;
+use crate::app::window_chrome::INTEGRATED_TITLEBAR;
 use crate::app::window_placement::{WINDOW_PLACEMENT, WindowPlacement};
 use crate::preferences::settings_catalog::DENSITY;
 use crate::shared::repo_failure::RepoFailure;
@@ -40,13 +41,26 @@ fn default_db_path() -> PathBuf {
 
 const APPEARANCE_READ_BUDGET: Duration = Duration::from_secs(2);
 
-#[derive(Default)]
 pub(crate) struct PersistedAppearance {
     pub theme: ThemeId,
     pub accent: AccentColor,
     pub density: Density,
     pub body_font: Option<String>,
     pub mono_font: Option<String>,
+    pub integrated_titlebar: bool,
+}
+
+impl Default for PersistedAppearance {
+    fn default() -> Self {
+        Self {
+            theme: ThemeId::default(),
+            accent: AccentColor::default(),
+            density: Density::default(),
+            body_font: None,
+            mono_font: None,
+            integrated_titlebar: crate::app::window_chrome::INTEGRATED_TITLEBAR_ENABLED_BY_DEFAULT,
+        }
+    }
 }
 
 #[derive(Default)]
@@ -153,6 +167,7 @@ async fn load_appearance(settings: &dyn SettingsRepo) -> PersistedAppearance {
         density,
         body_font: stored_or_warn(read_setting(settings, &FONT_BODY).await, "body font"),
         mono_font: stored_or_warn(read_setting(settings, &FONT_MONO).await, "mono font"),
+        integrated_titlebar: read_setting_or_default(settings, &INTEGRATED_TITLEBAR).await,
     }
 }
 
@@ -381,6 +396,7 @@ mod tests {
     use forge_storage::settings::core_settings::{ACCENT, FONT_BODY, FONT_MONO, THEME};
     use forge_storage::write_setting;
 
+    use crate::app::window_chrome::INTEGRATED_TITLEBAR;
     use crate::preferences::settings_catalog::DENSITY;
 
     use super::{
@@ -527,6 +543,25 @@ mod tests {
         let appearance = load_appearance(backend.settings_repo().as_ref()).await;
 
         assert_eq!(appearance.accent, AccentColor::Mauve);
+    }
+
+    #[tokio::test]
+    async fn the_integrated_titlebar_defaults_on_and_respects_a_stored_opt_out() {
+        let (backend, _writes) = test_backend();
+
+        let default = load_appearance(backend.settings_repo().as_ref()).await;
+        assert!(default.integrated_titlebar);
+
+        write_setting(
+            backend.settings_repo().as_ref(),
+            &INTEGRATED_TITLEBAR,
+            &false,
+        )
+        .await
+        .unwrap();
+
+        let opted_out = load_appearance(backend.settings_repo().as_ref()).await;
+        assert!(!opted_out.integrated_titlebar);
     }
 
     fn opened_backend() -> Arc<dyn DataProvider> {

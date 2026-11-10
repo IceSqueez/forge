@@ -2,6 +2,7 @@ key	accent	portable	verbatim
 key	action_history_retention_days	portable	verbatim
 key	app.date_format	portable	verbatim
 key	app.first_day_of_week	portable	verbatim
+key	app.integrated_titlebar	machine_local	verbatim
 key	app.keyboard_shortcuts	portable	kind
 key	app.language	portable	verbatim
 key	app.region	portable	verbatim

@@ -83,6 +83,7 @@ tabler_icons! {
     Heartbeat => "heartbeat.svg",
     Lock => "lock.svg",
     X => "x.svg",
+    Square => "square.svg",
     CircleCheck => "circle-check.svg",
     Check => "check.svg",
     InfoCircle => "info-circle.svg",

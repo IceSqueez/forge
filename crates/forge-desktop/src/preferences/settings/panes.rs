@@ -269,6 +269,23 @@ impl SettingsView {
             palette,
             density,
         );
+        let integrated_titlebar_hint = if cfg!(target_os = "linux") {
+            tr!("settings_integrated_titlebar_hint")
+        } else {
+            tr!("settings_integrated_titlebar_hint_restart")
+        };
+        let integrated_titlebar_row = setting_row(
+            tr!("settings_integrated_titlebar_label"),
+            Some(integrated_titlebar_hint.into()),
+            toggle(self.integrated_titlebar_enabled(cx), palette).on_click(
+                "settings-appearance-integrated-titlebar",
+                cx.listener(|this, _: &ClickEvent, window, cx| {
+                    this.toggle_integrated_titlebar(window, cx)
+                }),
+            ),
+            palette,
+            density,
+        );
 
         let mut density_rows = div().flex().flex_col().gap(spacing(Spacing::Xxs, density));
         let current_density = cx.density();
@@ -323,6 +340,7 @@ impl SettingsView {
                 [
                     theme_block.into_any_element(),
                     accent_row.into_any_element(),
+                    integrated_titlebar_row.into_any_element(),
                     density_block.into_any_element(),
                     fonts_block.into_any_element(),
                 ],

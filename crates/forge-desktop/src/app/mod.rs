@@ -40,5 +40,6 @@ pub(crate) mod system_info;
 pub(crate) mod system_notices;
 pub(crate) mod titlebar;
 pub(crate) mod topics;
+pub(crate) mod window_chrome;
 pub(crate) mod window_placement;
 pub(crate) mod window_presence;

@@ -18,7 +18,7 @@ use forge_components::ActivePresentation;
 use forge_components::{FOOTER_HEIGHT, IconAssets};
 use gpui::{
     AnyWindowHandle, App, AppContext, Bounds, Pixels, Point, QuitMode, SharedString, Size,
-    TitlebarOptions, WindowBounds, WindowOptions, point, px, size,
+    TitlebarOptions, WindowBounds, WindowDecorations, WindowOptions, point, px, size,
 };
 
 use crate::app::actions::register_key_bindings;
@@ -28,6 +28,7 @@ use crate::app::root::{BootInputs, RestoreWaitView, RootView, run_boot};
 use crate::app::shutdown::{RUNTIME_SHUTDOWN_BUDGET, RuntimeSlot, silence_logging};
 use crate::app::sidebar::SIDEBAR_MAX;
 use crate::app::titlebar::TITLEBAR_HEIGHT;
+use crate::app::window_chrome::WindowChrome;
 use crate::preferences::settings::{NAV_WIDTH, PANE_MIN_WIDTH};
 use forge_components::{AccentColor, Density, FontFamilies, Presentation, ThemeId};
 
@@ -367,6 +368,7 @@ fn open_main_window(
         splash,
     } = launch;
     let appearance = &presentation.appearance;
+    let integrated_titlebar = appearance.integrated_titlebar;
     cx.set_global(
         Presentation::accented(appearance.theme, appearance.accent, appearance.density).with_fonts(
             FontFamilies::with_overrides(
@@ -375,6 +377,9 @@ fn open_main_window(
             ),
         ),
     );
+    cx.set_global(WindowChrome {
+        integrated_titlebar,
+    });
     #[cfg(target_os = "linux")]
     prewarm_kit_fonts(cx);
 
@@ -387,8 +392,14 @@ fn open_main_window(
         display_id,
         titlebar: Some(TitlebarOptions {
             title: Some(SharedString::from("forge")),
-            appears_transparent: true,
-            traffic_light_position: Some(TRAFFIC_LIGHT_OFFSET),
+            appears_transparent: integrated_titlebar,
+            traffic_light_position: integrated_titlebar.then_some(TRAFFIC_LIGHT_OFFSET),
+        }),
+        app_owns_titlebar_drag: integrated_titlebar,
+        window_decorations: Some(if integrated_titlebar {
+            WindowDecorations::Client
+        } else {
+            WindowDecorations::Server
         }),
         app_id: Some("forge-desktop".to_owned()),
         window_min_size: Some(size(

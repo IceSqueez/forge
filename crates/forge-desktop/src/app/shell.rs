@@ -14,8 +14,8 @@ use forge_runtime::compute_stats;
 use forge_storage::{DataProvider, GlobalsRepo};
 use forge_types::IntegrationId;
 use gpui::{
-    AnyElement, AnyView, App, AppContext, AsyncApp, ClickEvent, Context, Entity, EventEmitter,
-    FocusHandle, Window, div, prelude::*,
+    AnyElement, AnyView, App, AppContext, AsyncApp, ClickEvent, Context, Decorations, Entity,
+    EventEmitter, FocusHandle, Window, div, prelude::*,
 };
 
 use crate::app::navigable_list::forward_root_focus_to_list;
@@ -37,6 +37,7 @@ use crate::app::screen_shortcuts::{
     ScreenShortcuts, ScreenShortcutsHandle, ToggleReturn, toggle_destination,
 };
 use crate::app::topics::Topics;
+use crate::app::window_chrome::{ActiveWindowChrome, WindowChrome};
 use crate::automation::hotkeys_screen::HotkeysScreenView;
 use crate::automation::midi_screen::MidiScreenView;
 use crate::automation::scheduled_runs_section::ScheduledRunsView;
@@ -151,6 +152,8 @@ impl AppShell {
         Self::follow_nav(&chrome.sidebar, cx);
 
         cx.observe_global::<Presentation>(|_, cx| cx.notify())
+            .detach();
+        cx.observe_global::<WindowChrome>(|_, cx| cx.notify())
             .detach();
 
         cx.observe_global::<Toasts>(|_, cx| cx.notify()).detach();
@@ -752,10 +755,12 @@ pub(crate) async fn refresh_dashboard_stats(
 }
 
 impl Render for AppShell {
-    fn render(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+    fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         let palette = cx.palette();
 
         let welcome = self.router.screen == Screen::Welcome;
+        let integrated_titlebar = cx.integrated_titlebar()
+            || matches!(window.window_decorations(), Decorations::Client { .. });
         let body = div()
             .w_full()
             .flex_1()
@@ -793,7 +798,9 @@ impl Render for AppShell {
             .flex()
             .flex_col()
             .bg(palette.base)
-            .child(self.chrome.titlebar.clone())
+            .when(integrated_titlebar, |root| {
+                root.child(self.chrome.titlebar.clone())
+            })
             .child(body)
             .when(!welcome, |root| root.child(self.chrome.footer.clone()));
 

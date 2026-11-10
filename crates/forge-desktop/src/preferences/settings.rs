@@ -30,6 +30,9 @@ use crate::app::async_bridge::{self, ErrorSink, KeyedSnapshotWriters, WriteOutco
 use crate::app::awake_state::AwakeState;
 use crate::app::navigation::SettingsSection;
 use crate::app::presentation::{LanguageSinks, LocaleState, apply_language};
+use crate::app::window_chrome::{
+    ActiveWindowChrome, INTEGRATED_TITLEBAR, WindowChrome, can_switch_live, set_integrated_titlebar,
+};
 use crate::data_flows::backup_schedule::BackupScheduleView;
 use crate::data_flows::problem_report::ProblemReport;
 use crate::data_flows::safety_copies::SafetyCopiesView;
@@ -168,6 +171,7 @@ pub(crate) struct SettingsView {
     services: SettingsServices,
     awake: Entity<AwakeState>,
     stay_awake_pending: Option<bool>,
+    integrated_titlebar_pending: Option<bool>,
     update_flow: Entity<UpdateFlow>,
     update_check: UpdateCheckStatus,
     language: Language,
@@ -363,6 +367,7 @@ impl SettingsView {
             services,
             awake,
             stay_awake_pending: None,
+            integrated_titlebar_pending: None,
             update_flow,
             update_check: UpdateCheckStatus::Idle,
             language: cx.global::<LocaleState>().language,
@@ -384,6 +389,33 @@ impl SettingsView {
         self.stay_awake_pending
             .or_else(|| self.awake.read(cx).enabled())
             .unwrap_or(crate::app::stay_awake::ENABLED_BY_DEFAULT)
+    }
+
+    fn integrated_titlebar_enabled(&self, cx: &App) -> bool {
+        self.integrated_titlebar_pending
+            .unwrap_or_else(|| cx.integrated_titlebar())
+    }
+
+    fn toggle_integrated_titlebar(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        let enabled = !self.integrated_titlebar_enabled(cx);
+        self.integrated_titlebar_pending = Some(enabled);
+        if can_switch_live() {
+            cx.set_global(WindowChrome {
+                integrated_titlebar: enabled,
+            });
+            set_integrated_titlebar(window, enabled);
+            self.integrated_titlebar_pending = None;
+            cx.refresh_windows();
+        }
+
+        let backend = self.services.backend.settings_repo();
+        self.appearance_writers.write_reporting(
+            "integrated_titlebar",
+            async move { write_setting(backend.as_ref(), &INTEGRATED_TITLEBAR, &enabled).await },
+            tr!("settings_integrated_titlebar_persist_failed"),
+            cx,
+        );
+        cx.notify();
     }
 
     fn toggle_stay_awake(&mut self, cx: &mut Context<Self>) {

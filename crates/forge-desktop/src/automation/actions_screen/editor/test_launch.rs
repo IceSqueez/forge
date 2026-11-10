@@ -202,3 +202,111 @@ mod row_name_tests {
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use forge_components::{Presentation, ThemeId, ToastKind};
+    use forge_storage::{
+        DataProvider, MockQueueRepo, MockSoundboardClipsRepo, MockTriggerInstanceRepo,
+    };
+
+    use super::*;
+    use crate::automation::actions_screen::test_run::tests::{WatchedRig, press_run_again, toasts};
+    use crate::test_support::{ActionsRepos, StubActions, actions_deps, test_backend};
+
+    fn editor_over(cx: &mut gpui::TestAppContext, rig: &WatchedRig) -> Entity<ActionEditor> {
+        cx.update(|cx| {
+            cx.set_global(Presentation::new(ThemeId::ForgeDefault, Density::Cozy));
+        });
+        let (backend, _writes) = test_backend();
+        let mut deps = actions_deps(
+            &rig.rt,
+            ActionsRepos {
+                actions: Arc::new(StubActions),
+                queues: Arc::new(MockQueueRepo::new()),
+                triggers: Arc::new(MockTriggerInstanceRepo::new()),
+                scripts: backend.script_repo(),
+                clips: Arc::new(MockSoundboardClipsRepo::new()),
+                media: backend.media_repo(),
+                globals: backend.globals_repo(),
+                sub_actions: SubActionRegistry::new(),
+                trigger_kinds: TriggerRegistry::new(),
+            },
+        );
+        deps.bus = Arc::clone(&rig.bus);
+        deps.scheduler = rig.scheduler.clone();
+        let detail = ActionDetail {
+            action: rig.action.clone(),
+            trigger_instances: Vec::new(),
+            sub_action_avg_ms: Vec::new(),
+            last_step_outcomes: Vec::new(),
+        };
+        let selected = Some(rig.action.id);
+        cx.update(|cx| {
+            cx.new(|cx| {
+                let mut editor = ActionEditor::new(
+                    deps,
+                    backend.settings_repo(),
+                    Arc::new(OverlayKindRegistry::new()),
+                    Arc::new(AtomicU64::new(0)),
+                    selected,
+                    cx,
+                );
+                editor.show_detail(detail);
+                editor
+            })
+        })
+    }
+
+    fn running_test(
+        cx: &mut gpui::TestAppContext,
+        rig: &WatchedRig,
+        editor: &Entity<ActionEditor>,
+    ) -> Entity<TestRunModal> {
+        editor.update(cx, |editor, cx| editor.start_test_run(cx));
+        let modal = editor
+            .read_with(cx, |editor, _| editor.test_run_modal())
+            .expect("the test run opens");
+        rig.settle_until_step_runs(cx, &modal);
+        modal
+    }
+
+    fn toast_kinds(cx: &mut gpui::TestAppContext) -> Vec<ToastKind> {
+        toasts(cx).into_iter().map(|(kind, _)| kind).collect()
+    }
+
+    #[gpui::test]
+    fn running_the_test_again_mid_run_opens_a_new_run_and_reports_the_old_one_in_a_toast(
+        cx: &mut gpui::TestAppContext,
+    ) {
+        let rig = WatchedRig::new(cx);
+        let editor = editor_over(cx, &rig);
+        let first = running_test(cx, &rig, &editor);
+
+        first.update(cx, press_run_again);
+        let second = editor
+            .read_with(cx, |editor, _| editor.test_run_modal())
+            .expect("the relaunched test run is showing");
+        rig.open_gate();
+        rig.settle_until(cx, |cx| !toasts(cx).is_empty());
+
+        assert_eq!(
+            (second.entity_id() != first.entity_id(), toast_kinds(cx)),
+            (true, vec![ToastKind::Success])
+        );
+    }
+
+    #[gpui::test]
+    fn leaving_the_editor_mid_run_reports_the_test_end_in_a_toast(cx: &mut gpui::TestAppContext) {
+        let rig = WatchedRig::new(cx);
+        let editor = editor_over(cx, &rig);
+        running_test(cx, &rig, &editor);
+
+        drop(editor);
+        cx.run_until_parked();
+        rig.open_gate();
+        rig.settle_until(cx, |cx| !toasts(cx).is_empty());
+
+        assert_eq!(toast_kinds(cx), vec![ToastKind::Success]);
+    }
+}

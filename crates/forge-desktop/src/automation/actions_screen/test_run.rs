@@ -1109,17 +1109,270 @@ fn row_status_from_done(done: &SubActionDone) -> RowStatus {
 }
 
 #[cfg(test)]
-mod tests {
+pub(in crate::automation::actions_screen) mod tests {
+    use forge_components::Toasts;
+    use forge_registry::{RunContext, StepTimer, SubActionRegistry};
     use forge_runtime::{ActionCancelRegistry, Catalog, QueueScheduler, spawn_action_engine};
-    use forge_types::{IntegrationId, UserText, integration_disabled_message};
+    use forge_storage::DataProvider;
+    use forge_types::{
+        Action, IntegrationId, SubActionConfig, SubActionTelemetry, UserText,
+        integration_disabled_message,
+    };
+    use std::cell::RefCell;
+    use std::rc::Rc;
+    use tokio::sync::watch;
 
     use super::*;
     use crate::test_support::{
-        StubEventLog, owned_sub_actions, runtime, sandboxed_provider, seed_action, step,
+        Sandboxed, StubEventLog, owned_sub_actions, runtime, sandboxed_provider, seed_action,
+        settle_until, step,
     };
 
     const OBS_SCENE: &str = "obs.scene.set";
+    const GATED: &str = "test.gated";
     const RUN_SETTLE: Duration = Duration::from_secs(30);
+
+    type CloseCase = (
+        &'static str,
+        fn() -> RunControl,
+        TestRunPhase,
+        (bool, usize),
+    );
+
+    struct GatedStep(watch::Receiver<bool>);
+
+    impl forge_registry::StepCatalogEntry for GatedStep {
+        fn category(&self) -> forge_registry::SubActionCategory {
+            forge_registry::SubActionCategory::Delay
+        }
+        fn label(&self) -> &str {
+            GATED
+        }
+        fn summary(&self) -> &str {
+            GATED
+        }
+        fn search_text(&self) -> &str {
+            GATED
+        }
+        fn icon_name(&self) -> &str {
+            "bolt"
+        }
+    }
+
+    #[async_trait::async_trait]
+    impl forge_registry::SubActionRunner for GatedStep {
+        fn id(&self) -> &str {
+            GATED
+        }
+
+        async fn execute(
+            &self,
+            _: &SubActionConfig,
+            ctx: &RunContext<'_>,
+        ) -> (SubActionTelemetry, Option<ArgStack>) {
+            let timer = StepTimer::start(ctx, GATED);
+            let mut gate = self.0.clone();
+            tokio::select! {
+                opened = gate.wait_for(|open| *open) => assert!(opened.is_ok(), "the gate outlives the run"),
+                () = ctx.cancel.cancelled() => {}
+            }
+            (timer.success(), None)
+        }
+    }
+
+    struct Engine {
+        bus: Arc<EventBus>,
+        scheduler: QueueSchedulerHandle,
+        queue_id: QueueId,
+    }
+
+    async fn engine_over(
+        provider: &Arc<dyn DataProvider>,
+        sub_actions: SubActionRegistry,
+    ) -> (Engine, forge_runtime::ActionEngineHandle) {
+        let queue = provider
+            .queue_repo()
+            .get(forge_types::DEFAULT_QUEUE_ID)
+            .await
+            .unwrap()
+            .expect("migrations seed the default queue");
+        let queue_id = queue.id;
+        let bus = EventBus::new(Arc::new(StubEventLog));
+        let engine = spawn_action_engine(forge_runtime::ActionEngineParts {
+            bus: Arc::clone(&bus),
+            catalog: Catalog::from_provider(provider.as_ref()),
+            actions: provider.action_repo(),
+            history: provider.history_repo(),
+            sub_action_registry: Arc::new(sub_actions),
+            cancel_registry: Arc::new(ActionCancelRegistry::new()),
+            date_names: forge_runtime::DateNamesHandle::default(),
+            config: forge_runtime::Config::default(),
+        });
+        let scheduler = QueueScheduler::spawn(engine.clone(), Arc::clone(&bus), vec![queue]);
+        (
+            Engine {
+                bus,
+                scheduler,
+                queue_id,
+            },
+            engine,
+        )
+    }
+
+    pub(in crate::automation::actions_screen) struct WatchedRig {
+        pub(in crate::automation::actions_screen) rt: tokio::runtime::Runtime,
+        pub(in crate::automation::actions_screen) bus: Arc<EventBus>,
+        pub(in crate::automation::actions_screen) scheduler: QueueSchedulerHandle,
+        pub(in crate::automation::actions_screen) action: Action,
+        gate: watch::Sender<bool>,
+        _provider: Sandboxed<Arc<dyn DataProvider>>,
+    }
+
+    impl WatchedRig {
+        pub(in crate::automation::actions_screen) fn new(cx: &mut gpui::TestAppContext) -> Self {
+            crate::app::i18n::install_language(forge_storage::Language::En);
+            cx.update(|cx| cx.set_global(Toasts::new()));
+            let rt = runtime();
+            let (gate, opened) = watch::channel(false);
+            let (provider, engine, action) = rt.block_on(async {
+                let provider = sandboxed_provider().await;
+                let action_id = seed_action(&provider, "Scene", vec![step(GATED, true)]).await;
+                let action = provider
+                    .action_repo()
+                    .get(action_id)
+                    .await
+                    .unwrap()
+                    .expect("the seeded action is stored");
+                let mut sub_actions = SubActionRegistry::new();
+                sub_actions
+                    .register(Box::new(GatedStep(opened)))
+                    .expect("the gated step registers");
+                let (engine, _) = engine_over(&provider, sub_actions).await;
+                (provider, engine, action)
+            });
+            assert_eq!(action.queue_id, engine.queue_id);
+            Self {
+                rt,
+                bus: engine.bus,
+                scheduler: engine.scheduler,
+                action,
+                gate,
+                _provider: provider,
+            }
+        }
+
+        pub(in crate::automation::actions_screen) fn open_gate(&self) {
+            self.gate.send_replace(true);
+        }
+
+        fn launch(&self) -> TestRunLaunch {
+            launch(self.action.id, self.action.queue_id)
+        }
+
+        fn modal(&self, cx: &mut gpui::TestAppContext) -> Entity<TestRunModal> {
+            let launch = self.launch();
+            cx.update(|cx| {
+                cx.new(|cx| {
+                    TestRunModal::new(
+                        launch,
+                        Arc::clone(&self.bus),
+                        self.scheduler.clone(),
+                        self.rt.handle().clone(),
+                        cx,
+                    )
+                })
+            })
+        }
+
+        pub(in crate::automation::actions_screen) fn settle_until(
+            &self,
+            cx: &mut gpui::TestAppContext,
+            reached: impl FnMut(&mut gpui::TestAppContext) -> bool,
+        ) {
+            settle_until(cx, &self.rt, reached);
+        }
+
+        pub(in crate::automation::actions_screen) fn settle_until_step_runs(
+            &self,
+            cx: &mut gpui::TestAppContext,
+            modal: &Entity<TestRunModal>,
+        ) {
+            self.settle_until(cx, |cx| modal.read_with(cx, step_runs));
+        }
+    }
+
+    pub(in crate::automation::actions_screen) fn step_runs(modal: &TestRunModal, _: &App) -> bool {
+        matches!(modal.run, RunControl::Live(_))
+            && matches!(modal.rows[0].status, RowStatus::Running)
+    }
+
+    fn run_ended(modal: &TestRunModal, _: &App) -> bool {
+        matches!(modal.run, RunControl::Ended | RunControl::Refused)
+    }
+
+    pub(in crate::automation::actions_screen) fn press_run_again(
+        modal: &mut TestRunModal,
+        cx: &mut Context<TestRunModal>,
+    ) {
+        modal.run_test_again(cx);
+    }
+
+    pub(in crate::automation::actions_screen) fn toasts(
+        cx: &mut gpui::TestAppContext,
+    ) -> Vec<(ToastKind, String)> {
+        cx.update(|cx| {
+            cx.global::<Toasts>()
+                .items()
+                .iter()
+                .map(|toast| (toast.kind, toast.message.to_string()))
+                .collect()
+        })
+    }
+
+    fn closes_of(
+        cx: &mut gpui::TestAppContext,
+        modal: &Entity<TestRunModal>,
+    ) -> Rc<RefCell<usize>> {
+        let closes = Rc::new(RefCell::new(0));
+        let counted = Rc::clone(&closes);
+        cx.update(|cx| {
+            cx.subscribe(modal, move |_, event: &TestRunEvent, _| {
+                if matches!(event, TestRunEvent::Closed(_)) {
+                    *counted.borrow_mut() += 1;
+                }
+            })
+            .detach();
+        });
+        closes
+    }
+
+    fn failures_of(
+        cx: &mut gpui::TestAppContext,
+        modal: &Entity<TestRunModal>,
+    ) -> Rc<RefCell<usize>> {
+        let failures = Rc::new(RefCell::new(0));
+        let counted = Rc::clone(&failures);
+        cx.update(|cx| {
+            cx.subscribe(modal, move |_, event: &TestRunEvent, _| {
+                if matches!(event, TestRunEvent::Failed(_)) {
+                    *counted.borrow_mut() += 1;
+                }
+            })
+            .detach();
+        });
+        failures
+    }
+
+    fn phase_name(phase: &TestRunPhase) -> &'static str {
+        match phase {
+            TestRunPhase::Awaiting => "awaiting",
+            TestRunPhase::Running => "running",
+            TestRunPhase::Done { .. } => "done",
+            TestRunPhase::Halted { .. } => "halted",
+            TestRunPhase::NotStarted => "not started",
+            TestRunPhase::Stopped => "stopped",
+        }
+    }
 
     fn launch(action_id: ActionId, queue_id: QueueId) -> TestRunLaunch {
         TestRunLaunch {
@@ -1156,39 +1409,22 @@ mod tests {
     ) {
         let rt = runtime();
         let obs = IntegrationId::new("obs");
-        let (_provider, bus, scheduler, action_id, queue_id) = rt.block_on(async {
+        let (_provider, engine, action_id) = rt.block_on(async {
             let provider = sandboxed_provider().await;
             let action_id = seed_action(&provider, "Scene", vec![step(OBS_SCENE, true)]).await;
-            let queue = provider
-                .queue_repo()
-                .get(forge_types::DEFAULT_QUEUE_ID)
-                .await
-                .unwrap()
-                .expect("migrations seed the default queue");
-            let queue_id = queue.id;
-            let bus = EventBus::new(Arc::new(StubEventLog));
-            let engine = spawn_action_engine(forge_runtime::ActionEngineParts {
-                bus: Arc::clone(&bus),
-                catalog: Catalog::from_provider(provider.as_ref()),
-                actions: provider.action_repo(),
-                history: provider.history_repo(),
-                sub_action_registry: Arc::new(owned_sub_actions(&[(OBS_SCENE, "obs")])),
-                cancel_registry: Arc::new(ActionCancelRegistry::new()),
-                date_names: forge_runtime::DateNamesHandle::default(),
-                config: forge_runtime::Config::default(),
-            });
-            engine.integration_gate().disable(obs.clone());
-            let scheduler = QueueScheduler::spawn(engine, Arc::clone(&bus), vec![queue]);
-            (provider, bus, scheduler, action_id, queue_id)
+            let (engine, handle) =
+                engine_over(&provider, owned_sub_actions(&[(OBS_SCENE, "obs")])).await;
+            handle.integration_gate().disable(obs.clone());
+            (provider, engine, action_id)
         });
-        let finished = bus.subscribe();
+        let finished = engine.bus.subscribe();
 
         let modal = cx.update(|cx| {
             cx.new(|cx| {
                 TestRunModal::new(
-                    launch(action_id, queue_id),
-                    Arc::clone(&bus),
-                    scheduler.clone(),
+                    launch(action_id, engine.queue_id),
+                    Arc::clone(&engine.bus),
+                    engine.scheduler.clone(),
                     rt.handle().clone(),
                     cx,
                 )
@@ -1221,5 +1457,259 @@ mod tests {
                 )
             )
         );
+    }
+
+    #[gpui::test]
+    fn closing_asks_first_while_the_run_is_open_and_closes_at_once_once_it_settled(
+        cx: &mut gpui::TestAppContext,
+    ) {
+        let rig = WatchedRig::new(cx);
+        let cases: [CloseCase; 6] = [
+            (
+                "dispatching",
+                || RunControl::Dispatching,
+                TestRunPhase::Awaiting,
+                (true, 0),
+            ),
+            (
+                "dispatched and running",
+                || RunControl::Dispatching,
+                TestRunPhase::Running,
+                (true, 0),
+            ),
+            (
+                "ended",
+                || RunControl::Ended,
+                TestRunPhase::Running,
+                (false, 1),
+            ),
+            (
+                "refused",
+                || RunControl::Refused,
+                TestRunPhase::Awaiting,
+                (false, 1),
+            ),
+            (
+                "done",
+                || RunControl::Dispatching,
+                TestRunPhase::Done { errors: 0 },
+                (false, 1),
+            ),
+            (
+                "halted",
+                || RunControl::Dispatching,
+                TestRunPhase::Halted { step: 0 },
+                (false, 1),
+            ),
+        ];
+        for (case, run, phase, expected) in cases {
+            let modal = rig.modal(cx);
+            let closes = closes_of(cx, &modal);
+            modal.update(cx, |modal, cx| {
+                modal.run = run();
+                modal.phase = phase;
+                modal.request_close(cx);
+            });
+
+            let prompt = modal.read_with(cx, |modal, _| modal.close_prompt);
+            assert_eq!((prompt, *closes.borrow()), expected, "{case}");
+        }
+    }
+
+    #[gpui::test]
+    fn returning_to_the_test_run_hides_the_prompt_and_keeps_the_run_showing(
+        cx: &mut gpui::TestAppContext,
+    ) {
+        let rig = WatchedRig::new(cx);
+        let modal = rig.modal(cx);
+        let closes = closes_of(cx, &modal);
+        modal.update(cx, |modal, cx| {
+            modal.phase = TestRunPhase::Running;
+            modal.request_close(cx);
+            modal.return_to_test_run(cx);
+        });
+
+        let state = modal.read_with(cx, |modal, _| {
+            (modal.close_prompt, phase_name(&modal.phase))
+        });
+        assert_eq!((state, *closes.borrow()), ((false, "running"), 0));
+    }
+
+    #[gpui::test]
+    fn stopping_a_live_test_cancels_its_waiting_step_without_a_finish_or_a_toast(
+        cx: &mut gpui::TestAppContext,
+    ) {
+        let rig = WatchedRig::new(cx);
+        let mut events = rig.bus.subscribe();
+        let modal = rig.modal(cx);
+        rig.settle_until_step_runs(cx, &modal);
+
+        modal.update(cx, |modal, cx| modal.stop_test(cx));
+        rig.settle_until(cx, |cx| modal.read_with(cx, run_ended));
+
+        let mut finished = 0;
+        while let Ok(Some(event)) = events.try_recv() {
+            if event.kind == "action.done" {
+                finished += 1;
+            }
+        }
+        assert_eq!((finished, toasts(cx)), (0, Vec::new()));
+    }
+
+    #[gpui::test]
+    fn stop_pressed_before_the_dispatch_answers_cancels_the_run_once_it_is_known(
+        cx: &mut gpui::TestAppContext,
+    ) {
+        let rig = WatchedRig::new(cx);
+        let modal = rig.modal(cx);
+        let dispatching =
+            modal.read_with(cx, |modal, _| matches!(modal.run, RunControl::Dispatching));
+
+        modal.update(cx, |modal, cx| modal.stop_test(cx));
+        rig.settle_until(cx, |cx| modal.read_with(cx, run_ended));
+
+        let ended = modal.read_with(cx, |modal, _| matches!(modal.run, RunControl::Ended));
+        assert_eq!((dispatching, ended), (true, true));
+    }
+
+    #[gpui::test]
+    fn a_test_kept_running_after_close_reports_its_finish_in_one_toast(
+        cx: &mut gpui::TestAppContext,
+    ) {
+        let rig = WatchedRig::new(cx);
+        let modal = rig.modal(cx);
+        rig.settle_until_step_runs(cx, &modal);
+
+        modal.update(cx, |modal, cx| modal.keep_running(cx));
+        rig.open_gate();
+        rig.settle_until(cx, |cx| modal.read_with(cx, run_ended));
+
+        let kinds: Vec<ToastKind> = toasts(cx).into_iter().map(|(kind, _)| kind).collect();
+        assert_eq!(kinds, vec![ToastKind::Success]);
+    }
+
+    #[gpui::test]
+    fn a_dispatch_failing_after_the_modal_closed_raises_an_error_toast_instead_of_the_modal_error(
+        cx: &mut gpui::TestAppContext,
+    ) {
+        let rig = WatchedRig::new(cx);
+        let stopped = rig.rt.block_on(rig.scheduler.stopped(RUN_SETTLE));
+        assert_eq!(stopped, forge_net::TaskShutdown::Drained);
+        let modal = rig.modal(cx);
+        let failures = failures_of(cx, &modal);
+
+        modal.update(cx, |modal, cx| modal.keep_running(cx));
+        rig.settle_until(cx, |cx| modal.read_with(cx, run_ended));
+
+        let kinds: Vec<ToastKind> = toasts(cx).into_iter().map(|(kind, _)| kind).collect();
+        assert_eq!((kinds, *failures.borrow()), (vec![ToastKind::Error], 0));
+    }
+
+    #[gpui::test]
+    fn a_run_ending_under_a_visible_modal_marks_an_early_end_but_keeps_a_finished_result(
+        cx: &mut gpui::TestAppContext,
+    ) {
+        let rig = WatchedRig::new(cx);
+        let cases = [
+            (
+                "never started",
+                TestRunPhase::Awaiting,
+                RunEnd::NotStarted,
+                "not started",
+            ),
+            (
+                "cancelled while running",
+                TestRunPhase::Running,
+                RunEnd::Finished(ExecutionOutcome::Cancelled),
+                "stopped",
+            ),
+            (
+                "succeeded while running",
+                TestRunPhase::Running,
+                RunEnd::Finished(ExecutionOutcome::Success),
+                "running",
+            ),
+            (
+                "cancelled after the last step",
+                TestRunPhase::Done { errors: 0 },
+                RunEnd::Finished(ExecutionOutcome::Cancelled),
+                "done",
+            ),
+            (
+                "never started after a halt",
+                TestRunPhase::Halted { step: 0 },
+                RunEnd::NotStarted,
+                "halted",
+            ),
+        ];
+        for (case, before, end, expected) in cases {
+            let modal = rig.modal(cx);
+            modal.update(cx, |modal, cx| {
+                modal.phase = before;
+                modal.on_run_end(end, cx);
+            });
+
+            let phase = modal.read_with(cx, |modal, _| phase_name(&modal.phase));
+            assert_eq!(phase, expected, "{case}");
+        }
+    }
+
+    #[gpui::test]
+    fn a_run_ending_under_a_visible_modal_hides_the_close_prompt(cx: &mut gpui::TestAppContext) {
+        let rig = WatchedRig::new(cx);
+        let modal = rig.modal(cx);
+        modal.update(cx, |modal, cx| {
+            modal.phase = TestRunPhase::Running;
+            modal.request_close(cx);
+        });
+        let asked = modal.read_with(cx, |modal, _| modal.close_prompt);
+
+        modal.update(cx, |modal, cx| {
+            modal.on_run_end(RunEnd::Finished(ExecutionOutcome::Success), cx)
+        });
+
+        let prompt = modal.read_with(cx, |modal, _| modal.close_prompt);
+        assert_eq!((asked, prompt), (true, false));
+    }
+
+    #[test]
+    fn a_background_report_names_the_action_and_matches_its_kind_to_how_the_run_ended() {
+        crate::app::i18n::install_language(forge_storage::Language::En);
+        let cases = [
+            (
+                "finished",
+                RunEnd::Finished(ExecutionOutcome::Success),
+                ToastKind::Success,
+                None,
+            ),
+            (
+                "failed",
+                RunEnd::Finished(ExecutionOutcome::Failed(UserText::from(
+                    forge_types::VerbatimText::new("scene missing"),
+                ))),
+                ToastKind::Error,
+                Some("scene missing"),
+            ),
+            (
+                "stopped",
+                RunEnd::Finished(ExecutionOutcome::Cancelled),
+                ToastKind::Info,
+                None,
+            ),
+            ("not started", RunEnd::NotStarted, ToastKind::Warn, None),
+        ];
+        let mut texts = Vec::new();
+        for (case, end, kind, reason) in cases {
+            let (reported, text) = background_report("Hydrate", &end);
+            assert_eq!(reported, kind, "{case}");
+            assert!(text.contains("Hydrate"), "{case}: {text}");
+            if let Some(reason) = reason {
+                assert!(text.contains(reason), "{case}: {text}");
+            }
+            texts.push(text);
+        }
+        texts.sort();
+        texts.dedup();
+        assert_eq!(texts.len(), 4, "every ending reads differently: {texts:?}");
     }
 }

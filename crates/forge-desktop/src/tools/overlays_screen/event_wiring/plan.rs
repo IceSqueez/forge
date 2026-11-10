@@ -384,6 +384,26 @@ mod tests {
     }
 
     #[test]
+    fn a_suggested_event_is_named_after_its_platform() {
+        en();
+        let registry = trigger_registry(vec![speaks(
+            SUBSCRIBER,
+            "Subscribed",
+            TriggerCategory::Subscriptions,
+        )]);
+
+        let (groups, _) = offered_events(&registry, &ThemeId::ForgeDefault.palette());
+
+        assert_eq!(
+            groups
+                .first()
+                .and_then(|group| group.items.first())
+                .map(|item| item.name.replace(crate::test_support::FORMAT_ISOLATES, "")),
+            Some("Twitch \u{b7} New subscriber".to_owned())
+        );
+    }
+
+    #[test]
     fn a_feeds_events_are_labelled_by_the_registry_and_an_unknown_kind_keeps_its_id() {
         let registry = trigger_registry(vec![speaks(
             FOLLOW,

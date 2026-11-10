@@ -1361,6 +1361,173 @@ mod tests {
         );
     }
 
+    const DELTA: &str = "delta";
+
+    fn section(key: &str) -> GridSection {
+        GridSection {
+            key: SharedString::from(key.to_owned()),
+            label: SharedString::from(key.to_uppercase()),
+            dot_color: FORGE_DEFAULT.info,
+        }
+    }
+
+    fn subgroup(section_key: &str, label: &str, items: Vec<GridPickerItem>) -> GridPickerGroup {
+        GridPickerGroup {
+            label: SharedString::from(label.to_owned()),
+            dot_color: FORGE_DEFAULT.brand,
+            scope: GridScope::Section(section(section_key)),
+            items,
+        }
+    }
+
+    fn plain(id: &str) -> GridPickerItem {
+        item(id, id, SHARED_WORD, None)
+    }
+
+    fn headers(
+        picker: &Entity<GridPicker>,
+        vcx: &mut VisualTestContext,
+    ) -> Vec<(&'static str, String, usize)> {
+        vcx.update(|_window, cx| {
+            picker
+                .read(cx)
+                .rows
+                .iter()
+                .filter_map(|row| match row {
+                    PickerRow::Header {
+                        label,
+                        count,
+                        level,
+                        ..
+                    } => {
+                        let level = match level {
+                            HeaderLevel::Section => "section",
+                            HeaderLevel::Group => "group",
+                        };
+                        Some((level, label.to_string(), *count))
+                    }
+                    PickerRow::Cards(_) => None,
+                })
+                .collect()
+        })
+    }
+
+    fn header(level: &'static str, label: &str, count: usize) -> (&'static str, String, usize) {
+        (level, label.to_owned(), count)
+    }
+
+    #[gpui::test]
+    fn a_section_header_precedes_its_groups_and_counts_all_of_their_items(
+        cx: &mut gpui::TestAppContext,
+    ) {
+        let groups = vec![
+            subgroup("twitch", "chat", vec![plain(ALPHA), plain(BETA)]),
+            subgroup("twitch", "subs", vec![plain(GAMMA)]),
+        ];
+        let (picker, _picked, vcx) = open(cx, groups);
+
+        assert_eq!(
+            headers(&picker, vcx),
+            [
+                header("section", "TWITCH", 3),
+                header("group", "chat", 2),
+                header("group", "subs", 1),
+            ]
+        );
+    }
+
+    #[gpui::test]
+    fn a_section_holding_a_single_group_shows_no_subgroup_header(cx: &mut gpui::TestAppContext) {
+        let groups = vec![
+            subgroup("kick", "chat", vec![plain(ALPHA)]),
+            subgroup("obs", "scenes", vec![plain(BETA)]),
+            subgroup("obs", "other", vec![plain(GAMMA)]),
+        ];
+        let (picker, _picked, vcx) = open(cx, groups);
+
+        assert_eq!(
+            headers(&picker, vcx),
+            [
+                header("section", "KICK", 1),
+                header("section", "OBS", 2),
+                header("group", "scenes", 1),
+                header("group", "other", 1),
+            ]
+        );
+    }
+
+    #[gpui::test]
+    fn a_search_that_leaves_one_group_of_a_section_drops_its_subgroup_header(
+        cx: &mut gpui::TestAppContext,
+    ) {
+        let groups = vec![
+            subgroup("twitch", "chat", vec![plain(ALPHA), plain(BETA)]),
+            subgroup("twitch", "subs", vec![plain(GAMMA)]),
+        ];
+        let (picker, _picked, vcx) = open(cx, groups);
+
+        type_query(&picker, vcx, BETA);
+
+        assert_eq!(headers(&picker, vcx), [header("section", "TWITCH", 1)]);
+    }
+
+    #[gpui::test]
+    fn groups_outside_any_section_keep_a_flat_header_each(cx: &mut gpui::TestAppContext) {
+        let mut groups = plain_roster();
+        groups.push(subgroup("kick", "chat", vec![plain(DELTA)]));
+        let (picker, _picked, vcx) = open(cx, groups);
+
+        assert_eq!(
+            headers(&picker, vcx),
+            [
+                header("group", "first", 2),
+                header("group", "second", 1),
+                header("section", "KICK", 1),
+            ]
+        );
+    }
+
+    #[gpui::test]
+    fn the_rail_lists_each_section_once_under_its_section_label(cx: &mut gpui::TestAppContext) {
+        let groups = vec![
+            subgroup("twitch", "chat", vec![plain(ALPHA)]),
+            subgroup("twitch", "subs", vec![plain(BETA)]),
+            subgroup("kick", "chat", vec![plain(GAMMA)]),
+        ];
+        let (picker, _picked, vcx) = open(cx, groups);
+
+        let rail = vcx.update(|_window, cx| {
+            picker
+                .read(cx)
+                .rail_scopes()
+                .into_iter()
+                .map(|entry| entry.label.to_string())
+                .collect::<Vec<_>>()
+        });
+
+        assert_eq!(rail, ["TWITCH".to_owned(), "KICK".to_owned()]);
+    }
+
+    #[gpui::test]
+    fn picking_a_section_on_the_rail_shows_every_group_of_that_section_only(
+        cx: &mut gpui::TestAppContext,
+    ) {
+        let groups = vec![
+            subgroup("twitch", "chat", vec![plain(ALPHA)]),
+            subgroup("twitch", "subs", vec![plain(BETA)]),
+            subgroup("kick", "chat", vec![plain(GAMMA)]),
+        ];
+        let (picker, _picked, vcx) = open(cx, groups);
+
+        vcx.update(|_window, cx| {
+            picker.update(cx, |view, cx| {
+                view.set_rail(RailSel::Group(GridScope::Section(section("twitch"))), cx);
+            });
+        });
+
+        assert_eq!(matched_ids(&picker, vcx), vec![ALPHA, BETA]);
+    }
+
     struct Starred {
         toggles: usize,
         _sub: Subscription,

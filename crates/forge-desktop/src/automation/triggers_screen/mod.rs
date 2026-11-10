@@ -553,6 +553,7 @@ async fn load_rows(repo: &dyn TriggerInstanceRepo) -> Result<Vec<TriggerInstance
 
 #[cfg(test)]
 mod tests {
+    use forge_registry::TriggerCategory;
     use forge_storage::MockTriggerInstanceRepo;
     use forge_types::IntegrationId;
 
@@ -610,68 +611,169 @@ mod tests {
         assert_eq!(Platform::from_kind_id(ELSEWHERE, &registry), owned("obs"));
     }
 
-    #[tokio::test]
-    async fn owned_kinds_group_after_moderation_in_declaration_order() {
-        crate::app::i18n::install_language(forge_storage::Language::En);
-        let (triggers, _) = crate::test_support::every_registry_entry().await;
+    fn stub_registry(kinds: &[(&str, TriggerCategory)]) -> TriggerRegistry {
+        crate::test_support::trigger_registry(
+            kinds
+                .iter()
+                .map(|(id, category)| {
+                    crate::test_support::StubTrigger::new(
+                        id,
+                        id,
+                        *category,
+                        crate::test_support::Declares::Nothing,
+                    )
+                })
+                .collect(),
+        )
+    }
 
-        let (groups, _) = build_kind_groups(&triggers, &forge_components::FORGE_DEFAULT);
-
-        let scopes: Vec<Option<&str>> = groups.iter().map(|g| g.scope.name()).collect();
-        let start = scopes
-            .iter()
-            .position(|s| *s == Some("moderation"))
-            .unwrap();
-        let labels: Vec<(String, String)> = groups[start + 1..]
-            .iter()
-            .map(|g| {
+    fn sectioned(registry: &TriggerRegistry) -> Vec<(String, String, Vec<String>)> {
+        let (groups, _) = build_kind_groups(registry, &forge_components::FORGE_DEFAULT);
+        groups
+            .into_iter()
+            .map(|group| {
                 (
-                    g.scope.name().unwrap_or_default().to_owned(),
-                    g.label.to_string(),
+                    group.scope.name().unwrap_or_default().to_owned(),
+                    group.label.to_string(),
+                    group.items.iter().map(|item| item.id.to_string()).collect(),
                 )
             })
+            .collect()
+    }
+
+    fn section_keys(registry: &TriggerRegistry) -> Vec<String> {
+        let mut keys: Vec<String> = sectioned(registry)
+            .into_iter()
+            .map(|(key, _, _)| key)
             .collect();
+        keys.dedup();
+        keys
+    }
+
+    #[test]
+    fn the_kind_picker_orders_platforms_first_then_built_in_sources_and_other_last() {
+        crate::app::i18n::install_language(forge_storage::Language::En);
+        let registry = stub_registry(&[
+            ("stub.loose", TriggerCategory::Chat),
+            ("core.startup", TriggerCategory::Core),
+            ("script.exec", TriggerCategory::Core),
+            ("timer.tick", TriggerCategory::Timer),
+            ("donation.received", TriggerCategory::Donations),
+            ("obs.scene_changed", TriggerCategory::Integration),
+            ("kick.chat", TriggerCategory::Chat),
+            ("youtube.chat", TriggerCategory::Chat),
+            ("twitch.chat", TriggerCategory::Chat),
+        ]);
+
         assert_eq!(
-            labels,
+            section_keys(&registry),
             [
-                ("obs", "OBS"),
-                ("vtube", "VTube Studio"),
-                ("midi", "MIDI"),
-                ("hotkey", "Hotkey"),
-                ("timer", "Timer"),
-                ("core", "Core"),
+                "twitch", "youtube", "kick", "obs", "donation", "timer", "script", "core", "other",
             ]
-            .map(|(scope, label)| (scope.to_owned(), label.to_owned()))
         );
     }
 
     #[test]
-    fn the_kind_picker_shows_each_registered_category_in_the_canonical_order() {
-        let mut registry = forge_registry::TriggerRegistry::new();
-        for (id, category) in [
-            ("core.startup", forge_registry::TriggerCategory::Core),
-            ("twitch.chat", forge_registry::TriggerCategory::Chat),
-            ("twitch.ban", forge_registry::TriggerCategory::Moderation),
-        ] {
-            registry
-                .register(Box::new(crate::test_support::StubTrigger::new(
-                    id,
-                    id,
-                    category,
-                    crate::test_support::Declares::Nothing,
-                )))
-                .expect("every stub carries its own id");
-        }
+    fn the_kind_picker_orders_the_groups_inside_a_section_by_the_canonical_category_order() {
+        crate::app::i18n::install_language(forge_storage::Language::En);
+        let registry = stub_registry(&[
+            ("twitch.ban", TriggerCategory::Moderation),
+            ("twitch.raid", TriggerCategory::Raids),
+            ("twitch.chat", TriggerCategory::Chat),
+        ]);
 
-        let (groups, _) = build_kind_groups(&registry, &forge_components::FORGE_DEFAULT);
+        let firsts: Vec<String> = sectioned(&registry)
+            .into_iter()
+            .map(|(_, _, ids)| ids[0].clone())
+            .collect();
 
         assert_eq!(
-            groups
-                .iter()
-                .map(|group| group.items[0].id.to_string())
-                .collect::<Vec<_>>(),
-            ["kind-twitch.chat", "kind-twitch.ban", "kind-core.startup"]
+            firsts,
+            ["kind-twitch.chat", "kind-twitch.raid", "kind-twitch.ban"]
         );
+    }
+
+    #[test]
+    fn subscription_kinds_of_different_platforms_land_in_different_sections() {
+        crate::app::i18n::install_language(forge_storage::Language::En);
+        let registry = stub_registry(&[
+            ("kick.sub", TriggerCategory::Subscriptions),
+            ("youtube.sub", TriggerCategory::Subscriptions),
+            ("twitch.sub", TriggerCategory::Subscriptions),
+        ]);
+
+        let placed: Vec<(String, Vec<String>)> = sectioned(&registry)
+            .into_iter()
+            .map(|(key, _, ids)| (key, ids))
+            .collect();
+
+        assert_eq!(
+            placed,
+            [
+                ("twitch", "kind-twitch.sub"),
+                ("youtube", "kind-youtube.sub"),
+                ("kick", "kind-kick.sub"),
+            ]
+            .map(|(key, id)| (key.to_owned(), vec![id.to_owned()]))
+        );
+    }
+
+    #[test]
+    fn integration_kinds_share_the_other_subgroup_of_their_section() {
+        crate::app::i18n::install_language(forge_storage::Language::En);
+        let registry = stub_registry(&[
+            ("obs.b_loose", TriggerCategory::Ungrouped),
+            ("obs.a_owned", TriggerCategory::Integration),
+        ]);
+
+        assert_eq!(
+            sectioned(&registry),
+            [(
+                "obs".to_owned(),
+                "Other".to_owned(),
+                vec!["kind-obs.a_owned".to_owned(), "kind-obs.b_loose".to_owned()],
+            )]
+        );
+    }
+
+    #[test]
+    fn kind_cards_are_tinted_with_their_platform_color() {
+        let registry = stub_registry(&[
+            ("kick.chat", TriggerCategory::Chat),
+            ("twitch.chat", TriggerCategory::Chat),
+        ]);
+        let palette = forge_components::FORGE_DEFAULT;
+        let expected =
+            ["twitch.chat", "kick.chat"].map(|id| platform_dot_color(id, &registry, &palette));
+        assert_ne!(expected[0], expected[1]);
+
+        let (groups, _) = build_kind_groups(&registry, &palette);
+        let tints: Vec<Rgba> = groups
+            .iter()
+            .flat_map(|group| group.items.iter().map(|item| item.tint))
+            .collect();
+
+        assert_eq!(tints, expected);
+    }
+
+    #[test]
+    fn a_kind_line_names_the_platform_before_the_trigger_name() {
+        crate::app::i18n::install_language(forge_storage::Language::En);
+        let registry = stub_registry(&[("twitch.stub_kind", TriggerCategory::Chat)]);
+
+        assert_eq!(
+            platform_kind_line("twitch.stub_kind", &registry)
+                .replace(crate::test_support::FORMAT_ISOLATES, ""),
+            "Twitch \u{b7} twitch.stub_kind"
+        );
+    }
+
+    #[test]
+    fn a_kind_line_without_a_platform_is_the_bare_trigger_name() {
+        crate::app::i18n::install_language(forge_storage::Language::En);
+        let registry = stub_registry(&[("stub.loose", TriggerCategory::Chat)]);
+
+        assert_eq!(platform_kind_line("stub.loose", &registry), "stub.loose");
     }
 
     #[test]

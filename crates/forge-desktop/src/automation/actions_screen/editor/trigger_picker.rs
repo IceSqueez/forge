@@ -304,3 +304,58 @@ impl ActionEditor {
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use forge_registry::TriggerCategory;
+    use forge_storage::Language;
+    use forge_types::{PermissionRung, PlatformScope, TriggerConfig};
+
+    use super::*;
+    use crate::app::i18n::install_language;
+    use crate::test_support::{Declares, FORMAT_ISOLATES, StubTrigger, trigger_registry};
+
+    const KICK_KIND: &str = "kick.stub_kind";
+
+    fn instance(kind_id: &str) -> TriggerInstance {
+        TriggerInstance {
+            id: TriggerInstanceId::new(),
+            kind_id: kind_id.to_owned(),
+            name: "Mine".to_owned(),
+            overrides: TriggerConfig::new(),
+            enabled: true,
+            user_defined: true,
+            platform_scope: PlatformScope::Any,
+            cooldown_secs: 0,
+            cooldown_global: true,
+            permission_rung: PermissionRung::Everyone,
+        }
+    }
+
+    #[test]
+    fn a_recent_trigger_is_described_by_its_platform_and_kind() {
+        install_language(Language::En);
+        let registry = trigger_registry(vec![StubTrigger::new(
+            KICK_KIND,
+            KICK_KIND,
+            TriggerCategory::Chat,
+            Declares::Nothing,
+        )]);
+
+        let (group, _) = build_recent_group(
+            &[instance(KICK_KIND)],
+            &registry,
+            &forge_components::FORGE_DEFAULT,
+        );
+
+        let desc = group
+            .and_then(|group| group.items.into_iter().next())
+            .map(|item| item.desc.replace(FORMAT_ISOLATES, ""))
+            .unwrap_or_default();
+
+        assert!(
+            desc.starts_with(&format!("Kick \u{b7} {KICK_KIND}")),
+            "{desc:?}"
+        );
+    }
+}

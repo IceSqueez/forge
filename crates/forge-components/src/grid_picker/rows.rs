@@ -6,7 +6,8 @@ use gpui::{
 use super::{
     CardData, GRID_BADGE_FS, GRID_CARD_GAP, GRID_CARD_ICON, GRID_CARD_NAME_FS, GRID_CARD_PAD_H,
     GRID_CARD_PAD_V, GRID_CARD_ROW_MB, GRID_CARD_TILE_RADIUS, GRID_GROUP_DOT, GRID_GROUP_FS,
-    GRID_HEADER_ROW_H, GRID_META_FS, GRID_STAR_PAD, GridPicker, GridPickerArt, GridPickerItemState,
+    GRID_HEADER_ROW_H, GRID_META_FS, GRID_SECTION_DOT, GRID_SECTION_FS, GRID_SECTION_ROW_H,
+    GRID_STAR_PAD, GridPicker, GridPickerArt, GridPickerItemState,
 };
 use crate::glyph::glyph_art;
 use crate::icons::{Icon, icon};
@@ -56,6 +57,58 @@ pub(super) fn render_header_row(
 
     div()
         .h(GRID_HEADER_ROW_H)
+        .w_full()
+        .flex()
+        .items_end()
+        .pb(spacing(Spacing::Xs, density))
+        .child(inner)
+        .into_any_element()
+}
+
+pub(super) fn render_section_row(
+    label: &SharedString,
+    dot: Rgba,
+    count: usize,
+    p: &ForgePalette,
+    density: Density,
+    cx: &App,
+) -> AnyElement {
+    let inner = div()
+        .w_full()
+        .flex()
+        .items_center()
+        .gap(spacing(Spacing::Xs, density))
+        .pb(spacing(Spacing::Xxs, density))
+        .border_b(BORDER_THIN)
+        .border_color(p.surface_overlay)
+        .child(
+            div()
+                .flex_none()
+                .size(GRID_SECTION_DOT)
+                .rounded(radius(Radius::Pill))
+                .bg(dot),
+        )
+        .child(
+            div()
+                .flex_1()
+                .min_w(px(0.0))
+                .truncate()
+                .font_family(cx.body_family())
+                .font_weight(FontWeight::SEMIBOLD)
+                .text_size(GRID_SECTION_FS)
+                .text_color(dot)
+                .child(label.clone()),
+        )
+        .child(
+            div()
+                .font_family(cx.mono_family())
+                .text_size(GRID_GROUP_FS)
+                .text_color(p.text_faint)
+                .child(count.to_string()),
+        );
+
+    div()
+        .h(GRID_SECTION_ROW_H)
         .w_full()
         .flex()
         .items_end()

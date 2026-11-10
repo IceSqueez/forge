@@ -27,7 +27,7 @@ use crate::tr;
 
 mod rows;
 
-use rows::{render_card_row, render_header_row};
+use rows::{render_card_row, render_header_row, render_section_row};
 
 const GRID_W: Pixels = px(880.0);
 const GRID_H: Pixels = px(640.0);
@@ -69,6 +69,9 @@ const GRID_LIST_OVERDRAW: Pixels = px(320.0);
 const GRID_STAR_PAD: Pixels = px(2.0);
 
 const GRID_HEADER_ROW_H: Pixels = px(30.0);
+const GRID_SECTION_ROW_H: Pixels = px(36.0);
+const GRID_SECTION_FS: Pixels = FONT_XS;
+const GRID_SECTION_DOT: Pixels = RAIL_DOT;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum GridPickerItemState {
@@ -89,10 +92,26 @@ pub struct GridPickerItem {
     pub matches: Option<GridItemQuery>,
 }
 
+#[derive(Debug, Clone)]
+pub struct GridSection {
+    pub key: SharedString,
+    pub label: SharedString,
+    pub dot_color: Rgba,
+}
+
+impl PartialEq for GridSection {
+    fn eq(&self, other: &Self) -> bool {
+        self.key == other.key
+    }
+}
+
+impl Eq for GridSection {}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum GridScope {
     Leading,
     Named(SharedString),
+    Section(GridSection),
 }
 
 impl GridScope {
@@ -100,6 +119,14 @@ impl GridScope {
         match self {
             Self::Leading => None,
             Self::Named(name) => Some(name),
+            Self::Section(section) => Some(&section.key),
+        }
+    }
+
+    fn section(&self) -> Option<&GridSection> {
+        match self {
+            Self::Section(section) => Some(section),
+            Self::Leading | Self::Named(_) => None,
         }
     }
 
@@ -107,6 +134,9 @@ impl GridScope {
         match self {
             Self::Leading => SharedString::new_static("forge-grid-rail-leading"),
             Self::Named(name) => SharedString::from(format!("forge-grid-rail-{name}")),
+            Self::Section(section) => {
+                SharedString::from(format!("forge-grid-rail-section-{}", section.key))
+            }
         }
     }
 }
@@ -205,11 +235,18 @@ struct CardData {
     cursored: bool,
 }
 
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum HeaderLevel {
+    Section,
+    Group,
+}
+
 enum PickerRow {
     Header {
         label: SharedString,
         dot: Rgba,
         count: usize,
+        level: HeaderLevel,
     },
     Cards([Option<CardData>; 2]),
 }
@@ -311,12 +348,40 @@ impl GridPicker {
 
         let mut rows: Vec<PickerRow> = Vec::new();
         let mut matched: Vec<MatchedItem> = Vec::new();
-        for (group, items) in shown {
-            rows.push(PickerRow::Header {
-                label: group.label.clone(),
-                dot: group.dot_color,
-                count: items.len(),
-            });
+        let mut section_run = 0;
+        for (index, (group, items)) in shown.iter().enumerate() {
+            match group.scope.section() {
+                Some(section) => {
+                    let opens_section = index == 0 || shown[index - 1].0.scope != group.scope;
+                    if opens_section {
+                        let run = &shown[index..];
+                        let members = run
+                            .iter()
+                            .take_while(|(member, _)| member.scope == group.scope);
+                        section_run = members.clone().count();
+                        rows.push(PickerRow::Header {
+                            label: section.label.clone(),
+                            dot: section.dot_color,
+                            count: members.map(|(_, member_items)| member_items.len()).sum(),
+                            level: HeaderLevel::Section,
+                        });
+                    }
+                    if section_run > 1 {
+                        rows.push(PickerRow::Header {
+                            label: group.label.clone(),
+                            dot: group.dot_color,
+                            count: items.len(),
+                            level: HeaderLevel::Group,
+                        });
+                    }
+                }
+                None => rows.push(PickerRow::Header {
+                    label: group.label.clone(),
+                    dot: group.dot_color,
+                    count: items.len(),
+                    level: HeaderLevel::Group,
+                }),
+            }
             for chunk in items.chunks(2) {
                 let row = rows.len();
                 let mut cards: [Option<CardData>; 2] = [None, None];
@@ -475,10 +540,14 @@ impl GridPicker {
         let mut scopes: Vec<RailScope> = Vec::new();
         for group in leading.chain(named) {
             if scopes.iter().all(|seen| seen.scope != group.scope) {
+                let (label, dot) = match group.scope.section() {
+                    Some(section) => (section.label.clone(), section.dot_color),
+                    None => (group.label.clone(), group.dot_color),
+                };
                 scopes.push(RailScope {
                     scope: group.scope.clone(),
-                    label: group.label.clone(),
-                    dot: group.dot_color,
+                    label,
+                    dot,
                 });
             }
         }
@@ -745,9 +814,15 @@ impl GridPicker {
         let accent = self.config.accent;
         let art = self.config.art;
         match &self.rows[ix] {
-            PickerRow::Header { label, dot, count } => {
-                render_header_row(label, *dot, *count, &p, density, cx)
-            }
+            PickerRow::Header {
+                label,
+                dot,
+                count,
+                level,
+            } => match level {
+                HeaderLevel::Section => render_section_row(label, *dot, *count, &p, density, cx),
+                HeaderLevel::Group => render_header_row(label, *dot, *count, &p, density, cx),
+            },
             PickerRow::Cards(cards) => render_card_row(cards, accent, art, &p, cx),
         }
     }

@@ -6,11 +6,11 @@ use forge_events::{EventObserver, EventPublisher};
 use forge_hotkey::HOTKEY_INTEGRATION;
 use forge_platform_core::PlatformEndpoints;
 use forge_runtime::{
-    CatchUpSettle, DateNamesHandle, DonationIngest, FrozenRuntime, IntegrationSupervisor,
-    OverlayFrameSink, RuntimeWiring, RuntimeWiringParts, TwitchEmoteLexicon,
+    CatchUpSettle, DateNamesHandle, DonationIngest, FollowKnowledgeParts, FrozenRuntime,
+    IntegrationSupervisor, OverlayFrameSink, RuntimeWiring, RuntimeWiringParts, TwitchEmoteLexicon,
     register_core_triggers, register_donation_sub_actions, register_latest_sub_actions,
-    register_speech_sub_actions, spawn_live_viewer_aggregator, spawn_stream_live_signal,
-    spawn_timer_scheduler, spawn_twitch_emote_learning,
+    register_speech_sub_actions, spawn_follow_knowledge, spawn_live_viewer_aggregator,
+    spawn_stream_live_signal, spawn_timer_scheduler, spawn_twitch_emote_learning,
 };
 use forge_server::DeliveryHub;
 use forge_soundboard::spawn_clip_hotkey_dispatcher;
@@ -23,6 +23,7 @@ use crate::core_boot::build_core;
 use crate::host_handles::{
     AudioHandles, AutomationHandles, BootOutcomes, Host, IntegrationHandles, SpeechHandles,
 };
+use crate::integration_sign_out::PlatformDataErasure;
 use crate::integrations::{IntegrationInputs, build_integrations};
 use crate::overlay_boot::{OverlayInputs, build_overlay_kinds, start_overlays};
 use crate::platform_identities::PlatformIdentities;
@@ -218,6 +219,12 @@ pub async fn build_host(inputs: HostInputs) -> Host {
     if !queues_loaded {
         boot_warnings.record(BootWarning::Queues);
     }
+    let follow_knowledge = spawn_follow_knowledge(FollowKnowledgeParts {
+        bus: Arc::clone(bus),
+        repo: backend.follow_knowledge_repo(),
+        event_log: backend.event_log_repo(),
+        triggers: Arc::clone(&trigger_registry),
+    });
     let live_viewers = spawn_live_viewer_aggregator(services);
     let supervisor = IntegrationSupervisor::launch(
         integrations.factories,
@@ -228,7 +235,10 @@ pub async fn build_host(inputs: HostInputs) -> Host {
     );
     let sign_out = integrations
         .sign_out_routes
-        .over(Arc::new(supervisor.clone()));
+        .over(Arc::new(supervisor.clone()))
+        .erasing(vec![
+            Arc::new(follow_knowledge.clone()) as Arc<dyn PlatformDataErasure>
+        ]);
     donations.recover_unannounced().await;
     supervisor.boot().await;
     let integration_states = supervisor.watch().current();
@@ -321,6 +331,7 @@ pub async fn build_host(inputs: HostInputs) -> Host {
             scheduled_runs,
             timer_scheduler,
             live_viewers,
+            follow_knowledge,
             bot_accounts,
         },
         integrations: IntegrationHandles {

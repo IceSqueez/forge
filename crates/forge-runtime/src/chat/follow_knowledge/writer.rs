@@ -12,6 +12,7 @@ use tokio::sync::{mpsc, oneshot, watch};
 
 use super::policy::{FOLLOWING_LIFETIME, FollowTranslation, is_fresh};
 use crate::delivery::CriticalSubscription;
+use crate::event_flow::persist_batch::FlushTicket;
 
 pub(super) const STORE_OP_TIMEOUT: Duration = Duration::from_secs(5);
 const STARTUP_OP_TIMEOUT: Duration = Duration::from_secs(30);
@@ -39,14 +40,38 @@ impl FollowWriter {
         event_log: Arc<dyn EventLogRepo>,
         mut intake: CriticalSubscription,
         mut commands: mpsc::Receiver<WriteCommand>,
+        mut ticket: FlushTicket,
     ) {
-        self.prune().await;
-        self.seed(event_log.as_ref()).await;
+        let started = tokio::select! {
+            biased;
+            () = ticket.stopping() => false,
+            () = self.start(event_log.as_ref()) => true,
+        };
         drop(event_log);
+        if started {
+            self.serve(&mut intake, &mut commands, &mut ticket).await;
+            self.drain(&mut intake, &mut ticket).await;
+        }
+        ticket.finish();
+    }
+
+    async fn start(&self, event_log: &dyn EventLogRepo) {
+        self.prune().await;
+        self.seed(event_log).await;
+    }
+
+    async fn serve(
+        &self,
+        intake: &mut CriticalSubscription,
+        commands: &mut mpsc::Receiver<WriteCommand>,
+        ticket: &mut FlushTicket,
+    ) {
         let mut intake_open = true;
         let mut commands_open = true;
         while intake_open || commands_open {
             tokio::select! {
+                biased;
+                () = ticket.stopping() => return,
                 event = intake.recv(), if intake_open => match event {
                     Some(event) => self.take(&event).await,
                     None => intake_open = false,
@@ -55,6 +80,16 @@ impl FollowWriter {
                     Some(command) => self.apply(command).await,
                     None => commands_open = false,
                 },
+            }
+        }
+    }
+
+    async fn drain(&self, intake: &mut CriticalSubscription, ticket: &mut FlushTicket) {
+        while let Some(event) = intake.try_recv() {
+            tokio::select! {
+                biased;
+                () = ticket.abandoning() => return,
+                () = self.take(&event) => {}
             }
         }
     }

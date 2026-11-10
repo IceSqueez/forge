@@ -3,8 +3,8 @@ use forge_host::integration_factories::{
     KICK_EVENT_RELAY, TWITCH_EVENT_RELAY, YOUTUBE_EVENT_RELAY,
 };
 use forge_runtime::delivery::{
-    CHAT_HISTORY, EVENT_LOG, EVENT_TRAIL, LATEST_OVERLAYS, LATEST_VALUES, RUN_HISTORY,
-    TRIGGER_EVALUATOR, UNNAMED_OBSERVER, VIEWER_TRACKER,
+    CHAT_HISTORY, EVENT_LOG, EVENT_TRAIL, FOLLOW_KNOWLEDGE, LATEST_OVERLAYS, LATEST_VALUES,
+    RUN_HISTORY, TRIGGER_EVALUATOR, UNNAMED_OBSERVER, VIEWER_TRACKER,
 };
 use forge_runtime::{ConsumerLoss, DeliveryTier, LossCount};
 
@@ -86,6 +86,7 @@ pub(crate) fn consumer_label(consumer: &str) -> String {
         TRIGGER_EVALUATOR => tr!("event_loss_consumer_trigger_evaluator"),
         EVENT_LOG => tr!("event_loss_consumer_event_log"),
         CHAT_HISTORY => tr!("event_loss_consumer_chat_history"),
+        FOLLOW_KNOWLEDGE => tr!("event_loss_consumer_follow_knowledge"),
         VIEWER_TRACKER => tr!("event_loss_consumer_viewer_tracker"),
         LATEST_VALUES => tr!("event_loss_consumer_latest_values"),
         LATEST_OVERLAYS => tr!("event_loss_consumer_latest_overlays"),

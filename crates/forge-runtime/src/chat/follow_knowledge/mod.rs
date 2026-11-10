@@ -44,7 +44,8 @@ pub fn spawn_follow_knowledge(parts: FollowKnowledgeParts) -> FollowKnowledgeHan
         revision: Arc::clone(&revision),
     };
     let intake = bus.subscribe_critical(FOLLOW_KNOWLEDGE);
-    tokio::spawn(writer.run(event_log, intake, commands));
+    let ticket = bus.flush_ticket();
+    tokio::spawn(writer.run(event_log, intake, commands, ticket));
     FollowKnowledgeHandle {
         repo,
         writes,

@@ -73,6 +73,31 @@ impl FlushTicket {
             ..self
         }
     }
+
+    pub(crate) async fn stopping(&mut self) {
+        if self.stop.wait_for(|stopping| *stopping).await.is_err() {
+            std::future::pending::<()>().await;
+        }
+    }
+
+    pub(crate) async fn abandoning(&mut self) {
+        if self
+            .abandon
+            .wait_for(|abandoning| *abandoning)
+            .await
+            .is_err()
+        {
+            std::future::pending::<()>().await;
+        }
+    }
+
+    pub(crate) fn finish(self) {
+        #[expect(
+            clippy::let_underscore_must_use,
+            reason = "the caller may stop waiting for the flush"
+        )]
+        let _ = self.done.send(());
+    }
 }
 
 impl BatchIntake for CriticalSubscription {

@@ -238,6 +238,7 @@ event_loss_part_unwritten = { $count ->
 event_loss_consumer_trigger_evaluator = Перевірка тригерів
 event_loss_consumer_event_log = Журнал подій
 event_loss_consumer_chat_history = Історія чату
+event_loss_consumer_follow_knowledge = Статуси фолову
 event_loss_consumer_viewer_tracker = Облік глядачів
 event_loss_consumer_latest_values = Останні значення
 event_loss_consumer_latest_overlays = Оверлеї останніх значень

@@ -5,10 +5,10 @@ use forge_overlay::OverlayKindRegistry;
 use forge_registry::{SubActionRegistry, TriggerRegistry};
 use forge_runtime::{
     ActionEngineHandle, ActionsService, ChatHistoryRetentionHandle, EventBus,
-    IntegrationSupervisor, LatestValues, LifecycleStates, LiveViewerAggregatorHandle,
-    MaterializePass, NotificationPolicyHandle, OverlaySampleSource, OverlayServiceHandle,
-    QueueSchedulerHandle, RuntimeError, ScheduledRunsHandle, ScriptCatalog, TimerSchedulerHandle,
-    TriggerEvaluatorHandle,
+    FollowKnowledgeHandle, IntegrationSupervisor, LatestValues, LifecycleStates,
+    LiveViewerAggregatorHandle, MaterializePass, NotificationPolicyHandle, OverlaySampleSource,
+    OverlayServiceHandle, QueueSchedulerHandle, RuntimeError, ScheduledRunsHandle, ScriptCatalog,
+    TimerSchedulerHandle, TriggerEvaluatorHandle,
 };
 use forge_server::ServerHandle;
 use forge_transfer::{ScheduledBackupHandle, TransferExclusivity};
@@ -43,6 +43,7 @@ pub struct AutomationHandles {
     pub scheduled_runs: ScheduledRunsHandle,
     pub timer_scheduler: TimerSchedulerHandle,
     pub live_viewers: LiveViewerAggregatorHandle,
+    pub follow_knowledge: FollowKnowledgeHandle,
     pub bot_accounts: Shared<Vec<String>>,
 }
 

@@ -230,6 +230,7 @@ event_loss_part_unwritten = { $count ->
 event_loss_consumer_trigger_evaluator = Trigger evaluation
 event_loss_consumer_event_log = Event log
 event_loss_consumer_chat_history = Chat history
+event_loss_consumer_follow_knowledge = Follow statuses
 event_loss_consumer_viewer_tracker = Viewer tracking
 event_loss_consumer_latest_values = Latest values
 event_loss_consumer_latest_overlays = Latest value overlays

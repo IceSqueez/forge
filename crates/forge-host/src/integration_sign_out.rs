@@ -6,7 +6,7 @@ use async_trait::async_trait;
 use forge_platform_core::{
     BuiltinControl, ControlFailure, PlatformError, credential_storage_error,
 };
-use forge_runtime::IntegrationSupervisor;
+use forge_runtime::{FollowKnowledgeHandle, IntegrationSupervisor};
 use forge_storage::{CredentialsRepo, StorageError};
 use forge_types::{IntegrationId, PlatformId};
 use futures_util::future::BoxFuture;
@@ -121,6 +121,18 @@ impl SlotRebuild for IntegrationSupervisor<BuiltinObject> {
     }
 }
 
+#[async_trait]
+pub trait PlatformDataErasure: Send + Sync {
+    async fn erase(&self, platform: PlatformId);
+}
+
+#[async_trait]
+impl PlatformDataErasure for FollowKnowledgeHandle {
+    async fn erase(&self, platform: PlatformId) {
+        self.clear_platform(platform).await;
+    }
+}
+
 #[derive(Default)]
 pub struct SignOutRoutes {
     routes: HashMap<IntegrationId, SignOutRoute>,
@@ -135,6 +147,7 @@ impl SignOutRoutes {
         IntegrationSignOut {
             routes: Arc::new(self.routes),
             slots,
+            erasures: Arc::new(Vec::new()),
         }
     }
 }
@@ -143,14 +156,23 @@ impl SignOutRoutes {
 pub struct IntegrationSignOut {
     routes: Arc<HashMap<IntegrationId, SignOutRoute>>,
     slots: Arc<dyn SlotRebuild>,
+    erasures: Arc<Vec<Arc<dyn PlatformDataErasure>>>,
 }
 
 impl IntegrationSignOut {
+    pub fn erasing(self, erasures: Vec<Arc<dyn PlatformDataErasure>>) -> Self {
+        Self {
+            erasures: Arc::new(erasures),
+            ..self
+        }
+    }
+
     pub fn entry(&self, id: &IntegrationId) -> Option<SignOutEntry> {
         self.routes.get(id).map(|route| SignOutEntry {
             id: id.clone(),
             route: route.clone(),
             slots: Arc::clone(&self.slots),
+            erasures: Arc::clone(&self.erasures),
         })
     }
 }
@@ -159,6 +181,7 @@ pub struct SignOutEntry {
     id: IntegrationId,
     route: SignOutRoute,
     slots: Arc<dyn SlotRebuild>,
+    erasures: Arc<Vec<Arc<dyn PlatformDataErasure>>>,
 }
 
 impl SignOutEntry {
@@ -166,7 +189,12 @@ impl SignOutEntry {
         self,
         control: Option<Arc<dyn BuiltinControl>>,
     ) -> Result<SignOutOutcome, PlatformError> {
-        let Self { id, route, slots } = self;
+        let Self {
+            id,
+            route,
+            slots,
+            erasures,
+        } = self;
         let forget = (route.forget)();
         match route.teardown {
             Teardown::DisconnectThenRelease(release) => {
@@ -176,6 +204,11 @@ impl SignOutEntry {
             }
             Teardown::RebuildSlot => {
                 let outcome = forget_then_disconnect(forget, None).await?;
+                if let Some(platform) = PlatformId::from_canonical(id.as_str()) {
+                    for erasure in erasures.iter() {
+                        erasure.erase(platform).await;
+                    }
+                }
                 slots.rebuild(&id).await;
                 Ok(outcome)
             }

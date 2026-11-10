@@ -4,7 +4,8 @@ use std::time::{Duration, Instant};
 use forge_awake::StatusWatch;
 use forge_components::{
     Density, FONT_LG, FONT_SM, FONT_XXS, ForgePalette, Icon, Radius, Spacing, ToastKind, Toasts,
-    card, icon, primary_button, radius, secondary_button, spacing, toast_layer, tr,
+    card, client_corners, icon, primary_button, radius, secondary_button, spacing, toast_layer, tr,
+    window_frame,
 };
 use forge_events::EventSubscription;
 use forge_platform_core::PlatformEndpoints;
@@ -12,7 +13,8 @@ use forge_runtime::{LiveViewerAggregatorHandle, LossWatch, QueueDepthWatch};
 use forge_storage::CredentialsKeyLoss;
 use futures_util::StreamExt as _;
 use gpui::{
-    AnyElement, App, AppContext, AsyncApp, Context, Entity, Window, WindowHandle, div, prelude::*,
+    AnyElement, App, AppContext, AsyncApp, Context, Div, Entity, Window, WindowHandle, div,
+    prelude::*, px,
 };
 
 use crate::app::async_bridge::{BridgeFlow, drain_subscription};
@@ -25,6 +27,7 @@ use crate::app::runtime_handles::RuntimeHandles;
 use crate::app::runtime_status::RuntimeStatus;
 use crate::app::shell::AppShell;
 use crate::app::system_info::WindowFacts;
+use crate::app::titlebar::TitleBar;
 use crate::app::topics::Topics;
 use crate::app::window_presence::PresenceGate;
 use crate::audience::chat_feed::{ChatFeed, ChatMessage, DEFAULT_DISPLAY_LIMIT};
@@ -74,6 +77,7 @@ pub(crate) struct BootInputs {
 
 pub(crate) struct RootView {
     state: BootState,
+    titlebar: Entity<TitleBar>,
     inputs: BootInputs,
     window: Option<WindowHandle<RootView>>,
 }
@@ -90,6 +94,7 @@ impl RootView {
         .detach();
         Self {
             state: BootState::Booting,
+            titlebar: cx.new(TitleBar::new),
             inputs,
             window: None,
         }
@@ -605,13 +610,14 @@ async fn seed_chat_history(
 }
 
 impl Render for RootView {
-    fn render(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+    fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         let palette = cx.palette();
         let density = cx.density();
-        let failure_screen = match &self.state {
-            BootState::Booting => return splash(tr!("boot_starting"), &palette, density, cx),
+        let body = match &self.state {
+            BootState::Booting => splash(tr!("boot_starting"), &palette, density, cx),
             BootState::Ready { shell } => {
-                return div().size_full().child(shell.clone()).into_any_element();
+                let content = div().size_full().child(shell.clone());
+                return window_frame(content, &palette, window);
             }
             BootState::Failed(BootFailure::UpgradeRequired { expected, found }) => {
                 upgrade_screen(*expected, *found, &palette, density, cx)
@@ -623,22 +629,45 @@ impl Render for RootView {
                 retry_screen(&failure.text(), cx.entity(), &palette, density, cx)
             }
         };
-        div()
-            .size_full()
+        let failed = matches!(self.state, BootState::Failed(_));
+        let content = rounded_surface(&palette, window)
             .relative()
-            .child(failure_screen)
-            .children(toast_layer(&palette, cx))
-            .into_any_element()
+            .flex()
+            .flex_col()
+            .child(self.titlebar.clone())
+            .child(
+                div()
+                    .flex_1()
+                    .min_h(px(0.0))
+                    .w_full()
+                    .flex()
+                    .flex_col()
+                    .child(body),
+            )
+            .when(failed, |content| {
+                content.children(toast_layer(&palette, cx))
+            });
+        window_frame(content, &palette, window)
     }
 }
 
-fn centered(child: impl IntoElement, palette: &ForgePalette, density: Density) -> AnyElement {
+fn rounded_surface(palette: &ForgePalette, window: &Window) -> Div {
+    let corners = client_corners(window);
+    div()
+        .size_full()
+        .bg(palette.base)
+        .rounded_tl(corners.top_left)
+        .rounded_tr(corners.top_right)
+        .rounded_bl(corners.bottom_left)
+        .rounded_br(corners.bottom_right)
+}
+
+fn centered(child: impl IntoElement, density: Density) -> AnyElement {
     div()
         .size_full()
         .flex()
         .items_center()
         .justify_center()
-        .bg(palette.base)
         .p(spacing(Spacing::Lg, density))
         .child(child)
         .into_any_element()
@@ -647,10 +676,16 @@ fn centered(child: impl IntoElement, palette: &ForgePalette, density: Density) -
 pub(crate) struct RestoreWaitView;
 
 impl Render for RestoreWaitView {
-    fn render(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+    fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         let palette = cx.palette();
         let density = cx.density();
-        splash(tr!("boot_finishing_restore"), &palette, density, cx)
+        let content = rounded_surface(&palette, window).child(splash(
+            tr!("boot_finishing_restore"),
+            &palette,
+            density,
+            cx,
+        ));
+        window_frame(content, &palette, window)
     }
 }
 
@@ -674,7 +709,7 @@ fn splash(status: String, palette: &ForgePalette, density: Density, cx: &App) ->
                 .text_color(palette.text_muted)
                 .child(status),
         );
-    centered(column, palette, density)
+    centered(column, density)
 }
 
 fn upgrade_screen(
@@ -711,7 +746,7 @@ fn upgrade_screen(
                 .text_color(palette.text_muted)
                 .child(tr!("boot_upgrade_reassure")),
         );
-    centered(card(body, palette), palette, density)
+    centered(card(body, palette), density)
 }
 
 fn pre_baseline_screen(
@@ -767,7 +802,7 @@ fn pre_baseline_screen(
                 .child(tr!("boot_pre_baseline_reassure")),
         )
         .child(actions);
-    centered(card(body, palette), palette, density)
+    centered(card(body, palette), density)
 }
 
 fn retry_screen(
@@ -831,7 +866,7 @@ fn retry_screen(
                 .child(tr!("boot_failure_reassure")),
         )
         .child(retry);
-    centered(card(body, palette), palette, density)
+    centered(card(body, palette), density)
 }
 
 #[cfg(test)]

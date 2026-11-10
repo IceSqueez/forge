@@ -1,4 +1,6 @@
-use forge_components::{ForgePalette, Icon, app_footer, footer_alert, footer_indicator, tr};
+use forge_components::{
+    ForgePalette, Icon, app_footer, client_corners, footer_alert, footer_indicator, tr,
+};
 use gpui::{AnyElement, Context, Entity, SharedString, Subscription, Window, div, prelude::*};
 
 use crate::app::awake_state::{AwakeState, AwakeTone};
@@ -106,7 +108,7 @@ impl Footer {
 }
 
 impl Render for Footer {
-    fn render(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+    fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         let density = cx.density();
         let palette = cx.palette();
         let uptime = self.status.read(cx).uptime_human();
@@ -130,16 +132,21 @@ impl Render for Footer {
         .flatten()
         .collect();
 
-        div().w_full().flex_none().child(app_footer(
-            "forge",
-            APP_VERSION,
-            connected as u8,
-            connected_label,
-            uptime_label,
-            trailing,
-            &palette,
-            density,
-            cx,
-        ))
+        let corners = client_corners(window);
+        div().w_full().flex_none().child(
+            app_footer(
+                "forge",
+                APP_VERSION,
+                connected as u8,
+                connected_label,
+                uptime_label,
+                trailing,
+                &palette,
+                density,
+                cx,
+            )
+            .rounded_bl(corners.bottom_left)
+            .rounded_br(corners.bottom_right),
+        )
     }
 }

@@ -1,8 +1,14 @@
-use forge_components::{BORDER_THIN, FONT_SM, FONT_XS, ForgePalette, Radius, radius, scaled};
+use forge_components::{
+    BORDER_THIN, FONT_SM, FONT_XS, ForgePalette, Radius, WindowControlsLayout, client_corners,
+    radius, scaled, window_controls,
+};
 use gpui::{
-    App, ClickEvent, Context, FontWeight, MouseButton, MouseDownEvent, MouseMoveEvent,
+    App, ClickEvent, Context, Decorations, FontWeight, MouseButton, MouseDownEvent, MouseMoveEvent,
     MouseUpEvent, Pixels, Window, WindowControlArea, div, prelude::*, px,
 };
+
+use crate::app::actions::Quit;
+use crate::app::window_chrome::{forge_titlebar_shown, forge_window_controls_shown};
 
 use forge_components::{ActivePresentation, Presentation};
 
@@ -51,9 +57,25 @@ pub(crate) fn brand_mark(
 }
 
 impl Render for TitleBar {
-    fn render(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+    fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+        if !forge_titlebar_shown(window, cx) {
+            return div().into_any_element();
+        }
         let density = cx.density();
         let palette = cx.palette();
+        let corners = client_corners(window);
+        let controls = forge_window_controls_shown(window, cx).then(|| {
+            div()
+                .absolute()
+                .top_0()
+                .right_0()
+                .h_full()
+                .child(window_controls(
+                    WindowControlsLayout::native(),
+                    &palette,
+                    |window, cx| window.dispatch_action(Box::new(Quit), cx),
+                ))
+        });
 
         let cluster = div()
             .flex()
@@ -82,7 +104,10 @@ impl Render for TitleBar {
             .flex()
             .items_center()
             .justify_center()
+            .relative()
             .px(scaled(TITLEBAR_PAD_H, density))
+            .rounded_tl(corners.top_left)
+            .rounded_tr(corners.top_right)
             .bg(palette.shell)
             .border_b(BORDER_THIN)
             .border_color(palette.border_regular)
@@ -102,6 +127,11 @@ impl Render for TitleBar {
                     this.should_move = true;
                 }),
             )
+            .on_mouse_down(MouseButton::Right, |event: &MouseDownEvent, window, _| {
+                if window_menu_available(window) {
+                    window.show_window_menu(event.position);
+                }
+            })
             .on_mouse_move(cx.listener(|this, _: &MouseMoveEvent, window, _| {
                 if this.should_move {
                     this.should_move = false;
@@ -119,5 +149,13 @@ impl Render for TitleBar {
                 }
             }))
             .child(cluster)
+            .children(controls)
+            .into_any_element()
     }
+}
+
+fn window_menu_available(window: &Window) -> bool {
+    cfg!(target_os = "linux")
+        && matches!(window.window_decorations(), Decorations::Client { .. })
+        && window.window_controls().window_menu
 }

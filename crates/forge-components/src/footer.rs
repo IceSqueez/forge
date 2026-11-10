@@ -1,6 +1,6 @@
 use crate::ActivePresentation;
 use gpui::{
-    AnyElement, App, ElementId, InteractiveElement, IntoElement, ParentElement, Pixels, Rgba,
+    AnyElement, App, Div, ElementId, InteractiveElement, IntoElement, ParentElement, Pixels, Rgba,
     SharedString, StatefulInteractiveElement, Styled, div, px,
 };
 
@@ -57,7 +57,7 @@ pub fn app_footer(
     palette: &ForgePalette,
     density: Density,
     cx: &App,
-) -> impl IntoElement {
+) -> Div {
     let shell = palette.shell;
     let border_color = palette.border_regular;
     let text_muted = palette.text_muted;

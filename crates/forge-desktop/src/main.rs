@@ -28,6 +28,9 @@ use crate::app::root::{BootInputs, RestoreWaitView, RootView, run_boot};
 use crate::app::shutdown::{RUNTIME_SHUTDOWN_BUDGET, RuntimeSlot, silence_logging};
 use crate::app::sidebar::SIDEBAR_MAX;
 use crate::app::titlebar::TITLEBAR_HEIGHT;
+use crate::app::window_chrome::{
+    TitlebarChoice, repaint_on_decoration_change, requested_decorations,
+};
 use crate::preferences::settings::{NAV_WIDTH, PANE_MIN_WIDTH};
 use forge_components::{AccentColor, Density, FontFamilies, Presentation, ThemeId};
 
@@ -367,6 +370,8 @@ fn open_main_window(
         splash,
     } = launch;
     let appearance = &presentation.appearance;
+    let integrated_titlebar = appearance.integrated_titlebar;
+    cx.set_global(TitlebarChoice::launched(integrated_titlebar));
     cx.set_global(
         Presentation::accented(appearance.theme, appearance.accent, appearance.density).with_fonts(
             FontFamilies::with_overrides(
@@ -387,9 +392,10 @@ fn open_main_window(
         display_id,
         titlebar: Some(TitlebarOptions {
             title: Some(SharedString::from("forge")),
-            appears_transparent: true,
-            traffic_light_position: Some(TRAFFIC_LIGHT_OFFSET),
+            appears_transparent: integrated_titlebar,
+            traffic_light_position: integrated_titlebar.then_some(TRAFFIC_LIGHT_OFFSET),
         }),
+        window_decorations: Some(requested_decorations(integrated_titlebar)),
         app_id: Some("forge-desktop".to_owned()),
         window_min_size: Some(size(
             SIDEBAR_MAX + NAV_WIDTH + PANE_MIN_WIDTH,
@@ -413,6 +419,7 @@ fn open_main_window(
         )
     });
     let window = match cx.open_window(options, move |window, cx| {
+        repaint_on_decoration_change(window);
         crate::app::window_presence::track_window_presence(window, cx);
         if let Some((backend, rt_handle, persisted)) = placement_storage {
             crate::app::window_placement::track_window_placement(

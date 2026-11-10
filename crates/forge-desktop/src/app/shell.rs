@@ -6,7 +6,7 @@ mod detail_screens;
 mod routes;
 
 use forge_components::{
-    FocusNextField, FocusPreviousField, Toasts, reveal_focus_after_tab, toast_layer,
+    FocusNextField, FocusPreviousField, Toasts, client_corners, reveal_focus_after_tab, toast_layer,
 };
 use forge_events::EventPublisher;
 use forge_registry::TriggerRegistry;
@@ -752,8 +752,9 @@ pub(crate) async fn refresh_dashboard_stats(
 }
 
 impl Render for AppShell {
-    fn render(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+    fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         let palette = cx.palette();
+        let corners = client_corners(window);
 
         let welcome = self.router.screen == Screen::Welcome;
         let body = div()
@@ -793,6 +794,10 @@ impl Render for AppShell {
             .flex()
             .flex_col()
             .bg(palette.base)
+            .rounded_tl(corners.top_left)
+            .rounded_tr(corners.top_right)
+            .rounded_bl(corners.bottom_left)
+            .rounded_br(corners.bottom_right)
             .child(self.chrome.titlebar.clone())
             .child(body)
             .when(!welcome, |root| root.child(self.chrome.footer.clone()));

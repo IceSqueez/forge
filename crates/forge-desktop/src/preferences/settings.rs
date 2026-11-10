@@ -30,6 +30,9 @@ use crate::app::async_bridge::{self, ErrorSink, KeyedSnapshotWriters, WriteOutco
 use crate::app::awake_state::AwakeState;
 use crate::app::navigation::SettingsSection;
 use crate::app::presentation::{LanguageSinks, LocaleState, apply_language};
+use crate::app::window_chrome::{
+    APPLIES_LIVE, INTEGRATED_TITLEBAR, TitlebarChoice, apply_titlebar_choice,
+};
 use crate::data_flows::backup_schedule::BackupScheduleView;
 use crate::data_flows::problem_report::ProblemReport;
 use crate::data_flows::safety_copies::SafetyCopiesView;
@@ -605,6 +608,23 @@ impl SettingsView {
             "theme",
             async move { write_setting(backend.as_ref(), &core_settings::THEME, &Some(key)).await },
             tr!("settings_theme_persist_failed"),
+            cx,
+        );
+        cx.refresh_windows();
+        cx.notify();
+    }
+
+    fn toggle_integrated_titlebar(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        let choice = TitlebarChoice::current(cx);
+        let integrated = !choice.integrated();
+        cx.set_global(choice.choose(integrated));
+        apply_titlebar_choice(integrated, window);
+
+        let backend = self.services.backend.settings_repo();
+        self.appearance_writers.write_reporting(
+            "integrated_titlebar",
+            async move { write_setting(backend.as_ref(), &INTEGRATED_TITLEBAR, &integrated).await },
+            tr!("settings_titlebar_persist_failed"),
             cx,
         );
         cx.refresh_windows();

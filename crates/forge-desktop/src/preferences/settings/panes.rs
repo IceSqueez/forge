@@ -270,6 +270,19 @@ impl SettingsView {
             density,
         );
 
+        let titlebar_row = setting_row(
+            tr!("settings_titlebar_label"),
+            Some(titlebar_hint(TitlebarChoice::current(cx)).into()),
+            toggle(TitlebarChoice::current(cx).integrated(), palette).on_click(
+                "settings-appearance-titlebar",
+                cx.listener(|this, _: &ClickEvent, window, cx| {
+                    this.toggle_integrated_titlebar(window, cx)
+                }),
+            ),
+            palette,
+            density,
+        );
+
         let mut density_rows = div().flex().flex_col().gap(spacing(Spacing::Xxs, density));
         let current_density = cx.density();
         for option in [Density::Compact, Density::Cozy, Density::Spacious] {
@@ -323,6 +336,7 @@ impl SettingsView {
                 [
                     theme_block.into_any_element(),
                     accent_row.into_any_element(),
+                    titlebar_row.into_any_element(),
                     density_block.into_any_element(),
                     fonts_block.into_any_element(),
                 ],
@@ -622,5 +636,15 @@ impl SettingsView {
             .child(SettingsPaneHeader::new(SettingsSection::General))
             .child(setting_rows(palette).row(stay_awake_row).in_card(palette))
             .into_any_element()
+    }
+}
+
+fn titlebar_hint(choice: TitlebarChoice) -> String {
+    if choice.restart_pending() {
+        tr!("settings_titlebar_restart_pending")
+    } else if APPLIES_LIVE {
+        tr!("settings_titlebar_hint_live")
+    } else {
+        tr!("settings_titlebar_hint_restart")
     }
 }

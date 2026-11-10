@@ -5,6 +5,7 @@ use forge_storage::{Flag, OptionalText, Setting, SettingSpec, SettingsCatalog};
 
 use crate::app::first_run::FIRST_RUN_COMPLETED;
 use crate::app::stay_awake::STAY_AWAKE;
+use crate::app::window_chrome::INTEGRATED_TITLEBAR;
 use crate::app::window_placement::WINDOW_PLACEMENT;
 use crate::automation::midi_screen::MIDI_KNOWN_DEVICES;
 use crate::automation::shortcut_overrides::KEYBOARD_SHORTCUTS;
@@ -34,6 +35,7 @@ pub(crate) const SETTING_SPECS: &[SettingSpec] = &[
     CLIPS_ROUTE.spec(),
     FIRST_RUN_COMPLETED.spec(),
     STAY_AWAKE.spec(),
+    INTEGRATED_TITLEBAR.spec(),
     WINDOW_PLACEMENT.spec(),
     ROLLED_BACK_VERSION.spec(),
     LEFTOVER_INSTALL_NOTICED.spec(),

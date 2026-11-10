@@ -68,6 +68,8 @@ mod tokens;
 mod tooltip;
 mod type_to_confirm;
 mod variable_picker;
+mod window_controls;
+mod window_frame;
 
 pub use avatar::{avatar_tile, hash_accent};
 pub use breadcrumb::{BreadcrumbCrumb, breadcrumb};
@@ -182,6 +184,10 @@ pub use type_to_confirm::{
 pub use variable_picker::{
     VariableEntry, VariableFormat, VariableGroup, VariablePicker, VariablePickerEvent,
     VariablePickerLabels,
+};
+pub use window_controls::{WindowControls, WindowControlsLayout, window_controls};
+pub use window_frame::{
+    CLIENT_SHADOW, client_corners, client_frame_tiling, resize_edge, rounded_corners, window_frame,
 };
 
 pub use avatar::AvatarTile;

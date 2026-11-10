@@ -28,6 +28,12 @@ pub trait EventLogRepo: Send + Sync {
         limit: usize,
         since: Option<EventId>,
     ) -> Result<Vec<Event>, StorageError>;
+
+    async fn events_of_kinds_since(
+        &self,
+        kinds: &[String],
+        since: time::OffsetDateTime,
+    ) -> Result<Vec<Event>, StorageError>;
 }
 
 pub const DEFAULT_EVENT_LOG_RETENTION_DAYS: u32 = 7;

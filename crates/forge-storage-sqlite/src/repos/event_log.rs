@@ -250,6 +250,38 @@ impl EventLogRepo for SqliteEventLogRepo {
             .map(|r| decode_row(r).map_err(StorageError::from))
             .collect()
     }
+
+    async fn events_of_kinds_since(
+        &self,
+        kinds: &[String],
+        since: OffsetDateTime,
+    ) -> Result<Vec<Event>, StorageError> {
+        if kinds.is_empty() {
+            return Ok(Vec::new());
+        }
+        let mut query = sqlx::QueryBuilder::<sqlx::Sqlite>::new(concat!(
+            "SELECT ",
+            event_log_columns!(),
+            " FROM event_log WHERE timestamp >= "
+        ));
+        query.push_bind(to_epoch_ms(since));
+        query.push(" AND kind IN (");
+        let mut separated = query.separated(", ");
+        for kind in kinds {
+            separated.push_bind(kind.as_str());
+        }
+        query.push(") ORDER BY timestamp ASC, rowid ASC");
+
+        let rows: Vec<EventLogRow> = query
+            .build_query_as()
+            .fetch_all(self.db.reader())
+            .await
+            .map_err(SqliteStorageError::Sqlx)?;
+
+        rows.into_iter()
+            .map(|r| decode_row(r).map_err(StorageError::from))
+            .collect()
+    }
 }
 
 #[cfg(test)]

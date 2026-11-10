@@ -400,6 +400,14 @@ impl forge_storage::EventLogRepo for StuckEventLog {
     ) -> Result<Vec<Event>, StorageError> {
         Ok(Vec::new())
     }
+
+    async fn events_of_kinds_since(
+        &self,
+        _: &[String],
+        _: time::OffsetDateTime,
+    ) -> Result<Vec<Event>, forge_storage::StorageError> {
+        Ok(Vec::new())
+    }
 }
 
 struct StuckChatHistory;

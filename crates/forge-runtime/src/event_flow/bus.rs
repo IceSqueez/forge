@@ -512,6 +512,17 @@ mod tests {
         ) -> Result<Vec<Event>, StorageError> {
             self.0.event_log_repo().recent_since(limit, since).await
         }
+
+        async fn events_of_kinds_since(
+            &self,
+            kinds: &[String],
+            since: time::OffsetDateTime,
+        ) -> Result<Vec<Event>, StorageError> {
+            self.0
+                .event_log_repo()
+                .events_of_kinds_since(kinds, since)
+                .await
+        }
     }
 
     async fn backed_bus_with_caps(
@@ -749,6 +760,14 @@ mod tests {
                 .cloned()
                 .collect())
         }
+
+        async fn events_of_kinds_since(
+            &self,
+            _: &[String],
+            _: time::OffsetDateTime,
+        ) -> Result<Vec<Event>, StorageError> {
+            Ok(Vec::new())
+        }
     }
 
     #[tokio::test]
@@ -949,6 +968,14 @@ mod tests {
             &self,
             _limit: usize,
             _since: Option<EventId>,
+        ) -> Result<Vec<Event>, StorageError> {
+            Ok(Vec::new())
+        }
+
+        async fn events_of_kinds_since(
+            &self,
+            _: &[String],
+            _: time::OffsetDateTime,
         ) -> Result<Vec<Event>, StorageError> {
             Ok(Vec::new())
         }

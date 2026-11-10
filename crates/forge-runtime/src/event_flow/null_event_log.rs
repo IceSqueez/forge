@@ -26,4 +26,12 @@ impl EventLogRepo for NullEventLogRepo {
     ) -> Result<Vec<Event>, StorageError> {
         Ok(Vec::new())
     }
+
+    async fn events_of_kinds_since(
+        &self,
+        _: &[String],
+        _: time::OffsetDateTime,
+    ) -> Result<Vec<Event>, StorageError> {
+        Ok(Vec::new())
+    }
 }

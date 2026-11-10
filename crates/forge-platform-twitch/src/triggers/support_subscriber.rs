@@ -40,7 +40,7 @@ pub(super) const SPEC: TwitchTriggerSpec = TwitchTriggerSpec {
     category: TriggerCategory::Subscriptions,
     label: "New subscriber",
     summary: "Fires on a first-time channel subscription",
-    search_text: "twitch subscribe subscriber new subscription tier",
+    search_text: "twitch subscribe subscribed subbed sub subscriber new subscription tier",
     icon: "user-plus",
     kind: event_kinds::CHANNEL_SUBSCRIBE,
     actors: ActorDeclaration::principal(),

@@ -51,6 +51,7 @@ fn build_step_groups(
             name: name.into(),
             desc: crate::shared::kind_copy::step_summary(runner).into(),
             state: GridPickerItemState::Normal,
+            keywords: runner.search_text().to_owned().into(),
             matches: None,
         };
         match groups.iter_mut().find(|g| g.scope == scope) {

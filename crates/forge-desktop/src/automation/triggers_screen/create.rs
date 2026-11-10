@@ -312,6 +312,7 @@ pub(crate) fn build_kind_groups(
                 name: name.into(),
                 desc: crate::shared::kind_copy::trigger_summary(d).into(),
                 state: GridPickerItemState::Normal,
+                keywords: d.search_text().to_owned().into(),
                 matches: None,
             });
         }

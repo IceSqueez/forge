@@ -36,7 +36,7 @@ pub(super) const SPEC: TwitchTriggerSpec = TwitchTriggerSpec {
     category: TriggerCategory::Subscriptions,
     label: "Gift subscription",
     summary: "Fires when a user gifts one or more subscriptions",
-    search_text: "twitch gift sub gifted subscription gifter",
+    search_text: "twitch gift sub gift sub gifted gifting subscription gifter",
     icon: "gift",
     kind: event_kinds::CHANNEL_SUBSCRIPTION_GIFT,
     actors: ActorDeclaration::Actors(&[ActorRole::Gifter]),

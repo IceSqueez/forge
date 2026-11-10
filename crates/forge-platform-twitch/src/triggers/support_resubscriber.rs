@@ -41,7 +41,7 @@ pub(super) const SPEC: TwitchTriggerSpec = TwitchTriggerSpec {
     category: TriggerCategory::Subscriptions,
     label: "Re-subscriber",
     summary: "Fires on subscription renewals",
-    search_text: "twitch resub resubscribe renewal subscription months streak",
+    search_text: "twitch resub resubscribed resubscribe renewal subscription months streak",
     icon: "repeat",
     kind: event_kinds::CHANNEL_SUBSCRIPTION_MESSAGE,
     actors: ActorDeclaration::principal(),

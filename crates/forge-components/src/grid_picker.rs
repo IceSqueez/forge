@@ -85,6 +85,7 @@ pub struct GridPickerItem {
     pub name: SharedString,
     pub desc: SharedString,
     pub state: GridPickerItemState,
+    pub keywords: SharedString,
     pub matches: Option<GridItemQuery>,
 }
 
@@ -825,7 +826,11 @@ impl Render for GridPicker {
 fn item_hit(item: &GridPickerItem, query: &str) -> bool {
     match &item.matches {
         Some(test) => test(query),
-        None => contains_folded(&item.name, query) || contains_folded(&item.desc, query),
+        None => {
+            contains_folded(&item.name, query)
+                || contains_folded(&item.desc, query)
+                || contains_folded(&item.keywords, query)
+        }
     }
 }
 
@@ -930,6 +935,7 @@ mod tests {
             name: SharedString::from(name.to_owned()),
             desc: SharedString::from(desc.to_owned()),
             state: GridPickerItemState::Normal,
+            keywords: SharedString::default(),
             matches,
         }
     }

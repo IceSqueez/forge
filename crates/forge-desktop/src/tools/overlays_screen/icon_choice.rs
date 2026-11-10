@@ -203,6 +203,7 @@ fn empty_group(name: String, desc: String, palette: &ForgePalette) -> GridPicker
             name: name.into(),
             desc: desc.into(),
             state: GridPickerItemState::Normal,
+            keywords: SharedString::default(),
             matches: None,
         }],
     }
@@ -245,6 +246,7 @@ pub(super) fn icon_groups(
                 name: SharedString::from(glyph_label(glyph)),
                 desc: SharedString::from(glyph.words.join(WORD_SEPARATOR)),
                 state: GridPickerItemState::Normal,
+                keywords: SharedString::default(),
                 matches: Some(Box::new(move |query: &str| {
                     glyph.matches(query)
                         || glyph_label(glyph)
@@ -277,6 +279,7 @@ fn imported_group(images: &[IconImage], accent: Rgba, palette: &ForgePalette) ->
         name: tr!("overlays_icon_import").into(),
         desc: tr!("overlays_icon_import_desc", formats = formats.as_str()).into(),
         state: GridPickerItemState::Normal,
+        keywords: SharedString::default(),
         matches: None,
     }];
     imported.extend(images.iter().map(|image| GridPickerItem {
@@ -286,6 +289,7 @@ fn imported_group(images: &[IconImage], accent: Rgba, palette: &ForgePalette) ->
         name: SharedString::from(image.label.clone()),
         desc: SharedString::from(image.format.as_str().to_uppercase()),
         state: GridPickerItemState::Normal,
+        keywords: SharedString::default(),
         matches: None,
     }));
     GridPickerGroup {

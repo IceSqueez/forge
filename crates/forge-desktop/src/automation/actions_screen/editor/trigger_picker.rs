@@ -57,6 +57,10 @@ fn build_recent_group(
                 .into(),
             desc: desc.into(),
             state,
+            keywords: descriptor
+                .map(|kind| kind.search_text().to_owned())
+                .unwrap_or_default()
+                .into(),
             matches: None,
         });
     }

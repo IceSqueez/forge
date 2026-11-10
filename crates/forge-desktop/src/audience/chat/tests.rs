@@ -1042,3 +1042,94 @@ fn a_filtered_out_cursor_row_activates_nothing(cx: &mut TestAppContext) {
     });
     assert_eq!(selected, None);
 }
+
+fn whisper_draft_for(
+    view: &Entity<ChatView>,
+    key: AuthorKey,
+    draft: &str,
+    vcx: &mut VisualTestContext,
+) {
+    view.update_in(vcx, |view, window, cx| {
+        view.drawer.update(cx, |drawer, cx| {
+            drawer.open_whisper(key, window, cx);
+            drawer
+                .whisper_input
+                .update(cx, |input, cx| input.set_content(draft.to_owned(), cx));
+        })
+    });
+    vcx.run_until_parked();
+}
+
+fn whisper_state(view: &Entity<ChatView>, vcx: &mut VisualTestContext) -> (bool, String) {
+    view.read_with(vcx, |view, cx| {
+        let drawer = view.drawer.read(cx);
+        (
+            drawer.whisper_open,
+            drawer.whisper_input.read(cx).content().to_owned(),
+        )
+    })
+}
+
+#[gpui::test]
+fn selecting_another_viewer_closes_the_whisper_and_drops_its_draft(cx: &mut TestAppContext) {
+    let rt = runtime();
+    let (view, vcx) = mount_in_window(cx, &rt, MockVoiceAliasRepo::new());
+    whisper_draft_for(
+        &view,
+        AuthorKey::by_viewer_id(PlatformId::Twitch, "1"),
+        "see you",
+        vcx,
+    );
+
+    view.update(vcx, |view, cx| {
+        view.drawer.update(cx, |drawer, cx| {
+            drawer.open_viewer(AuthorKey::by_viewer_id(PlatformId::Twitch, "2"), cx)
+        })
+    });
+    vcx.run_until_parked();
+
+    assert_eq!(whisper_state(&view, vcx), (false, String::new()));
+}
+
+#[gpui::test]
+fn selecting_the_same_viewer_again_keeps_the_whisper_draft(cx: &mut TestAppContext) {
+    let rt = runtime();
+    let (view, vcx) = mount_in_window(cx, &rt, MockVoiceAliasRepo::new());
+    let ann = AuthorKey::by_viewer_id(PlatformId::Twitch, "1");
+    whisper_draft_for(&view, ann.clone(), "see you", vcx);
+
+    view.update(vcx, |view, cx| {
+        view.drawer
+            .update(cx, |drawer, cx| drawer.open_viewer(ann, cx))
+    });
+    vcx.run_until_parked();
+
+    assert_eq!(whisper_state(&view, vcx), (true, "see you".to_owned()));
+}
+
+#[gpui::test]
+fn opening_a_whisper_starts_open_and_empty_whoever_had_the_draft(cx: &mut TestAppContext) {
+    for (next, case) in [("1", "same viewer"), ("2", "other viewer")] {
+        let rt = runtime();
+        let (view, vcx) = mount_in_window(cx, &rt, MockVoiceAliasRepo::new());
+        whisper_draft_for(
+            &view,
+            AuthorKey::by_viewer_id(PlatformId::Twitch, "1"),
+            "see you",
+            vcx,
+        );
+
+        view.update_in(vcx, |view, window, cx| {
+            view.drawer.update(cx, |drawer, cx| {
+                drawer.open_whisper(
+                    AuthorKey::by_viewer_id(PlatformId::Twitch, next),
+                    window,
+                    cx,
+                )
+            })
+        });
+        vcx.run_until_parked();
+
+        assert_eq!(whisper_state(&view, vcx), (true, String::new()), "{case}");
+    }
+}

@@ -8,6 +8,7 @@ use forge_registry::{
 use forge_types::{
     DeclaredVariable, PlatformId, SynthesisHint, TriggerConfig, UserText, Variant, VariantKind,
 };
+use time::OffsetDateTime;
 
 use super::payload_read;
 
@@ -30,9 +31,14 @@ pub(super) struct TwitchTriggerSpec {
     pub chat_family: Option<ChatTriggerFamily>,
     pub chat_event: Option<ChatEventKind>,
     pub lane: DeliveryLane,
+    pub follow_moment: fn(&Event) -> Option<OffsetDateTime>,
 }
 
 fn no_variables() -> Option<TriggerVariables> {
+    None
+}
+
+fn no_follow_moment(_: &Event) -> Option<OffsetDateTime> {
     None
 }
 
@@ -75,6 +81,7 @@ impl TwitchTriggerSpec {
         chat_family: None,
         chat_event: None,
         lane: DeliveryLane::Priority,
+        follow_moment: no_follow_moment,
     };
 }
 
@@ -154,6 +161,10 @@ impl TriggerKindDescriptor for TwitchTriggerSpec {
 
     fn delivery_lane(&self) -> DeliveryLane {
         self.lane
+    }
+
+    fn follow_moment(&self, event: &Event) -> Option<OffsetDateTime> {
+        (self.follow_moment)(event)
     }
 }
 

@@ -7,6 +7,7 @@ use forge_registry::{
     ActorDeclaration, ActorIdentity, ActorRole, TriggerCategory, TriggerVariables,
 };
 use forge_types::{DeclaredVariable, VariantKind};
+use time::OffsetDateTime;
 
 use super::payload_read::{self, twitch_actor};
 use crate::vocabulary::fields::follow as fields;
@@ -37,8 +38,17 @@ pub(super) const SPEC: TwitchTriggerSpec = TwitchTriggerSpec {
     actors: ActorDeclaration::principal(),
     variables,
     chat_event: Some(ChatEventKind::Follow),
+    follow_moment,
     ..TwitchTriggerSpec::BASE
 };
+
+fn follow_moment(event: &Event) -> Option<OffsetDateTime> {
+    event
+        .payload
+        .get(fields::FOLLOWED_AT)
+        .and_then(|raw| raw.as_str())
+        .and_then(forge_platform_core::parse_timestamp)
+}
 
 fn follower_identity(event: &Event) -> ActorIdentity {
     payload_read::identity(

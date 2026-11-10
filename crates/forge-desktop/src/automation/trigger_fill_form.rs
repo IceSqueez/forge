@@ -15,7 +15,7 @@ use gpui::{
 
 use crate::automation::trigger_form_shape::{trigger_form_defaults, trigger_form_specs};
 use crate::automation::triggers_screen::{
-    platform_dot_color, refuse_invalid_config, timer_field_hints,
+    platform_dot_color, platform_kind_line, refuse_invalid_config, timer_field_hints,
 };
 use crate::shared::config_field_label::{config_field_labels, row_label};
 use crate::shared::config_form::{
@@ -52,7 +52,7 @@ pub(crate) struct TriggerFillSeed {
 pub(crate) struct TriggerFillForm {
     registry: Arc<TriggerRegistry>,
     kind_id: String,
-    kind_label: String,
+    kind_line: String,
     ids: TriggerFillIds,
     on_back: BackHandler,
     pub(crate) name_field: Entity<TextInput>,
@@ -75,9 +75,7 @@ impl TriggerFillForm {
         } = seed;
         let palette = cx.palette();
         let descriptor = registry.get(&kind_id);
-        let kind_label = descriptor
-            .map(crate::shared::kind_copy::trigger_name)
-            .unwrap_or_else(|| kind_id.clone());
+        let kind_line = platform_kind_line(&kind_id, &registry);
         let default = trigger_form_defaults(descriptor);
         let specs = trigger_form_specs(descriptor);
 
@@ -105,7 +103,7 @@ impl TriggerFillForm {
         Self {
             registry,
             kind_id,
-            kind_label,
+            kind_line,
             ids,
             on_back,
             name_field,
@@ -363,22 +361,15 @@ impl Render for TriggerFillForm {
             .child(name_section)
             .child(config_section);
 
-        let card = modal(
-            tr!(
-                "triggers_create_new_instance",
-                kind = self.kind_label.as_str()
-            ),
-            body,
-            &palette,
-        )
-        .header_icon(glyph, dot_color)
-        .subtitle(self.kind_id.clone())
-        .size(ModalSize::Md)
-        .footer(self.footer(&palette, cx))
-        .on_close(
-            self.ids.close,
-            cx.listener(|this, _: &ClickEvent, _, cx| this.cancel(cx)),
-        );
+        let card = modal(tr!("triggers_new_trigger"), body, &palette)
+            .header_icon(glyph, dot_color)
+            .subtitle(self.kind_line.clone())
+            .size(ModalSize::Md)
+            .footer(self.footer(&palette, cx))
+            .on_close(
+                self.ids.close,
+                cx.listener(|this, _: &ClickEvent, _, cx| this.cancel(cx)),
+            );
 
         let view = cx.entity();
         div().absolute().top_0().left_0().size_full().child(

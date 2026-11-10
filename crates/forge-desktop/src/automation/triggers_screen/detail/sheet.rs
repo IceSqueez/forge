@@ -189,10 +189,10 @@ impl TriggerDetailPane {
             .child(status_dot(dot_color, KIND_DOT))
             .child(
                 div()
-                    .font_family(cx.mono_family())
+                    .font_family(cx.body_family())
                     .text_size(KIND_FS)
                     .text_color(palette.text_faint)
-                    .child(instance.kind_id.clone()),
+                    .child(platform_kind_line(&instance.kind_id, &self.deps.registry)),
             )
             .when_some(self.switched_off_owner(&instance.kind_id), |line, owner| {
                 line.child(inactive_badge(&owner, palette, density, cx))

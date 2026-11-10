@@ -160,6 +160,24 @@ pub(crate) fn platform_dot_color(
         .unwrap_or(palette.info)
 }
 
+pub(crate) fn platform_kind_line(kind_id: &str, registry: &TriggerRegistry) -> String {
+    let kind = registry
+        .get(kind_id)
+        .map(crate::shared::kind_copy::trigger_name)
+        .unwrap_or_else(|| kind_id.to_owned());
+    match Platform::from_kind_id(kind_id, registry) {
+        Some(platform) => {
+            let platform = platform.display();
+            tr!(
+                "triggers_detail_kind_line",
+                platform = platform.as_str(),
+                kind = kind.as_str()
+            )
+        }
+        None => kind,
+    }
+}
+
 #[derive(Clone)]
 struct TriggerInstanceRow {
     id: TriggerInstanceId,

@@ -1,23 +1,19 @@
 use super::choice_feed::{ChoiceFeed, ChoiceHost, start_option_choices};
-use super::{TriggerInstanceRow, TriggerScreenDeps, on_repo_error, save_then_list};
+use super::{Platform, TriggerInstanceRow, TriggerScreenDeps, on_repo_error, save_then_list};
 use crate::app::async_bridge;
 use crate::automation::trigger_fill_form::{
     TriggerFillForm, TriggerFillFormEvent, TriggerFillIds, TriggerFillSeed,
 };
-use crate::integrations::integration_catalog::{catalog_text, tint_color};
 use crate::shared::picker_favorites::{StoredFavorites, bind_picker, follow_picker_event};
 use forge_components::focus_inside_modal;
 use forge_components::{
     ActivePresentation, ForgePalette, GlyphArt, GridPicker, GridPickerArt, GridPickerConfig,
     GridPickerEvent, GridPickerGroup, GridPickerItem, GridPickerItemState, GridPickerSubtitle,
-    GridScope, Icon, OverlayPosition, overlay, tr,
+    GridScope, GridSection, Icon, OverlayPosition, overlay, tr,
 };
-use forge_host::integration_catalog::{declaration_of, declarations};
 use forge_host::integrations::BuiltinRegistry;
-use forge_platform_core::IntegrationDeclaration;
 use forge_registry::{TriggerCategory, TriggerKindDescriptor, TriggerRegistry};
 use forge_types::TriggerInstanceId;
-use gpui::Rgba;
 use gpui::{
     AnyElement, App, Context, Entity, EventEmitter, SharedString, Subscription, Window, prelude::*,
 };
@@ -284,97 +280,92 @@ pub(crate) fn build_kind_groups(
     registry: &TriggerRegistry,
     palette: &ForgePalette,
 ) -> (Vec<GridPickerGroup>, HashMap<SharedString, String>) {
+    let kinds: Vec<PickableKind<'_>> = registry
+        .all()
+        .map(|descriptor| PickableKind {
+            platform: Platform::from_kind_id(descriptor.id(), registry),
+            subgroup: subgroup_of(descriptor.category()),
+            name: crate::shared::kind_copy::trigger_name(descriptor),
+            descriptor,
+        })
+        .collect();
+
     let mut groups: Vec<GridPickerGroup> = Vec::new();
     let mut picks: HashMap<SharedString, String> = HashMap::new();
+    let sections = Platform::ordered().into_iter().map(Some).chain([None]);
 
-    for slot in kind_slots() {
-        let (label, slug, color) = slot.meta(palette);
-        let mut descs: Vec<(String, &dyn TriggerKindDescriptor)> = registry
-            .all()
-            .filter(|d| slot.holds(registry, *d))
-            .map(|d| (crate::shared::kind_copy::trigger_name(d), d))
-            .collect();
-        if descs.is_empty() {
-            continue;
-        }
-        descs.sort_by(|(a_name, a), (b_name, b)| {
-            a_name.cmp(b_name).then_with(|| a.id().cmp(b.id()))
-        });
+    for platform in sections {
+        let section = section_of(platform.as_ref(), palette);
+        for category in CATEGORY_ORDER {
+            let mut members: Vec<&PickableKind<'_>> = kinds
+                .iter()
+                .filter(|kind| kind.platform == platform && kind.subgroup == category)
+                .collect();
+            if members.is_empty() {
+                continue;
+            }
+            members.sort_by(|a, b| {
+                a.name
+                    .cmp(&b.name)
+                    .then_with(|| a.descriptor.id().cmp(b.descriptor.id()))
+            });
 
-        let mut items = Vec::with_capacity(descs.len());
-        for (name, d) in descs {
-            let id = SharedString::from(format!("kind-{}", d.id()));
-            picks.insert(id.clone(), d.id().to_owned());
-            items.push(GridPickerItem {
-                id,
-                glyph: GlyphArt::Icon(Icon::from_name(d.icon_name())),
-                tint: color,
-                name: name.into(),
-                desc: crate::shared::kind_copy::trigger_summary(d).into(),
-                state: GridPickerItemState::Normal,
-                keywords: d.search_text().to_owned().into(),
-                matches: None,
+            let mut items = Vec::with_capacity(members.len());
+            for kind in members {
+                let id = SharedString::from(format!("kind-{}", kind.descriptor.id()));
+                picks.insert(id.clone(), kind.descriptor.id().to_owned());
+                items.push(GridPickerItem {
+                    id,
+                    glyph: GlyphArt::Icon(Icon::from_name(kind.descriptor.icon_name())),
+                    tint: section.dot_color,
+                    name: kind.name.clone().into(),
+                    desc: crate::shared::kind_copy::trigger_summary(kind.descriptor).into(),
+                    state: GridPickerItemState::Normal,
+                    keywords: kind.descriptor.search_text().to_owned().into(),
+                    matches: None,
+                });
+            }
+            groups.push(GridPickerGroup {
+                label: category_label(category),
+                dot_color: section.dot_color,
+                scope: GridScope::Section(section.clone()),
+                items,
             });
         }
-        groups.push(GridPickerGroup {
-            label,
-            dot_color: color,
-            scope: GridScope::Named(slug),
-            items,
-        });
     }
 
     (groups, picks)
 }
 
-#[derive(Clone)]
-enum KindSlot {
-    Category(TriggerCategory),
-    Owner(Box<IntegrationDeclaration>),
+struct PickableKind<'a> {
+    platform: Option<Platform>,
+    subgroup: TriggerCategory,
+    name: String,
+    descriptor: &'a dyn TriggerKindDescriptor,
 }
 
-impl KindSlot {
-    fn holds(&self, registry: &TriggerRegistry, descriptor: &dyn TriggerKindDescriptor) -> bool {
-        let category = descriptor.category();
-        let owner = || registry.owning_integration(descriptor.id());
-        match self {
-            Self::Owner(declaration) => {
-                category == TriggerCategory::Integration && owner() == Some(&declaration.id)
-            }
-            Self::Category(TriggerCategory::Ungrouped) => {
-                category == TriggerCategory::Ungrouped
-                    || (category == TriggerCategory::Integration
-                        && owner().and_then(declaration_of).is_none())
-            }
-            Self::Category(own) => category == *own,
-        }
-    }
+const OTHER_SECTION: &str = "other";
 
-    fn meta(&self, palette: &ForgePalette) -> (SharedString, SharedString, Rgba) {
-        match self {
-            Self::Owner(declaration) => (
-                catalog_text(declaration.catalog_group.label).into(),
-                declaration.id.to_string().into(),
-                tint_color(declaration.catalog_group.trigger_tint, palette),
-            ),
-            Self::Category(category) => {
-                let (label, slug, color) = category_meta(*category, palette);
-                (label, slug.into(), color)
-            }
-        }
+fn section_of(platform: Option<&Platform>, palette: &ForgePalette) -> GridSection {
+    match platform {
+        Some(platform) => GridSection {
+            key: platform.element_key().into(),
+            label: platform.display().into(),
+            dot_color: platform.dot(palette),
+        },
+        None => GridSection {
+            key: OTHER_SECTION.into(),
+            label: tr!("trigger_cat_other").into(),
+            dot_color: palette.text_muted,
+        },
     }
 }
 
-fn kind_slots() -> Vec<KindSlot> {
-    CATEGORY_ORDER
-        .into_iter()
-        .flat_map(|category| match category {
-            TriggerCategory::Integration => declarations()
-                .map(|declaration| KindSlot::Owner(Box::new(declaration)))
-                .to_vec(),
-            other => vec![KindSlot::Category(other)],
-        })
-        .collect()
+fn subgroup_of(category: TriggerCategory) -> TriggerCategory {
+    match category {
+        TriggerCategory::Integration => TriggerCategory::Ungrouped,
+        other => other,
+    }
 }
 
 const CATEGORY_ORDER: [TriggerCategory; 20] = [
@@ -400,69 +391,29 @@ const CATEGORY_ORDER: [TriggerCategory; 20] = [
     TriggerCategory::Ungrouped,
 ];
 
-fn category_meta(
-    cat: TriggerCategory,
-    palette: &ForgePalette,
-) -> (SharedString, &'static str, Rgba) {
-    match cat {
-        TriggerCategory::Chat => (tr!("trigger_cat_chat").into(), "chat", palette.info),
-        TriggerCategory::Subscriptions => (
-            tr!("trigger_cat_subscriptions").into(),
-            "subs",
-            palette.brand,
-        ),
-        TriggerCategory::Bits => (tr!("trigger_cat_bits").into(), "bits", palette.accent_peach),
-        TriggerCategory::Raids => (
-            tr!("trigger_cat_raids").into(),
-            "raids",
-            palette.theme_brand,
-        ),
-        TriggerCategory::Moderation => (
-            tr!("trigger_cat_moderation").into(),
-            "moderation",
-            palette.danger,
-        ),
-        TriggerCategory::ChannelPoints => (
-            tr!("trigger_cat_channel_points").into(),
-            "points",
-            palette.accent_pink_light,
-        ),
-        TriggerCategory::Polls => (tr!("trigger_cat_polls").into(), "polls", palette.warning),
-        TriggerCategory::Predictions => (
-            tr!("trigger_cat_predictions").into(),
-            "predictions",
-            palette.warning,
-        ),
-        TriggerCategory::Hype => (tr!("trigger_cat_hype").into(), "hype", palette.theme_brand),
-        TriggerCategory::Charity => (
-            tr!("trigger_cat_charity").into(),
-            "charity",
-            palette.success,
-        ),
-        TriggerCategory::Donations => (
-            tr!("trigger_cat_donations").into(),
-            "donations",
-            palette.success,
-        ),
-        TriggerCategory::Goals => (tr!("trigger_cat_goals").into(), "goals", palette.success),
-        TriggerCategory::Clips => (tr!("trigger_cat_clips").into(), "clips", palette.info),
-        TriggerCategory::Streams => (tr!("trigger_cat_streams").into(), "streams", palette.info),
-        TriggerCategory::Users => (tr!("trigger_cat_users").into(), "users", palette.info),
-        TriggerCategory::Core => (tr!("trigger_cat_core").into(), "core", palette.info),
-        TriggerCategory::Server => (
-            tr!("triggers_create_cat_server").into(),
-            "server",
-            palette.info,
-        ),
-        TriggerCategory::Timer => (
-            tr!("triggers_create_cat_timer").into(),
-            "timer",
-            palette.warning,
-        ),
-        TriggerCategory::Ungrouped | TriggerCategory::Integration => {
-            (tr!("trigger_cat_other").into(), "other", palette.text_muted)
-        }
+fn category_label(category: TriggerCategory) -> SharedString {
+    match category {
+        TriggerCategory::Chat => tr!("trigger_cat_chat"),
+        TriggerCategory::Subscriptions => tr!("trigger_cat_subscriptions"),
+        TriggerCategory::Bits => tr!("trigger_cat_bits"),
+        TriggerCategory::Raids => tr!("trigger_cat_raids"),
+        TriggerCategory::Moderation => tr!("trigger_cat_moderation"),
+        TriggerCategory::ChannelPoints => tr!("trigger_cat_channel_points"),
+        TriggerCategory::Polls => tr!("trigger_cat_polls"),
+        TriggerCategory::Predictions => tr!("trigger_cat_predictions"),
+        TriggerCategory::Hype => tr!("trigger_cat_hype"),
+        TriggerCategory::Charity => tr!("trigger_cat_charity"),
+        TriggerCategory::Donations => tr!("trigger_cat_donations"),
+        TriggerCategory::Goals => tr!("trigger_cat_goals"),
+        TriggerCategory::Clips => tr!("trigger_cat_clips"),
+        TriggerCategory::Streams => tr!("trigger_cat_streams"),
+        TriggerCategory::Users => tr!("trigger_cat_users"),
+        TriggerCategory::Core => tr!("trigger_cat_core"),
+        TriggerCategory::Server => tr!("triggers_create_cat_server"),
+        TriggerCategory::Timer => tr!("triggers_create_cat_timer"),
+        TriggerCategory::Ungrouped | TriggerCategory::Integration => tr!("trigger_cat_other"),
     }
+    .into()
 }
 
 #[cfg(test)]

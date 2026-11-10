@@ -1,7 +1,7 @@
 use super::trigger_fill::{TriggerFillDeps, TriggerFillEvent, TriggerFillModal};
 use super::*;
 use crate::app::async_bridge;
-use crate::automation::triggers_screen::platform_dot_color;
+use crate::automation::triggers_screen::{platform_dot_color, platform_kind_line};
 use crate::shared::picker_favorites::{bind_picker, follow_picker_event};
 use crate::shared::repo_failure::RepoFailure;
 use forge_components::GridScope;
@@ -34,9 +34,7 @@ fn build_recent_group(
         let id = SharedString::from(format!("recent-{}", instance.id));
         picks.insert(id.clone(), instance.id);
         let glyph = Icon::from_name(descriptor.map(|kind| kind.icon_name()).unwrap_or("bolt"));
-        let kind_label = descriptor
-            .map(crate::shared::kind_copy::trigger_name)
-            .unwrap_or_else(|| instance.kind_id.clone());
+        let kind_label = platform_kind_line(&instance.kind_id, registry);
         let condition =
             crate::automation::triggers_screen::condition_display(descriptor, &instance.overrides);
         let desc = if condition.is_empty() {

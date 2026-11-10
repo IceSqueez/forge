@@ -1206,6 +1206,7 @@ triggers_sheet_section_used_in = ВИКОРИСТОВУЄТЬСЯ В
 triggers_sheet_delete_btn = Видалити
 triggers_sheet_save_btn = Зберегти
 triggers_detail_loading = Завантаження тригера...
+triggers_detail_kind_line = { $platform } · { $kind }
 triggers_sheet_config_authored = Задається на кроці
 triggers_sheet_section_used_in_count = ВИКОРИСТОВУЄТЬСЯ В ({ $count })
 triggers_sheet_used_in_empty_title = Ще не пов'язано з жодною дією.
@@ -1284,7 +1285,6 @@ triggers_create_cat_timer = Таймер
 ## Форма створення тригера - заповнення
 
 triggers_create_back = Назад
-triggers_create_new_instance = Новий екземпляр: { $kind }
 triggers_create_section_name = НАЗВА
 triggers_create_name_placeholder = Назва екземпляра (обов'язково)
 triggers_create_section_config = КОНФІГУРАЦІЯ

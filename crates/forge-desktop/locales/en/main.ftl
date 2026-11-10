@@ -1178,6 +1178,7 @@ triggers_sheet_section_used_in = USED IN
 triggers_sheet_delete_btn = Delete
 triggers_sheet_save_btn = Save
 triggers_detail_loading = Loading trigger...
+triggers_detail_kind_line = { $platform } · { $kind }
 triggers_sheet_config_authored = Authored on the step
 triggers_sheet_section_used_in_count = USED IN ({ $count })
 triggers_sheet_used_in_empty_title = Not linked to any action yet.
@@ -1252,7 +1253,6 @@ triggers_create_cat_timer = Timer
 ## Triggers create form - fill form
 
 triggers_create_back = Back
-triggers_create_new_instance = New { $kind } instance
 triggers_create_section_name = NAME
 triggers_create_name_placeholder = Instance name (required)
 triggers_create_section_config = CONFIGURATION

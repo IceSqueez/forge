@@ -11,7 +11,7 @@ use forge_storage::OverlayDefinition;
 use forge_types::{ActionId, Queue, QueueId, Variant};
 use gpui::SharedString;
 
-use crate::automation::triggers_screen::build_kind_groups;
+use crate::automation::triggers_screen::{build_kind_groups, platform_kind_line};
 use crate::shared::config_field_label::{field_label, field_placeholder};
 
 const SUGGESTED_SCOPE: &str = "suggested";
@@ -94,7 +94,8 @@ pub(super) fn offered_events(
                 continue;
             };
             if is_curated(kind_id) {
-                suggested.push((kind_id.clone(), item));
+                let name = platform_kind_line(kind_id, registry).into();
+                suggested.push((kind_id.clone(), GridPickerItem { name, ..item }));
             } else {
                 kept.push(item);
             }

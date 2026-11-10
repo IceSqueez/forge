@@ -54,3 +54,34 @@ pub trait FollowKnowledgeRepo: Send + Sync {
 
     async fn clear_platform(&self, platform: PlatformId) -> Result<u64, StorageError>;
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    const VIEWER_ID: &str = "viewer-41782";
+
+    fn key() -> FollowKnowledgeKey {
+        FollowKnowledgeKey {
+            platform: PlatformId::Twitch,
+            viewer_id: VIEWER_ID.to_owned(),
+        }
+    }
+
+    #[test]
+    fn key_debug_hides_the_viewer_id() {
+        assert!(!format!("{:?}", key()).contains(VIEWER_ID));
+    }
+
+    #[test]
+    fn entry_debug_hides_the_viewer_id() {
+        let entry = FollowKnowledgeEntry {
+            key: key(),
+            follow: KnownFollow::NotFollowing,
+            observed_at: OffsetDateTime::UNIX_EPOCH,
+            fresh_until: OffsetDateTime::UNIX_EPOCH,
+        };
+
+        assert!(!format!("{entry:?}").contains(VIEWER_ID));
+    }
+}

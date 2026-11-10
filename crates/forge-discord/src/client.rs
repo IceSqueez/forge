@@ -18,7 +18,7 @@ use crate::embed::{DiscordEmbed, MAX_CONTENT_CHARS};
 use crate::error::{DiscordError, ValidationFault};
 use crate::events::{publish_failed, publish_posted, publish_rate_limited};
 use crate::health::{
-    DiscordHealthSnapshot, make_health_state, record_missing_webhook, update_on_send,
+    DiscordHealthSnapshot, make_health_state, record_unsent_failure, update_on_send,
 };
 use crate::mention::MentionPolicy;
 use crate::ratelimit::{
@@ -169,20 +169,28 @@ impl DiscordClient {
     }
 
     async fn load_route(&self, name: &str) -> Result<WebhookRoute, DiscordError> {
-        let cred = match self.load_webhook(name).await {
-            Ok(cred) => cred,
-            Err(err) => {
-                self.record_missing_webhook_failure(name, &err);
-                return Err(err);
-            }
-        };
+        let cred = self.load_webhook(name).await?;
         WebhookRoute::parse(cred.url.expose())
     }
 
-    fn record_missing_webhook_failure(&self, webhook_name: &str, err: &DiscordError) {
+    pub(crate) async fn prepare<T>(
+        &self,
+        webhook_name: &str,
+        stage: impl std::future::Future<Output = Result<T, DiscordError>>,
+    ) -> Result<T, DiscordError> {
+        match stage.await {
+            Ok(prepared) => Ok(prepared),
+            Err(err) => {
+                self.record_early_failure(webhook_name, &err);
+                Err(err)
+            }
+        }
+    }
+
+    fn record_early_failure(&self, webhook_name: &str, err: &DiscordError) {
         let deltas = {
             let mut snap = self.health_state.lock_recover();
-            record_missing_webhook(&mut snap)
+            record_unsent_failure(&mut snap)
         };
         for delta in deltas {
             #[expect(
@@ -204,12 +212,17 @@ impl DiscordClient {
         content: &str,
         mentions: MentionPolicy,
     ) -> Result<String, DiscordError> {
-        check_content(content)?;
-        let route = self.load_route(webhook_name).await?;
-        let body = serde_json::json!({
-            "content": content,
-            "allowed_mentions": mentions.to_wire(),
-        });
+        let (route, body) = self
+            .prepare(webhook_name, async {
+                check_content(content)?;
+                let route = self.load_route(webhook_name).await?;
+                let body = serde_json::json!({
+                    "content": content,
+                    "allowed_mentions": mentions.to_wire(),
+                });
+                Ok((route, body))
+            })
+            .await?;
         self.execute_post(&route, &body, webhook_name, PLAIN_SEND)
             .await
     }
@@ -219,9 +232,14 @@ impl DiscordClient {
         webhook_name: &str,
         embed: DiscordEmbed,
     ) -> Result<String, DiscordError> {
-        embed.validate()?;
-        let route = self.load_route(webhook_name).await?;
-        let body = serde_json::json!({ "embeds": [embed_to_wire(&embed)] });
+        let (route, body) = self
+            .prepare(webhook_name, async {
+                embed.validate()?;
+                let route = self.load_route(webhook_name).await?;
+                let body = serde_json::json!({ "embeds": [embed_to_wire(&embed)] });
+                Ok((route, body))
+            })
+            .await?;
         let record = SendRecord { embed_count: 1 };
         self.execute_post(&route, &body, webhook_name, record).await
     }
@@ -234,31 +252,35 @@ impl DiscordClient {
         embed: Option<DiscordEmbed>,
         mentions: MentionPolicy,
     ) -> Result<(), DiscordError> {
-        if content.is_none() && embed.is_none() {
-            return Err(DiscordError::Validation(ValidationFault::NothingToEdit));
-        }
-        if let Some(c) = content {
-            check_content(c)?;
-        }
-        if let Some(e) = &embed {
-            e.validate()?;
-        }
-        let route = self.load_route(webhook_name).await?;
+        let request = self
+            .prepare(webhook_name, async {
+                if content.is_none() && embed.is_none() {
+                    return Err(DiscordError::Validation(ValidationFault::NothingToEdit));
+                }
+                if let Some(c) = content {
+                    check_content(c)?;
+                }
+                if let Some(e) = &embed {
+                    e.validate()?;
+                }
+                let route = self.load_route(webhook_name).await?;
 
-        let mut map = serde_json::Map::new();
-        if let Some(c) = content {
-            map.insert(
-                "content".to_owned(),
-                serde_json::Value::String(c.to_owned()),
-            );
-            map.insert("allowed_mentions".to_owned(), mentions.to_wire());
-        }
-        if let Some(e) = &embed {
-            map.insert("embeds".to_owned(), serde_json::json!([embed_to_wire(e)]));
-        }
-        let request = route
-            .message(Method::Patch, message_id)?
-            .body(json_body(&serde_json::Value::Object(map))?);
+                let mut map = serde_json::Map::new();
+                if let Some(c) = content {
+                    map.insert(
+                        "content".to_owned(),
+                        serde_json::Value::String(c.to_owned()),
+                    );
+                    map.insert("allowed_mentions".to_owned(), mentions.to_wire());
+                }
+                if let Some(e) = &embed {
+                    map.insert("embeds".to_owned(), serde_json::json!([embed_to_wire(e)]));
+                }
+                Ok(route
+                    .message(Method::Patch, message_id)?
+                    .body(json_body(&serde_json::Value::Object(map))?))
+            })
+            .await?;
         self.execute_without_reply(request, webhook_name).await
     }
 
@@ -270,10 +292,14 @@ impl DiscordClient {
         file_bytes: &[u8],
         mentions: MentionPolicy,
     ) -> Result<String, DiscordError> {
-        if let Some(c) = content {
-            check_content(c)?;
-        }
-        let route = self.load_route(webhook_name).await?;
+        let route = self
+            .prepare(webhook_name, async {
+                if let Some(c) = content {
+                    check_content(c)?;
+                }
+                self.load_route(webhook_name).await
+            })
+            .await?;
 
         let mut payload = serde_json::Map::new();
         payload.insert("allowed_mentions".to_owned(), mentions.to_wire());
@@ -297,9 +323,13 @@ impl DiscordClient {
         webhook_name: &str,
         message_id: &str,
     ) -> Result<(), DiscordError> {
-        let route = self.load_route(webhook_name).await?;
-        self.execute_without_reply(route.message(Method::Delete, message_id)?, webhook_name)
-            .await
+        let request = self
+            .prepare(webhook_name, async {
+                let route = self.load_route(webhook_name).await?;
+                route.message(Method::Delete, message_id)
+            })
+            .await?;
+        self.execute_without_reply(request, webhook_name).await
     }
 
     pub(crate) async fn execute_post(
@@ -309,7 +339,11 @@ impl DiscordClient {
         webhook_name: &str,
         record: SendRecord,
     ) -> Result<String, DiscordError> {
-        let request = route.execute().body(json_body(body)?);
+        let request = self
+            .prepare(webhook_name, async {
+                Ok(route.execute().body(json_body(body)?))
+            })
+            .await?;
         let delivered = self.send(request, webhook_name, record).await?;
         Ok(self.finish_post(webhook_name, &delivered, record))
     }

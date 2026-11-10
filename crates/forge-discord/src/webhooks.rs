@@ -87,7 +87,9 @@ impl DiscordClient {
         url: &str,
         content: &str,
     ) -> Result<String, DiscordError> {
-        let route = WebhookRoute::parse(url)?;
+        let route = self
+            .prepare(webhook_name, async { WebhookRoute::parse(url) })
+            .await?;
         let body = serde_json::json!({
             "content": content,
             "allowed_mentions": MentionPolicy::default().to_wire(),

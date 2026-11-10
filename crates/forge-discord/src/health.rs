@@ -131,7 +131,7 @@ fn errors_value(count: usize) -> HealthValue {
     }
 }
 
-pub(crate) fn record_missing_webhook(snap: &mut DiscordHealthSnapshot) -> Vec<HealthDelta> {
+pub(crate) fn record_unsent_failure(snap: &mut DiscordHealthSnapshot) -> Vec<HealthDelta> {
     let mut deltas = Vec::new();
 
     let prev_ok = snap.last_send_ok;
@@ -303,7 +303,7 @@ mod tests {
             5,
             Some(Duration::from_secs(9)),
         ));
-        deltas.extend(record_missing_webhook(&mut DiscordHealthSnapshot::default()));
+        deltas.extend(record_unsent_failure(&mut DiscordHealthSnapshot::default()));
 
         for delta in &deltas {
             assert!(
@@ -378,7 +378,7 @@ mod tests {
 
     #[test]
     fn a_missing_webhook_fails_the_last_send_tile_and_counts_as_an_error() {
-        let deltas = record_missing_webhook(&mut DiscordHealthSnapshot::default());
+        let deltas = record_unsent_failure(&mut DiscordHealthSnapshot::default());
 
         assert_eq!(
             value_of(&deltas, LAST_SEND_METRIC),

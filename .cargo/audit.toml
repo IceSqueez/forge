@@ -24,7 +24,5 @@
 # REVIEW TRIGGER: drop this ignore when age ships a release on p256 >= 0.14.
 [advisories]
 ignore = [
-    "RUSTSEC-2026-0194",
-    "RUSTSEC-2026-0195",
     "RUSTSEC-2026-0387",
 ]
